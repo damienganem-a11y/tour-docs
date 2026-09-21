@@ -11,7 +11,7 @@ import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { applyChange } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
-import { byName, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, slotLabel, plural, joinNames } from '../rules.js';
+import { byName, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
 
 const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :
@@ -146,33 +146,41 @@ export function startAddGuest(ctx, trip, slot, activity) {
 
 // ---------- 3. Travel party prompt ----------
 
-// After a place is picked: if the guest travels with people who are in the same place, ask
-// whether to move them too. Splitting a party must stay possible.
+// After a place is picked: if the guest travels with people who are in the same place, ask whether to
+// move them too. Splitting a party must stay possible. The question is asked the same way whether the
+// tour has room or not:
+//   - there is room for everyone: Yes and No both save the move straight away (the question IS the confirmation);
+//   - not everyone fits: the question says so, and whatever does not fit goes to the FORCE confirmation
+//     (the dispatcher decides, and may write who approved it).
 function afterPick(ctx, trip, guest, slot, target) {
-  const movers = partyMovers(trip, guest, slot);
+  const { movers, room, guestFits, everyoneFits } = partyPlan(trip, guest, slot, target);
   if (movers.length === 0) return confirmMove(ctx, trip, guest, slot, target, []);
 
-  // How many free places does the target have? (Unlimited for At leisure and for activities with no capacity.)
-  const room = target.kind === 'activity' && target.activity.capacity !== null
-    ? target.activity.capacity - countIn(trip, target.activity) : Infinity;
-
-  // There is room for the guest but not for everybody: no question to ask. Only the tapped guest
-  // can move, and the confirmation screen says so ("Only 1 seat left: ... stays in ...").
-  if (room < 1 + movers.length) return confirmMove(ctx, trip, guest, slot, target, []);
-
-  // This question IS the confirmation: Yes and No both save the move straight away, so there is
-  // no second screen. It shows what will happen, and Cancel (in red) backs out.
   const withParty = moveFacts(trip, guest, slot, target, movers);
   const alone = moveFacts(trip, guest, slot, target, []);
   const moverNames = joinNames(movers.map((m) => alone.names.get(m.id)));
+
+  // What to say about the room in the target tour.
+  let roomNote = null;
+  if (target.kind === 'activity' && target.activity.capacity !== null) {
+    const tour = target.activity;
+    const now = countIn(trip, tour);
+    if (!guestFits) roomNote = `"${tour.name}" is full (${now} / ${tour.capacity}). Moving anyone in needs FORCE.`;
+    else if (!everyoneFits) roomNote = `Only ${plural(room, 'seat')} left in "${tour.name}". Moving everyone makes it ${now + 1 + movers.length} / ${tour.capacity}: that needs FORCE.`;
+    else if (room <= 3) roomNote = `Only ${plural(room, 'seat')} left in "${tour.name}".`;
+  }
+
+  // Yes: everyone. No: only the tapped guest. Either one goes to the FORCE confirmation if it does not fit.
+  const yes = () => (everyoneFits ? saveChanges(ctx, trip, withParty.changes, withParty.done) : confirmMove(ctx, trip, guest, slot, target, movers));
+  const no = () => (guestFits ? saveChanges(ctx, trip, alone.changes, alone.done) : confirmMove(ctx, trip, guest, slot, target, []));
 
   openSheet({
     eyebrow: 'Travel party', title: 'Also move their travel party?',
     subtitle: `Move ${alone.who}${alone.from} to ${alone.to} · ${alone.detail}`,
     body: [
-      Number.isFinite(room) && room <= 3 ? notice(`Only ${plural(room, 'seat')} left in "${target.activity.name}".`) : null,
-      h('button', { class: 'btn', type: 'button', onclick: () => saveChanges(ctx, trip, withParty.changes, withParty.done) }, `Yes, move ${moverNames} too`),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => saveChanges(ctx, trip, alone.changes, alone.done) }, `No, only ${alone.who}`),
+      roomNote ? notice(roomNote) : null,
+      h('button', { class: 'btn', type: 'button', onclick: yes }, `Yes, move ${moverNames} too`),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: no }, `No, only ${alone.who}`),
     ],
     cancelDanger: true,
   });
@@ -209,8 +217,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers) {
   const partyHere = partyMovers(trip, guest, slot);
   const leftBehind = partyHere.filter((m) => !movers.includes(m));
 
-  // The tour is full: the dispatcher can still decide to put the guest in, by FORCING it.
-  // Only the tapped guest moves (there is no room to ask about the travel party).
+  // The group does not fit in the tour: the dispatcher can still decide to put them in, by FORCING it.
   const needsForce = limited && roomBefore < group.length;
 
   if (needsForce) {
@@ -223,17 +230,10 @@ function confirmMove(ctx, trip, guest, slot, target, movers) {
   } else if (leftBehind.length > 0) {
     // (Party members are only "in the same place" when the guest is in an activity or At leisure.)
     const stay = leftBehind.length === 1 ? 'stays' : 'stay';
-    const leftNames = joinNames(leftBehind.map((m) => names.get(m.id)));
-    if (roomBefore < 1 + partyHere.length) {
-      // The party could not all fit: say it once, plainly.
-      warnings.push(`Only ${plural(roomBefore, 'seat')} left: ${leftNames} cannot come along and ${stay} in ${placeText(here)}. Their travel party will be split.`);
-    } else {
-      // The party could fit, but you chose to split it.
-      warnings.push(`Their travel party will be split: ${leftNames} ${stay} in ${placeText(here)}.`);
-    }
+    warnings.push(`Their travel party will be split: ${joinNames(leftBehind.map((m) => names.get(m.id)))} ${stay} in ${placeText(here)}.`);
   }
-  // A nearly full tour (not repeated when the message above already explains the missing seats).
-  if (limited && !needsForce && !(leftBehind.length > 0 && roomBefore < 1 + partyHere.length)) {
+  // A nearly full tour.
+  if (limited && !needsForce) {
     const left = roomBefore - group.length;
     if (left === 0) warnings.unshift(`Only ${plural(roomBefore, 'seat')} left: the tour will be full after this.`);
     else if (left <= 3) warnings.unshift(`${plural(left, 'seat')} left after this.`);

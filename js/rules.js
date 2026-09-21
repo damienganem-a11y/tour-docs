@@ -136,6 +136,18 @@ export function partyMovers(trip, guest, slot) {
 
 // ---------- Capacity ----------
 
+// How a guest (and the travel party who is with them) fit into a place they might be moved to.
+//   movers        party members in the same place: the ones we offer to move together
+//   room          free places in the target (Infinity for At leisure and for a tour with no capacity)
+//   guestFits     the tapped guest alone fits without forcing
+//   everyoneFits  the guest and all of the movers fit without forcing
+export function partyPlan(trip, guest, slot, target) {
+  const movers = partyMovers(trip, guest, slot);
+  const room = target.kind === 'activity' && target.activity.capacity !== null
+    ? target.activity.capacity - countIn(trip, target.activity) : Infinity;
+  return { movers, room, guestFits: room >= 1, everyoneFits: room >= 1 + movers.length };
+}
+
 // How many guests are booked on an activity right now.
 export function countIn(trip, activity) {
   let count = 0;

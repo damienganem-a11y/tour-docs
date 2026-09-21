@@ -12,7 +12,7 @@ import { groupBatches, lastUndoable, summarize, wasForced, forcedPlacements } fr
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, slotLabel } from './rules.js';
+import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -578,6 +578,35 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   const both = forcedPlacements(two.entries);
   check('A forced group is listed guest by guest; an empty note reads as "not written down"',
     both.size === 2 && both.get(`${pair[0].id}|${slot('S05').id}`).approvedBy === 'Sam' && both.get(`${pair[1].id}|${slot('S05').id}`).approvedBy === null);
+}
+
+// --- The travel party question is the same whether the tour has room or not ---
+{
+  const toTour = (activityRef) => ({ kind: 'activity', activity: activity(activityRef) });
+
+  // A couple in Tram 28 (16 / 16) who want to go to the full Alfama tour (20 / 20)
+  const inTramWithPartner = trip.guests.find((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-2').id && partyMovers(trip, g, slot('S01')).length >= 1);
+  const full = partyPlan(trip, inTramWithPartner, slot('S01'), toTour('S01-1'));
+  check('Full tour: the travel party is still found and offered, but nobody fits without FORCE',
+    full.movers.length >= 1 && full.room === 0 && !full.guestFits && !full.everyoneFits, JSON.stringify({ movers: full.movers.length, room: full.room }));
+
+  // Richard S. and Priya S. are together in the Hammam; the Medina walk has exactly 1 seat left
+  const medina = trip.activities.find((a) => a.slotId === slot('S05').id && a.name === 'Medina orientation walk');
+  const oneSeat = partyPlan(trip, guest('G001'), slot('S05'), { kind: 'activity', activity: medina });
+  check('One seat left: the guest fits, the couple does not (so "Yes" needs FORCE, "No" does not)',
+    oneSeat.movers.map((g) => g.ref).join() === 'G002' && oneSeat.room === 1 && oneSeat.guestFits && !oneSeat.everyoneFits);
+
+  const leisureOrFree = partyPlan(trip, guest('G001'), slot('S05'), { kind: 'leisure' });
+  check('At leisure: everybody fits, the party is offered as usual', leisureOrFree.movers.length === 1 && leisureOrFree.everyoneFits && leisureOrFree.guestFits && leisureOrFree.room === Infinity);
+  const noCapacity = partyPlan(trip, guest('G001'), slot('S25'), toTour('S25-1'));
+  check('A tour with no capacity: everybody fits', noCapacity.everyoneFits && noCapacity.room === Infinity);
+
+  // Saying "Yes" to a couple for a full tour forces both, as one action, each with the note
+  const ctx = makeCtx();
+  const couple = [inTramWithPartner, ...partyMovers(trip, inTramWithPartner, slot('S01'))];
+  const r = await applyChange(ctx, trip.id, couple.map((g) => ({ ...moveOf(g.ref, 'S01', toActivity('S01-1')), force: true, approvedBy: 'Sam' })));
+  check('Both people of a couple can be forced into the full Alfama tour in one action (22 / 20)',
+    r.ok && countIn(ctx.state, activity('S01-1')) === 20 + couple.length && ctx.entries.length === couple.length && ctx.entries.every((e) => e.forced && e.approvedBy === 'Sam'));
 }
 
 // =====================================================================
