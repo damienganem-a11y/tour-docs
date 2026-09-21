@@ -277,6 +277,8 @@ button.strip-item.is-active { color: var(--brand-ink); }
   cursor: pointer;
 }
 .chip:active { background: var(--brand-tint); }
+.chip--forced { background: var(--undo); border-color: var(--undo); color: #ffffff; font-weight: 700; }
+.chip--forced:active { background: var(--undo); filter: brightness(0.9); }
 .chip--more { background: transparent; border-color: var(--line); color: var(--muted); font-weight: 700; }
 
 /* ---------- Guest list and one guest's trip ---------- */

@@ -2,14 +2,16 @@
 // guests on it and a count. Guests who are At leisure are a category of their own.
 //
 // Tap a card to open it: you see every name and the actions (Add guest, Cancel tour).
-// Tap a name to move that guest.
+// Tap a name to move that guest. A guest who is in the tour by force (a move into a full tour) is shown in
+// orange, first in the list; tapping that name shows who approved it and who added them.
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 import { byName, displayNames, whoIsWhere, capacityInfo } from '../rules.js';
 import { pageHead } from './chrome.js';
-import { startMove, startAddGuest, startCancelTour } from './move.js';
+import { startMove, startAddGuest, startCancelTour, showForcedInfo } from './move.js';
 import { undoButton } from './undo.js';
+import { forcedPlacements } from '../journal.js';
 
 const PREVIEW = 4; // names shown on a closed card
 
@@ -38,6 +40,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   }
 
   const names = displayNames(trip.guests);
+  const forced = forcedPlacements(ctx.journal(trip.id)); // who is in a tour by force, right now
   const { byActivity, leisure, attention } = whoIsWhere(trip, slot);
   const activities = trip.activities.filter((a) => a.slotId === slot.id);
 
@@ -49,6 +52,8 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       .filter(Boolean).join(' · ');
     return guestCard(ctx, trip, slot, {
       key: `${slot.id}|${activity.id}`, title: activity.name, detail, guests, names,
+      // A guest put here by force (a move into a full tour) is shown in orange; tapping shows who approved it.
+      forcedOf: (g) => { const entry = forced.get(`${g.id}|${slot.id}`); return entry?.to.activityId === activity.id ? entry : undefined; },
       countText: activity.cancelled ? 'Cancelled' : count.text, bad: activity.cancelled || count.tone === 'bad',
       cancelled: activity.cancelled,
       actions: activity.cancelled ? [] : [
@@ -92,8 +97,10 @@ function strip(items, small = false) {
 
 // A card with a title, a count and the guests as name pills.
 // Tapping the top of the card opens it (all names, plus the actions); tapping a name moves that guest.
-function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, cancelled = false, soft = false, actions }) {
-  const sorted = [...guests].sort(byName);
+function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions }) {
+  // Forced guests come first, so they are seen even on a closed card; then everybody by name.
+  const isForced = (g) => Boolean(forcedOf?.(g));
+  const sorted = [...guests].sort((a, b) => Number(isForced(b)) - Number(isForced(a)) || byName(a, b));
   const body = h('div', {});
 
   // Open or close the card (the "+4" pill does the same as tapping the top of the card).
@@ -111,7 +118,14 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
       ...(sorted.length === 0
         ? (cancelled ? [] : [h('p', { class: 'muted nobody' }, 'Nobody')])
         : [h('div', { class: 'chips' },
-            ...shown.map((g) => h('button', { class: 'chip', type: 'button', onclick: () => startMove(ctx, trip, g, slot) }, names.get(g.id))),
+            ...shown.map((g) => {
+              const entry = forcedOf?.(g);
+              return h('button', {
+                class: `chip${entry ? ' chip--forced' : ''}`, type: 'button',
+                'aria-label': entry ? `${names.get(g.id)}, forced into this tour. Tap to see who approved it.` : null,
+                onclick: () => (entry ? showForcedInfo(ctx, trip, g, slot, entry) : startMove(ctx, trip, g, slot)),
+              }, names.get(g.id));
+            }),
             !open && sorted.length > PREVIEW ? h('button', { class: 'chip chip--more', type: 'button', onclick: toggle }, `+${sorted.length - PREVIEW}`) : null)]),
       ...(open && actions.length > 0
         ? [h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: a.run }, a.label)))]

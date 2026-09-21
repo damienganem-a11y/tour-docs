@@ -10,7 +10,7 @@
 import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { applyChange } from '../changes.js';
-import { formatTime } from '../time.js';
+import { formatTime, formatMoment } from '../time.js';
 import { byName, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, slotLabel, plural, joinNames } from '../rules.js';
 
 const placeText = (place) =>
@@ -74,6 +74,33 @@ export function startMove(ctx, trip, guest, slot) {
     title: names.get(guest.id),
     subtitle: `${slotLabel(trip, slot)} · now: ${placeText(here)}`,
     body: [leisureRow, ...activityRows],
+  });
+}
+
+// ---------- The story of a forced move ----------
+
+// Shown when you tap a guest who is in a full tour because the move was forced: who approved it, who added
+// them, when, and from where. From here you can also move the guest.
+export function showForcedInfo(ctx, trip, guest, slot, entry) {
+  const names = displayNames(trip.guests);
+  const activity = trip.activities.find((a) => a.id === entry.to.activityId);
+  const fact = (label, value) => h('div', { class: 'line' }, h('span', { class: 'muted' }, label), h('strong', {}, value));
+
+  openSheet({
+    eyebrow: 'Forced into a full tour',
+    title: names.get(guest.id),
+    subtitle: `${entry.to.label} · ${slotLabel(trip, slot)}`,
+    body: [
+      h('div', { class: 'card' },
+        fact('Approved by', entry.approvedBy ?? 'Not written down'),
+        fact('Added by', entry.who.name),
+        // Shown in the local time of the place, with the place named.
+        fact('When', `${formatMoment(entry.at, entry.place.timeZone)} ${entry.place.name} time`),
+        fact('Moved from', entry.from.kind === 'blank' ? 'Nothing chosen yet' : entry.from.label),
+        activity ? fact('The tour now', capacityInfo(countIn(trip, activity), activity.capacity).text) : null),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startMove(ctx, trip, guest, slot) }, 'Move this guest'),
+    ],
+    cancelLabel: 'Close',
   });
 }
 

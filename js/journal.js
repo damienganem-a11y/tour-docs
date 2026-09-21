@@ -42,6 +42,21 @@ export function lastUndoable(entries) {
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }
 
+// Who is in a tour RIGHT NOW because a move was forced (the dispatcher's decision). Returns a Map:
+// "guestId|slotId" -> the journal line of that forced move (who approved it, who made it, when).
+// Only the latest action for a guest in a half-day counts: if they were moved again afterwards, or the
+// forced move was undone, they are no longer in the list.
+export function forcedPlacements(entries) {
+  const latest = new Map();
+  for (const batch of groupBatches(entries)) {          // oldest first
+    if (batch.kind === 'undo' || batch.undone) continue; // an undone action no longer counts
+    for (const entry of batch.entries) {
+      if (entry.type === 'move') latest.set(`${entry.guestId}|${entry.slotId}`, entry);
+    }
+  }
+  return new Map([...latest].filter(([, entry]) => entry.forced));
+}
+
 // One line saying what an action did, e.g. "Moved Richard S. and Priya S. from Sintra palaces to At leisure".
 export function summarize(batch) {
   if (batch.kind === 'undo') return `Undid: ${batch.entries[0].undoesSummary}`;

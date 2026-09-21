@@ -8,7 +8,7 @@ import { applyChange, validateChanges } from './changes.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
-import { groupBatches, lastUndoable, summarize, wasForced } from './journal.js';
+import { groupBatches, lastUndoable, summarize, wasForced, forcedPlacements } from './journal.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
@@ -551,6 +551,33 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
     countIn(ctx.state, hammam) === 10 && restoredExactly(ctx.state, trip) && groupBatches(ctx.entries).length === 2 && groupBatches(ctx.entries)[0].undone);
   check('The undo line says what it undid, including "forced"', /^Undid: .*\(forced, approved by Sam Reed\)$/.test(summarize(groupBatches(ctx.entries)[1])), summarize(groupBatches(ctx.entries)[1]));
   check('Forced journal lines never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(ctx.entries)));
+}
+
+// --- Who is in a tour by force, right now (shown in orange in the list) ---
+{
+  const ctx = makeCtx();
+  const key = `${stranger.id}|${slot('S05').id}`;
+  await applyChange(ctx, trip.id, { ...moveOf(stranger.ref, 'S05', toActivity('S05-2')), force: true, approvedBy: 'Sam' });
+  const found = forcedPlacements(ctx.entries).get(key);
+  check('The forced guest is found, with who approved it, who added them and where they came from',
+    forcedPlacements(ctx.entries).size === 1 && found.approvedBy === 'Sam' && found.who.name === 'Tester' && found.to.activityId === hammam.id && found.from.kind === 'activity', JSON.stringify(found?.approvedBy));
+  await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S05', LEISURE));
+  check('...but not any more once the guest is moved somewhere else', forcedPlacements(ctx.entries).size === 0);
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('...and again when that later move is undone', forcedPlacements(ctx.entries).size === 1 && forcedPlacements(ctx.entries).get(key).approvedBy === 'Sam');
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('...and gone when the forced move itself is undone', forcedPlacements(ctx.entries).size === 0);
+
+  const normal = makeCtx();
+  await applyChange(normal, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('A normal move is never listed as forced', forcedPlacements(normal.entries).size === 0);
+
+  const two = makeCtx();
+  const pair = trip.guests.filter((g) => { const p = guestPlace(trip, g, slot('S05')); return p.kind === 'activity' && p.activity.id !== hammam.id; }).slice(0, 2);
+  await applyChange(two, trip.id, pair.map((g, i) => ({ ...moveOf(g.ref, 'S05', toActivity('S05-2')), force: true, approvedBy: i === 0 ? 'Sam' : '' })));
+  const both = forcedPlacements(two.entries);
+  check('A forced group is listed guest by guest; an empty note reads as "not written down"',
+    both.size === 2 && both.get(`${pair[0].id}|${slot('S05').id}`).approvedBy === 'Sam' && both.get(`${pair[1].id}|${slot('S05').id}`).approvedBy === null);
 }
 
 // =====================================================================
