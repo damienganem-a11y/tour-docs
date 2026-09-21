@@ -8,7 +8,10 @@
 import { joinNames, plural } from './rules.js';
 
 // The kinds of journal lines that belong to a roll call (see changes.js).
-const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number', 'return-start', 'return-in', 'return-out']);
+const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+// The return count was taken out of the app (v0.7.1). A phone that used it (v0.7.0) still has its lines in the journal:
+// they stay readable, but can no longer be undone.
+const RETURN_COUNT_TYPES = new Set(['return-start', 'return-in', 'return-out']);
 
 // Entries of one action, in the order they were written (`n`), and actions in the order they happened (`seq`).
 const inBatchOrder = (a, b) => (a.n ?? 0) - (b.n ?? 0);
@@ -29,13 +32,13 @@ export function groupBatches(entries) {
     const sorted = [...list].sort(inBatchOrder);
     const first = sorted[0];
     const types = new Set(sorted.map((e) => e.type));
-    // End roll call also moves guests (to At leisure), but it is still a roll call action.
-    const onlyRollCall = types.has('rollcall-end') || (!types.has('move') && [...types].some((t) => ROLLCALL_TYPES.has(t)));
+    // End roll call and Re-open roll call also move guests, but they are still roll call actions.
+    const onlyRollCall = types.has('rollcall-end') || types.has('rollcall-reopen') || (!types.has('move') && [...types].some((t) => ROLLCALL_TYPES.has(t)));
     return {
       batchId, entries: sorted,
       seq: Math.max(...sorted.map((e) => e.seq ?? 0)), at: first.at, who: first.who,
       place: first.place, slotId: first.slotId, slotLabel: first.slotLabel,
-      kind: types.has('undo') ? 'undo' : types.has('cancel-tour') ? 'cancel-tour' : onlyRollCall ? 'rollcall' : 'move',
+      kind: types.has('undo') ? 'undo' : [...types].some((t) => RETURN_COUNT_TYPES.has(t)) ? 'old-return-count' : types.has('cancel-tour') ? 'cancel-tour' : onlyRollCall ? 'rollcall' : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
       undone: undone.has(batchId),
     };
@@ -45,7 +48,7 @@ export function groupBatches(entries) {
 // What the Undo button would undo: the latest action that is not an undo and not already undone.
 // Pressing Undo again then reaches the action before it, and so on (like Ctrl+Z). Returns null if none.
 export function lastUndoable(entries) {
-  const candidates = groupBatches(entries).filter((b) => b.kind !== 'undo' && !b.undone);
+  const candidates = groupBatches(entries).filter((b) => b.kind !== 'undo' && b.kind !== 'old-return-count' && !b.undone);
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }
 
@@ -73,6 +76,7 @@ export function summarize(batch) {
     return `Cancelled ${tour.activityLabel}${tour.guestCount > 0 ? ` (${plural(tour.guestCount, 'guest')} moved to At leisure)` : ''}`;
   }
 
+  if (batch.kind === 'old-return-count') return 'Return count (no longer part of the app)';
   if (batch.kind === 'rollcall') return summarizeRollCall(batch);
 
   // Guests who went from the same place to the same place are told together.
@@ -107,15 +111,19 @@ function summarizeRollCall(batch) {
     if (entry.keptCount > 0) parts.push(`${entry.keptCount} stayed on the tour without a vehicle`);
     return `Ended the roll call: ${parts.join(', ')}`;
   }
-  if (entry.type === 'return-start') return 'Started the return count';
-  if (entry.type === 'checkin' || entry.type === 'return-in') {
-    const back = entry.type === 'return-in';
-    if (batch.entries.length > 1) return `${joinNames(alphaNames(batch.entries))} ${back ? 'counted back in' : 'checked in to'} ${entry.vehicleLabel}`;
-    if (entry.fromVehicleLabel) return `${entry.guestName} moved from ${entry.fromVehicleLabel} to ${entry.vehicleLabel}${back ? ' (return count)' : ''}`;
-    return `${entry.guestName} ${back ? 'counted back in' : 'checked in to'} ${entry.vehicleLabel}`;
+  if (entry.type === 'rollcall-reopen') {
+    // The guests put back on the tour are the "move" lines of the same action.
+    const back = alphaNames(batch.entries.filter((e) => e.type === 'move'));
+    const parts = [back.length > 0 ? `${plural(back.length, 'guest')} put back on the tour (${joinNames(back)})` : 'nobody had to be put back'];
+    if (entry.leftOutNames.length > 0) parts.push(`${joinNames(entry.leftOutNames)} could not be put back: the tour is full`);
+    return `Re-opened the roll call: ${parts.join(', ')}`;
+  }
+  if (entry.type === 'checkin') {
+    if (batch.entries.length > 1) return `${joinNames(alphaNames(batch.entries))} checked in to ${entry.vehicleLabel}`;
+    if (entry.fromVehicleLabel) return `${entry.guestName} moved from ${entry.fromVehicleLabel} to ${entry.vehicleLabel}`;
+    return `${entry.guestName} checked in to ${entry.vehicleLabel}`;
   }
   if (entry.type === 'checkout') return `${entry.guestName} taken out of ${entry.fromVehicleLabel}`;
-  if (entry.type === 'return-out') return `${entry.guestName} taken out of ${entry.fromVehicleLabel} (return count)`;
   if (entry.type === 'vehicle-add') return `Added ${entry.vehicleLabel}`;
   return `${entry.fromLabel} renumbered ${entry.toLabel}`; // vehicle-number
 }

@@ -15,6 +15,7 @@ import { forcedPlacements } from '../journal.js';
 import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
 import { showToast } from '../ui.js';
+import { reopenRollCall } from './rollcall.js';
 
 const PREVIEW = 4; // names shown on a closed card
 
@@ -60,7 +61,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       countText: activity.cancelled ? 'Cancelled' : count.text, bad: activity.cancelled || count.tone === 'bad',
       cancelled: activity.cancelled,
       actions: activity.cancelled ? [] : [
-        rollCallAction(ctx, trip, activity),
+        ...rollCallActions(ctx, trip, activity),
         { label: '+ Add guest', run: () => startAddGuest(ctx, trip, slot, activity) },
         { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
       ],
@@ -87,21 +88,25 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   );
 }
 
-// The "Roll call" button of an activity card: starts the roll call the first time, then just opens it.
-function rollCallAction(ctx, trip, activity) {
+// The roll call buttons of an activity card: start the roll call the first time, then open it. Once it has ended:
+// look at it, or re-open it (the guests End roll call moved to At leisure come back on the tour).
+function rollCallActions(ctx, trip, activity) {
   const open = () => ctx.go(`#/trip/${trip.id}/rollcall/${activity.id}`);
   const rollCall = findRollCall(trip, activity.id);
-  if (rollCall) {
-    const words = !rollCall.endedAt ? 'Continue roll call' : rollCall.returnCount ? 'Continue return count' : 'Return count';
-    return { label: words, primary: true, run: open };
+  if (rollCall?.endedAt) {
+    return [
+      { label: 'Re-open roll call', primary: true, run: () => reopenRollCall(ctx, trip.id, activity) },
+      { label: 'View roll call', run: open },
+    ];
   }
-  return {
+  if (rollCall) return [{ label: 'Continue roll call', primary: true, run: open }];
+  return [{
     label: 'Start roll call', primary: true,
     run: async () => {
       const result = await applyChange(ctx, trip.id, { type: 'rollcall-start', activityId: activity.id });
       if (result.ok) open(); else showToast(result.error, true);
     },
-  };
+  }];
 }
 
 // A row of tappable pills that scrolls sideways.

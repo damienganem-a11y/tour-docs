@@ -3,9 +3,9 @@
 // A roll call is stored inside the trip, in trip.rollCalls, one per activity:
 //   { id, activityId, startedAt, startedBy: { id, name }, endedAt: null, endedBy,
 //     vehicles: [ { id, number: 1 }, ... ],          V1, V2... (the "V" comes from the trip, see vehicleLabel)
-//     checkins: { guestId: vehicleId },              who is in which vehicle, on departure
-//     returnCount: null | { startedAt, startedBy, returned: { guestId: vehicleId } } }   the count on the way back
-// The roll call ends with "End roll call"; the vehicles and who was in them are then kept for the return count.
+//     checkins: { guestId: vehicleId },              who is in which vehicle
+//     movedByEnd: [ guestId, ... ] }                 the guests "End roll call" moved to At leisure (Re-open roll call puts them back)
+// The roll call ends with "End roll call"; "Re-open roll call" opens it again, with its vehicles and check-ins.
 // Every change to a roll call goes through the one change function (changes.js) like everything else.
 
 import { newId } from './ids.js';
@@ -33,21 +33,4 @@ export function rollCallState(trip, rollCall) {
   const expected = booked.filter((g) => !rollCall.checkins[g.id]);
   const perVehicle = new Map(rollCall.vehicles.map((v) => [v.id, checkedIn.filter((g) => rollCall.checkins[g.id] === v.id)]));
   return { activity, booked, checkedIn, expected, perVehicle };
-}
-
-// Where the return count stands: the same vehicles, this time counting the guests back in.
-//   back        booked guests already counted back
-//   toCount     booked guests not counted back yet (the list on the screen)
-//   backPerVehicle     Map: vehicle id -> guests counted back into it
-//   missingPerVehicle  Map: vehicle id -> guests who LEFT in it (departure) and are not back yet
-export function returnState(trip, rollCall) {
-  const state = rollCallState(trip, rollCall);
-  const returned = rollCall.returnCount?.returned ?? {};
-  const back = state.booked.filter((g) => returned[g.id]);
-  const toCount = state.booked.filter((g) => !returned[g.id]);
-  return {
-    ...state, back, toCount,
-    backPerVehicle: new Map(rollCall.vehicles.map((v) => [v.id, back.filter((g) => returned[g.id] === v.id)])),
-    missingPerVehicle: new Map(rollCall.vehicles.map((v) => [v.id, (state.perVehicle.get(v.id) ?? []).filter((g) => !returned[g.id])])),
-  };
 }

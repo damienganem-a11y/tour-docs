@@ -16,7 +16,7 @@
 //   Roll call (see rollcall.js), each one on its own:
 //   { type: 'rollcall-start', activityId }
 //   { type: 'rollcall-end', activityId, moveGuestIds }       End roll call: those guests go to At leisure ("moved by End roll call")
-//   { type: 'return-start' | 'return-in' | 'return-out', ... }  the return count: same vehicles, guests counted back in
+//   { type: 'rollcall-reopen', activityId }                  Re-open roll call: the guests End roll call moved to At leisure go back on the tour
 //   { type: 'checkin', activityId, guestId, vehicleId }      the guest goes into that vehicle (or moves to it)
 //   { type: 'checkout', activityId, guestId }                the guest comes out of the vehicle: back on the list
 //   { type: 'vehicle-add', activityId }                      the next vehicle number (V5, V6...)
@@ -30,18 +30,12 @@
 
 import { newId } from './ids.js';
 import { canUser } from './users.js';
-import { displayNames, guestPlace, countIn, slotLabel, plural } from './rules.js';
+import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural } from './rules.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 
 // The changes that belong to a roll call. Each one is made on its own (never mixed with others).
-// The return count is the same kind of thing on the way back: "return-in" counts a guest back into a vehicle.
-const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number', 'return-start', 'return-in', 'return-out']);
-const RETURN_TYPES = new Set(['return-start', 'return-in', 'return-out']);
-const isCountIn = (type) => type === 'checkin' || type === 'return-in';   // a guest going INTO a vehicle (on departure or on return)
-const isCountOut = (type) => type === 'checkout' || type === 'return-out'; // a guest coming out of one
-// The list "guestId -> vehicleId" that a check-in or a return-count line is about.
-const countList = (rollCall, type) => (RETURN_TYPES.has(type) ? rollCall.returnCount.returned : rollCall.checkins);
+const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -59,7 +53,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   const names = displayNames(trip.guests);
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
-  const allCheckins = changes.every((c) => c.type === 'checkin') || changes.every((c) => c.type === 'return-in');
+  const allCheckins = changes.every((c) => c.type === 'checkin');
   if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing and roll call changes are changes of their own.');
   }
@@ -180,28 +174,25 @@ function validateRollCall(trip, change) {
   }
 
   if (!rollCall) return fail(`There is no roll call for "${activity.name}".`);
-  if (RETURN_TYPES.has(change.type)) {
-    // The return count only exists once the roll call has ended (and never before it is started).
-    if (!rollCall.endedAt) return fail('The roll call has not ended yet. End it first, then count the guests back.');
-    if (change.type === 'return-start') return rollCall.returnCount ? fail('The return count has already been started.') : { ok: true };
-    if (!rollCall.returnCount) return fail('Start the return count first.');
-  } else if (rollCall.endedAt) {
-    return fail('This roll call has ended.');
+  if (change.type === 'rollcall-reopen') {
+    if (!rollCall.endedAt) return fail('This roll call is not ended, so there is nothing to re-open.');
+    if (activity.cancelled) return fail(`"${activity.name}" is cancelled.`);
+    return { ok: true };
   }
+  if (rollCall.endedAt) return fail('This roll call has ended. Re-open it to change it.');
   const vehicle = rollCall.vehicles.find((v) => v.id === change.vehicleId);
   const names = displayNames(trip.guests);
   const guest = trip.guests.find((g) => g.id === change.guestId);
   const bookedHere = (g) => trip.bookings[g.id]?.[activity.slotId]?.activityId === activity.id;
 
-  if (isCountIn(change.type)) {
-    const list = countList(rollCall, change.type);
+  if (change.type === 'checkin') {
     if (!guest) return fail('That guest is not in this trip.');
     if (!vehicle) return fail('That vehicle does not exist.');
     if (!bookedHere(guest)) return fail(`${names.get(guest.id)} is not booked on "${activity.name}".`);
-    if (list[guest.id] === vehicle.id) return fail(`${names.get(guest.id)} is already in ${vehicleLabel(trip, vehicle)}.`);
-  } else if (isCountOut(change.type)) {
+    if (rollCall.checkins[guest.id] === vehicle.id) return fail(`${names.get(guest.id)} is already in ${vehicleLabel(trip, vehicle)}.`);
+  } else if (change.type === 'checkout') {
     if (!guest) return fail('That guest is not in this trip.');
-    if (!countList(rollCall, change.type)[guest.id]) return fail(`${names.get(guest.id)} is not in a vehicle.`);
+    if (!rollCall.checkins[guest.id]) return fail(`${names.get(guest.id)} is not in a vehicle.`);
   } else if (change.type === 'rollcall-end') {
     // End roll call: the guests who did not show up go to At leisure. Only guests still expected can be moved.
     const ids = change.moveGuestIds;
@@ -229,10 +220,10 @@ function validateRollCall(trip, change) {
 function rollCallUndoProblem(trip, entry) {
   const rollCall = (trip.rollCalls ?? []).find((r) => r.id === entry.rollCallId);
   if (!rollCall) return 'This action cannot be undone: the roll call no longer exists.';
-  if (isCountIn(entry.type) && countList(rollCall, entry.type)?.[entry.guestId] !== entry.vehicleId) return `This action cannot be undone: ${entry.guestName} is no longer in ${entry.vehicleLabel}.`;
-  if (isCountOut(entry.type) && countList(rollCall, entry.type)?.[entry.guestId]) return `This action cannot be undone: ${entry.guestName} is in a vehicle again.`;
-  if (entry.type === 'rollcall-end' && (!rollCall.endedAt || rollCall.returnCount)) return 'This action cannot be undone: the roll call is not in the state that End roll call left it.';
-  if (entry.type === 'return-start' && (!rollCall.returnCount || Object.keys(rollCall.returnCount.returned).length > 0)) return 'This action cannot be undone: the return count has already begun.';
+  if (entry.type === 'checkin' && rollCall.checkins[entry.guestId] !== entry.vehicleId) return `This action cannot be undone: ${entry.guestName} is no longer in ${entry.vehicleLabel}.`;
+  if (entry.type === 'checkout' && rollCall.checkins[entry.guestId]) return `This action cannot be undone: ${entry.guestName} is in a vehicle again.`;
+  if (entry.type === 'rollcall-end' && !rollCall.endedAt) return 'This action cannot be undone: the roll call is not in the state that End roll call left it.';
+  if (entry.type === 'rollcall-reopen' && rollCall.endedAt) return 'This action cannot be undone: the roll call is not in the state that Re-open left it.';
   if (entry.type === 'vehicle-add' && !rollCall.vehicles.some((v) => v.id === entry.vehicleId)) return 'This action cannot be undone: that vehicle is gone.';
   if (entry.type === 'vehicle-number' && rollCall.vehicles.find((v) => v.id === entry.vehicleId)?.number !== entry.toNumber) return 'This action cannot be undone: that vehicle has another number now.';
   return null;
@@ -353,7 +344,7 @@ async function doApply(ctx, tripId, changes) {
       const rollCall = {
         id: newId(), activityId: activity.id, startedAt: at,
         startedBy: { id: ctx.owner.id, name: ctx.owner.name },
-        endedAt: null, vehicles: defaultVehicles(trip.defaultVehicles ?? 4), checkins: {},
+        endedAt: null, vehicles: defaultVehicles(trip.defaultVehicles ?? 4), checkins: {}, movedByEnd: [],
       };
       (next.rollCalls ??= []).push(rollCall);
       entries.push({ ...base(), type: 'rollcall-start', ...rollCallAbout(activity, slot, rollCall), vehicles: rollCall.vehicles.map((v) => label(v)) });
@@ -365,8 +356,8 @@ async function doApply(ctx, tripId, changes) {
     const about = rollCallAbout(activity, slot, rollCall);
     const guest = trip.guests.find((g) => g.id === change.guestId);
 
-    if (isCountIn(change.type)) {
-      const list = countList(rollCall, change.type); // who is in which vehicle: on departure, or on the way back
+    if (change.type === 'checkin') {
+      const list = rollCall.checkins; // who is in which vehicle
       for (const one of changes) { // one guest, or a whole travel party at once
         const who = trip.guests.find((g) => g.id === one.guestId);
         const into = rollCall.vehicles.find((v) => v.id === one.vehicleId);
@@ -374,31 +365,48 @@ async function doApply(ctx, tripId, changes) {
         const from = rollCall.vehicles.find((v) => v.id === fromId);
         list[who.id] = into.id;
         entries.push({
-          ...base(), type: change.type, ...about, guestId: who.id, guestName: names.get(who.id),
+          ...base(), type: 'checkin', ...about, guestId: who.id, guestName: names.get(who.id),
           vehicleId: into.id, vehicleLabel: label(into),
           fromVehicleId: fromId, fromVehicleLabel: from ? label(from) : null,
         });
       }
-    } else if (isCountOut(change.type)) {
-      const list = countList(rollCall, change.type);
-      const from = rollCall.vehicles.find((v) => v.id === list[guest.id]);
-      delete list[guest.id];
-      entries.push({ ...base(), type: change.type, ...about, guestId: guest.id, guestName: names.get(guest.id), fromVehicleId: from.id, fromVehicleLabel: label(from) });
+    } else if (change.type === 'checkout') {
+      const from = rollCall.vehicles.find((v) => v.id === rollCall.checkins[guest.id]);
+      delete rollCall.checkins[guest.id];
+      entries.push({ ...base(), type: 'checkout', ...about, guestId: guest.id, guestName: names.get(guest.id), fromVehicleId: from.id, fromVehicleLabel: label(from) });
     } else if (change.type === 'rollcall-end') {
       // End roll call: the guests who did not show up go to At leisure ("moved by End roll call"), and the
-      // roll call is closed. The vehicles and who was in them are kept: they are the base of the return count.
+      // roll call is closed. The roll call remembers who it moved, so that Re-open roll call can put them back.
       const booked = trip.guests.filter((g) => trip.bookings[g.id]?.[slot.id]?.activityId === activity.id);
       const checkedInCount = booked.filter((g) => rollCall.checkins[g.id]).length;
       rollCall.endedAt = at;
       rollCall.endedBy = { id: ctx.owner.id, name: ctx.owner.name };
+      rollCall.movedByEnd = [...new Set([...(rollCall.movedByEnd ?? []), ...change.moveGuestIds])];
       entries.push({
-        ...base(), type: 'rollcall-end', ...about,
+        ...base(), type: 'rollcall-end', ...about, movedGuestIds: change.moveGuestIds,
         checkedInCount, movedCount: change.moveGuestIds.length, keptCount: booked.length - checkedInCount - change.moveGuestIds.length,
       });
       for (const id of change.moveGuestIds) move(trip.guests.find((g) => g.id === id), slot, { kind: 'leisure' }, 'end-roll-call');
-    } else if (change.type === 'return-start') {
-      rollCall.returnCount = { startedAt: at, startedBy: { id: ctx.owner.id, name: ctx.owner.name }, returned: {} };
-      entries.push({ ...base(), type: 'return-start', ...about });
+    } else if (change.type === 'rollcall-reopen') {
+      // Re-open roll call: the roll call is open again, with its vehicles and check-ins. Everybody End roll call moved to
+      // At leisure, and who is still At leisure, goes back on the tour, as far as there are places (a tour that filled up
+      // meanwhile keeps its places: those who do not fit stay At leisure and the journal says so).
+      const stillAway = (rollCall.movedByEnd ?? [])
+        .map((id) => trip.guests.find((g) => g.id === id))
+        .filter((g) => g && guestPlace(trip, g, slot).kind === 'leisure')
+        .sort(alphabetical(names));
+      const room = activity.capacity === null ? stillAway.length : Math.max(0, activity.capacity - countIn(trip, activity));
+      const putBack = stillAway.slice(0, room);
+      const leftOut = stillAway.slice(room);
+      entries.push({
+        ...base(), type: 'rollcall-reopen', ...about,
+        previousEndedAt: rollCall.endedAt, previousEndedBy: rollCall.endedBy ?? null, previousMovedByEnd: [...(rollCall.movedByEnd ?? [])], // so Undo can close it again exactly as it was
+        putBackIds: putBack.map((g) => g.id), leftOutNames: leftOut.map((g) => names.get(g.id)),
+      });
+      rollCall.endedAt = null;
+      delete rollCall.endedBy;
+      rollCall.movedByEnd = (rollCall.movedByEnd ?? []).filter((id) => !putBack.some((g) => g.id === id));
+      for (const guest of putBack) move(guest, slot, { kind: 'activity', activityId: activity.id }, 'reopen-roll-call');
     } else if (change.type === 'vehicle-add') {
       const added = { id: newId(), number: Math.max(0, ...rollCall.vehicles.map((v) => v.number)) + 1 };
       rollCall.vehicles.push(added);
@@ -454,27 +462,27 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'rollcall-end') {
     rollCall.endedAt = null; // the roll call is open again (the guests it moved are put back by their own lines)
     delete rollCall.endedBy;
+    rollCall.movedByEnd = (rollCall.movedByEnd ?? []).filter((id) => !entry.movedGuestIds?.includes(id));
     entries.push({ ...base(), type: 'rollcall-reopen', cause: 'undo', ...about });
     return;
   }
-  if (entry.type === 'return-start') {
-    rollCall.returnCount = null;
-    entries.push({ ...base(), type: 'return-remove', cause: 'undo', ...about });
+  if (entry.type === 'rollcall-reopen') {
+    rollCall.endedAt = entry.previousEndedAt; // closed again, as End roll call left it (the guests put back are moved back by their own lines)
+    if (entry.previousEndedBy) rollCall.endedBy = entry.previousEndedBy;
+    rollCall.movedByEnd = entry.previousMovedByEnd;
+    entries.push({ ...base(), type: 'rollcall-close', cause: 'undo', ...about });
     return;
   }
-  if (isCountIn(entry.type) || isCountOut(entry.type)) {
+  if (entry.type === 'checkin' || entry.type === 'checkout') {
     // Back to where the guest was before: in the vehicle they came from, or not in any (on the list).
-    const list = countList(rollCall, entry.type);
-    const inType = RETURN_TYPES.has(entry.type) ? 'return-in' : 'checkin';
-    const outType = RETURN_TYPES.has(entry.type) ? 'return-out' : 'checkout';
     const before = entry.fromVehicleId; // (a check-out remembers the vehicle the guest came out of in the same field)
     const beforeLabel = entry.fromVehicleLabel;
-    const after = isCountIn(entry.type) ? entry.vehicleId : null;
-    const afterLabel = isCountIn(entry.type) ? entry.vehicleLabel : null;
-    if (before) list[entry.guestId] = before; else delete list[entry.guestId];
+    const after = entry.type === 'checkin' ? entry.vehicleId : null;
+    const afterLabel = entry.type === 'checkin' ? entry.vehicleLabel : null;
+    if (before) rollCall.checkins[entry.guestId] = before; else delete rollCall.checkins[entry.guestId];
     entries.push(before
-      ? { ...base(), type: inType, cause: 'undo', ...about, guestId: entry.guestId, guestName: entry.guestName, vehicleId: before, vehicleLabel: beforeLabel, fromVehicleId: after, fromVehicleLabel: afterLabel }
-      : { ...base(), type: outType, cause: 'undo', ...about, guestId: entry.guestId, guestName: entry.guestName, fromVehicleId: entry.vehicleId, fromVehicleLabel: entry.vehicleLabel });
+      ? { ...base(), type: 'checkin', cause: 'undo', ...about, guestId: entry.guestId, guestName: entry.guestName, vehicleId: before, vehicleLabel: beforeLabel, fromVehicleId: after, fromVehicleLabel: afterLabel }
+      : { ...base(), type: 'checkout', cause: 'undo', ...about, guestId: entry.guestId, guestName: entry.guestName, fromVehicleId: entry.vehicleId, fromVehicleLabel: entry.vehicleLabel });
     return;
   }
   if (entry.type === 'vehicle-add') {

@@ -10,7 +10,7 @@
 import { h } from '../dom.js';
 import { formatMoment, formatTime } from '../time.js';
 import { plain } from '../rules.js';
-import { rollCallState, returnState } from '../rollcall.js';
+import { rollCallState } from '../rollcall.js';
 import { groupBatches, journalItems, summarize, guestNamesOf, wasForced } from '../journal.js';
 import { pageHead } from './chrome.js';
 
@@ -97,7 +97,6 @@ export function journalPage(ctx, trip) {
         `${formatMoment((start ?? first).at, first.place.timeZone)} ${first.place.name} time · ${(start ?? first).who.name}`,
         h('span', { class: 'tag' }, `${checkedIn} checked in`),
         live?.endedAt ? h('span', { class: 'tag' }, 'Ended') : null,
-        live?.returnCount ? h('span', { class: 'tag' }, `${returnState(trip, live).back.length} back`) : null,
         h('span', { class: 'tag' }, isOpen ? 'Hide' : 'Show all')),
       isOpen ? h('div', { class: 'roll-lines' }, lines) : null);
     return card;
