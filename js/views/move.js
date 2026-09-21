@@ -137,24 +137,17 @@ function afterPick(ctx, trip, guest, slot, target) {
   const room = target.kind === 'activity' && target.activity.capacity !== null
     ? target.activity.capacity - countIn(trip, target.activity) : Infinity;
 
-  if (room >= 1 + movers.length) {
-    openSheet({
-      eyebrow: 'Travel party', title: 'Also move their travel party?', subtitle: moverNames,
-      body: [
-        h('button', { class: 'btn', type: 'button', onclick: () => confirmMove(ctx, trip, guest, slot, target, movers) }, `Yes, move ${moverNames} too`),
-        h('button', { class: 'btn btn--plain', type: 'button', onclick: () => confirmMove(ctx, trip, guest, slot, target, []) }, `No, only ${who}`),
-      ],
-    });
-  } else {
-    // There is room for the guest but not for everybody: only the tapped guest can move.
-    openSheet({
-      eyebrow: 'Travel party', title: 'Their travel party cannot follow', subtitle: moverNames,
-      body: [
-        notice(`Only ${plural(room, 'seat')} left in "${target.activity.name}": ${moverNames} cannot come along.`),
-        h('button', { class: 'btn', type: 'button', onclick: () => confirmMove(ctx, trip, guest, slot, target, []) }, `Continue with ${who} only`),
-      ],
-    });
-  }
+  // There is room for the guest but not for everybody: no question to ask. Only the tapped guest
+  // can move, and the confirmation screen says so ("Only 1 seat left: ... stays in ...").
+  if (room < 1 + movers.length) return confirmMove(ctx, trip, guest, slot, target, []);
+
+  openSheet({
+    eyebrow: 'Travel party', title: 'Also move their travel party?', subtitle: moverNames,
+    body: [
+      h('button', { class: 'btn', type: 'button', onclick: () => confirmMove(ctx, trip, guest, slot, target, movers) }, `Yes, move ${moverNames} too`),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => confirmMove(ctx, trip, guest, slot, target, []) }, `No, only ${who}`),
+    ],
+  });
 }
 
 // ---------- 4. Confirmation screen ----------
@@ -170,17 +163,28 @@ function confirmMove(ctx, trip, guest, slot, target, movers) {
 
   // Warnings (shown in the warning colour): a nearly full tour, a split travel party.
   const warnings = [];
-  if (target.kind === 'activity' && target.activity.capacity !== null) {
-    const roomBefore = target.activity.capacity - countIn(trip, target.activity);
-    const left = roomBefore - group.length;
-    if (left === 0) warnings.push(`Only ${plural(roomBefore, 'seat')} left: the tour will be full after this.`);
-    else if (left <= 3) warnings.push(`${plural(left, 'seat')} left after this.`);
-  }
-  const leftBehind = partyMovers(trip, guest, slot).filter((m) => !movers.includes(m));
+  const limited = target.kind === 'activity' && target.activity.capacity !== null;
+  const roomBefore = limited ? target.activity.capacity - countIn(trip, target.activity) : Infinity;
+  const partyHere = partyMovers(trip, guest, slot);
+  const leftBehind = partyHere.filter((m) => !movers.includes(m));
+
   if (leftBehind.length > 0) {
     // (Party members are only "in the same place" when the guest is in an activity or At leisure.)
     const stay = leftBehind.length === 1 ? 'stays' : 'stay';
-    warnings.push(`Their travel party will be split: ${joinNames(leftBehind.map((m) => names.get(m.id)))} ${stay} in ${placeText(here)}.`);
+    const leftNames = joinNames(leftBehind.map((m) => names.get(m.id)));
+    if (roomBefore < 1 + partyHere.length) {
+      // The party could not all fit: say it once, plainly.
+      warnings.push(`Only ${plural(roomBefore, 'seat')} left: ${leftNames} cannot come along and ${stay} in ${placeText(here)}. Their travel party will be split.`);
+    } else {
+      // The party could fit, but you chose to split it.
+      warnings.push(`Their travel party will be split: ${leftNames} ${stay} in ${placeText(here)}.`);
+    }
+  }
+  // A nearly full tour (not repeated when the message above already explains the missing seats).
+  if (limited && !(leftBehind.length > 0 && roomBefore < 1 + partyHere.length)) {
+    const left = roomBefore - group.length;
+    if (left === 0) warnings.unshift(`Only ${plural(roomBefore, 'seat')} left: the tour will be full after this.`);
+    else if (left <= 3) warnings.unshift(`${plural(left, 'seat')} left after this.`);
   }
 
   const detail = target.kind === 'activity'
