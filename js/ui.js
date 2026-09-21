@@ -18,9 +18,9 @@ export function closeSheet() {
 }
 
 // eyebrow: small label above the title. title/subtitle: text at the top. body: elements to show inside.
-// cancelLabel: the words on the button that closes the sheet.
+// cancelLabel: the words on the button that closes the sheet. cancelDanger: draw that button in red.
 // Opening a sheet while another is open replaces it, so a flow can go from step to step.
-export function openSheet({ eyebrow, title, subtitle, body, cancelLabel = 'Cancel' }) {
+export function openSheet({ eyebrow, title, subtitle, body, cancelLabel = 'Cancel', cancelDanger = false }) {
   closeSheet();
 
   const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
@@ -30,7 +30,7 @@ export function openSheet({ eyebrow, title, subtitle, body, cancelLabel = 'Cance
       subtitle ? h('div', { class: 'muted' }, subtitle) : null
     ),
     h('div', { class: 'sheet-body' }, body),
-    h('button', { class: 'btn btn--plain', type: 'button', onclick: closeSheet }, cancelLabel)
+    h('button', { class: `btn ${cancelDanger ? 'btn--danger' : 'btn--plain'}`, type: 'button', onclick: closeSheet }, cancelLabel)
   );
 
   // Tapping the dark area outside the sheet closes it.

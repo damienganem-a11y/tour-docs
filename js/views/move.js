@@ -129,10 +129,6 @@ function afterPick(ctx, trip, guest, slot, target) {
   const movers = partyMovers(trip, guest, slot);
   if (movers.length === 0) return confirmMove(ctx, trip, guest, slot, target, []);
 
-  const names = displayNames(trip.guests);
-  const who = names.get(guest.id);
-  const moverNames = joinNames(movers.map((m) => names.get(m.id)));
-
   // How many free places does the target have? (Unlimited for At leisure and for activities with no capacity.)
   const room = target.kind === 'activity' && target.activity.capacity !== null
     ? target.activity.capacity - countIn(trip, target.activity) : Infinity;
@@ -141,25 +137,47 @@ function afterPick(ctx, trip, guest, slot, target) {
   // can move, and the confirmation screen says so ("Only 1 seat left: ... stays in ...").
   if (room < 1 + movers.length) return confirmMove(ctx, trip, guest, slot, target, []);
 
+  // This question IS the confirmation: Yes and No both save the move straight away, so there is
+  // no second screen. It shows what will happen, and Cancel (in red) backs out.
+  const withParty = moveFacts(trip, guest, slot, target, movers);
+  const alone = moveFacts(trip, guest, slot, target, []);
+  const moverNames = joinNames(movers.map((m) => alone.names.get(m.id)));
+
   openSheet({
-    eyebrow: 'Travel party', title: 'Also move their travel party?', subtitle: moverNames,
+    eyebrow: 'Travel party', title: 'Also move their travel party?',
+    subtitle: `Move ${alone.who}${alone.from} to ${alone.to} · ${alone.detail}`,
     body: [
-      h('button', { class: 'btn', type: 'button', onclick: () => confirmMove(ctx, trip, guest, slot, target, movers) }, `Yes, move ${moverNames} too`),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => confirmMove(ctx, trip, guest, slot, target, []) }, `No, only ${who}`),
+      Number.isFinite(room) && room <= 3 ? notice(`Only ${plural(room, 'seat')} left in "${target.activity.name}".`) : null,
+      h('button', { class: 'btn', type: 'button', onclick: () => saveChanges(ctx, trip, withParty.changes, withParty.done) }, `Yes, move ${moverNames} too`),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => saveChanges(ctx, trip, alone.changes, alone.done) }, `No, only ${alone.who}`),
     ],
+    cancelDanger: true,
   });
 }
 
-// ---------- 4. Confirmation screen ----------
-
+// What a move says about itself: the words for the screens, and the list of changes to apply.
 // group: the guests moving together (the tapped guest, and party members if you said Yes).
-function confirmMove(ctx, trip, guest, slot, target, movers) {
+function moveFacts(trip, guest, slot, target, movers) {
   const names = displayNames(trip.guests);
   const group = [guest, ...movers];
   const who = joinNames(group.map((g) => names.get(g.id)));
   const here = guestPlace(trip, guest, slot);
   const to = target.kind === 'leisure' ? 'At leisure' : target.activity.name;
   const from = here.kind === 'blank' ? '' : ` from ${here.kind === 'unknown' ? `"${here.raw}"` : placeText(here)}`;
+  const detail = target.kind === 'activity'
+    ? `${slotLabel(trip, slot)} · ${activityDetail(trip, slot, target.activity)}`
+    : slotLabel(trip, slot);
+  const changes = group.map((g) => ({
+    type: 'move', guestId: g.id, slotId: slot.id,
+    to: target.kind === 'leisure' ? { kind: 'leisure' } : { kind: 'activity', activityId: target.activity.id },
+  }));
+  return { names, group, who, here, to, from, detail, changes, done: `Moved ${who} to ${to}` };
+}
+
+// ---------- 4. Confirmation screen ----------
+
+function confirmMove(ctx, trip, guest, slot, target, movers) {
+  const { names, group, who, here, to, from, detail, changes, done } = moveFacts(trip, guest, slot, target, movers);
 
   // Warnings (shown in the warning colour): a nearly full tour, a split travel party.
   const warnings = [];
@@ -187,17 +205,9 @@ function confirmMove(ctx, trip, guest, slot, target, movers) {
     else if (left <= 3) warnings.unshift(`${plural(left, 'seat')} left after this.`);
   }
 
-  const detail = target.kind === 'activity'
-    ? `${slotLabel(trip, slot)} · ${activityDetail(trip, slot, target.activity)}`
-    : slotLabel(trip, slot);
-
-  const changes = group.map((g) => ({
-    type: 'move', guestId: g.id, slotId: slot.id,
-    to: target.kind === 'leisure' ? { kind: 'leisure' } : { kind: 'activity', activityId: target.activity.id },
-  }));
   confirmSheet(ctx, trip, {
     title: `Move ${who}${from} to ${to}?`, detail, warnings,
-    confirmLabel: 'Confirm', changes, done: `Moved ${who} to ${to}`,
+    confirmLabel: 'Confirm', changes, done,
   });
 }
 
@@ -215,26 +225,33 @@ export function startCancelTour(ctx, trip, slot, activity) {
   });
 }
 
-// The confirmation sheet used by every change: a summary, warnings, and one Confirm button.
-function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, cancelLabel, changes, done }) {
-  let busy = false; // ignore a second tap while the first is still being saved
+// Makes the change (through the one change function), then closes the sheet and redraws the screen.
+// If the change is refused, the sheet stays open with a message, so nothing is lost.
+let saving = false; // ignore a second tap while the first is still being saved
+async function saveChanges(ctx, trip, changes, done) {
+  if (saving) return;
+  saving = true;
+  const result = await applyChange(ctx, trip.id, changes);
+  saving = false;
+  if (result.ok) {
+    closeSheet();
+    ctx.refresh();
+    showToast(done);
+  } else {
+    showToast(result.error, true);
+  }
+}
 
+// The confirmation sheet: a summary, warnings, and one Confirm button.
+// A tour cancellation has its own red Confirm button, so there the Cancel button stays plain.
+function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, cancelLabel, changes, done }) {
   const confirmButton = h('button', {
     class: `btn${danger ? ' btn--danger' : ''}`, type: 'button',
-    onclick: async () => {
-      if (busy) return;
-      busy = true;
-      const result = await applyChange(ctx, trip.id, changes);
-      busy = false;
-      if (result.ok) {
-        closeSheet();
-        ctx.refresh();
-        showToast(done);
-      } else {
-        showToast(result.error, true); // the sheet stays open so nothing is lost
-      }
-    },
+    onclick: () => saveChanges(ctx, trip, changes, done),
   }, confirmLabel);
 
-  openSheet({ eyebrow: 'Confirm change', title, subtitle: detail, body: [warnings.map(notice), confirmButton], cancelLabel });
+  openSheet({
+    eyebrow: 'Confirm change', title, subtitle: detail, body: [warnings.map(notice), confirmButton],
+    cancelLabel, cancelDanger: !danger,
+  });
 }
