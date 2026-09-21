@@ -7,6 +7,9 @@
 
 import { joinNames, plural } from './rules.js';
 
+// The kinds of journal lines that belong to a roll call (see changes.js).
+const ROLLCALL_TYPES = new Set(['rollcall-start', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+
 // Entries of one action, in the order they were written (`n`), and actions in the order they happened (`seq`).
 const inBatchOrder = (a, b) => (a.n ?? 0) - (b.n ?? 0);
 const inTimeOrder = (a, b) => a.seq - b.seq || a.at.localeCompare(b.at);
@@ -25,11 +28,14 @@ export function groupBatches(entries) {
   return [...byBatch.entries()].map(([batchId, list]) => {
     const sorted = [...list].sort(inBatchOrder);
     const first = sorted[0];
+    const types = new Set(sorted.map((e) => e.type));
+    const onlyRollCall = !types.has('move') && [...types].some((t) => ROLLCALL_TYPES.has(t));
     return {
       batchId, entries: sorted,
       seq: Math.max(...sorted.map((e) => e.seq ?? 0)), at: first.at, who: first.who,
       place: first.place, slotId: first.slotId, slotLabel: first.slotLabel,
-      kind: sorted.some((e) => e.type === 'undo') ? 'undo' : sorted.some((e) => e.type === 'cancel-tour') ? 'cancel-tour' : 'move',
+      kind: types.has('undo') ? 'undo' : types.has('cancel-tour') ? 'cancel-tour' : onlyRollCall ? 'rollcall' : 'move',
+      rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
       undone: undone.has(batchId),
     };
   }).sort(inTimeOrder);
@@ -66,9 +72,11 @@ export function summarize(batch) {
     return `Cancelled ${tour.activityLabel}${tour.guestCount > 0 ? ` (${plural(tour.guestCount, 'guest')} moved to At leisure)` : ''}`;
   }
 
+  if (batch.kind === 'rollcall') return summarizeRollCall(batch.entries[0]);
+
   // Guests who went from the same place to the same place are told together.
   const groups = new Map();
-  for (const entry of batch.entries) {
+  for (const entry of batch.entries.filter((e) => e.type === 'move')) {
     const key = `${entry.from.label}|${entry.to.label}`;
     groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
@@ -76,15 +84,53 @@ export function summarize(batch) {
     .map((list) => `Moved ${joinNames(list.map((e) => e.guestName))}${list[0].from.kind === 'blank' ? '' : ` from ${list[0].from.label}`} to ${list[0].to.label}`)
     .join('; ');
 
+  // Joining a tour during its roll call also puts the guest in a vehicle.
+  const checkin = batch.entries.find((e) => e.type === 'checkin');
+  const withVehicle = checkin ? ` and into ${checkin.vehicleLabel}` : '';
+
   // A move into a full tour, decided by the dispatcher: say so, and who approved it if it was written down.
   const forced = batch.entries.filter((e) => e.forced);
-  if (forced.length === 0) return text;
+  if (forced.length === 0) return `${text}${withVehicle}`;
   const approvers = [...new Set(forced.map((e) => e.approvedBy).filter(Boolean))];
-  return `${text} (forced${approvers.length > 0 ? `, approved by ${approvers.join(' and ')}` : ''})`;
+  return `${text}${withVehicle} (forced${approvers.length > 0 ? `, approved by ${approvers.join(' and ')}` : ''})`;
+}
+
+// One line for one roll call action.
+function summarizeRollCall(entry) {
+  if (entry.type === 'rollcall-start') return `Started the roll call: ${entry.activityLabel} (${entry.vehicles.join(', ')})`;
+  if (entry.type === 'checkin') {
+    return entry.fromVehicleLabel ? `${entry.guestName} moved from ${entry.fromVehicleLabel} to ${entry.vehicleLabel}` : `${entry.guestName} checked in to ${entry.vehicleLabel}`;
+  }
+  if (entry.type === 'checkout') return `${entry.guestName} taken out of ${entry.fromVehicleLabel}`;
+  if (entry.type === 'vehicle-add') return `Added ${entry.vehicleLabel}`;
+  return `${entry.fromLabel} renumbered ${entry.toLabel}`; // vehicle-number
 }
 
 // Did this action force a move into a full tour?
 export const wasForced = (batch) => batch.entries.some((e) => e.forced);
 
 // The guests an action concerns (for searching by guest).
-export const guestNamesOf = (batch) => batch.entries.filter((e) => e.type === 'move').map((e) => e.guestName);
+export const guestNamesOf = (batch) => [...new Set(batch.entries.filter((e) => e.guestName).map((e) => e.guestName))];
+
+// What the Journal shows: one card per action, EXCEPT that everything that belongs to one roll call is folded
+// into one card for that roll call (its check-ins are listed inside). Newest first.
+//   { kind: 'batch', batch, batches: [batch], first, seq }
+//   { kind: 'rollcall', rollCallId, batches: [oldest first], first, seq }
+export function journalItems(batches) {
+  const items = [];
+  const byRollCall = new Map();
+  for (const batch of batches) { // oldest first
+    if (!batch.rollCallId) {
+      items.push({ kind: 'batch', batch, batches: [batch], first: batch });
+      continue;
+    }
+    if (!byRollCall.has(batch.rollCallId)) {
+      const item = { kind: 'rollcall', rollCallId: batch.rollCallId, batches: [], first: batch };
+      byRollCall.set(batch.rollCallId, item);
+      items.push(item);
+    }
+    byRollCall.get(batch.rollCallId).batches.push(batch);
+  }
+  for (const item of items) item.seq = Math.max(...item.batches.map((b) => b.seq));
+  return items.sort((a, b) => b.seq - a.seq);
+}

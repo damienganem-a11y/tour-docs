@@ -167,7 +167,9 @@ export function buildTrip(raw) {
     start: raw.trip.start,
     days: raw.trip.days,
     defaultVehicles: raw.trip.default_vehicles ?? 4,
+    vehicleLabel: raw.trip.vehicle_label ?? 'V',   // what vehicles are called: V1, V2...
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
+    rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)
   };
 }

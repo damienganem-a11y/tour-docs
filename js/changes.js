@@ -13,6 +13,13 @@
 //       then says "forced", with the optional note approvedBy ("Approved by Sam").
 //   { type: 'cancel-tour', activityId }        everybody on it goes to At leisure, it stays as "Cancelled"
 //   { type: 'undo' }                           takes back the last action of the trip (like Ctrl+Z)
+//   Roll call (see rollcall.js), each one on its own:
+//   { type: 'rollcall-start', activityId }
+//   { type: 'checkin', activityId, guestId, vehicleId }      the guest goes into that vehicle (or moves to it)
+//   { type: 'checkout', activityId, guestId }                the guest comes out of the vehicle: back on the list
+//   { type: 'vehicle-add', activityId }                      the next vehicle number (V5, V6...)
+//   { type: 'vehicle-number', activityId, vehicleId, number }
+//   A 'move' into a tour can also carry checkinVehicleId: the guest joins the tour AND goes into that vehicle.
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
 //
@@ -23,6 +30,10 @@ import { newId } from './ids.js';
 import { canUser } from './users.js';
 import { displayNames, guestPlace, countIn, slotLabel, plural } from './rules.js';
 import { lastUndoable, summarize } from './journal.js';
+import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
+
+// The changes that belong to a roll call. Each one is made on its own (never mixed with others).
+const ROLLCALL_TYPES = new Set(['rollcall-start', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -38,10 +49,11 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (!Array.isArray(changes) || changes.length === 0) return fail('There is nothing to change.');
 
   const names = displayNames(trip.guests);
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo') && changes.length > 1) {
-    return fail('Cancelling a tour and undoing are changes of their own.');
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type)) && changes.length > 1) {
+    return fail('Cancelling a tour, undoing and roll call changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal);
+  if (ROLLCALL_TYPES.has(changes[0].type)) return validateRollCall(trip, changes[0]);
 
   const seen = new Set();     // the same guest cannot be changed twice in the same half-day
   const flows = new Map();    // activityId -> { activity, joining, leaving, forced }, to check capacity below
@@ -83,9 +95,15 @@ export function validateChanges(trip, user, changes, journal = []) {
       }
       flow(activity).joining++;
       if (change.force) flow(activity).forced = true;
+      if (change.checkinVehicleId) {
+        const rollCall = findRollCall(trip, activity.id);
+        if (!rollCall || rollCall.endedAt) return fail(`There is no roll call running for "${activity.name}".`);
+        if (!rollCall.vehicles.some((v) => v.id === change.checkinVehicleId)) return fail('That vehicle does not exist.');
+      }
     } else {
       return fail('Choose an activity or At leisure.');
     }
+    if (change.checkinVehicleId && target.kind !== 'activity') return fail('Only a guest joining a tour can go into a vehicle.');
     if (here.kind === 'activity') flow(here.activity).leaving++;
   }
 
@@ -116,6 +134,11 @@ function validateUndo(trip, journal) {
       const activity = trip.activities.find((a) => a.id === entry.activityId);
       if (!activity || !activity.cancelled) return fail(`"${entry.activityLabel}" is not cancelled anymore, so this cannot be undone.`);
     }
+    if (entry.rollCallId && entry.type !== 'move') {
+      const problem = rollCallUndoProblem(trip, entry);
+      if (problem) return fail(problem);
+      continue;
+    }
     if (entry.type !== 'move') continue;
 
     const guest = trip.guests.find((g) => g.id === entry.guestId);
@@ -129,6 +152,56 @@ function validateUndo(trip, journal) {
     }
   }
   return { ok: true };
+}
+
+// Checks one roll call change (see the list at the top).
+function validateRollCall(trip, change) {
+  const activity = trip.activities.find((a) => a.id === change.activityId);
+  if (!activity) return fail('That activity does not exist.');
+  const rollCall = findRollCall(trip, activity.id);
+
+  if (change.type === 'rollcall-start') {
+    if (activity.cancelled) return fail(`"${activity.name}" is cancelled.`);
+    if (rollCall) return fail(`The roll call for "${activity.name}" has already been started.`);
+    return { ok: true };
+  }
+
+  if (!rollCall) return fail(`There is no roll call for "${activity.name}".`);
+  if (rollCall.endedAt) return fail('This roll call has ended.');
+  const vehicle = rollCall.vehicles.find((v) => v.id === change.vehicleId);
+  const names = displayNames(trip.guests);
+  const guest = trip.guests.find((g) => g.id === change.guestId);
+
+  if (change.type === 'checkin') {
+    if (!guest) return fail('That guest is not in this trip.');
+    if (!vehicle) return fail('That vehicle does not exist.');
+    if (trip.bookings[guest.id]?.[activity.slotId]?.activityId !== activity.id) return fail(`${names.get(guest.id)} is not booked on "${activity.name}".`);
+    if (rollCall.checkins[guest.id] === vehicle.id) return fail(`${names.get(guest.id)} is already in ${vehicleLabel(trip, vehicle)}.`);
+  } else if (change.type === 'checkout') {
+    if (!guest) return fail('That guest is not in this trip.');
+    if (!rollCall.checkins[guest.id]) return fail(`${names.get(guest.id)} is not in a vehicle.`);
+  } else if (change.type === 'vehicle-add') {
+    if (rollCall.vehicles.length >= 30) return fail('That is enough vehicles (30).');
+  } else if (change.type === 'vehicle-number') {
+    if (!vehicle) return fail('That vehicle does not exist.');
+    if (!Number.isInteger(change.number) || change.number < 1 || change.number > 99) return fail('A vehicle number is a whole number from 1 to 99.');
+    if (change.number === vehicle.number) return fail(`That vehicle is already ${vehicleLabel(trip, vehicle)}.`);
+    const taken = rollCall.vehicles.find((v) => v.number === change.number);
+    if (taken) return fail(`${vehicleLabel(trip, taken)} exists already in this roll call. Pick another number.`);
+  }
+  return { ok: true };
+}
+
+// Can this roll call line be taken back? Returns the reason if not. (It always can, as the last action is
+// the last thing that happened; this protects against surprises.)
+function rollCallUndoProblem(trip, entry) {
+  const rollCall = (trip.rollCalls ?? []).find((r) => r.id === entry.rollCallId);
+  if (!rollCall) return 'This action cannot be undone: the roll call no longer exists.';
+  if (entry.type === 'checkin' && rollCall.checkins[entry.guestId] !== entry.vehicleId) return `This action cannot be undone: ${entry.guestName} is no longer in ${entry.vehicleLabel}.`;
+  if (entry.type === 'checkout' && rollCall.checkins[entry.guestId]) return `This action cannot be undone: ${entry.guestName} is in a vehicle again.`;
+  if (entry.type === 'vehicle-add' && !rollCall.vehicles.some((v) => v.id === entry.vehicleId)) return 'This action cannot be undone: that vehicle is gone.';
+  if (entry.type === 'vehicle-number' && rollCall.vehicles.find((v) => v.id === entry.vehicleId)?.number !== entry.toNumber) return 'This action cannot be undone: that vehicle has another number now.';
+  return null;
 }
 
 // Is a guest's place (from guestPlace) the one a journal entry describes ({ kind, activityId, raw })?
@@ -203,33 +276,70 @@ async function doApply(ctx, tripId, changes) {
     const [firstEntry] = target.entries;
     entries.push({
       ...base(), type: 'undo', undoesBatchId: target.batchId, undoesSummary: summary,
+      rollCallId: firstEntry.rollCallId ?? null, // an undone roll call action stays with its roll call in the Journal
       slotId: firstEntry.slotId, slotLabel: firstEntry.slotLabel, place: firstEntry.place,
     });
-
-    for (const entry of [...target.entries].reverse()) {
-      if (entry.type === 'cancel-tour') {
-        next.activities.find((a) => a.id === entry.activityId).cancelled = false; // the tour is back
-        continue;
-      }
-      // Put the guest back where they were. "Nothing chosen yet" is put back as nothing.
-      const row = (next.bookings[entry.guestId] ??= {});
-      if (entry.from.kind === 'blank') delete row[entry.slotId];
-      else if (entry.from.kind === 'leisure') row[entry.slotId] = { kind: 'leisure' };
-      else if (entry.from.kind === 'unknown') row[entry.slotId] = { kind: 'unknown', raw: entry.from.raw };
-      else row[entry.slotId] = { kind: 'activity', activityId: entry.from.activityId };
-
-      entries.push({
-        ...base(), type: 'move', cause: 'undo',
-        guestId: entry.guestId, guestName: entry.guestName,
-        slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place,
-        from: entry.to, to: entry.from,
-      });
-    }
+    // The lines are taken back in the opposite order (the last thing done is the first thing undone).
+    for (const entry of [...target.entries].reverse()) undoEntry(next, entry, base, entries);
     return save(ctx, next, entries, { summary });
   }
 
+  // The words and place shared by every line of a roll call action.
+  const rollCallAbout = (activity, slot, rollCall) => ({
+    rollCallId: rollCall.id, activityId: activity.id, activityLabel: activity.name, ...where(trip, slot),
+  });
+
+  // Roll call changes: start it, check a guest in or out, add a vehicle, renumber a vehicle.
+  if (ROLLCALL_TYPES.has(changes[0].type)) {
+    const change = changes[0];
+    const activity = trip.activities.find((a) => a.id === change.activityId);
+    const slot = trip.slots.find((s) => s.id === activity.slotId);
+    const label = (vehicle) => vehicleLabel(next, vehicle);
+
+    if (change.type === 'rollcall-start') {
+      const rollCall = {
+        id: newId(), activityId: activity.id, startedAt: at,
+        startedBy: { id: ctx.owner.id, name: ctx.owner.name },
+        endedAt: null, vehicles: defaultVehicles(trip.defaultVehicles ?? 4), checkins: {},
+      };
+      (next.rollCalls ??= []).push(rollCall);
+      entries.push({ ...base(), type: 'rollcall-start', ...rollCallAbout(activity, slot, rollCall), vehicles: rollCall.vehicles.map((v) => label(v)) });
+      return save(ctx, next, entries, { rollCallId: rollCall.id });
+    }
+
+    const rollCall = next.rollCalls.find((r) => r.activityId === activity.id);
+    const vehicle = rollCall.vehicles.find((v) => v.id === change.vehicleId);
+    const about = rollCallAbout(activity, slot, rollCall);
+    const guest = trip.guests.find((g) => g.id === change.guestId);
+
+    if (change.type === 'checkin') {
+      const fromId = rollCall.checkins[guest.id] ?? null;
+      const from = rollCall.vehicles.find((v) => v.id === fromId);
+      rollCall.checkins[guest.id] = vehicle.id;
+      entries.push({
+        ...base(), type: 'checkin', ...about, guestId: guest.id, guestName: names.get(guest.id),
+        vehicleId: vehicle.id, vehicleLabel: label(vehicle),
+        fromVehicleId: fromId, fromVehicleLabel: from ? label(from) : null,
+      });
+    } else if (change.type === 'checkout') {
+      const from = rollCall.vehicles.find((v) => v.id === rollCall.checkins[guest.id]);
+      delete rollCall.checkins[guest.id];
+      entries.push({ ...base(), type: 'checkout', ...about, guestId: guest.id, guestName: names.get(guest.id), fromVehicleId: from.id, fromVehicleLabel: label(from) });
+    } else if (change.type === 'vehicle-add') {
+      const added = { id: newId(), number: Math.max(0, ...rollCall.vehicles.map((v) => v.number)) + 1 };
+      rollCall.vehicles.push(added);
+      entries.push({ ...base(), type: 'vehicle-add', ...about, vehicleId: added.id, vehicleLabel: label(added) });
+    } else {
+      const fromLabel = label(vehicle);
+      const fromNumber = vehicle.number;
+      vehicle.number = change.number;
+      entries.push({ ...base(), type: 'vehicle-number', ...about, vehicleId: vehicle.id, fromNumber, toNumber: change.number, fromLabel, toLabel: label(vehicle) });
+    }
+    return save(ctx, next, entries, {});
+  }
+
   // A "move" of one guest in one half-day.
-  const move = (guest, slot, to, cause, force = false, approvedBy = null) => {
+  const move = (guest, slot, to, cause, force = false, approvedBy = null, checkinVehicleId = null) => {
     const before = guestPlace(trip, guest, slot);
     const forced = force && to.kind === 'activity' && willBeOver(to.activityId);
     next.bookings[guest.id] ??= {};
@@ -245,12 +355,24 @@ async function doApply(ctx, tripId, changes) {
       to: to.kind === 'leisure' ? { kind: 'leisure', label: 'At leisure' }
         : { kind: 'activity', activityId: to.activityId, label: trip.activities.find((a) => a.id === to.activityId).name },
     });
+
+    // Joining a tour during its roll call: the guest goes straight into the chosen vehicle (a second line, same action).
+    if (checkinVehicleId) {
+      const activity = trip.activities.find((a) => a.id === to.activityId);
+      const rollCall = next.rollCalls.find((r) => r.activityId === activity.id);
+      const vehicle = rollCall.vehicles.find((v) => v.id === checkinVehicleId);
+      rollCall.checkins[guest.id] = vehicle.id;
+      entries.push({
+        ...base(), type: 'checkin', ...rollCallAbout(activity, slot, rollCall), guestId: guest.id, guestName: names.get(guest.id),
+        vehicleId: vehicle.id, vehicleLabel: vehicleLabel(next, vehicle), fromVehicleId: null, fromVehicleLabel: null,
+      });
+    }
   };
 
   for (const change of changes) {
     if (change.type === 'move') {
       const approvedBy = String(change.approvedBy ?? '').trim().slice(0, 60) || null;
-      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null, Boolean(change.force), approvedBy);
+      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null, Boolean(change.force), approvedBy, change.checkinVehicleId ?? null);
       continue;
     }
 
@@ -267,6 +389,61 @@ async function doApply(ctx, tripId, changes) {
   }
 
   return save(ctx, next, entries, {});
+}
+
+// Takes back ONE journal line of the action being undone, and writes the line that says so.
+function undoEntry(next, entry, base, entries) {
+  const rollCall = entry.rollCallId ? (next.rollCalls ?? []).find((r) => r.id === entry.rollCallId) : null;
+  const about = entry.rollCallId
+    ? { rollCallId: entry.rollCallId, activityId: entry.activityId, activityLabel: entry.activityLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place }
+    : {};
+
+  if (entry.type === 'cancel-tour') {
+    next.activities.find((a) => a.id === entry.activityId).cancelled = false; // the tour is back
+    return;
+  }
+
+  if (entry.type === 'rollcall-start') {
+    next.rollCalls = next.rollCalls.filter((r) => r.id !== entry.rollCallId); // as if it was never started
+    entries.push({ ...base(), type: 'rollcall-remove', cause: 'undo', ...about });
+    return;
+  }
+  if (entry.type === 'checkin' || entry.type === 'checkout') {
+    // Back to where the guest was before: in the vehicle they came from, or on the list.
+    const before = entry.fromVehicleId; // (a check-out remembers the vehicle the guest came out of in the same field)
+    const beforeLabel = entry.fromVehicleLabel;
+    const after = entry.type === 'checkin' ? entry.vehicleId : null;
+    const afterLabel = entry.type === 'checkin' ? entry.vehicleLabel : null;
+    if (before) rollCall.checkins[entry.guestId] = before; else delete rollCall.checkins[entry.guestId];
+    entries.push(before
+      ? { ...base(), type: 'checkin', cause: 'undo', ...about, guestId: entry.guestId, guestName: entry.guestName, vehicleId: before, vehicleLabel: beforeLabel, fromVehicleId: after, fromVehicleLabel: afterLabel }
+      : { ...base(), type: 'checkout', cause: 'undo', ...about, guestId: entry.guestId, guestName: entry.guestName, fromVehicleId: entry.vehicleId, fromVehicleLabel: entry.vehicleLabel });
+    return;
+  }
+  if (entry.type === 'vehicle-add') {
+    rollCall.vehicles = rollCall.vehicles.filter((v) => v.id !== entry.vehicleId);
+    entries.push({ ...base(), type: 'vehicle-remove', cause: 'undo', ...about, vehicleId: entry.vehicleId, vehicleLabel: entry.vehicleLabel });
+    return;
+  }
+  if (entry.type === 'vehicle-number') {
+    rollCall.vehicles.find((v) => v.id === entry.vehicleId).number = entry.fromNumber;
+    entries.push({ ...base(), type: 'vehicle-number', cause: 'undo', ...about, vehicleId: entry.vehicleId, fromNumber: entry.toNumber, toNumber: entry.fromNumber, fromLabel: entry.toLabel, toLabel: entry.fromLabel });
+    return;
+  }
+
+  // A move: put the guest back where they were. "Nothing chosen yet" is put back as nothing.
+  const row = (next.bookings[entry.guestId] ??= {});
+  if (entry.from.kind === 'blank') delete row[entry.slotId];
+  else if (entry.from.kind === 'leisure') row[entry.slotId] = { kind: 'leisure' };
+  else if (entry.from.kind === 'unknown') row[entry.slotId] = { kind: 'unknown', raw: entry.from.raw };
+  else row[entry.slotId] = { kind: 'activity', activityId: entry.from.activityId };
+
+  entries.push({
+    ...base(), type: 'move', cause: 'undo',
+    guestId: entry.guestId, guestName: entry.guestName,
+    slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place,
+    from: entry.to, to: entry.from,
+  });
 }
 
 // Saves the changed trip and its journal entries together. If that fails, nothing changed.

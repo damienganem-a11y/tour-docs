@@ -12,6 +12,7 @@ import { openSheet, closeSheet, showToast } from '../ui.js';
 import { applyChange } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
 import { byName, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
+import { vehicleLabel } from '../rollcall.js';
 
 const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :
@@ -20,10 +21,10 @@ const placeText = (place) =>
 
 // ---------- Small building blocks ----------
 
-const notice = (text) => h('div', { class: 'notice' }, text);
+export const notice = (text) => h('div', { class: 'notice' }, text);
 
 // One tappable row in a list inside a sheet.
-function choiceRow({ title, detail, side, badge, current = false, disabled = false, onclick }) {
+export function choiceRow({ title, detail, side, badge, current = false, disabled = false, onclick }) {
   return h('button', {
     class: `choice${current ? ' is-current' : ''}`, type: 'button', disabled, 'aria-current': current ? 'true' : null, onclick,
   },
@@ -44,14 +45,15 @@ function activityDetail(trip, slot, activity) {
 // ---------- 1. Pick a place for a guest ----------
 
 // guest, slot: who and which half-day. Called from a tap on a guest anywhere in the app.
-export function startMove(ctx, trip, guest, slot) {
+// options.askParty === false: no travel party question (the roll call: speed first).
+export function startMove(ctx, trip, guest, slot, options = {}) {
   const names = displayNames(trip.guests);
   const here = guestPlace(trip, guest, slot);
 
   const leisureRow = choiceRow({
     title: 'At leisure', detail: 'Not on any of our tours',
     badge: here.kind === 'leisure' ? { text: '✓ Current' } : null, current: here.kind === 'leisure',
-    onclick: () => afterPick(ctx, trip, guest, slot, { kind: 'leisure' }),
+    onclick: () => afterPick(ctx, trip, guest, slot, { kind: 'leisure' }, options),
   });
 
   const activityRows = trip.activities.filter((a) => a.slotId === slot.id).map((activity) => {
@@ -65,7 +67,7 @@ export function startMove(ctx, trip, guest, slot) {
       current: isCurrent,
       badge: activity.cancelled ? { text: 'Cancelled', bad: true } : isCurrent ? { text: '✓ Current' } : full ? { text: 'Full', bad: true } : null,
       disabled: activity.cancelled,
-      onclick: () => (isCurrent ? closeSheet() : afterPick(ctx, trip, guest, slot, { kind: 'activity', activity })),
+      onclick: () => (isCurrent ? closeSheet() : afterPick(ctx, trip, guest, slot, { kind: 'activity', activity }, options)),
     });
   });
 
@@ -107,7 +109,11 @@ export function showForcedInfo(ctx, trip, guest, slot, entry) {
 // ---------- 2. Add a guest to an activity ----------
 
 // Search all guests, see where each one is now, tap one to bring them into this activity.
-export function startAddGuest(ctx, trip, slot, activity) {
+// options.vehicle: during a roll call, the guest also goes straight into that vehicle (and no travel party question).
+export function startAddGuest(ctx, trip, slot, activity, options = {}) {
+  const rollCallOptions = options.vehicle
+    ? { askParty: false, checkinVehicleId: options.vehicle.id, vehicleLabel: vehicleLabel(trip, options.vehicle) }
+    : {};
   const names = displayNames(trip.guests);
   const guests = [...trip.guests].sort(byName);
   const list = h('div', {});
@@ -125,7 +131,7 @@ export function startAddGuest(ctx, trip, slot, activity) {
           return choiceRow({
             title: names.get(guest.id), detail: `Now: ${placeText(here)}`,
             badge: already ? { text: '✓ Already here' } : null, disabled: already,
-            onclick: () => afterPick(ctx, trip, guest, slot, { kind: 'activity', activity }),
+            onclick: () => afterPick(ctx, trip, guest, slot, { kind: 'activity', activity }, rollCallOptions),
           });
         })));
   }
@@ -152,9 +158,9 @@ export function startAddGuest(ctx, trip, slot, activity) {
 //   - there is room for everyone: Yes and No both save the move straight away (the question IS the confirmation);
 //   - not everyone fits: the question says so, and whatever does not fit goes to the FORCE confirmation
 //     (the dispatcher decides, and may write who approved it).
-function afterPick(ctx, trip, guest, slot, target) {
+function afterPick(ctx, trip, guest, slot, target, options = {}) {
   const { movers, room, guestFits, everyoneFits } = partyPlan(trip, guest, slot, target);
-  if (movers.length === 0) return confirmMove(ctx, trip, guest, slot, target, []);
+  if (movers.length === 0 || options.askParty === false) return confirmMove(ctx, trip, guest, slot, target, [], options);
 
   const withParty = moveFacts(trip, guest, slot, target, movers);
   const alone = moveFacts(trip, guest, slot, target, []);
@@ -188,34 +194,37 @@ function afterPick(ctx, trip, guest, slot, target) {
 
 // What a move says about itself: the words for the screens, and the list of changes to apply.
 // group: the guests moving together (the tapped guest, and party members if you said Yes).
-function moveFacts(trip, guest, slot, target, movers) {
+function moveFacts(trip, guest, slot, target, movers, options = {}) {
   const names = displayNames(trip.guests);
   const group = [guest, ...movers];
   const who = joinNames(group.map((g) => names.get(g.id)));
   const here = guestPlace(trip, guest, slot);
   const to = target.kind === 'leisure' ? 'At leisure' : target.activity.name;
   const from = here.kind === 'blank' ? '' : ` from ${here.kind === 'unknown' ? `"${here.raw}"` : placeText(here)}`;
-  const detail = target.kind === 'activity'
+  const intoVehicle = options.checkinVehicleId ? ` and into ${options.vehicleLabel}` : ''; // during a roll call
+  const detail = (target.kind === 'activity'
     ? `${slotLabel(trip, slot)} · ${activityDetail(trip, slot, target.activity)}`
-    : slotLabel(trip, slot);
+    : slotLabel(trip, slot)) + (options.checkinVehicleId ? ` · then into ${options.vehicleLabel}` : '');
   const changes = group.map((g) => ({
     type: 'move', guestId: g.id, slotId: slot.id,
     to: target.kind === 'leisure' ? { kind: 'leisure' } : { kind: 'activity', activityId: target.activity.id },
+    ...(options.checkinVehicleId ? { checkinVehicleId: options.checkinVehicleId } : {}),
   }));
-  return { names, group, who, here, to, from, detail, changes, done: `Moved ${who} to ${to}` };
+  return { names, group, who, here, to, from, detail, changes, done: `Moved ${who} to ${to}${intoVehicle}` };
 }
 
 // ---------- 4. Confirmation screen ----------
 
-function confirmMove(ctx, trip, guest, slot, target, movers) {
-  const { names, group, who, here, to, from, detail, changes, done } = moveFacts(trip, guest, slot, target, movers);
+function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
+  const { names, group, who, here, to, from, detail, changes, done } = moveFacts(trip, guest, slot, target, movers, options);
 
   // Warnings (shown in the warning colour): a full tour, a nearly full tour, a split travel party.
   const warnings = [];
   const limited = target.kind === 'activity' && target.activity.capacity !== null;
   const roomBefore = limited ? target.activity.capacity - countIn(trip, target.activity) : Infinity;
   const partyHere = partyMovers(trip, guest, slot);
-  const leftBehind = partyHere.filter((m) => !movers.includes(m));
+  // (In a roll call nobody asks about the travel party, so there is nobody "left behind" to warn about.)
+  const leftBehind = options.askParty === false ? [] : partyHere.filter((m) => !movers.includes(m));
 
   // The group does not fit in the tour: the dispatcher can still decide to put them in, by FORCING it.
   const needsForce = limited && roomBefore < group.length;

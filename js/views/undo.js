@@ -8,13 +8,14 @@ import { applyChange } from '../changes.js';
 import { lastUndoable, summarize } from '../journal.js';
 import { showToast } from '../ui.js';
 
-export function undoButton(ctx, trip) {
+// options.wide: full width, for the roll call screen (under the row of vehicles).
+export function undoButton(ctx, trip, options = {}) {
   const last = lastUndoable(ctx.journal(trip.id));
   const what = last ? summarize(last) : 'Nothing to undo';
   let busy = false; // ignore a second tap while the first is still being saved
 
   return h('button', {
-    class: 'undo-btn', type: 'button', disabled: !last, 'aria-label': `Undo: ${what}`,
+    class: `undo-btn${options.wide ? ' undo-btn--wide' : ''}`, type: 'button', disabled: !last, 'aria-label': `Undo: ${what}`,
     onclick: async () => {
       if (busy) return;
       busy = true;

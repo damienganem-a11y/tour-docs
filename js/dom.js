@@ -24,3 +24,26 @@ export function h(tag, props = {}, ...children) {
   }
   return node;
 }
+
+// Makes a button understand both a tap and a long press (finger held down for about half a second).
+//   pressable(button, { tap, long })
+// A long press does NOT also count as a tap. Scrolling with the finger cancels the press.
+// The iPhone's own long-press menu is switched off for this button (see "user-select" in styles.css).
+export function pressable(node, { tap, long, ms = 500 }) {
+  let timer = null;
+  let longFired = false;
+
+  node.addEventListener('pointerdown', () => {
+    longFired = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => { longFired = true; long(); }, ms);
+  });
+  for (const type of ['pointerup', 'pointerleave', 'pointercancel']) {
+    node.addEventListener(type, () => clearTimeout(timer));
+  }
+  node.addEventListener('click', (event) => {
+    if (longFired) { longFired = false; event.preventDefault(); return; } // that press was a long one: no tap
+    tap();
+  });
+  node.addEventListener('contextmenu', (event) => event.preventDefault());
+}

@@ -207,6 +207,68 @@ a { color: inherit; text-decoration: none; }
 .entry-meta { margin-top: 6px; font-size: 14px; color: var(--muted); }
 .tag--warn { background: var(--warn-bg); color: var(--warn-ink); }
 .approval-input { margin: 4px 0 12px; }
+
+/* ---------- Roll call ---------- */
+
+.vehicles { display: flex; gap: 10px; margin: 0 -20px 12px; padding: 2px 20px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.vehicles::-webkit-scrollbar { display: none; }
+/* Buttons that also react to a long press: switch off the iPhone's own long-press menu and text selection. */
+.vehicle, .rc-guest { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.vehicle {
+  flex: 0 0 auto;
+  min-width: 78px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 2px solid var(--line);
+  border-radius: 22px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.vehicle-label { font-size: 24px; font-weight: 700; line-height: 1.1; }
+.vehicle-count { font-size: 18px; font-weight: 600; color: var(--muted); }
+.vehicle.is-selected { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.vehicle.is-selected .vehicle-count { color: var(--brand-ink); opacity: 0.85; }
+.vehicle--add { min-width: 66px; font-size: 34px; font-weight: 400; color: var(--brand); }
+
+.rc-guest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 68px;
+  margin-bottom: 10px;
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 21px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.rc-guest:active { background: var(--brand-tint); }
+.rc-guest--forced { background: var(--undo); border-color: var(--undo); color: #ffffff; }   /* on this tour by force */
+.rc-guest--forced:active { background: var(--undo); filter: brightness(0.9); }
+.rc-tap { font-size: 15px; font-weight: 600; opacity: 0.7; }
+.rc-hint { margin: 6px 0 4px; font-size: 14px; color: var(--muted); text-align: center; }
+
+/* The Undo button, full width, under the vehicles */
+.undo-btn--wide { flex: none; width: 100%; min-width: 0; margin: 0 0 14px; flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+
+/* The roll call card of the Journal */
+.entry--button { display: block; width: 100%; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.roll-lines { margin-top: 10px; border-top: 1px solid var(--line); }
+.roll-line { align-items: baseline; justify-content: flex-start; gap: 12px; }
+.roll-line--undone span:last-child { text-decoration: line-through; color: var(--muted); }
 .tag {
   display: inline-block;
   margin-left: 8px;
@@ -250,7 +312,7 @@ button.strip-item.is-active { color: var(--brand-ink); }
 /* The top of an activity card is a button: tap it to open the card (all names + actions). */
 .card-head { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .card-head:active { opacity: 0.7; }
-.card-actions { display: flex; gap: 10px; margin-top: 14px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .card--soft { background: var(--soft); }
 .card--cancelled { background: var(--soft); border-style: dashed; }
 .card--cancelled .act-name { text-decoration: line-through; color: var(--muted); }

@@ -6,6 +6,7 @@
 //     #/trip/<id>/use/destination[/<destinationId>[/<slotId>]]   Use, By destination
 //     #/trip/<id>/use/guest[/<guestId>]                          Use, By guest (a list, or one guest)
 //     #/trip/<id>/settings                                       Settings
+//     #/trip/<id>/rollcall/<activityId>                          the roll call of one activity
 // Using the address means the iPhone's back gesture works as you would expect.
 //
 // Each view is a function that returns { node }: the screen content.
@@ -21,6 +22,7 @@ import { passcodeView } from './views/passcode.js';
 import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
 import { tripView } from './views/trip.js';
+import { rollCallView } from './views/rollcall.js';
 
 // What the app knows right now: who the owner is, every trip on this phone (by id), and the
 // journal entries of each trip (by trip id; also stored on the phone, this is a copy in memory).
@@ -29,6 +31,7 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), locked: 
 
 // The list of screens. The first one whose pattern matches the address is used.
 const routes = [
+  { pattern: /^#\/trip\/([^/]+)\/rollcall\/([^/]+)$/, view: rollCallView },
   { pattern: /^#\/trip\/([^/]+)\/(use|settings)(?:\/([a-z]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/, view: tripView },
   { pattern: /^#\/?$/, view: tripsView },
 ];

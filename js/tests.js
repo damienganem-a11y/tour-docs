@@ -8,7 +8,9 @@ import { applyChange, validateChanges } from './changes.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
-import { groupBatches, lastUndoable, summarize, wasForced, forcedPlacements } from './journal.js';
+import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements } from './journal.js';
+import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
+import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
@@ -607,6 +609,168 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   const r = await applyChange(ctx, trip.id, couple.map((g) => ({ ...moveOf(g.ref, 'S01', toActivity('S01-1')), force: true, approvedBy: 'Sam' })));
   check('Both people of a couple can be forced into the full Alfama tour in one action (22 / 20)',
     r.ok && countIn(ctx.state, activity('S01-1')) === 20 + couple.length && ctx.entries.length === couple.length && ctx.entries.every((e) => e.forced && e.approvedBy === 'Sam'));
+}
+
+// =====================================================================
+// Step 6a: the roll call (rollcall.js, changes.js, journal.js)
+// =====================================================================
+{
+  const startRollCall = (ctx, activityRef) => applyChange(ctx, ctx.state.id, { type: 'rollcall-start', activityId: activity(activityRef).id });
+  const rollCallOf = (ctx, activityRef) => findRollCall(ctx.state, activity(activityRef).id);
+  const inTram = trip.guests.filter((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-2').id);   // Tram 28: 16 / 16
+  const rc = (activityRef, type, extra = {}) => ({ type, activityId: activity(activityRef).id, ...extra });
+
+  // --- Starting ---
+  const ctx = makeCtx();
+  const r = await startRollCall(ctx, 'S01-2');
+  const call = rollCallOf(ctx, 'S01-2');
+  check('Start roll call: it is created with the 4 vehicles of the trip file (V1 to V4), nobody checked in',
+    r.ok && call.vehicles.map((v) => vehicleLabel(ctx.state, v)).join() === 'V1,V2,V3,V4' && Object.keys(call.checkins).length === 0 && call.endedAt === null, r.error);
+  check('The roll call remembers who started it and when', call.startedBy.name === 'Tester' && !Number.isNaN(Date.parse(call.startedAt)));
+  check('The journal says "Started the roll call: Tram 28 and viewpoints (V1, V2, V3, V4)"',
+    summarize(groupBatches(ctx.entries)[0]) === 'Started the roll call: Tram 28 and viewpoints (V1, V2, V3, V4)', summarize(groupBatches(ctx.entries)[0]));
+  check('Only one roll call per activity', !(await startRollCall(ctx, 'S01-2')).ok);
+  const cancelledCtx = makeCtx();
+  await applyChange(cancelledCtx, trip.id, { type: 'cancel-tour', activityId: activity('S01-2').id });
+  check('A cancelled tour has no roll call', !(await startRollCall(cancelledCtx, 'S01-2')).ok);
+  check('What vehicles are called comes from the trip data (default "V"): "Bus 2" if the trip says so',
+    trip.vehicleLabel === 'V' && vehicleLabel({ vehicleLabel: 'Bus ' }, { number: 2 }) === 'Bus 2' && vehicleLabel({}, { number: 2 }) === 'V2');
+  check('A new trip file gives an empty list of roll calls', Array.isArray(trip.rollCalls) && trip.rollCalls.length === 0);
+
+  // --- Checking guests in ---
+  const [a, b, c] = inTram;
+  const [v1, v2] = call.vehicles;
+  check('One tap checks a guest into a vehicle, and they leave the list of those still expected',
+    (await applyChange(ctx, trip.id, rc('S01-2', 'checkin', { guestId: a.id, vehicleId: v1.id }))).ok
+    && rollCallState(ctx.state, rollCallOf(ctx, 'S01-2')).expected.length === 15 && rollCallState(ctx.state, rollCallOf(ctx, 'S01-2')).perVehicle.get(v1.id).length === 1);
+  await applyChange(ctx, trip.id, rc('S01-2', 'checkin', { guestId: b.id, vehicleId: v1.id }));
+  await applyChange(ctx, trip.id, rc('S01-2', 'checkin', { guestId: c.id, vehicleId: v2.id }));
+  const state = rollCallState(ctx.state, rollCallOf(ctx, 'S01-2'));
+  check('Each vehicle shows its own count (V1: 2, V2: 1) and 13 are still expected',
+    state.perVehicle.get(v1.id).length === 2 && state.perVehicle.get(v2.id).length === 1 && state.expected.length === 13 && state.checkedIn.length === 3);
+  const tapJournal = groupBatches(ctx.entries).filter((x) => x.kind === 'rollcall');
+  check('Every tap is one journal action, told in words ("Priya A. checked in to V1")',
+    tapJournal.length === 4 && /^[A-Z][\w-]+ [A-Z]\.? checked in to V1$/.test(summarize(tapJournal[1])), summarize(tapJournal[1]));
+  check('Somebody who is not booked on this tour cannot be checked in',
+    !(await applyChange(ctx, trip.id, rc('S01-2', 'checkin', { guestId: guest('G001').id, vehicleId: v1.id }))).ok);
+  check('A vehicle that does not exist, or the same vehicle twice, is refused',
+    !(await applyChange(ctx, trip.id, rc('S01-2', 'checkin', { guestId: inTram[5].id, vehicleId: 'nope' }))).ok && !(await applyChange(ctx, trip.id, rc('S01-2', 'checkin', { guestId: a.id, vehicleId: v1.id }))).ok);
+
+  // Move someone to another vehicle, or take them out
+  const moved = await applyChange(ctx, trip.id, rc('S01-2', 'checkin', { guestId: a.id, vehicleId: v2.id }));
+  check('A checked-in guest can be moved to another vehicle (the journal says "moved from V1 to V2")',
+    moved.ok && rollCallOf(ctx, 'S01-2').checkins[a.id] === v2.id && /moved from V1 to V2$/.test(summarize(groupBatches(ctx.entries).at(-1))), summarize(groupBatches(ctx.entries).at(-1)));
+  const out = await applyChange(ctx, trip.id, rc('S01-2', 'checkout', { guestId: a.id }));
+  check('A guest can be taken out of the vehicle: back on the list', out.ok && !rollCallOf(ctx, 'S01-2').checkins[a.id] && rollCallState(ctx.state, rollCallOf(ctx, 'S01-2')).expected.some((g) => g.id === a.id));
+  check('Taking out somebody who is not in a vehicle is refused', !(await applyChange(ctx, trip.id, rc('S01-2', 'checkout', { guestId: a.id }))).ok);
+
+  // --- Vehicles: add, renumber ---
+  const add = await applyChange(ctx, trip.id, rc('S01-2', 'vehicle-add'));
+  await applyChange(ctx, trip.id, rc('S01-2', 'vehicle-add'));
+  check('The + adds the next vehicle: V5, then V6', add.ok && rollCallOf(ctx, 'S01-2').vehicles.map((v) => vehicleLabel(ctx.state, v)).join() === 'V1,V2,V3,V4,V5,V6');
+  const v3 = rollCallOf(ctx, 'S01-2').vehicles[2];
+  const renamed = await applyChange(ctx, trip.id, rc('S01-2', 'vehicle-number', { vehicleId: v3.id, number: 9 }));
+  check('A vehicle can be renumbered (V3 becomes V9); the journal says so', renamed.ok && vehicleLabel(ctx.state, rollCallOf(ctx, 'S01-2').vehicles[2]) === 'V9' && summarize(groupBatches(ctx.entries).at(-1)) === 'V3 renumbered V9');
+  check('Two vehicles cannot share a number; nor can it be 0, 100 or 2.5',
+    !(await applyChange(ctx, trip.id, rc('S01-2', 'vehicle-number', { vehicleId: v3.id, number: 1 }))).ok
+    && !(await applyChange(ctx, trip.id, rc('S01-2', 'vehicle-number', { vehicleId: v3.id, number: 0 }))).ok
+    && !(await applyChange(ctx, trip.id, rc('S01-2', 'vehicle-number', { vehicleId: v3.id, number: 100 }))).ok
+    && !(await applyChange(ctx, trip.id, rc('S01-2', 'vehicle-number', { vehicleId: v3.id, number: 2.5 }))).ok);
+  check('Roll call changes cannot be mixed with others in one change',
+    !validateChanges(ctx.state, owner, [rc('S01-2', 'vehicle-add'), moveOf(inTram[6].ref, 'S01', LEISURE)], ctx.entries).ok);
+  check('Somebody who is not the owner cannot start or run a roll call',
+    !(await startRollCall(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), 'S01-1')).ok);
+  const archived = makeCtx(); archived.state.archivedAt = '2027-02-05T00:00:00.000Z';
+  check('An archived trip has no roll call changes either', !(await startRollCall(archived, 'S01-1')).ok);
+
+  // --- Undo takes every one of those back, step by step (Ctrl+Z) ---
+  const undoAll = makeCtx();
+  await startRollCall(undoAll, 'S01-2');
+  const uv = rollCallOf(undoAll, 'S01-2').vehicles;
+  await applyChange(undoAll, trip.id, rc('S01-2', 'checkin', { guestId: a.id, vehicleId: uv[0].id }));
+  await applyChange(undoAll, trip.id, rc('S01-2', 'checkin', { guestId: a.id, vehicleId: uv[1].id }));   // moved to V2
+  await applyChange(undoAll, trip.id, rc('S01-2', 'checkout', { guestId: a.id }));
+  await applyChange(undoAll, trip.id, rc('S01-2', 'vehicle-add'));
+  await applyChange(undoAll, trip.id, rc('S01-2', 'vehicle-number', { vehicleId: uv[2].id, number: 9 }));
+  const steps = ['renumbering', 'the added vehicle', 'the check-out', 'the move to V2', 'the check-in', 'the whole roll call'];
+  const results = [];
+  for (const step of steps) results.push([step, (await applyChange(undoAll, trip.id, { type: 'undo' })).ok]);
+  check('Six undos take back: renumbering, adding V5, the check-out, the move to V2, the check-in, the start', results.every(([, ok]) => ok), JSON.stringify(results));
+  check('...and the trip is EXACTLY as it was before the roll call (no roll call, nobody checked in)', restoredExactly(undoAll.state, trip) && undoAll.state.rollCalls.length === 0);
+  check('The journal kept everything (12 actions: 6 to do, 6 to undo) and nothing more can be undone',
+    groupBatches(undoAll.entries).length === 12 && lastUndoable(undoAll.entries) === null);
+
+  // --- Add guest: somebody from another tour joins and goes straight into a vehicle ---
+  const addCtx = makeCtx();
+  await startRollCall(addCtx, 'S01-2');
+  const av = rollCallOf(addCtx, 'S01-2').vehicles[1];
+  const fromAlfama = trip.guests.find((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-1').id);
+  const intoFullTram = { ...moveOf(fromAlfama.ref, 'S01', toActivity('S01-2')), checkinVehicleId: av.id };
+  check('Add guest into a FULL tour needs FORCE, like everywhere else', !(await applyChange(addCtx, trip.id, intoFullTram)).ok);
+  const forcedIn = await applyChange(addCtx, trip.id, { ...intoFullTram, force: true, approvedBy: 'Sam' });
+  check('...with FORCE, the guest joins Tram 28 (17 / 16) AND goes into V2, as one action of two lines (a forced move, a check-in)',
+    forcedIn.ok && countIn(addCtx.state, activity('S01-2')) === 17 && rollCallOf(addCtx, 'S01-2').checkins[fromAlfama.id] === av.id
+    && addCtx.entries.filter((e) => e.type === 'move' && e.forced).length === 1 && addCtx.entries.some((e) => e.type === 'checkin') && new Set(addCtx.entries.map((e) => e.batchId)).size === 2);
+  const addBatch = groupBatches(addCtx.entries).at(-1);
+  check('The journal tells it in one sentence: "... to Tram 28 and viewpoints and into V2 (forced, approved by Sam)"',
+    /and into V2 \(forced, approved by Sam\)$/.test(summarize(addBatch)) && addBatch.kind === 'move' && addBatch.rollCallId, summarize(addBatch));
+  await applyChange(addCtx, trip.id, { type: 'undo' });
+  check('Undo takes back both: the guest is back in Alfama and out of the vehicle',
+    guestPlace(addCtx.state, fromAlfama, slot('S01')).activity.id === activity('S01-1').id && !rollCallOf(addCtx, 'S01-2').checkins[fromAlfama.id]);
+
+  const easy = makeCtx();
+  const sintra = activity('S02-1');
+  const other = trip.guests.find((g) => { const p = guestPlace(trip, g, slot('S02')); return p.kind === 'activity' && p.activity.id !== sintra.id; });
+  await startRollCall(easy, 'S02-1');
+  const ev = rollCallOf(easy, 'S02-1').vehicles[0];
+  const easyIn = await applyChange(easy, trip.id, { ...moveOf(other.ref, 'S02', toActivity('S02-1')), checkinVehicleId: ev.id });
+  check('Add guest into a tour with room: no FORCE needed, and the guest is in the vehicle', easyIn.ok && easy.entries.every((e) => !e.forced) && rollCallOf(easy, 'S02-1').checkins[other.id] === ev.id);
+  check('A vehicle can only be used when joining a tour that has a roll call, never for At leisure',
+    !(await applyChange(makeCtx(), trip.id, { ...moveOf(other.ref, 'S02', toActivity('S02-1')), checkinVehicleId: 'x' })).ok
+    && !(await applyChange(easy, trip.id, { ...moveOf(inTram[0].ref, 'S01', LEISURE), checkinVehicleId: ev.id })).ok);
+
+  // A guest moved off the tour after checking in is not counted anymore
+  const leftCtx = makeCtx();
+  await startRollCall(leftCtx, 'S01-2');
+  await applyChange(leftCtx, trip.id, rc('S01-2', 'checkin', { guestId: a.id, vehicleId: rollCallOf(leftCtx, 'S01-2').vehicles[0].id }));
+  await applyChange(leftCtx, trip.id, moveOf(a.ref, 'S01', LEISURE));
+  const leftState = rollCallState(leftCtx.state, rollCallOf(leftCtx, 'S01-2'));
+  check('A guest moved to At leisure after checking in is no longer counted in the vehicle nor expected', leftState.checkedIn.length === 0 && leftState.expected.length === 15);
+
+  // Many quick taps at the same time are all done, one after the other, in order
+  const rush = makeCtx();
+  await startRollCall(rush, 'S01-2');
+  const rv = rollCallOf(rush, 'S01-2').vehicles[0];
+  const taps = await Promise.all(inTram.slice(0, 10).map((g) => applyChange(rush, trip.id, rc('S01-2', 'checkin', { guestId: g.id, vehicleId: rv.id }))));
+  check('10 taps as fast as possible: all accepted, in order, each with its own number', taps.every((x) => x.ok) && rush.commits.length === 11 && rush.state.changeCount === 11);
+  check('Roll call lines never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(rush.entries)));
+
+  // --- The Journal: ONE card per roll call ---
+  const jctx = makeCtx();
+  await startRollCall(jctx, 'S01-2');
+  const jv = rollCallOf(jctx, 'S01-2').vehicles;
+  await applyChange(jctx, trip.id, rc('S01-2', 'checkin', { guestId: a.id, vehicleId: jv[0].id }));
+  await applyChange(jctx, trip.id, rc('S01-2', 'checkin', { guestId: b.id, vehicleId: jv[1].id }));
+  await applyChange(jctx, trip.id, { type: 'undo' });
+  await applyChange(jctx, trip.id, moveOf(guest('G001').ref, 'S05', LEISURE)); // an ordinary move, not part of the roll call
+  const items = journalItems(groupBatches(jctx.entries));
+  check('The Journal folds start, check-ins and the undo into ONE roll call card; the ordinary move is its own card',
+    items.length === 2 && items[0].kind === 'batch' && items[1].kind === 'rollcall' && items[1].batches.length === 4, JSON.stringify(items.map((i) => `${i.kind}:${i.batches.length}`)));
+  check('Newest first: the ordinary move is on top', items[0].seq > items[1].seq);
+  const inside = items[1].batches;
+  check('Inside the card, in order: start, two check-ins (the second undone), and the undo line',
+    inside.map((x) => x.kind).join() === 'rollcall,rollcall,rollcall,undo' && inside[2].undone === true && /^Undid: .* checked in to V2$/.test(summarize(inside[3])), inside.map((x) => summarize(x)).join(' | '));
+
+  // --- The long-press helper: a tap is a tap, a long press is not also a tap ---
+  const log = [];
+  const button = document.createElement('button');
+  pressable(button, { tap: () => log.push('tap'), long: () => log.push('long'), ms: 40 });
+  const fire = (type) => button.dispatchEvent(new PointerEvent(type, { bubbles: true }));
+  fire('pointerdown'); fire('pointerup'); button.click();
+  await new Promise((r) => setTimeout(r, 70));
+  fire('pointerdown'); await new Promise((r) => setTimeout(r, 80)); fire('pointerup'); button.click();
+  fire('pointerdown'); fire('pointercancel'); await new Promise((r) => setTimeout(r, 80));
+  check('A quick touch is a tap; holding the finger is a long press and NOT also a tap; scrolling away cancels it', log.join() === 'tap,long', log.join());
 }
 
 // =====================================================================

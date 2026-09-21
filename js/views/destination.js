@@ -12,6 +12,9 @@ import { pageHead } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo } from './move.js';
 import { undoButton } from './undo.js';
 import { forcedPlacements } from '../journal.js';
+import { applyChange } from '../changes.js';
+import { findRollCall } from '../rollcall.js';
+import { showToast } from '../ui.js';
 
 const PREVIEW = 4; // names shown on a closed card
 
@@ -57,6 +60,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       countText: activity.cancelled ? 'Cancelled' : count.text, bad: activity.cancelled || count.tone === 'bad',
       cancelled: activity.cancelled,
       actions: activity.cancelled ? [] : [
+        rollCallAction(ctx, trip, activity),
         { label: '+ Add guest', run: () => startAddGuest(ctx, trip, slot, activity) },
         { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
       ],
@@ -81,6 +85,19 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
     leisureCard,
     attention.length > 0 ? attentionCard(ctx, trip, slot, attention, names) : null
   );
+}
+
+// The "Roll call" button of an activity card: starts the roll call the first time, then just opens it.
+function rollCallAction(ctx, trip, activity) {
+  const open = () => ctx.go(`#/trip/${trip.id}/rollcall/${activity.id}`);
+  if (findRollCall(trip, activity.id)) return { label: 'Continue roll call', primary: true, run: open };
+  return {
+    label: 'Start roll call', primary: true,
+    run: async () => {
+      const result = await applyChange(ctx, trip.id, { type: 'rollcall-start', activityId: activity.id });
+      if (result.ok) open(); else showToast(result.error, true);
+    },
+  };
 }
 
 // A row of tappable pills that scrolls sideways.
@@ -128,7 +145,7 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
             }),
             !open && sorted.length > PREVIEW ? h('button', { class: 'chip chip--more', type: 'button', onclick: toggle }, `+${sorted.length - PREVIEW}`) : null)]),
       ...(open && actions.length > 0
-        ? [h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: a.run }, a.label)))]
+        ? [h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: `btn btn--small${a.primary ? '' : ' btn--plain'}`, type: 'button', onclick: a.run }, a.label)))]
         : [])
     );
   };
