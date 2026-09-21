@@ -5,7 +5,8 @@
 import { buildTrip } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores } from './db.js';
 import { newId } from './ids.js';
-import { localToInstant, formatTime, tripDates, isValidTimeZone } from './time.js';
+import { localToInstant, formatTime, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
+import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -131,6 +132,72 @@ checkRefused('Refuses a half-day in a destination that does not exist', () => { 
 checkRefused('Refuses two guests with the same id', () => { const r = copyOfRaw(); r.guests[1].id = r.guests[0].id; buildTrip(r); }, /appears twice/);
 checkRefused('Refuses sign-ups for a guest who does not exist', () => { const r = copyOfRaw(); r.signups.G999 = {}; buildTrip(r); }, /G999/);
 checkRefused('Refuses a start time that is not a time', () => { const r = copyOfRaw(); r.slots[0].options[0].start = 'after lunch'; buildTrip(r); }, /start time/);
+
+// =====================================================================
+// Step 2: names, who is where, capacity wording (rules.js)
+// =====================================================================
+
+const names = displayNames(trip.guests);
+const nameOf = (ref) => names.get(guest(ref).id);
+const fake = (id, first, last) => ({ id, first, last });
+const shown = (guests) => displayNames(guests);
+
+// --- Display names ---
+check('Names are first name + last initial: "Priya S."', nameOf('G002') === 'Priya S.', nameOf('G002'));
+check('Two unrelated Smith couples: Richard S., Priya S., Peter S., Mary S. are all different',
+  new Set(['G001', 'G002', 'G003', 'G004'].map(nameOf)).size === 4 && nameOf('G003') === 'Peter S.' && nameOf('G004') === 'Mary S.',
+  ['G001', 'G002', 'G003', 'G004'].map(nameOf).join(', '));
+check('Nobody in the whole trip shows the same name as somebody else', new Set(trip.guests.map((g) => names.get(g.id))).size === 80);
+const marias = trip.guests.filter((g) => g.first === 'Maria' && g.last.startsWith('M'));
+check('Two guests "Maria M." get letters added: Maria Mb. and Maria Mo.',
+  marias.length === 2 && marias.map((g) => names.get(g.id)).sort().join(' / ') === 'Maria Mb. / Maria Mo.', marias.map((g) => names.get(g.id)).join(' / '));
+{
+  const s = shown([fake('a', 'John', 'Smith'), fake('b', 'John', 'Stone')]);
+  check('John Smith and John Stone show as "John Sm." and "John St."', s.get('a') === 'John Sm.' && s.get('b') === 'John St.', `${s.get('a')} / ${s.get('b')}`);
+  const same = shown([fake('a', 'John', 'Smith'), fake('b', 'John', 'Smith')]);
+  check('Two guests with identical names show their full name', same.get('a') === 'John Smith' && same.get('b') === 'John Smith');
+  const mixed = shown([fake('a', 'John', 'Smith'), fake('b', 'John', 'Smith'), fake('c', 'John', 'Stone')]);
+  check('Still-identical guests show the full name while others keep the short one',
+    mixed.get('a') === 'John Smith' && mixed.get('c') === 'John St.', `${mixed.get('a')} / ${mixed.get('c')}`);
+  const shortName = shown([fake('a', 'Ann', 'Li'), fake('b', 'Ann', 'Lim')]);
+  check('A short last name is shown in full without a dot ("Ann Li" and "Ann Lim")', shortName.get('a') === 'Ann Li' && shortName.get('b') === 'Ann Lim', `${shortName.get('a')} / ${shortName.get('b')}`);
+  const accent = shown([fake('a', 'Zoë', 'Åberg'), fake('b', 'Zoë', 'Ågren')]);
+  check('Accented letters count as letters ("Zoë Åb." and "Zoë Åg.")', accent.get('a') === 'Zoë Åb.' && accent.get('b') === 'Zoë Åg.');
+}
+check('Search ignores accents: Grünewald / Sørensen / Lucía', plain('Grünewald') === 'grunewald' && plain('Sørensen') === 'sorensen' && plain('Lucía') === 'lucia');
+check('The party line reads "Couple with Priya S."', partyLabel(trip, guest('G001'), names) === 'Couple with Priya S.', partyLabel(trip, guest('G001'), names));
+check('A guest travelling alone reads "Travelling solo"', trip.parties.filter((p) => p.type === 'Solo').length === 10
+  && partyLabel(trip, trip.guests.find((g) => trip.parties.find((p) => p.id === g.partyId).type === 'Solo'), names) === 'Travelling solo');
+
+// --- Who is where ---
+const perSlot = trip.slots.map((s) => {
+  const w = whoIsWhere(trip, s);
+  return { s, inActivities: [...w.byActivity.values()].reduce((n, g) => n + g.length, 0), leisure: w.leisure.length, attention: w.attention.length };
+});
+check('In all 39 half-days, activities + at leisure + needs-a-look add up to all 80 guests',
+  perSlot.every((x) => x.inActivities + x.leisure + x.attention === 80), perSlot.filter((x) => x.inActivities + x.leisure + x.attention !== 80).map((x) => x.s.ref).join(', '));
+check('Across the trip, exactly 6 guest-half-days need a look (5 empty + 1 misspelled)', perSlot.reduce((n, x) => n + x.attention, 0) === 6);
+check('At leisure is counted per half-day, not as an activity', perSlot.every((x) => x.leisure >= 0) && perSlot.reduce((n, x) => n + x.leisure, 0) === 1225);
+{
+  const istanbulAttention = whoIsWhere(trip, slot('S09')).attention;
+  check('G022 in Istanbul (S09) shows in "needs a look" with the misspelled name',
+    istanbulAttention.length === 1 && istanbulAttention[0].guest.ref === 'G022' && istanbulAttention[0].reason === 'Unknown activity: "Topkapi palace & Hagia Sofia"', JSON.stringify(istanbulAttention.map((a) => a.reason)));
+  const blank = whoIsWhere(trip, slot('S10')).attention;
+  check('An empty sign-up (G014 on S10) reads "Nothing chosen yet"', blank.length === 1 && blank[0].guest.ref === 'G014' && blank[0].reason === 'Nothing chosen yet');
+}
+{
+  const inHammamNow = whoIsWhere(trip, slot('S05')).byActivity.get(hammam.id);
+  check('Hammam and spa shows 10 guests', inHammamNow.length === 10);
+  const c = capacityInfo(inHammamNow.length, hammam.capacity);
+  check('Hammam and spa reads "10 / 8 · Over by 2" in the warning colour', c.text === '10 / 8 · Over by 2' && c.tone === 'bad', c.text);
+}
+check('Capacity wording: "6 / 8", "8 / 8 · Full", and just "12" with no capacity',
+  capacityInfo(6, 8).text === '6 / 8' && capacityInfo(6, 8).tone === null && capacityInfo(8, 8).text === '8 / 8 · Full' && capacityInfo(8, 8).tone === 'bad' && capacityInfo(12, null).text === '12');
+check('P08 (G015 + G016) are kept apart on S10 in the guest view',
+  guestPlace(trip, guest('G015'), slot('S10')).activity.name !== guestPlace(trip, guest('G016'), slot('S10')).activity.name);
+check('A guest at leisure is reported as leisure, an empty sign-up as blank',
+  guestPlace(trip, guest('G014'), slot('S10')).kind === 'blank' && trip.guests.some((g) => guestPlace(trip, g, slot('S10')).kind === 'leisure'));
+check('Dates read like "Sat 16 Jan"', formatWeekdayDate('2027-01-16') === 'Sat 16 Jan', formatWeekdayDate('2027-01-16'));
 
 // --- Show the results ---
 const out = document.getElementById('out');

@@ -3,9 +3,9 @@
 // The app has a handful of screens ("views"). The address after the # in the URL says which one
 // to show:
 //     #/                              the Trips screen
-//     #/trip/<id>/use/destination     inside a trip: Use, By destination
-//     #/trip/<id>/use/guest           inside a trip: Use, By guest
-//     #/trip/<id>/settings            inside a trip: Settings
+//     #/trip/<id>/use/destination[/<destinationId>[/<slotId>]]   Use, By destination
+//     #/trip/<id>/use/guest[/<guestId>]                          Use, By guest (a list, or one guest)
+//     #/trip/<id>/settings                                       Settings
 // Using the address means the iPhone's back gesture works as you would expect.
 //
 // Each view is a function that returns { node }: the screen content.
@@ -24,7 +24,7 @@ const state = { owner: undefined, trips: new Map() };
 
 // The list of screens. The first one whose pattern matches the address is used.
 const routes = [
-  { pattern: /^#\/trip\/([^/]+)\/(use|settings)(?:\/([a-z]+))?$/, view: tripView },
+  { pattern: /^#\/trip\/([^/]+)\/(use|settings)(?:\/([a-z]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/, view: tripView },
   { pattern: /^#\/?$/, view: tripsView },
 ];
 

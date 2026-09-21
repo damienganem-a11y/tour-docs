@@ -66,6 +66,15 @@ function formatDay(date, withYear) {
     .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: withYear ? 'numeric' : undefined, timeZone: 'UTC' });
 }
 
+// "2027-01-16" -> "Sat 16 Jan"
+export function formatWeekdayDate(date) {
+  const [year, month, day] = date.split('-').map(Number);
+  const parts = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+    .formatToParts(new Date(Date.UTC(year, month - 1, day)));
+  const part = (type) => parts.find((p) => p.type === type).value;
+  return `${part('weekday')} ${part('day')} ${part('month')}`; // built by hand so the wording is the same on every phone
+}
+
 // First and last day of a trip: "12 Jan to 4 Feb 2027".
 export function tripDates(start, days) {
   const last = addDays(start, days - 1);
