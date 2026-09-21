@@ -10,32 +10,36 @@
 // A change is one of:
 //   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' } }
 //   { type: 'cancel-tour', activityId }        everybody on it goes to At leisure, it stays as "Cancelled"
+//   { type: 'undo' }                           takes back the last action of the trip (like Ctrl+Z)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
 //
+// Undo never deletes anything from the journal: it writes new entries saying what was taken back.
 // Privacy: journal entries never contain dietary info.
 
 import { newId } from './ids.js';
 import { canUser } from './users.js';
-import { displayNames, guestPlace, countIn, slotLabel } from './rules.js';
+import { displayNames, guestPlace, countIn, slotLabel, plural } from './rules.js';
+import { lastUndoable, summarize } from './journal.js';
 
 const fail = (error) => ({ ok: false, error });
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 // ---------- 1. Checking changes (changes nothing) ----------
 
 // Returns { ok: true } or { ok: false, error: 'plain-language reason' }.
 // The screens also use this to grey out choices that would not be allowed.
-export function validateChanges(trip, user, changes) {
+// journal: the trip's journal entries (only Undo needs them).
+export function validateChanges(trip, user, changes, journal = []) {
   if (!canUser(user, 'change')) return fail('You do not have permission to change bookings.');
   if (!trip) return fail('This trip is not on this phone.');
   if (trip.archivedAt) return fail('This trip is archived. Un-archive it to change it.');
   if (!Array.isArray(changes) || changes.length === 0) return fail('There is nothing to change.');
 
   const names = displayNames(trip.guests);
-  if (changes.some((c) => c.type === 'cancel-tour') && changes.length > 1) {
-    return fail('Cancelling a tour is a change of its own.');
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo') && changes.length > 1) {
+    return fail('Cancelling a tour and undoing are changes of their own.');
   }
+  if (changes[0].type === 'undo') return validateUndo(trip, journal);
 
   const seen = new Set();     // the same guest cannot be changed twice in the same half-day
   const flows = new Map();    // activityId -> { activity, joining, leaving }, to check capacity below
@@ -96,6 +100,39 @@ export function validateChanges(trip, user, changes) {
   return { ok: true };
 }
 
+// Undo is only possible if the trip still looks the way that action left it. (It always does, as the
+// last action is the last thing that happened; this check protects against surprises.)
+function validateUndo(trip, journal) {
+  const target = lastUndoable(journal);
+  if (!target) return fail('There is nothing to undo.');
+
+  for (const entry of target.entries) {
+    if (entry.type === 'cancel-tour') {
+      const activity = trip.activities.find((a) => a.id === entry.activityId);
+      if (!activity || !activity.cancelled) return fail(`"${entry.activityLabel}" is not cancelled anymore, so this cannot be undone.`);
+    }
+    if (entry.type !== 'move') continue;
+
+    const guest = trip.guests.find((g) => g.id === entry.guestId);
+    const slot = trip.slots.find((s) => s.id === entry.slotId);
+    if (!guest || !slot) return fail('This action cannot be undone: the guest or the half-day no longer exists.');
+    if (!isPlace(guestPlace(trip, guest, slot), entry.to)) {
+      return fail(`This action cannot be undone: ${entry.guestName} is no longer where it left them.`);
+    }
+    if (entry.from.kind === 'activity' && !trip.activities.some((a) => a.id === entry.from.activityId)) {
+      return fail(`This action cannot be undone: "${entry.from.label}" no longer exists.`);
+    }
+  }
+  return { ok: true };
+}
+
+// Is a guest's place (from guestPlace) the one a journal entry describes ({ kind, activityId, raw })?
+function isPlace(place, spec) {
+  if (spec.kind === 'activity') return place.kind === 'activity' && place.activity.id === spec.activityId;
+  if (spec.kind === 'unknown') return place.kind === 'unknown' && place.raw === spec.raw;
+  return place.kind === spec.kind; // 'leisure' or 'blank'
+}
+
 // ---------- 2. Making changes ----------
 
 // Changes are handled one at a time, in order, so two quick taps can never trample each other.
@@ -116,7 +153,8 @@ export function applyChange(ctx, tripId, changes) {
 
 async function doApply(ctx, tripId, changes) {
   const trip = ctx.trip(tripId);
-  const check = validateChanges(trip, ctx.owner, changes);
+  const journal = ctx.journal(tripId);
+  const check = validateChanges(trip, ctx.owner, changes, journal);
   if (!check.ok) return check;
 
   // Work on a copy. The real trip is only replaced once the copy is safely saved, so a failed
@@ -127,12 +165,50 @@ async function doApply(ctx, tripId, changes) {
   const at = new Date().toISOString();      // the exact moment
   const entries = [];
 
+  // Every action gets the next number in the trip's own order (`seq`), so the journal keeps its order even
+  // when two actions happen in the same millisecond. (Journals from before this had no numbers: they count as 0.)
+  const lastSeq = Math.max(trip.changeCount ?? 0, ...journal.map((e) => e.seq ?? 0));
+  next.changeCount = lastSeq + 1;
+
   const base = () => ({
     id: newId(), tripId: trip.id, at,
+    seq: next.changeCount, n: entries.length, // n = this entry's place inside its action
     who: { id: ctx.owner.id, name: ctx.owner.name, role: ctx.owner.role },
     source: 'app',                          // later: 'colleague request', 'whatsapp'...
     batchId,
   });
+
+  // Undo: take back the last action of the trip, and write what was taken back.
+  if (changes[0].type === 'undo') {
+    const target = lastUndoable(journal);
+    const summary = summarize(target);
+    const [firstEntry] = target.entries;
+    entries.push({
+      ...base(), type: 'undo', undoesBatchId: target.batchId, undoesSummary: summary,
+      slotId: firstEntry.slotId, slotLabel: firstEntry.slotLabel, place: firstEntry.place,
+    });
+
+    for (const entry of [...target.entries].reverse()) {
+      if (entry.type === 'cancel-tour') {
+        next.activities.find((a) => a.id === entry.activityId).cancelled = false; // the tour is back
+        continue;
+      }
+      // Put the guest back where they were. "Nothing chosen yet" is put back as nothing.
+      const row = (next.bookings[entry.guestId] ??= {});
+      if (entry.from.kind === 'blank') delete row[entry.slotId];
+      else if (entry.from.kind === 'leisure') row[entry.slotId] = { kind: 'leisure' };
+      else if (entry.from.kind === 'unknown') row[entry.slotId] = { kind: 'unknown', raw: entry.from.raw };
+      else row[entry.slotId] = { kind: 'activity', activityId: entry.from.activityId };
+
+      entries.push({
+        ...base(), type: 'move', cause: 'undo',
+        guestId: entry.guestId, guestName: entry.guestName,
+        slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place,
+        from: entry.to, to: entry.from,
+      });
+    }
+    return save(ctx, next, entries, { summary });
+  }
 
   // A "move" of one guest in one half-day.
   const move = (guest, slot, to, cause) => {
@@ -169,12 +245,17 @@ async function doApply(ctx, tripId, changes) {
     for (const guest of booked) move(guest, slot, { kind: 'leisure' }, 'cancel-tour');
   }
 
+  return save(ctx, next, entries, {});
+}
+
+// Saves the changed trip and its journal entries together. If that fails, nothing changed.
+async function save(ctx, next, entries, extra) {
   try {
     await ctx.commit(next, entries);
   } catch (error) {
     return fail(`Could not save on this phone (${error.message}). Nothing was changed.`);
   }
-  return { ok: true, entries };
+  return { ok: true, entries, ...extra };
 }
 
 // Where a change happened: the half-day, and the place with its time zone (the journal shows

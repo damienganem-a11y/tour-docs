@@ -7,8 +7,9 @@ import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal } from '.
 import { applyChange, validateChanges } from './changes.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
-import { localToInstant, formatTime, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
-import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers } from './rules.js';
+import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
+import { groupBatches, lastUndoable, summarize } from './journal.js';
+import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, slotLabel } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -210,9 +211,10 @@ check('Dates read like "Sat 16 Jan"', formatWeekdayDate('2027-01-16') === 'Sat 1
 const owner = makeOwner(newId(), 'Tester');
 const makeCtx = (user = owner) => {
   const ctx = {
-    owner: user, state: structuredClone(trip), commits: [], journal: [],
+    owner: user, state: structuredClone(trip), commits: [], entries: [],
     trip: (id) => (id === ctx.state.id ? ctx.state : undefined),
-    async commit(next, entries) { ctx.commits.push(next); ctx.journal.push(...entries); ctx.state = next; },
+    journal: () => ctx.entries,
+    async commit(next, entries) { ctx.commits.push(next); ctx.entries.push(...entries); ctx.state = next; },
   };
   return ctx;
 };
@@ -231,8 +233,8 @@ let ctx1; // the context of the first test, reused by the storage test at the en
   const ctx = makeCtx();
   const leaver = inHammam[0];
   const r = await applyChange(ctx, trip.id, moveOf(leaver.ref, 'S05', LEISURE));
-  const e = ctx.journal[0];
-  check('Leaving the Hammam for At leisure works: one save, one journal entry', r.ok && ctx.commits.length === 1 && ctx.journal.length === 1);
+  const e = ctx.entries[0];
+  check('Leaving the Hammam for At leisure works: one save, one journal entry', r.ok && ctx.commits.length === 1 && ctx.entries.length === 1);
   check('The guest is now At leisure and the Hammam went from 10 to 9', placeNow(ctx, leaver.ref, 'S05').kind === 'leisure' && countIn(ctx.state, hammam) === 9);
   check('The journal says who, what, from, to and the half-day',
     e.who.name === 'Tester' && e.who.role === 'owner' && e.type === 'move' && e.guestId === leaver.id
@@ -249,7 +251,7 @@ let ctx1; // the context of the first test, reused by the storage test at the en
   const ctx = makeCtx();
   const r = await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S05', toActivity('S05-2')));
   check('Joining the full, overbooked Hammam (10 / 8) is refused, with a clear message', !r.ok && /full \(10 \/ 8\)/.test(r.error), r.error);
-  check('A refused change saves nothing and writes nothing', ctx.commits.length === 0 && ctx.journal.length === 0);
+  check('A refused change saves nothing and writes nothing', ctx.commits.length === 0 && ctx.entries.length === 0);
   const same = await applyChange(ctx, trip.id, moveOf(inHammam[0].ref, 'S05', toActivity('S05-2')));
   check('Choosing the activity a guest is already in is refused', !same.ok && /already in/.test(same.error), same.error);
   const otherSlot = await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S05', toActivity('S01-1')));
@@ -268,12 +270,12 @@ let ctx1; // the context of the first test, reused by the storage test at the en
   const ctx = makeCtx();
   const target = trip.activities.find((a) => a.slotId === slot('S10').id && (a.capacity === null || countIn(trip, a) < a.capacity));
   const r = await applyChange(ctx, trip.id, moveOf('G014', 'S10', { kind: 'activity', activityId: target.id }));
-  check('An empty sign-up (G014) can be filled; the journal says "Nothing chosen yet"', r.ok && ctx.journal[0].from.kind === 'blank' && ctx.journal[0].from.label === 'Nothing chosen yet', JSON.stringify(ctx.journal[0]?.from));
+  check('An empty sign-up (G014) can be filled; the journal says "Nothing chosen yet"', r.ok && ctx.entries[0].from.kind === 'blank' && ctx.entries[0].from.label === 'Nothing chosen yet', JSON.stringify(ctx.entries[0]?.from));
   const ctx2 = makeCtx();
   const target2 = trip.activities.find((a) => a.slotId === slot('S09').id && (a.capacity === null || countIn(trip, a) < a.capacity));
   const r2 = await applyChange(ctx2, trip.id, moveOf('G022', 'S09', { kind: 'activity', activityId: target2.id }));
   check('The misspelled activity (G022) can be fixed; the journal keeps the misspelling as typed',
-    r2.ok && ctx2.journal[0].from.kind === 'unknown' && ctx2.journal[0].from.label.includes('Topkapi palace & Hagia Sofia'), JSON.stringify(ctx2.journal[0]?.from));
+    r2.ok && ctx2.entries[0].from.kind === 'unknown' && ctx2.entries[0].from.label.includes('Topkapi palace & Hagia Sofia'), JSON.stringify(ctx2.entries[0]?.from));
   check('After the fix, nothing needs a look in that half-day anymore', whoIsWhere(ctx2.state, slot('S09')).attention.length === 0);
 }
 
@@ -286,7 +288,7 @@ let ctx1; // the context of the first test, reused by the storage test at the en
   const s = trip.slots.find((x) => guestPlace(trip, guest('G001'), x).kind === 'activity' && partyMovers(trip, guest('G001'), x).length === 1);
   const good = await applyChange(ctx, trip.id, [moveOf('G001', s.ref, LEISURE), moveOf('G002', s.ref, LEISURE)]);
   check('A couple moved together is ONE save with 2 journal entries sharing a batch id',
-    good.ok && ctx.commits.length === 1 && ctx.journal.length === 2 && ctx.journal[0].batchId === ctx.journal[1].batchId);
+    good.ok && ctx.commits.length === 1 && ctx.entries.length === 2 && ctx.entries[0].batchId === ctx.entries[1].batchId);
   check('The travel party helper finds the partner who is in the same place (G001 -> G002)', partyMovers(trip, guest('G001'), s).map((g) => g.ref).join() === 'G002');
   check('A split couple gets no prompt: P08 (G015) has nobody in the same place on S10', partyMovers(trip, guest('G015'), slot('S10')).length === 0);
 }
@@ -329,8 +331,8 @@ let ctx1; // the context of the first test, reused by the storage test at the en
     r.ok && ctx.state.activities.find((a) => a.id === alfama.id).cancelled === true && countIn(ctx.state, alfama) === 0
     && whoIsWhere(ctx.state, slot('S01')).leisure.length === whoIsWhere(trip, slot('S01')).leisure.length + booked);
   check(`Cancel tour writes 1 entry for the tour and ${booked} for the guests, all in one batch`,
-    ctx.commits.length === 1 && ctx.journal.length === booked + 1 && new Set(ctx.journal.map((e) => e.batchId)).size === 1
-    && ctx.journal.filter((e) => e.cause === 'cancel-tour').length === booked && ctx.journal[0].type === 'cancel-tour' && ctx.journal[0].guestCount === booked);
+    ctx.commits.length === 1 && ctx.entries.length === booked + 1 && new Set(ctx.entries.map((e) => e.batchId)).size === 1
+    && ctx.entries.filter((e) => e.cause === 'cancel-tour').length === booked && ctx.entries[0].type === 'cancel-tour' && ctx.entries[0].guestCount === booked);
   const again = await applyChange(ctx, trip.id, { type: 'cancel-tour', activityId: alfama.id });
   check('A tour cannot be cancelled twice', !again.ok && /already cancelled/.test(again.error), again.error);
   const into = await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S01', toActivity('S01-1')));
@@ -359,16 +361,139 @@ let ctx1; // the context of the first test, reused by the storage test at the en
   const ctx = makeCtx();
   const s = trip.slots.find((x) => guestPlace(trip, guest('G034'), x).kind === 'activity');
   await applyChange(ctx, trip.id, moveOf('G034', s.ref, LEISURE));
-  const text = JSON.stringify(ctx.journal);
-  check('The journal has no dietary info (G034 has a shellfish allergy)', ctx.journal.length === 1 && !/allerg|shellfish|dietary/i.test(text), text.slice(0, 200));
+  const text = JSON.stringify(ctx.entries);
+  check('The journal has no dietary info (G034 has a shellfish allergy)', ctx.entries.length === 1 && !/allerg|shellfish|dietary/i.test(text), text.slice(0, 200));
+}
+
+// =====================================================================
+// Step 4: Undo (like Ctrl+Z) and reading the journal (journal.js)
+// =====================================================================
+
+const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === JSON.stringify({ ...b, changeCount: 0 });
+
+// --- Undo takes back the last action, and only writes new lines in the journal ---
+{
+  const ctx = makeCtx();
+  const leaver = inHammam[0];
+  await applyChange(ctx, trip.id, moveOf(leaver.ref, 'S05', LEISURE));
+  const afterMove = structuredClone(ctx.state);
+  const entriesBefore = ctx.entries.length;
+
+  const r = await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Undo puts the guest back in the Hammam (10 again) and the trip is exactly as before the move',
+    r.ok && placeNow(ctx, leaver.ref, 'S05').activity?.id === hammam.id && countIn(ctx.state, hammam) === 10 && restoredExactly(ctx.state, trip), r.error);
+  check('Undo never deletes: the journal only grows (old lines kept, new lines added)', ctx.entries.length > entriesBefore && ctx.entries[0].type === 'move');
+  const undoEntries = ctx.entries.slice(entriesBefore);
+  check('An undo writes a header ("Undid: ...") and one line per guest put back, marked as undo',
+    undoEntries[0].type === 'undo' && /^Moved .* to At leisure$/.test(undoEntries[0].undoesSummary.replace(/ from [^]*? to /, ' to ')) && undoEntries.slice(1).every((e) => e.cause === 'undo')
+    && undoEntries.slice(1)[0].from.kind === 'leisure' && undoEntries.slice(1)[0].to.label === 'Hammam and spa', JSON.stringify(undoEntries[0]));
+  check('The undone action is marked "Undone" in the journal, and there is nothing left to undo',
+    groupBatches(ctx.entries).find((b) => b.kind === 'move').undone === true && lastUndoable(ctx.entries) === null);
+  const again = await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Undo with nothing to undo is refused', !again.ok && /nothing to undo/.test(again.error), again.error);
+  check('Undo lines keep the exact moment, the place and time zone, and a sequence number in order',
+    undoEntries.every((e) => !Number.isNaN(Date.parse(e.at)) && e.place.timeZone === 'Africa/Casablanca' && e.seq === 2));
+  check('The trip counts its actions: the move was action 1, the undo action 2', afterMove.changeCount === 1 && ctx.state.changeCount === 2);
+}
+
+// --- Several undos go back step by step (like Ctrl+Z) ---
+{
+  const ctx = makeCtx();
+  const a = inHammam[0], b = inHammam[1];
+  await applyChange(ctx, trip.id, moveOf(a.ref, 'S05', LEISURE));
+  await applyChange(ctx, trip.id, moveOf(b.ref, 'S05', LEISURE));
+  check('The button would undo the LAST action first (the second guest)', /Moved/.test(summarize(lastUndoable(ctx.entries))) && summarize(lastUndoable(ctx.entries)).includes(names.get(b.id)), summarize(lastUndoable(ctx.entries)));
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('After one undo: the second guest is back, the first is still At leisure', placeNow(ctx, b.ref, 'S05').activity?.id === hammam.id && placeNow(ctx, a.ref, 'S05').kind === 'leisure');
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('After a second undo: the first guest is back too, the trip is as it was at the start', placeNow(ctx, a.ref, 'S05').activity?.id === hammam.id && restoredExactly(ctx.state, trip));
+  check('Every action is still in the journal: 2 moves + 2 undos', groupBatches(ctx.entries).length === 4 && groupBatches(ctx.entries).filter((x) => x.kind === 'undo').length === 2);
+}
+
+// --- Undo of a couple, of a cancelled tour, and of fixing an empty or misspelled sign-up ---
+{
+  const ctx = makeCtx();
+  const s = trip.slots.find((x) => guestPlace(trip, guest('G001'), x).kind === 'activity' && partyMovers(trip, guest('G001'), x).length === 1);
+  await applyChange(ctx, trip.id, [moveOf('G001', s.ref, LEISURE), moveOf('G002', s.ref, LEISURE)]);
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('One undo puts BOTH people of a couple back (it was one action)', restoredExactly(ctx.state, trip));
+
+  const cancel = makeCtx();
+  await applyChange(cancel, trip.id, { type: 'cancel-tour', activityId: activity('S01-1').id });
+  await applyChange(cancel, trip.id, { type: 'undo' });
+  check('Undo of a cancelled tour brings the tour back and all its guests (one tap)',
+    restoredExactly(cancel.state, trip) && cancel.state.activities.find((a) => a.ref === 'S01-1').cancelled === false && countIn(cancel.state, activity('S01-1')) === 20);
+  check('Undoing the cancelled tour writes 1 header + 20 lines, all marked as undo', cancel.entries.filter((e) => e.type === 'undo' || e.cause === 'undo').length === 21);
+
+  const fix = makeCtx();
+  const t10 = trip.activities.find((a) => a.slotId === slot('S10').id && (a.capacity === null || countIn(trip, a) < a.capacity));
+  await applyChange(fix, trip.id, { type: 'move', guestId: guest('G014').id, slotId: slot('S10').id, to: { kind: 'activity', activityId: t10.id } });
+  await applyChange(fix, trip.id, { type: 'undo' });
+  check('Undo of filling an empty sign-up puts it back as empty ("Nothing chosen yet")', restoredExactly(fix.state, trip) && placeNow(fix, 'G014', 'S10').kind === 'blank');
+
+  const typo = makeCtx();
+  const t09 = trip.activities.find((a) => a.slotId === slot('S09').id && (a.capacity === null || countIn(trip, a) < a.capacity));
+  await applyChange(typo, trip.id, { type: 'move', guestId: guest('G022').id, slotId: slot('S09').id, to: { kind: 'activity', activityId: t09.id } });
+  await applyChange(typo, trip.id, { type: 'undo' });
+  check('Undo of fixing the misspelled activity puts the misspelling back as it was typed',
+    restoredExactly(typo.state, trip) && placeNow(typo, 'G022', 'S09').raw === 'Topkapi palace & Hagia Sofia');
+}
+
+// --- Undo is refused when it would not be safe, and cannot be mixed ---
+{
+  const ctx = makeCtx();
+  await applyChange(ctx, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  const tampered = structuredClone(ctx.state);
+  tampered.bookings[inHammam[0].id][slot('S05').id] = { kind: 'activity', activityId: activity('S05-1').id }; // changed behind the journal's back
+  ctx.state = tampered;
+  const r = await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Undo is refused (and changes nothing) if the guest is no longer where the journal says', !r.ok && /no longer where/.test(r.error) && ctx.commits.length === 1, r.error);
+  const mixed = validateChanges(trip, owner, [{ type: 'undo' }, moveOf(inHammam[0].ref, 'S05', LEISURE)], ctx.entries);
+  check('Undo cannot be mixed with other changes', !mixed.ok);
+  const archived = makeCtx();
+  await applyChange(archived, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  archived.state.archivedAt = '2027-02-05T00:00:00.000Z';
+  check('An archived trip cannot be undone either', !(await applyChange(archived, trip.id, { type: 'undo' })).ok);
+  const stranger2 = makeCtx({ id: 'x', name: 'Guest', role: 'guest' });
+  check('Somebody who is not the owner cannot undo', !(await applyChange(stranger2, trip.id, { type: 'undo' })).ok);
+}
+
+// --- Trips changed by the earlier version of the app (no sequence numbers) can still be undone ---
+{
+  const ctx = makeCtx();
+  await applyChange(ctx, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  for (const e of ctx.entries) { delete e.seq; delete e.n; }   // what step 3 wrote
+  delete ctx.state.changeCount;
+  const r = await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Journal lines written before sequence numbers existed can be undone', r.ok && restoredExactly(ctx.state, trip), r.error);
+}
+
+// --- Reading the journal ---
+{
+  const ctx = makeCtx();
+  const s = trip.slots.find((x) => guestPlace(trip, guest('G001'), x).kind === 'activity' && partyMovers(trip, guest('G001'), x).length === 1);
+  await applyChange(ctx, trip.id, [moveOf('G001', s.ref, LEISURE), moveOf('G002', s.ref, LEISURE)]);
+  await applyChange(ctx, trip.id, { type: 'cancel-tour', activityId: activity('S01-1').id });
+  const batches = groupBatches([...ctx.entries].reverse()); // even if the lines come back in any order
+  check('The journal shows one action per couple and one per cancelled tour, oldest first', batches.length === 2 && batches[0].kind === 'move' && batches[1].kind === 'cancel-tour');
+  check('A couple is told in one sentence: "Moved Richard S. and Priya S. from ... to At leisure"',
+    /^Moved (Richard S\. and Priya S\.|Priya S\. and Richard S\.) from .+ to At leisure$/.test(summarize(batches[0])), summarize(batches[0]));
+  check('A cancelled tour is told with its guests: "Cancelled Alfama walking tour (20 guests moved to At leisure)"',
+    summarize(batches[1]) === 'Cancelled Alfama walking tour (20 guests moved to At leisure)', summarize(batches[1]));
+  check('An action knows its half-day, its place and who did it', batches[0].slotLabel === slotLabel(trip, s) && batches[0].who.name === 'Tester' && batches[1].place.name === 'Lisbon');
+  check('Times are shown in the destination time with the place: 15:30 UTC is "13 Jan, 00:30" in Kyoto',
+    formatMoment('2027-01-12T15:30:00.000Z', 'Asia/Tokyo') === '13 Jan, 00:30', formatMoment('2027-01-12T15:30:00.000Z', 'Asia/Tokyo'));
+  const sorted = [...ctx.entries].sort(() => 0.5 - Math.random());
+  check('The journal keeps its order even when entries are read back in a different order', groupBatches(sorted).map((b) => b.seq).join() === '1,2');
+  check('Journal lines never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(ctx.entries)));
 }
 
 // --- The trip and its journal entries are saved together, on the device ---
 {
-  await saveTripAndJournal(ctx1.state, ctx1.journal);
+  await saveTripAndJournal(ctx1.state, ctx1.entries);
   const savedTrip = await dbGet('trips', ctx1.state.id);
   const savedJournal = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));
-  check('The changed trip and its journal entry are both on the device', JSON.stringify(savedTrip) === JSON.stringify(ctx1.state) && savedJournal.length === 1 && savedJournal[0].id === ctx1.journal[0].id);
+  check('The changed trip and its journal entry are both on the device', JSON.stringify(savedTrip) === JSON.stringify(ctx1.state) && savedJournal.length === 1 && savedJournal[0].id === ctx1.entries[0].id);
   await dbDelete('trips', ctx1.state.id);
   for (const entry of savedJournal) await dbDelete('journal', entry.id);
   const left = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));

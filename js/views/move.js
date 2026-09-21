@@ -11,12 +11,7 @@ import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { applyChange } from '../changes.js';
 import { formatTime } from '../time.js';
-import { byName, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, slotLabel } from '../rules.js';
-
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-
-// ["Simon B."] -> "Simon B."   ["Simon B.", "Anne B."] -> "Simon B. and Anne B."
-const joinNames = (list) => (list.length <= 1 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`);
+import { byName, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, slotLabel, plural, joinNames } from '../rules.js';
 
 const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :

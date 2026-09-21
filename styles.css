@@ -52,6 +52,8 @@ a { color: inherit; text-decoration: none; }
 .page-head { margin-bottom: 18px; }
 .back-link {
   display: inline-flex;
+  flex: 0 0 auto;
+  white-space: nowrap;
   align-items: center;
   min-height: 44px;
   margin-left: -8px;
@@ -159,7 +161,53 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Top bar and sideways strips (Use) ---------- */
 
-.top-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.top-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+/* The Undo button (like Ctrl+Z): always visible at the top of the Use screens. */
+.undo-btn {
+  flex: 0 1 auto;
+  min-width: 0;                       /* lets the text be cut with "..." instead of pushing the button off the screen */
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--brand);
+  border-radius: 22px;
+  background: var(--card);
+  color: var(--brand);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.undo-btn:active { background: var(--brand-tint); }
+.undo-btn:disabled { border-color: var(--line); color: var(--muted); cursor: default; }
+.undo-btn:disabled:active { background: var(--card); }
+.undo-label { font-weight: 700; white-space: nowrap; align-self: center; }
+.undo-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 14px; align-self: center; }
+
+/* ---------- Journal ---------- */
+
+.entry {
+  margin-bottom: 10px;
+  padding: 14px 18px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+.entry--muted { background: var(--soft); }
+.entry--muted .entry-title { color: var(--muted); }
+.entry-title { font-size: 18px; font-weight: 700; line-height: 1.3; }
+.entry-meta { margin-top: 6px; font-size: 14px; color: var(--muted); }
+.tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--track);
+  font-size: 13px;
+  font-weight: 700;
+}
 
 .strip {
   display: flex;
@@ -185,6 +233,9 @@ a { color: inherit; text-decoration: none; }
 }
 .strip--small .strip-item { min-height: 42px; padding: 0 14px; font-size: 16px; }
 .strip-item.is-active { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+button.strip-item { font: inherit; font-weight: 700; color: inherit; cursor: pointer; }
+button.strip-item.is-active { color: var(--brand-ink); }
+.strip--small button.strip-item { font-size: 16px; }
 
 /* ---------- Activity cards and guest name pills ---------- */
 
@@ -396,7 +447,8 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
   position: fixed;
   left: 16px;
   right: 16px;
-  top: calc(12px + env(safe-area-inset-top));   /* at the top, so it never covers the buttons of a sheet */
+  bottom: calc(96px + env(safe-area-inset-bottom));   /* above the tab bar, so it never covers the Undo button at the top */
+  pointer-events: none;                               /* taps go through to what is underneath */
   z-index: 40;
   max-width: 688px;
   margin: 0 auto;
@@ -408,3 +460,5 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 .toast--error { background: var(--bad-ink); }
+/* While a sheet is open its buttons are at the bottom, so the message moves to the top instead. */
+body.sheet-open .toast { top: calc(12px + env(safe-area-inset-top)); bottom: auto; }

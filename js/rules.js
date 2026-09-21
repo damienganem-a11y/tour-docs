@@ -4,6 +4,14 @@
 // back an answer. They never change anything and never touch the screen, so they are easy to
 // test (see tests.html).
 
+// ---------- Small text helpers ----------
+
+// plural(2, 'seat') -> "2 seats"
+export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// ["Simon B."] -> "Simon B."   ["Simon B.", "Anne B."] -> "Simon B. and Anne B."
+export const joinNames = (list) => (list.length <= 1 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`);
+
 // ---------- Names ----------
 
 // Sorting people by last name, then first name.

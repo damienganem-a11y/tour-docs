@@ -1,5 +1,5 @@
 // Inside a trip. Two spaces, chosen with the switch at the top:
-//   Use       the day-to-day screens (bottom tabs: By destination, By guest)
+//   Use       the day-to-day screens (bottom tabs: By destination, By guest), with the Undo button
 //   Settings  setup and control (owner only)
 //
 // The Settings screens are built one step at a time (see SPEC.md "Build order"); until then the
@@ -7,16 +7,20 @@
 
 import { h } from '../dom.js';
 import { tripDates } from '../time.js';
+import { applyChange } from '../changes.js';
+import { lastUndoable, summarize } from '../journal.js';
+import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { destinationPage } from './destination.js';
 import { guestPage } from './guest.js';
+import { journalPage } from './journal.js';
 
-// The Settings menu. `step` is the build step where each one arrives.
+// The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
 const SETTINGS_MENU = [
   { label: 'Destinations', step: 7 },
   { label: 'Travel parties', step: 7 },
   { label: 'Guests', step: 7 },
-  { label: 'Journal', step: 4, ownerOnly: true },
+  { label: 'Journal', page: 'journal', ownerOnly: true },
   { label: 'Exports archive', step: 8 },
   { label: 'Backup', step: 9 },
 ];
@@ -29,6 +33,7 @@ const USE_TABS = [
 // Routes:  #/trip/<id>/use/destination/<destinationId>/<slotId>
 //          #/trip/<id>/use/guest/<guestId>
 //          #/trip/<id>/settings
+//          #/trip/<id>/settings/journal
 // `first` and `second` are the parts after the page name (they may be missing).
 export function tripView(ctx, tripId, mode, page = 'destination', first, second) {
   const trip = ctx.trip(tripId);
@@ -38,6 +43,11 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
         pageHead({ back: { href: '#/', label: 'All trips' }, title: 'Trip not found' }),
         h('p', { class: 'empty' }, 'This trip is not on this phone.')),
     };
+  }
+
+  // Settings > Journal is a screen of its own.
+  if (mode === 'settings' && page === 'journal') {
+    return { node: h('div', { class: 'screen' }, journalPage(ctx, trip)) };
   }
 
   const link = (target, label) =>
@@ -52,13 +62,13 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
       title: trip.name,
       subtitle: `${tripDates(trip.start, trip.days)} · ${trip.destinations.length} destinations · ${trip.guests.length} guests`,
     });
-    return { node: h('div', { class: 'screen' }, head, modeSwitch, settingsMenu()) };
+    return { node: h('div', { class: 'screen' }, head, modeSwitch, settingsMenu(trip)) };
   }
 
   // Use: a slim bar on top (the phone screen is small), then the chosen page and the bottom tabs.
   const topBar = h('div', { class: 'top-bar' },
     h('a', { class: 'back-link', href: '#/' }, '‹ All trips'),
-    h('span', { class: 'muted' }, trip.ref));
+    undoButton(ctx, trip));
   const content = page === 'guest' ? guestPage(ctx, trip, first) : destinationPage(ctx, trip, first, second);
   const activePage = page === 'guest' ? 'guest' : 'destination';
   const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },
@@ -68,12 +78,43 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
   return { node: h('div', { class: 'screen' }, topBar, modeSwitch, content, tabs) };
 }
 
-function settingsMenu() {
+// The Undo button: like Ctrl+Z. One tap takes back the last action of the trip, no confirmation.
+// It shows what it would undo, and is greyed out when there is nothing to undo.
+function undoButton(ctx, trip) {
+  const last = lastUndoable(ctx.journal(trip.id));
+  const what = last ? summarize(last) : 'nothing to undo';
+  let busy = false; // ignore a second tap while the first is still being saved
+
+  return h('button', {
+    class: 'undo-btn', type: 'button', disabled: !last, 'aria-label': `Undo: ${what}`,
+    onclick: async () => {
+      if (busy) return;
+      busy = true;
+      const result = await applyChange(ctx, trip.id, { type: 'undo' });
+      busy = false;
+      if (result.ok) {
+        ctx.refresh();
+        showToast(`Undone: ${result.summary}`);
+      } else {
+        showToast(result.error, true);
+      }
+    },
+  },
+    h('span', { class: 'undo-label' }, '↶ Undo'),
+    h('span', { class: 'undo-what' }, what));
+}
+
+function settingsMenu(trip) {
   return h('div', { class: 'menu' },
-    SETTINGS_MENU.map((item) =>
-      h('div', { class: 'menu-row is-soon' },
+    SETTINGS_MENU.map((item) => {
+      // A screen that exists is a link; one that does not exist yet says in which step it arrives.
+      if (item.page) {
+        return h('a', { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
+          h('span', {}, item.label),
+          h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null, h('span', { class: 'row-chev' }, '›')));
+      }
+      return h('div', { class: 'menu-row is-soon' },
         h('span', {}, item.label),
-        h('span', { class: 'menu-side' },
-          item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null,
-          h('span', { class: 'pill' }, `Step ${item.step}`)))));
+        h('span', { class: 'menu-side' }, h('span', { class: 'pill' }, `Step ${item.step}`)));
+    }));
 }

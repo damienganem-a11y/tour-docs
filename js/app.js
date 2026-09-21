@@ -19,8 +19,9 @@ import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
 import { tripView } from './views/trip.js';
 
-// What the app knows right now: who the owner is, and every trip on this phone (by id).
-const state = { owner: undefined, trips: new Map() };
+// What the app knows right now: who the owner is, every trip on this phone (by id), and the
+// journal entries of each trip (by trip id; also stored on the phone, this is a copy in memory).
+const state = { owner: undefined, trips: new Map(), journal: new Map() };
 
 // The list of screens. The first one whose pattern matches the address is used.
 const routes = [
@@ -33,6 +34,7 @@ const ctx = {
   get owner() { return state.owner; },
   get trips() { return [...state.trips.values()]; },
   trip: (id) => state.trips.get(id),
+  journal: (tripId) => state.journal.get(tripId) ?? [],
   go(hash) { location.hash = hash; },
 
   // Save the owner's name (asked once, on first launch) and show the app.
@@ -54,6 +56,7 @@ const ctx = {
   async commit(trip, entries) {
     await saveTripAndJournal(trip, entries);
     state.trips.set(trip.id, trip);
+    state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
   },
 
   // Redraw the current screen without jumping back to the top.
@@ -86,6 +89,9 @@ async function start() {
   try {
     state.owner = await dbGet('settings', 'owner');
     for (const trip of await dbAll('trips')) state.trips.set(trip.id, trip);
+    for (const entry of await dbAll('journal')) {
+      state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
+    }
     // Ask the browser not to clear our saved data when the phone is short on space.
     navigator.storage?.persist?.();
   } catch (error) {

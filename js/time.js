@@ -51,6 +51,15 @@ export function formatTime(instant, timeZone) {
     .format(new Date(instant));
 }
 
+// An exact moment as a short date and time in a time zone:
+// ("2027-01-12T15:30:00.000Z", "Asia/Tokyo") -> "13 Jan, 00:30".
+export function formatMoment(instant, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date(instant));
+  const part = (type) => parts.find((p) => p.type === type).value;
+  return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')}`;
+}
+
 // ---------- Calendar dates (a day, with no time and no time zone) ----------
 
 // "2027-01-12" plus 23 days -> "2027-02-04"
