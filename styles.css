@@ -1,0 +1,253 @@
+/* Tour Docs: styles.
+   Designed for a phone in a moving vehicle: big text, big tap targets, strong contrast.
+   All colours live in the :root block below, so a different company or look = change them here only. */
+
+:root {
+  /* Palette taken from the prototype screenshots (cream page, dark teal accent). */
+  --brand: #1d5c57;          /* buttons, active tab, links, small labels */
+  --brand-ink: #ffffff;      /* text on top of the brand colour */
+  --brand-tint: #e3efec;     /* light wash of the brand colour: pressed rows */
+  --ink: #1f2a2a;            /* main text */
+  --muted: #55605f;          /* secondary text */
+  --bg: #f3efe6;             /* page background */
+  --card: #ffffff;           /* cards and rows */
+  --soft: #faf8f3;           /* bars and things that are not available yet */
+  --track: #e6e0d2;          /* the groove behind the Use / Settings switch */
+  --line: #ded7c9;           /* borders */
+
+  --warn-bg: #fbeedd;        /* "needs attention" (e.g. nothing chosen yet) */
+  --warn-line: #c26418;
+  --warn-ink: #7a3b0c;
+
+  --bad-bg: #f8e6e1;         /* "problem" (e.g. unknown activity) */
+  --bad-line: #9a3a2a;
+  --bad-ink: #7a2a1c;
+
+  --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;   /* big titles */
+  --tap: 60px;               /* minimum height of anything you tap */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 18px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: inherit; text-decoration: none; }
+.muted { color: var(--muted); }
+
+/* ---------- Page layout ---------- */
+
+.screen {
+  max-width: 720px;
+  margin: 0 auto;
+  /* Top: clear of the iPhone notch. Bottom: clear of the tab bar. */
+  padding: calc(env(safe-area-inset-top) + 16px) 20px calc(var(--tap) + env(safe-area-inset-bottom) + 48px);
+}
+
+.page-head { margin-bottom: 18px; }
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-left: -8px;
+  padding: 0 8px;
+  color: var(--brand);
+  font-weight: 700;
+}
+.eyebrow {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brand);
+}
+.title {
+  margin: 4px 0 6px;
+  font: 700 34px/1.1 var(--serif);
+}
+.subtitle { color: var(--muted); }
+
+/* ---------- Use / Settings switch ---------- */
+
+.switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 24px;
+  padding: 4px;
+  border-radius: 22px;
+  background: var(--track);
+}
+.switch-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  border-radius: 18px;
+  font-weight: 700;
+}
+.switch-item.is-active { background: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+
+/* ---------- Cards, buttons, forms ---------- */
+
+.card {
+  margin-bottom: 12px;
+  padding: 16px 18px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+.card h2 { margin: 0 0 4px; font-size: 22px; }
+.card p { margin: 6px 0 0; }
+.card--link { display: block; }
+.card--link:active { background: var(--brand-tint); }
+.card-title { margin-bottom: 4px; font: 700 22px/1.2 var(--serif); }
+.card-sub { margin-top: 14px; font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.line { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
+.line:last-child { border-bottom: 0; }
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 12px;
+  padding: 0 20px;
+  border: 2px solid var(--brand);
+  border-radius: 30px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn:active { opacity: 0.85; }
+.btn--plain { background: transparent; color: var(--brand); }
+.file-input { display: none; }
+
+.text-input {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 18px;
+  border: 2px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  font: inherit;
+  color: var(--ink);
+}
+.text-input:focus { outline: none; border-color: var(--brand); }
+
+.message {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--bad-bg);
+  border: 1px solid var(--bad-line);
+  color: var(--bad-ink);
+  font-weight: 600;
+}
+
+.empty { padding: 24px 8px; text-align: center; color: var(--muted); }
+
+/* ---------- Settings menu ---------- */
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 68px;
+  border-bottom: 1px solid var(--line);
+  font-size: 20px;
+  font-weight: 700;
+}
+.menu-row.is-soon { color: var(--muted); }
+.menu-side { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; }
+.pill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--track);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ---------- Bottom tabs (Use) ---------- */
+
+.bottom-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--soft);
+  border-top: 1px solid var(--line);
+}
+.bottom-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border-radius: 28px;
+  font-weight: 700;
+}
+.bottom-tab.is-active { background: var(--brand); color: var(--brand-ink); }
+
+/* ---------- Bottom sheet (used by confirmation screens from step 3) and toast ---------- */
+
+body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not scroll */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.sheet {
+  width: 100%;
+  max-width: 720px;
+  max-height: 88vh;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  background: var(--card);
+  border-radius: 28px 28px 0 0;
+  animation: slide-up 0.18s ease-out;
+}
+@keyframes slide-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+
+.sheet-head h2 { margin: 0; font-size: 22px; }
+.sheet-head { margin-bottom: 12px; }
+.sheet-body { flex: 1; overflow-y: auto; }
+
+.toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 40;
+  max-width: 688px;
+  margin: 0 auto;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: var(--ink);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.toast--error { background: var(--bad-ink); }
