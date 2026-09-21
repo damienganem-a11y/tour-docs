@@ -1,26 +1,31 @@
 // The roll call screen (check-in at departure): #/trip/<id>/rollcall/<activityId>
 //
-//   - Top row: the vehicles (V1, V2...) and a + to add one. Tap a vehicle to choose it; tap the chosen one
-//     again to see who is inside; long-press a vehicle to change its number.
-//   - One tap on a guest puts them in the chosen vehicle and takes them off the list. No question, no
-//     confirmation: speed first. Undo (like Ctrl+Z) takes back the last tap.
+//   - A search bar at the very top, then the vehicles (V1, V2...) and a + to add one. Tap a vehicle to choose it;
+//     tap the chosen one again to see who is inside; long-press a vehicle to change its number.
+//   - One tap on a guest puts them in the chosen vehicle and takes them off the list: no confirmation, speed first.
+//     If their travel party is still expected, ONE question: "Also check in Susan S.?" (they are almost always
+//     together, but not always).
+//     Undo (like Ctrl+Z) takes back the last tap.
 //   - Long-press a guest: At leisure, or another tour of the same half-day.
-//   - "Add guest": somebody from another tour joins this one and goes straight into the chosen vehicle.
+//   - "Add guest": somebody from another tour joins this one and appears in the list (they are NOT put in a
+//     vehicle automatically: you check them in like everybody else).
+//   - Every list is alphabetical by the name shown.
 // Every tap goes through the one change function (changes.js) and is written in the journal.
 
 import { h, pressable } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { formatTime } from '../time.js';
-import { byName, displayNames, plural } from '../rules.js';
+import { alphabetical, displayNames, plain, plural, joinNames } from '../rules.js';
 import { findRollCall, vehicleLabel, rollCallState } from '../rollcall.js';
 import { forcedPlacements } from '../journal.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { startMove, startAddGuest, choiceRow, notice } from './move.js';
 
-// Which vehicle the taps go into, for each roll call (remembered while the app is open).
+// What is remembered while the app is open, for each roll call: which vehicle the taps go into, and the search words.
 const chosenVehicle = new Map();
+const searchWords = new Map();
 
 export function rollCallView(ctx, tripId, activityId) {
   const trip = ctx.trip(tripId);
@@ -42,18 +47,20 @@ export function rollCallView(ctx, tripId, activityId) {
   }
 
   const names = displayNames(trip.guests);
+  const inOrder = alphabetical(names);
   const state = rollCallState(trip, rollCall);
   const label = (vehicle) => vehicleLabel(trip, vehicle);
   const selected = rollCall.vehicles.find((v) => v.id === chosenVehicle.get(rollCall.id)) ?? rollCall.vehicles[0];
   chosenVehicle.set(rollCall.id, selected.id);
 
-  // Makes one change; if it works the screen is redrawn (keeping its place), if not a message says why.
+  // Makes one change (or several together); if it works the screen is redrawn (keeping its place), if not a message says why.
   async function change(changes) {
     const result = await applyChange(ctx, trip.id, changes);
     if (result.ok) ctx.refresh(); else showToast(result.error, true);
     return result;
   }
   const rollCallChange = (type, extra = {}) => ({ type, activityId: activity.id, ...extra });
+  const checkInChange = (guest, vehicle) => rollCallChange('checkin', { guestId: guest.id, vehicleId: vehicle.id });
 
   // ---------- Vehicles ----------
 
@@ -64,7 +71,7 @@ export function rollCallView(ctx, tripId, activityId) {
 
   // Who is inside a vehicle; tap somebody to take them out or move them to another vehicle.
   function showInside(vehicle) {
-    const inside = [...(state.perVehicle.get(vehicle.id) ?? [])].sort(byName);
+    const inside = [...(state.perVehicle.get(vehicle.id) ?? [])].sort(inOrder);
     openSheet({
       eyebrow: 'Roll call', title: `${label(vehicle)} · ${plural(inside.length, 'guest')} inside`, subtitle: activity.name,
       body: inside.length === 0
@@ -80,7 +87,7 @@ export function rollCallView(ctx, tripId, activityId) {
       eyebrow: label(vehicle), title: names.get(guest.id), subtitle: 'Where should they go?',
       body: [
         choiceRow({ title: 'Back on the list', detail: 'Not checked in', onclick: async () => { closeSheet(); await change(rollCallChange('checkout', { guestId: guest.id })); } }),
-        ...others.map((v) => choiceRow({ title: `Move to ${label(v)}`, onclick: async () => { closeSheet(); await change(rollCallChange('checkin', { guestId: guest.id, vehicleId: v.id })); } })),
+        ...others.map((v) => choiceRow({ title: `Move to ${label(v)}`, onclick: async () => { closeSheet(); await change(checkInChange(guest, v)); } })),
       ],
     });
   }
@@ -130,16 +137,49 @@ export function rollCallView(ctx, tripId, activityId) {
   const forced = forcedPlacements(ctx.journal(trip.id)); // guests who are on this tour by force show in orange
   const isForced = (guest) => forced.get(`${guest.id}|${slot.id}`)?.to.activityId === activity.id;
 
-  const rows = [...state.expected].sort(byName).map((guest, index) => {
-    const row = h('button', { class: `rc-guest${isForced(guest) ? ' rc-guest--forced' : ''}`, type: 'button' },
-      h('span', {}, names.get(guest.id)),
-      index === 0 ? h('span', { class: 'rc-tap' }, `tap = ${label(selected)}`) : null);
-    pressable(row, {
-      tap: () => change(rollCallChange('checkin', { guestId: guest.id, vehicleId: selected.id })),
-      long: () => startMove(ctx, trip, guest, slot, { askParty: false }), // At leisure, or another tour: asks to confirm
+  // A tap checks the guest in. If their travel party is still expected, ask about them too (one question).
+  function tapGuest(guest) {
+    searchWords.delete(rollCall.id); // the next guest is found with a fresh search
+    const partners = state.expected.filter((g) => g.partyId === guest.partyId && g.id !== guest.id).sort(inOrder);
+    if (partners.length === 0) return change(checkInChange(guest, selected));
+
+    const partnerNames = joinNames(partners.map((g) => names.get(g.id)));
+    openSheet({
+      eyebrow: 'Travel party', title: `Also check in ${partnerNames}?`, subtitle: `${names.get(guest.id)} goes into ${label(selected)}`,
+      body: [
+        h('button', { class: 'btn', type: 'button', onclick: () => change([guest, ...partners].map((g) => checkInChange(g, selected))) }, `Yes, check in ${partnerNames} too`),
+        h('button', { class: 'btn btn--plain', type: 'button', onclick: () => change(checkInChange(guest, selected)) }, `No, only ${names.get(guest.id)}`),
+      ],
+      cancelDanger: true,
     });
-    return row;
+  }
+
+  // The list, alphabetical, filtered by what is typed in the search bar at the top.
+  const list = h('div', {});
+  function fillList() {
+    const words = plain(searchWords.get(rollCall.id) ?? '').split(/\s+/).filter(Boolean);
+    const shown = [...state.expected].sort(inOrder).filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
+
+    list.replaceChildren(...(shown.length === 0
+      ? [h('p', { class: 'empty' }, state.expected.length === 0 ? 'Everybody is checked in.' : 'No guest matches that search.')]
+      : shown.map((guest, index) => {
+          const row = h('button', { class: `rc-guest${isForced(guest) ? ' rc-guest--forced' : ''}`, type: 'button' },
+            h('span', {}, names.get(guest.id)),
+            index === 0 ? h('span', { class: 'rc-tap' }, `tap = ${label(selected)}`) : null);
+          pressable(row, {
+            tap: () => tapGuest(guest),
+            long: () => startMove(ctx, trip, guest, slot, { askParty: false }), // At leisure, or another tour: asks to confirm
+          });
+          return row;
+        })));
+  }
+
+  const search = h('input', {
+    class: 'text-input', type: 'search', placeholder: 'Search guests', value: searchWords.get(rollCall.id) ?? '',
+    autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Search guests',
+    oninput: () => { searchWords.set(rollCall.id, search.value); fillList(); },
   });
+  fillList();
 
   const startTime = activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '';
   return {
@@ -150,11 +190,12 @@ export function rollCallView(ctx, tripId, activityId) {
         title: activity.name,
         subtitle: [destination.name, startTime, `${state.expected.length} still expected`].filter(Boolean).join(' · '),
       }),
+      search,
       h('div', { class: 'vehicles' }, vehicleButtons, addVehicle),
       undoButton(ctx, trip, { wide: true }),
-      rows.length === 0 ? h('p', { class: 'empty' }, 'Everybody is checked in.') : rows,
+      list,
       h('p', { class: 'rc-hint' }, 'Long-press a name: At leisure or another tour'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startAddGuest(ctx, trip, slot, activity, { vehicle: selected }) }, '+ Add guest'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startAddGuest(ctx, trip, slot, activity) }, '+ Add guest'),
       h('button', { class: 'btn', type: 'button', disabled: true }, 'End roll call'),
       h('p', { class: 'muted footer-note' }, 'Ending the roll call comes in the next update.')
     ),

@@ -7,7 +7,7 @@
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
-import { byName, displayNames, whoIsWhere, capacityInfo } from '../rules.js';
+import { alphabetical, displayNames, whoIsWhere, capacityInfo } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo } from './move.js';
 import { undoButton } from './undo.js';
@@ -115,9 +115,10 @@ function strip(items, small = false) {
 // A card with a title, a count and the guests as name pills.
 // Tapping the top of the card opens it (all names, plus the actions); tapping a name moves that guest.
 function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions }) {
-  // Forced guests come first, so they are seen even on a closed card; then everybody by name.
+  // Alphabetical. Guests who are here by force (orange) come first as a group, so they are seen even on a closed card.
   const isForced = (g) => Boolean(forcedOf?.(g));
-  const sorted = [...guests].sort((a, b) => Number(isForced(b)) - Number(isForced(a)) || byName(a, b));
+  const inOrder = alphabetical(names);
+  const sorted = [...guests].sort((a, b) => Number(isForced(b)) - Number(isForced(a)) || inOrder(a, b));
   const body = h('div', {});
 
   // Open or close the card (the "+4" pill does the same as tapping the top of the card).
@@ -165,7 +166,7 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
 function attentionCard(ctx, trip, slot, attention, names) {
   return h('div', { class: 'card card--warn' },
     h('div', { class: 'act-name' }, `Needs a look (${attention.length})`),
-    attention.map(({ guest, reason }) =>
+    [...attention].sort((a, b) => alphabetical(names)(a.guest, b.guest)).map(({ guest, reason }) =>
       h('button', { class: 'line line--button', type: 'button', onclick: () => startMove(ctx, trip, guest, slot) },
         h('span', {}, names.get(guest.id)), h('span', {}, reason))));
 }

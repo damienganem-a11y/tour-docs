@@ -19,7 +19,7 @@
 //   { type: 'checkout', activityId, guestId }                the guest comes out of the vehicle: back on the list
 //   { type: 'vehicle-add', activityId }                      the next vehicle number (V5, V6...)
 //   { type: 'vehicle-number', activityId, vehicleId, number }
-//   A 'move' into a tour can also carry checkinVehicleId: the guest joins the tour AND goes into that vehicle.
+//   (Several 'checkin' changes for the same roll call may be made together: a travel party checked in at once.)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
 //
@@ -49,11 +49,22 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (!Array.isArray(changes) || changes.length === 0) return fail('There is nothing to change.');
 
   const names = displayNames(trip.guests);
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type)) && changes.length > 1) {
+  // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
+  // check-ins together (a travel party checked into the same vehicle at once).
+  const allCheckins = changes.every((c) => c.type === 'checkin');
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing and roll call changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal);
-  if (ROLLCALL_TYPES.has(changes[0].type)) return validateRollCall(trip, changes[0]);
+  if (ROLLCALL_TYPES.has(changes[0].type)) {
+    if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
+    if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
+    for (const change of changes) {
+      const result = validateRollCall(trip, change);
+      if (!result.ok) return result;
+    }
+    return { ok: true };
+  }
 
   const seen = new Set();     // the same guest cannot be changed twice in the same half-day
   const flows = new Map();    // activityId -> { activity, joining, leaving, forced }, to check capacity below
@@ -95,15 +106,9 @@ export function validateChanges(trip, user, changes, journal = []) {
       }
       flow(activity).joining++;
       if (change.force) flow(activity).forced = true;
-      if (change.checkinVehicleId) {
-        const rollCall = findRollCall(trip, activity.id);
-        if (!rollCall || rollCall.endedAt) return fail(`There is no roll call running for "${activity.name}".`);
-        if (!rollCall.vehicles.some((v) => v.id === change.checkinVehicleId)) return fail('That vehicle does not exist.');
-      }
     } else {
       return fail('Choose an activity or At leisure.');
     }
-    if (change.checkinVehicleId && target.kind !== 'activity') return fail('Only a guest joining a tour can go into a vehicle.');
     if (here.kind === 'activity') flow(here.activity).leaving++;
   }
 
@@ -291,10 +296,10 @@ async function doApply(ctx, tripId, changes) {
 
   // Roll call changes: start it, check a guest in or out, add a vehicle, renumber a vehicle.
   if (ROLLCALL_TYPES.has(changes[0].type)) {
-    const change = changes[0];
-    const activity = trip.activities.find((a) => a.id === change.activityId);
+    const activity = trip.activities.find((a) => a.id === changes[0].activityId);
     const slot = trip.slots.find((s) => s.id === activity.slotId);
     const label = (vehicle) => vehicleLabel(next, vehicle);
+    const change = changes[0]; // (only check-ins can come in several at once)
 
     if (change.type === 'rollcall-start') {
       const rollCall = {
@@ -313,14 +318,18 @@ async function doApply(ctx, tripId, changes) {
     const guest = trip.guests.find((g) => g.id === change.guestId);
 
     if (change.type === 'checkin') {
-      const fromId = rollCall.checkins[guest.id] ?? null;
-      const from = rollCall.vehicles.find((v) => v.id === fromId);
-      rollCall.checkins[guest.id] = vehicle.id;
-      entries.push({
-        ...base(), type: 'checkin', ...about, guestId: guest.id, guestName: names.get(guest.id),
-        vehicleId: vehicle.id, vehicleLabel: label(vehicle),
-        fromVehicleId: fromId, fromVehicleLabel: from ? label(from) : null,
-      });
+      for (const one of changes) { // one check-in, or a whole travel party at once
+        const who = trip.guests.find((g) => g.id === one.guestId);
+        const into = rollCall.vehicles.find((v) => v.id === one.vehicleId);
+        const fromId = rollCall.checkins[who.id] ?? null;
+        const from = rollCall.vehicles.find((v) => v.id === fromId);
+        rollCall.checkins[who.id] = into.id;
+        entries.push({
+          ...base(), type: 'checkin', ...about, guestId: who.id, guestName: names.get(who.id),
+          vehicleId: into.id, vehicleLabel: label(into),
+          fromVehicleId: fromId, fromVehicleLabel: from ? label(from) : null,
+        });
+      }
     } else if (change.type === 'checkout') {
       const from = rollCall.vehicles.find((v) => v.id === rollCall.checkins[guest.id]);
       delete rollCall.checkins[guest.id];
@@ -339,7 +348,7 @@ async function doApply(ctx, tripId, changes) {
   }
 
   // A "move" of one guest in one half-day.
-  const move = (guest, slot, to, cause, force = false, approvedBy = null, checkinVehicleId = null) => {
+  const move = (guest, slot, to, cause, force = false, approvedBy = null) => {
     const before = guestPlace(trip, guest, slot);
     const forced = force && to.kind === 'activity' && willBeOver(to.activityId);
     next.bookings[guest.id] ??= {};
@@ -355,24 +364,12 @@ async function doApply(ctx, tripId, changes) {
       to: to.kind === 'leisure' ? { kind: 'leisure', label: 'At leisure' }
         : { kind: 'activity', activityId: to.activityId, label: trip.activities.find((a) => a.id === to.activityId).name },
     });
-
-    // Joining a tour during its roll call: the guest goes straight into the chosen vehicle (a second line, same action).
-    if (checkinVehicleId) {
-      const activity = trip.activities.find((a) => a.id === to.activityId);
-      const rollCall = next.rollCalls.find((r) => r.activityId === activity.id);
-      const vehicle = rollCall.vehicles.find((v) => v.id === checkinVehicleId);
-      rollCall.checkins[guest.id] = vehicle.id;
-      entries.push({
-        ...base(), type: 'checkin', ...rollCallAbout(activity, slot, rollCall), guestId: guest.id, guestName: names.get(guest.id),
-        vehicleId: vehicle.id, vehicleLabel: vehicleLabel(next, vehicle), fromVehicleId: null, fromVehicleLabel: null,
-      });
-    }
   };
 
   for (const change of changes) {
     if (change.type === 'move') {
       const approvedBy = String(change.approvedBy ?? '').trim().slice(0, 60) || null;
-      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null, Boolean(change.force), approvedBy, change.checkinVehicleId ?? null);
+      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null, Boolean(change.force), approvedBy);
       continue;
     }
 

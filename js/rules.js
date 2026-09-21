@@ -14,8 +14,13 @@ export const joinNames = (list) => (list.length <= 1 ? (list[0] ?? '') : `${list
 
 // ---------- Names ----------
 
-// Sorting people by last name, then first name.
+// Sorting people by last name, then first name (used to break ties).
 export const byName = (a, b) => a.last.localeCompare(b.last, 'en') || a.first.localeCompare(b.first, 'en');
+
+// Every list of guests is alphabetical by the name SHOWN on screen ("Helen C." before "Linda D."): what you
+// read is what is sorted. Accents and capitals do not matter. Use it like:  guests.sort(alphabetical(names)).
+export const alphabetical = (names) => (a, b) =>
+  names.get(a.id).localeCompare(names.get(b.id), 'en', { sensitivity: 'base' }) || byName(a, b);
 
 // Lower-case and remove accents so "grunewald" finds "Grünewald" and "sorensen" finds "Sørensen".
 export const plain = (text) =>

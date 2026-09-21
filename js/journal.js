@@ -72,7 +72,7 @@ export function summarize(batch) {
     return `Cancelled ${tour.activityLabel}${tour.guestCount > 0 ? ` (${plural(tour.guestCount, 'guest')} moved to At leisure)` : ''}`;
   }
 
-  if (batch.kind === 'rollcall') return summarizeRollCall(batch.entries[0]);
+  if (batch.kind === 'rollcall') return summarizeRollCall(batch);
 
   // Guests who went from the same place to the same place are told together.
   const groups = new Map();
@@ -81,24 +81,25 @@ export function summarize(batch) {
     groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
   const text = [...groups.values()]
-    .map((list) => `Moved ${joinNames(list.map((e) => e.guestName))}${list[0].from.kind === 'blank' ? '' : ` from ${list[0].from.label}`} to ${list[0].to.label}`)
+    .map((list) => `Moved ${joinNames(alphaNames(list))}${list[0].from.kind === 'blank' ? '' : ` from ${list[0].from.label}`} to ${list[0].to.label}`)
     .join('; ');
-
-  // Joining a tour during its roll call also puts the guest in a vehicle.
-  const checkin = batch.entries.find((e) => e.type === 'checkin');
-  const withVehicle = checkin ? ` and into ${checkin.vehicleLabel}` : '';
 
   // A move into a full tour, decided by the dispatcher: say so, and who approved it if it was written down.
   const forced = batch.entries.filter((e) => e.forced);
-  if (forced.length === 0) return `${text}${withVehicle}`;
+  if (forced.length === 0) return text;
   const approvers = [...new Set(forced.map((e) => e.approvedBy).filter(Boolean))];
-  return `${text}${withVehicle} (forced${approvers.length > 0 ? `, approved by ${approvers.join(' and ')}` : ''})`;
+  return `${text} (forced${approvers.length > 0 ? `, approved by ${approvers.join(' and ')}` : ''})`;
 }
 
-// One line for one roll call action.
-function summarizeRollCall(entry) {
+// The guest names of some journal lines, alphabetical (the names are already the ones shown on screen).
+const alphaNames = (entries) => entries.map((e) => e.guestName).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+
+// One line for one roll call action (a whole travel party checked in together is one action).
+function summarizeRollCall(batch) {
+  const entry = batch.entries[0];
   if (entry.type === 'rollcall-start') return `Started the roll call: ${entry.activityLabel} (${entry.vehicles.join(', ')})`;
   if (entry.type === 'checkin') {
+    if (batch.entries.length > 1) return `${joinNames(alphaNames(batch.entries))} checked in to ${entry.vehicleLabel}`;
     return entry.fromVehicleLabel ? `${entry.guestName} moved from ${entry.fromVehicleLabel} to ${entry.vehicleLabel}` : `${entry.guestName} checked in to ${entry.vehicleLabel}`;
   }
   if (entry.type === 'checkout') return `${entry.guestName} taken out of ${entry.fromVehicleLabel}`;

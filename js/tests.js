@@ -14,7 +14,7 @@ import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel } from './rules.js';
+import { plain, displayNames, alphabetical, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -612,6 +612,21 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
 }
 
 // =====================================================================
+// Every list of guests is alphabetical by the name shown
+// =====================================================================
+{
+  const shown = displayNames(trip.guests);
+  const sortedNames = [...trip.guests].sort(alphabetical(shown)).map((g) => shown.get(g.id));
+  check('Guests sorted for any list come out alphabetical by the name shown ("Helen C." before "Linda D.")',
+    sortedNames.every((n, i) => i === 0 || sortedNames[i - 1].localeCompare(n, 'en', { sensitivity: 'base' }) <= 0) && sortedNames.indexOf('Helen C.') < sortedNames.indexOf('Linda D.'));
+  check('"Maria Mb." comes before "Maria Mo." and "Mary S." after "Mark O."', sortedNames.indexOf('Maria Mb.') < sortedNames.indexOf('Maria Mo.') && sortedNames.indexOf('Mark O.') < sortedNames.indexOf('Mary S.'));
+  const fk = [{ id: 'a', first: 'Eva', last: 'Cohen' }, { id: 'b', first: 'Élodie', last: 'Blanc' }, { id: 'c', first: 'zoë', last: 'Berg' }, { id: 'd', first: 'Eva', last: 'Adams' }];
+  const fkNames = displayNames(fk);
+  check('Accents and capital letters do not matter, and two guests with the same first name go by last name',
+    [...fk].sort(alphabetical(fkNames)).map((g) => fkNames.get(g.id)).join() === 'Élodie B.,Eva A.,Eva C.,zoë B.', [...fk].sort(alphabetical(fkNames)).map((g) => fkNames.get(g.id)).join());
+}
+
+// =====================================================================
 // Step 6a: the roll call (rollcall.js, changes.js, journal.js)
 // =====================================================================
 {
@@ -700,34 +715,46 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   check('The journal kept everything (12 actions: 6 to do, 6 to undo) and nothing more can be undone',
     groupBatches(undoAll.entries).length === 12 && lastUndoable(undoAll.entries) === null);
 
-  // --- Add guest: somebody from another tour joins and goes straight into a vehicle ---
+  // --- Add guest during a roll call is the ordinary Add guest: the guest is NOT put in a vehicle ---
   const addCtx = makeCtx();
-  await startRollCall(addCtx, 'S01-2');
-  const av = rollCallOf(addCtx, 'S01-2').vehicles[1];
+  await startRollCall(addCtx, 'S02-1');
+  const other = trip.guests.find((g) => { const p = guestPlace(trip, g, slot('S02')); return p.kind === 'activity' && p.activity.id !== activity('S02-1').id; });
+  const added = await applyChange(addCtx, trip.id, moveOf(other.ref, 'S02', toActivity('S02-1')));
+  const addedState = rollCallState(addCtx.state, rollCallOf(addCtx, 'S02-1'));
+  check('Add guest during the roll call: the guest joins the tour and appears in the list to check in, in NO vehicle',
+    added.ok && addedState.expected.some((g) => g.id === other.id) && !rollCallOf(addCtx, 'S02-1').checkins[other.id] && addCtx.entries.filter((e) => e.type !== 'rollcall-start').every((e) => e.type === 'move'));
+  const fullCtx = makeCtx();
+  await startRollCall(fullCtx, 'S01-2');
   const fromAlfama = trip.guests.find((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-1').id);
-  const intoFullTram = { ...moveOf(fromAlfama.ref, 'S01', toActivity('S01-2')), checkinVehicleId: av.id };
-  check('Add guest into a FULL tour needs FORCE, like everywhere else', !(await applyChange(addCtx, trip.id, intoFullTram)).ok);
-  const forcedIn = await applyChange(addCtx, trip.id, { ...intoFullTram, force: true, approvedBy: 'Sam' });
-  check('...with FORCE, the guest joins Tram 28 (17 / 16) AND goes into V2, as one action of two lines (a forced move, a check-in)',
-    forcedIn.ok && countIn(addCtx.state, activity('S01-2')) === 17 && rollCallOf(addCtx, 'S01-2').checkins[fromAlfama.id] === av.id
-    && addCtx.entries.filter((e) => e.type === 'move' && e.forced).length === 1 && addCtx.entries.some((e) => e.type === 'checkin') && new Set(addCtx.entries.map((e) => e.batchId)).size === 2);
-  const addBatch = groupBatches(addCtx.entries).at(-1);
-  check('The journal tells it in one sentence: "... to Tram 28 and viewpoints and into V2 (forced, approved by Sam)"',
-    /and into V2 \(forced, approved by Sam\)$/.test(summarize(addBatch)) && addBatch.kind === 'move' && addBatch.rollCallId, summarize(addBatch));
-  await applyChange(addCtx, trip.id, { type: 'undo' });
-  check('Undo takes back both: the guest is back in Alfama and out of the vehicle',
-    guestPlace(addCtx.state, fromAlfama, slot('S01')).activity.id === activity('S01-1').id && !rollCallOf(addCtx, 'S01-2').checkins[fromAlfama.id]);
+  check('Add guest into a FULL tour still needs FORCE, as everywhere else (and then also just joins the list)',
+    !(await applyChange(fullCtx, trip.id, moveOf(fromAlfama.ref, 'S01', toActivity('S01-2')))).ok
+    && (await applyChange(fullCtx, trip.id, { ...moveOf(fromAlfama.ref, 'S01', toActivity('S01-2')), force: true })).ok
+    && rollCallState(fullCtx.state, rollCallOf(fullCtx, 'S01-2')).expected.some((g) => g.id === fromAlfama.id));
 
-  const easy = makeCtx();
-  const sintra = activity('S02-1');
-  const other = trip.guests.find((g) => { const p = guestPlace(trip, g, slot('S02')); return p.kind === 'activity' && p.activity.id !== sintra.id; });
-  await startRollCall(easy, 'S02-1');
-  const ev = rollCallOf(easy, 'S02-1').vehicles[0];
-  const easyIn = await applyChange(easy, trip.id, { ...moveOf(other.ref, 'S02', toActivity('S02-1')), checkinVehicleId: ev.id });
-  check('Add guest into a tour with room: no FORCE needed, and the guest is in the vehicle', easyIn.ok && easy.entries.every((e) => !e.forced) && rollCallOf(easy, 'S02-1').checkins[other.id] === ev.id);
-  check('A vehicle can only be used when joining a tour that has a roll call, never for At leisure',
-    !(await applyChange(makeCtx(), trip.id, { ...moveOf(other.ref, 'S02', toActivity('S02-1')), checkinVehicleId: 'x' })).ok
-    && !(await applyChange(easy, trip.id, { ...moveOf(inTram[0].ref, 'S01', LEISURE), checkinVehicleId: ev.id })).ok);
+  // --- A travel party checked in together: ONE action ---
+  const partyCtx = makeCtx();
+  await startRollCall(partyCtx, 'S01-2');
+  const pv = rollCallOf(partyCtx, 'S01-2').vehicles[0];
+  const pair = inTram.find((g) => partyMovers(trip, g, slot('S01')).length >= 1);
+  const family = [pair, ...partyMovers(trip, pair, slot('S01'))];
+  const checkAll = (guests, vehicle = pv) => guests.map((g) => rc('S01-2', 'checkin', { guestId: g.id, vehicleId: vehicle.id }));
+  const groupResult = await applyChange(partyCtx, trip.id, checkAll(family));
+  const groupEntries = partyCtx.entries.filter((e) => e.type === 'checkin');
+  check(`A whole travel party (${family.length} people) can be checked into a vehicle in one action: one batch, one line each`,
+    groupResult.ok && groupEntries.length === family.length && new Set(groupEntries.map((e) => e.batchId)).size === 1 && family.every((g) => rollCallOf(partyCtx, 'S01-2').checkins[g.id] === pv.id));
+  const groupBatch = groupBatches(partyCtx.entries).at(-1);
+  const namesInOrder = family.map((g) => displayNames(trip.guests).get(g.id)).sort((x, y) => x.localeCompare(y, 'en', { sensitivity: 'base' }));
+  check('The journal names them alphabetically in one sentence: "... checked in to V1"',
+    groupBatch.kind === 'rollcall' && summarize(groupBatch) === `${joinNames(namesInOrder)} checked in to V1`, summarize(groupBatch));
+  await applyChange(partyCtx, trip.id, { type: 'undo' });
+  check('ONE undo takes the whole party out of the vehicle again (they are all back on the list)',
+    family.every((g) => !rollCallOf(partyCtx, 'S01-2').checkins[g.id]) && rollCallState(partyCtx.state, rollCallOf(partyCtx, 'S01-2')).expected.length === 16);
+  const notBooked = await applyChange(partyCtx, trip.id, [...checkAll([pair]), rc('S01-2', 'checkin', { guestId: guest('G001').id, vehicleId: pv.id })]);
+  check('A group with one guest who is not booked on the tour is refused, and nobody is checked in', !notBooked.ok && !rollCallOf(partyCtx, 'S01-2').checkins[pair.id]);
+  check('A group cannot repeat a guest, mix in another kind of change, or concern two tours',
+    !(await applyChange(partyCtx, trip.id, [...checkAll([pair]), ...checkAll([pair])])).ok
+    && !(await applyChange(partyCtx, trip.id, [...checkAll([pair]), rc('S01-2', 'vehicle-add')])).ok
+    && !validateChanges(partyCtx.state, owner, [rc('S01-2', 'checkin', { guestId: pair.id, vehicleId: pv.id }), rc('S01-1', 'checkin', { guestId: fromAlfama.id, vehicleId: pv.id })], partyCtx.entries).ok);
 
   // A guest moved off the tour after checking in is not counted anymore
   const leftCtx = makeCtx();

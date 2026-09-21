@@ -11,8 +11,7 @@ import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { applyChange } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
-import { byName, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
-import { vehicleLabel } from '../rollcall.js';
+import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
 
 const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :
@@ -109,13 +108,10 @@ export function showForcedInfo(ctx, trip, guest, slot, entry) {
 // ---------- 2. Add a guest to an activity ----------
 
 // Search all guests, see where each one is now, tap one to bring them into this activity.
-// options.vehicle: during a roll call, the guest also goes straight into that vehicle (and no travel party question).
-export function startAddGuest(ctx, trip, slot, activity, options = {}) {
-  const rollCallOptions = options.vehicle
-    ? { askParty: false, checkinVehicleId: options.vehicle.id, vehicleLabel: vehicleLabel(trip, options.vehicle) }
-    : {};
+// (During a roll call the guest just joins the tour and appears in the list; they are NOT put in a vehicle.)
+export function startAddGuest(ctx, trip, slot, activity) {
   const names = displayNames(trip.guests);
-  const guests = [...trip.guests].sort(byName);
+  const guests = [...trip.guests].sort(alphabetical(names));
   const list = h('div', {});
   const now = countIn(trip, activity);
   const full = activity.capacity !== null && now >= activity.capacity;
@@ -131,7 +127,7 @@ export function startAddGuest(ctx, trip, slot, activity, options = {}) {
           return choiceRow({
             title: names.get(guest.id), detail: `Now: ${placeText(here)}`,
             badge: already ? { text: '✓ Already here' } : null, disabled: already,
-            onclick: () => afterPick(ctx, trip, guest, slot, { kind: 'activity', activity }, rollCallOptions),
+            onclick: () => afterPick(ctx, trip, guest, slot, { kind: 'activity', activity }),
           });
         })));
   }
@@ -164,7 +160,7 @@ function afterPick(ctx, trip, guest, slot, target, options = {}) {
 
   const withParty = moveFacts(trip, guest, slot, target, movers);
   const alone = moveFacts(trip, guest, slot, target, []);
-  const moverNames = joinNames(movers.map((m) => alone.names.get(m.id)));
+  const moverNames = joinNames([...movers].sort(alphabetical(alone.names)).map((m) => alone.names.get(m.id)));
 
   // What to say about the room in the target tour.
   let roomNote = null;
@@ -197,20 +193,18 @@ function afterPick(ctx, trip, guest, slot, target, options = {}) {
 function moveFacts(trip, guest, slot, target, movers, options = {}) {
   const names = displayNames(trip.guests);
   const group = [guest, ...movers];
-  const who = joinNames(group.map((g) => names.get(g.id)));
+  const who = joinNames([...group].sort(alphabetical(names)).map((g) => names.get(g.id)));
   const here = guestPlace(trip, guest, slot);
   const to = target.kind === 'leisure' ? 'At leisure' : target.activity.name;
   const from = here.kind === 'blank' ? '' : ` from ${here.kind === 'unknown' ? `"${here.raw}"` : placeText(here)}`;
-  const intoVehicle = options.checkinVehicleId ? ` and into ${options.vehicleLabel}` : ''; // during a roll call
-  const detail = (target.kind === 'activity'
+  const detail = target.kind === 'activity'
     ? `${slotLabel(trip, slot)} · ${activityDetail(trip, slot, target.activity)}`
-    : slotLabel(trip, slot)) + (options.checkinVehicleId ? ` · then into ${options.vehicleLabel}` : '');
+    : slotLabel(trip, slot);
   const changes = group.map((g) => ({
     type: 'move', guestId: g.id, slotId: slot.id,
     to: target.kind === 'leisure' ? { kind: 'leisure' } : { kind: 'activity', activityId: target.activity.id },
-    ...(options.checkinVehicleId ? { checkinVehicleId: options.checkinVehicleId } : {}),
   }));
-  return { names, group, who, here, to, from, detail, changes, done: `Moved ${who} to ${to}${intoVehicle}` };
+  return { names, group, who, here, to, from, detail, changes, done: `Moved ${who} to ${to}` };
 }
 
 // ---------- 4. Confirmation screen ----------

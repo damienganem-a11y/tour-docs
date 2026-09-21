@@ -4,7 +4,7 @@
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
-import { byName, plain, displayNames, partyLabel, guestPlace } from '../rules.js';
+import { alphabetical, plain, displayNames, partyLabel, guestPlace } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { startMove } from './move.js';
 import { undoButton } from './undo.js';
@@ -18,7 +18,7 @@ export function guestPage(ctx, trip, guestId) {
 
 function guestList(ctx, trip) {
   const names = displayNames(trip.guests);
-  const guests = [...trip.guests].sort(byName);
+  const guests = [...trip.guests].sort(alphabetical(names));
   const count = h('p', { class: 'muted count-line' });
   const list = h('ul', { class: 'list' });
 
