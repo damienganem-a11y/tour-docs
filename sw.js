@@ -9,14 +9,17 @@
 //   - Later, WITH internet: it asks the network first, so a new version you uploaded arrives
 //     straight away, and it refreshes its copy. If the network is very slow (over 3 seconds), it
 //     uses its copy instead of making you wait.
-//   - Later, WITHOUT internet: it uses its copy.
+//   - Later, WITHOUT internet: it uses its copy. Once the network has failed, it does not try it again
+//     for 30 seconds, so the app opens fast instead of waiting for a timeout on every single file.
 //
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.5.0'; // keep equal to js/version.js
+const VERSION = '0.5.1'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
+const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)
+let networkDownUntil = 0; // until when we skip the network (see answer() below)
 
 const FILES = [
   'index.html',
@@ -82,16 +85,23 @@ async function answer(request) {
   // The page itself is asked for as "./" or as "index.html": both are the same file.
   const copy = () => cache.match(request, { ignoreSearch: true }).then((found) => found ?? (request.mode === 'navigate' ? cache.match('index.html') : undefined));
 
-  try {
-    const fromNetwork = await withTimeout(fetch(request.url, { cache: 'no-cache' }), SLOW);
-    if (fromNetwork.ok) cache.put(request, fromNetwork.clone()); // keep our copy fresh
-    return fromNetwork;
-  } catch {
-    // No network, or too slow: use the copy we kept.
-    const found = await copy();
-    if (found) return found;
-    return new Response('Offline, and this file was not saved yet.', { status: 503, headers: { 'Content-Type': 'text/plain' } });
+  // Airplane mode, or the network failed a moment ago: go straight to the copy. Without this, every file
+  // of the app would wait for its own timeout, one after the other, and the app would take ages to open.
+  const networkLooksDown = navigator.onLine === false || Date.now() < networkDownUntil;
+
+  if (!networkLooksDown) {
+    try {
+      const fromNetwork = await withTimeout(fetch(request.url, { cache: 'no-cache' }), SLOW);
+      if (fromNetwork.ok) cache.put(request, fromNetwork.clone()); // keep our copy fresh
+      return fromNetwork;
+    } catch {
+      networkDownUntil = Date.now() + PAUSE; // no network, or too slow: use the copy, and stop waiting for a while
+    }
   }
+
+  const found = await copy();
+  if (found) return found;
+  return new Response('Offline, and this file was not saved yet.', { status: 503, headers: { 'Content-Type': 'text/plain' } });
 }
 
 // Gives up on a request that takes too long, so a bad connection never blocks the app.

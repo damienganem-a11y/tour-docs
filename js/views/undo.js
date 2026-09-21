@@ -1,6 +1,7 @@
 // The Undo button: like Ctrl+Z. One tap takes back the last action of the trip, no confirmation.
-// It shows what it would undo, and is greyed out when there is nothing to undo.
-// It sits next to the title of each Use screen (see pageHead in chrome.js).
+// It sits next to the title of each Use screen (see pageHead in chrome.js) and takes all the room
+// that is left, so it can say in full what it would undo (for someone who forgot what they just did):
+// what was moved, and in which half-day. It is greyed out when there is nothing to undo.
 
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
@@ -9,7 +10,7 @@ import { showToast } from '../ui.js';
 
 export function undoButton(ctx, trip) {
   const last = lastUndoable(ctx.journal(trip.id));
-  const what = last ? summarize(last) : 'nothing to undo';
+  const what = last ? summarize(last) : 'Nothing to undo';
   let busy = false; // ignore a second tap while the first is still being saved
 
   return h('button', {
@@ -28,5 +29,6 @@ export function undoButton(ctx, trip) {
     },
   },
     h('span', { class: 'undo-label' }, '↶ Undo'),
-    h('span', { class: 'undo-what' }, what));
+    h('span', { class: 'undo-what' }, what),
+    last ? h('span', { class: 'undo-when' }, last.slotLabel) : null);
 }

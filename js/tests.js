@@ -552,11 +552,10 @@ if (realWorker) {
 // --- How sw.js behaves, tried with a pretend network and a pretend storage ---
 {
   const ORIGIN = location.origin;
-  const listeners = {};
   const stores = new Map(); // cache name -> Map(url -> Response)
-  let claimed = false, skipped = false;
   let network = 'online';   // 'online' | 'offline' | 'slow' | 'missing'
   const networkCalls = [];
+  const CACHE_NAME = `tour-docs-${APP_VERSION}`;
 
   const urlOf = (request) => (typeof request === 'string' ? new URL(request, ORIGIN).href : request.url);
   const makeCache = (map) => ({
@@ -583,52 +582,86 @@ if (realWorker) {
     return new Response(`from network: ${new URL(url).pathname}`, { status: 200 });
   }
 
-  // Run sw.js with these pretend tools (and a 50 ms patience instead of 3 s, so the test is quick).
-  const pretendSelf = {
-    location: { origin: ORIGIN },
-    addEventListener: (type, handler) => { listeners[type] = handler; },
-    skipWaiting: () => { skipped = true; return Promise.resolve(); },
-    clients: { claim: () => { claimed = true; return Promise.resolve(); } },
-  };
-  new Function('self', 'caches', 'fetch', 'Request', 'Response', 'URL', 'setTimeout', 'clearTimeout', swText.replace('const SLOW = 3000', 'const SLOW = 50'))(
-    pretendSelf, pretendCaches, pretendFetch, Request, Response, URL, setTimeout, clearTimeout);
+  // Starts a fresh copy of sw.js (as a phone does after a restart) with these pretend tools. It is given
+  // 50 ms of patience instead of 3 s, and a 200 ms pause instead of 30 s, so the tests are quick.
+  function startWorker(pretendNavigator = { onLine: true }) {
+    const listeners = {};
+    const flags = { claimed: false, skipped: false };
+    const pretendSelf = {
+      location: { origin: ORIGIN },
+      addEventListener: (type, handler) => { listeners[type] = handler; },
+      skipWaiting: () => { flags.skipped = true; return Promise.resolve(); },
+      clients: { claim: () => { flags.claimed = true; return Promise.resolve(); } },
+    };
+    const code = swText.replace('const SLOW = 3000', 'const SLOW = 50').replace('const PAUSE = 30000', 'const PAUSE = 200');
+    new Function('self', 'caches', 'fetch', 'Request', 'Response', 'URL', 'setTimeout', 'clearTimeout', 'navigator', code)(
+      pretendSelf, pretendCaches, pretendFetch, Request, Response, URL, setTimeout, clearTimeout, pretendNavigator);
 
-  const run = async (type, extra = {}) => { const event = { ...extra, waitUntil(p) { event.done = p; }, respondWith(p) { event.answer = p; } }; listeners[type](event); await (event.done ?? event.answer); return event; };
-  const ask = async (path, request = {}) => { const event = await run('fetch', { request: { url: ORIGIN + path, method: 'GET', mode: 'cors', ...request } }); return event.answer ? await event.answer : null; };
-  const CACHE_NAME = `tour-docs-${APP_VERSION}`;
+    const run = async (type, extra = {}) => {
+      const event = { ...extra, waitUntil(p) { event.done = p; }, respondWith(p) { event.answer = p; } };
+      listeners[type](event);
+      await (event.done ?? event.answer);
+      return event;
+    };
+    const ask = async (path, request = {}) => {
+      const event = await run('fetch', { request: { url: ORIGIN + path, method: 'GET', mode: 'cors', ...request } });
+      return event.answer ? await event.answer : null;
+    };
+    return { run, ask, flags };
+  }
+  const savedCopy = (path) => stores.get(CACHE_NAME).get(`${ORIGIN}${path}`).clone().text();
 
+  // Install and activate
   stores.set('tour-docs-0.0.1', new Map()); // a copy left by an older version
-  await run('install');
-  check('Install: every file of the list is copied, and the new version starts straight away', listed.every((f) => stores.get(CACHE_NAME)?.has(`${ORIGIN}/${f}`)) && skipped);
-  await run('activate');
+  const worker = startWorker();
+  await worker.run('install');
+  check('Install: every file of the list is copied, and the new version starts straight away', listed.every((f) => stores.get(CACHE_NAME)?.has(`${ORIGIN}/${f}`)) && worker.flags.skipped);
+  await worker.run('activate');
   check('Activate: the copies of older versions are thrown away, the current one is kept, and open pages are taken over',
-    !stores.has('tour-docs-0.0.1') && stores.has(CACHE_NAME) && claimed);
+    !stores.has('tour-docs-0.0.1') && stores.has(CACHE_NAME) && worker.flags.claimed);
+
+  // With internet
+  network = 'online'; networkCalls.length = 0;
+  const online = await worker.ask('/js/app.js');
+  check('With internet, the file comes from the network (so a new upload arrives at once)', (await online.text()) === 'from network: /js/app.js' && networkCalls.length === 1);
+  check('...and the saved copy is refreshed', (await savedCopy('/js/app.js')) === 'from network: /js/app.js');
+
+  // Without internet
+  network = 'offline';
+  check('Without internet, a saved file is served from the copy', (await (await worker.ask('/js/app.js')).text()) === 'from network: /js/app.js');
+  check('Without internet, the app itself opens from the saved index.html (asked for as "/" or as "?x=1")',
+    (await (await worker.ask('/', { mode: 'navigate' })).text()) === 'from network: /index.html' && (await (await worker.ask('/index.html?x=1', { mode: 'navigate' })).text()) === 'from network: /index.html');
+  check('Without internet, a file that was never saved gets a clear 503 answer (no crash)', (await worker.ask('/js/never-saved.js')).status === 503);
+
+  // A dead or slow network must not make every file wait for its own timeout
+  network = 'slow';
+  const slowWorker = startWorker();
+  let started = Date.now();
+  const firstSlow = await slowWorker.ask('/styles.css');
+  check('With a very slow connection, the saved copy is used instead of waiting', (await firstSlow.text()) === 'from network: /styles.css' && Date.now() - started < 300, `${Date.now() - started} ms`);
+  networkCalls.length = 0; started = Date.now();
+  const nextOnes = await Promise.all([slowWorker.ask('/js/db.js'), slowWorker.ask('/js/ui.js'), slowWorker.ask('/js/rules.js')]);
+  check('After the network has failed once, the next files go straight to the copy: no more waiting, no more attempts',
+    networkCalls.length === 0 && Date.now() - started < 30 && nextOnes.every((r) => r.status === 200), `${networkCalls.length} attempts, ${Date.now() - started} ms`);
+  network = 'online';
+  await new Promise((r) => setTimeout(r, 250)); // longer than the (shortened) pause
+  networkCalls.length = 0;
+  check('...and after the pause, the network is tried again (so a new upload arrives once you are back online)',
+    (await (await slowWorker.ask('/js/db.js')).text()) === 'from network: /js/db.js' && networkCalls.length === 1);
 
   network = 'online'; networkCalls.length = 0;
-  const online = await ask('/js/app.js');
-  check('With internet, the file comes from the network (so a new upload arrives at once)', (await online.text()) === 'from network: /js/app.js' && networkCalls.length === 1);
-  check('...and the saved copy is refreshed', (await stores.get(CACHE_NAME).get(`${ORIGIN}/js/app.js`).clone().text()) === 'from network: /js/app.js');
+  const airplane = startWorker({ onLine: false });
+  check('In airplane mode (the phone says it is offline), the copy is used at once without trying the network',
+    (await (await airplane.ask('/js/app.js')).text()) === 'from network: /js/app.js' && networkCalls.length === 0);
 
-  network = 'offline';
-  check('Without internet, a saved file is served from the copy', (await (await ask('/js/app.js')).text()) === 'from network: /js/app.js');
-  check('Without internet, the app itself opens from the saved index.html (asked for as "/" or as "?x=1")',
-    (await (await ask('/', { mode: 'navigate' })).text()) === 'from network: /index.html' && (await (await ask('/index.html?x=1', { mode: 'navigate' })).text()) === 'from network: /index.html');
-  const notSaved = await ask('/js/never-saved.js');
-  check('Without internet, a file that was never saved gets a clear 503 answer (no crash)', notSaved.status === 503);
-
-  network = 'slow';
-  const started = Date.now();
-  const slow = await ask('/styles.css');
-  check('With a very slow connection, the saved copy is used instead of waiting', (await slow.text()) === 'from network: /styles.css' && Date.now() - started < 300, `${Date.now() - started} ms`);
-
+  // Odd cases
   network = 'missing';
-  const before = await stores.get(CACHE_NAME).get(`${ORIGIN}/js/db.js`).clone().text();
-  const missing = await ask('/js/db.js');
+  const before = await savedCopy('/js/db.js');
+  const missing = await startWorker().ask('/js/db.js');
   check('If the network says "not found", that answer is passed on and the saved copy is NOT overwritten',
-    missing.status === 404 && (await stores.get(CACHE_NAME).get(`${ORIGIN}/js/db.js`).clone().text()) === before);
-
+    missing.status === 404 && (await savedCopy('/js/db.js')) === before);
   check('Requests that are not plain reads, or go to other websites, are left alone',
-    (await ask('/js/app.js', { method: 'POST' })) === null && (await run('fetch', { request: { url: 'https://example.com/x.js', method: 'GET', mode: 'cors' } }).then((e) => e.answer)) === undefined);
+    (await worker.ask('/js/app.js', { method: 'POST' })) === null && (await worker.run('fetch', { request: { url: 'https://example.com/x.js', method: 'GET', mode: 'cors' } }).then((e) => e.answer)) === undefined);
 }
 
 // --- The access code ---

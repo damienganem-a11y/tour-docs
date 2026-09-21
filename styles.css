@@ -165,19 +165,19 @@ a { color: inherit; text-decoration: none; }
 
 .top-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
-/* The Undo button (like Ctrl+Z): next to the title of each Use screen, in orange so it is easy to see. */
-.page-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.page-head-text { flex: 1; min-width: 0; }
+/* The Undo button (like Ctrl+Z): next to the title of each Use screen, in orange so it is easy to see.
+   It takes ALL the room left of the title, and says in full what it would undo. */
+.page-head-row { display: flex; align-items: flex-start; gap: 14px; }
+.page-head-text { flex: 0 1 auto; min-width: 0; }
 .undo-btn {
-  flex: 0 1 40%;
-  min-width: 120px;
-  max-width: 170px;
+  flex: 1 1 0;
+  min-width: 150px;
   margin-top: 6px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 9px 16px;
+  gap: 3px;
+  padding: 12px 16px;
   border: 0;
   border-radius: 18px;
   background: var(--undo);
@@ -188,8 +188,9 @@ a { color: inherit; text-decoration: none; }
 }
 .undo-btn:active { filter: brightness(0.9); }
 .undo-btn:disabled { background: var(--track); color: var(--muted); cursor: default; }
-.undo-label { font-size: 19px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
-.undo-what { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; opacity: 0.92; }
+.undo-label { font-size: 20px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.undo-what { font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
+.undo-when { font-size: 13px; opacity: 0.85; }
 
 /* ---------- Journal ---------- */
 
