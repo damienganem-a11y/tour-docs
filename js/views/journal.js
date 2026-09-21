@@ -7,7 +7,7 @@
 import { h } from '../dom.js';
 import { formatMoment } from '../time.js';
 import { plain } from '../rules.js';
-import { groupBatches, summarize, guestNamesOf } from '../journal.js';
+import { groupBatches, summarize, guestNamesOf, wasForced } from '../journal.js';
 import { pageHead } from './chrome.js';
 
 const PAGE = 50; // cards shown at once; "Show more" adds the next 50
@@ -60,6 +60,7 @@ export function journalPage(ctx, trip) {
         // The time is shown in the local time of the place concerned, with the place named.
         `${formatMoment(batch.at, batch.place.timeZone)} ${batch.place.name} time · ${batch.who.name}`,
         batch.undone ? h('span', { class: 'tag' }, 'Undone') : null,
+        wasForced(batch) ? h('span', { class: 'tag tag--warn' }, 'Forced') : null,
         batch.kind === 'undo' ? h('span', { class: 'tag' }, 'Undo') : null,
         batch.kind === 'move' && guests > 1 ? h('span', { class: 'tag' }, `Group of ${guests}`) : null));
   }

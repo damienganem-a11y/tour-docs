@@ -205,6 +205,8 @@ a { color: inherit; text-decoration: none; }
 .entry--muted .entry-title { color: var(--muted); }
 .entry-title { font-size: 18px; font-weight: 700; line-height: 1.3; }
 .entry-meta { margin-top: 6px; font-size: 14px; color: var(--muted); }
+.tag--warn { background: var(--warn-bg); color: var(--warn-ink); }
+.approval-input { margin: 4px 0 12px; }
 .tag {
   display: inline-block;
   margin-left: 8px;

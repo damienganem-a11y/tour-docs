@@ -8,7 +8,9 @@
 //   3. the journal says who, what, from, to and when (the exact moment).
 //
 // A change is one of:
-//   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' } }
+//   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' }, force?, approvedBy? }
+//       force: true lets a move go into a full tour (the dispatcher has authority; owner only). The journal
+//       then says "forced", with the optional note approvedBy ("Approved by Sam").
 //   { type: 'cancel-tour', activityId }        everybody on it goes to At leisure, it stays as "Cancelled"
 //   { type: 'undo' }                           takes back the last action of the trip (like Ctrl+Z)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
@@ -42,9 +44,9 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (changes[0].type === 'undo') return validateUndo(trip, journal);
 
   const seen = new Set();     // the same guest cannot be changed twice in the same half-day
-  const flows = new Map();    // activityId -> { activity, joining, leaving }, to check capacity below
+  const flows = new Map();    // activityId -> { activity, joining, leaving, forced }, to check capacity below
   const flow = (activity) => {
-    if (!flows.has(activity.id)) flows.set(activity.id, { activity, joining: 0, leaving: 0 });
+    if (!flows.has(activity.id)) flows.set(activity.id, { activity, joining: 0, leaving: 0, forced: false });
     return flows.get(activity.id);
   };
 
@@ -61,6 +63,7 @@ export function validateChanges(trip, user, changes, journal = []) {
     const slot = trip.slots.find((s) => s.id === change.slotId);
     if (!guest) return fail('That guest is not in this trip.');
     if (!slot) return fail('That half-day is not in this trip.');
+    if (change.force && !canUser(user, 'force')) return fail('You do not have permission to force a move.');
 
     const key = `${guest.id}|${slot.id}`;
     if (seen.has(key)) return fail(`${names.get(guest.id)} appears twice in the same change.`);
@@ -79,6 +82,7 @@ export function validateChanges(trip, user, changes, journal = []) {
         return fail(`${names.get(guest.id)} is already in "${activity.name}".`);
       }
       flow(activity).joining++;
+      if (change.force) flow(activity).forced = true;
     } else {
       return fail('Choose an activity or At leisure.');
     }
@@ -87,8 +91,9 @@ export function validateChanges(trip, user, changes, journal = []) {
 
   // Capacity: for every activity that gains guests, will they all fit?
   // An activity with no capacity never fills up. Guests leaving in the same change free their places.
-  for (const { activity, joining, leaving } of flows.values()) {
-    if (joining === 0 || activity.capacity === null) continue;
+  // A forced move (dispatcher's decision) may go over capacity.
+  for (const { activity, joining, leaving, forced } of flows.values()) {
+    if (joining === 0 || activity.capacity === null || forced) continue;
 
     const now = countIn(trip, activity);
     const room = activity.capacity - (now - leaving);
@@ -170,6 +175,19 @@ async function doApply(ctx, tripId, changes) {
   const lastSeq = Math.max(trip.changeCount ?? 0, ...journal.map((e) => e.seq ?? 0));
   next.changeCount = lastSeq + 1;
 
+  // Which activities will be over capacity once this change is made (only those make a move "forced").
+  const net = new Map(); // activityId -> guests gained (+) or lost (-)
+  for (const change of changes) {
+    if (change.type !== 'move') continue;
+    const before = guestPlace(trip, trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId));
+    if (before.kind === 'activity') net.set(before.activity.id, (net.get(before.activity.id) ?? 0) - 1);
+    if (change.to.kind === 'activity') net.set(change.to.activityId, (net.get(change.to.activityId) ?? 0) + 1);
+  }
+  const willBeOver = (activityId) => {
+    const activity = trip.activities.find((a) => a.id === activityId);
+    return activity.capacity !== null && countIn(trip, activity) + (net.get(activityId) ?? 0) > activity.capacity;
+  };
+
   const base = () => ({
     id: newId(), tripId: trip.id, at,
     seq: next.changeCount, n: entries.length, // n = this entry's place inside its action
@@ -211,14 +229,16 @@ async function doApply(ctx, tripId, changes) {
   }
 
   // A "move" of one guest in one half-day.
-  const move = (guest, slot, to, cause) => {
+  const move = (guest, slot, to, cause, force = false, approvedBy = null) => {
     const before = guestPlace(trip, guest, slot);
+    const forced = force && to.kind === 'activity' && willBeOver(to.activityId);
     next.bookings[guest.id] ??= {};
     next.bookings[guest.id][slot.id] = to.kind === 'leisure' ? { kind: 'leisure' } : { kind: 'activity', activityId: to.activityId };
 
     // Names are copied in as text, so the journal still reads correctly even if things are renamed later.
     entries.push({
       ...base(), type: 'move', cause,
+      forced, approvedBy: forced ? approvedBy : null, // a forced move says who approved it (optional note)
       guestId: guest.id, guestName: names.get(guest.id),
       ...where(trip, slot),
       from: describe(before),
@@ -229,7 +249,8 @@ async function doApply(ctx, tripId, changes) {
 
   for (const change of changes) {
     if (change.type === 'move') {
-      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null);
+      const approvedBy = String(change.approvedBy ?? '').trim().slice(0, 60) || null;
+      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null, Boolean(change.force), approvedBy);
       continue;
     }
 

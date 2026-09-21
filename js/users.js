@@ -7,7 +7,7 @@
 export const makeOwner = (id, name) => ({ id, name, role: 'owner' });
 
 const PERMISSIONS = {
-  owner: ['change'],   // can change anyone's bookings directly
+  owner: ['change', 'force'], // can change anyone's bookings directly, and force a move into a full tour
   colleague: [],       // later
   guest: [],           // later
 };

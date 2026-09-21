@@ -8,7 +8,7 @@ import { applyChange, validateChanges } from './changes.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
-import { groupBatches, lastUndoable, summarize } from './journal.js';
+import { groupBatches, lastUndoable, summarize, wasForced } from './journal.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
@@ -489,6 +489,68 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   const sorted = [...ctx.entries].sort(() => 0.5 - Math.random());
   check('The journal keeps its order even when entries are read back in a different order', groupBatches(sorted).map((b) => b.seq).join() === '1,2');
   check('Journal lines never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(ctx.entries)));
+}
+
+// =====================================================================
+// FORCE: moving into a full tour (the dispatcher's decision), with an optional "approved by" note
+// =====================================================================
+{
+  const forced = (guestRef, slotRef, activityRef, extra = {}) => ({ ...moveOf(guestRef, slotRef, toActivity(activityRef)), force: true, ...extra });
+  const ctx = makeCtx();
+  const r = await applyChange(ctx, trip.id, forced(stranger.ref, 'S05', 'S05-2', { approvedBy: '  Sam Reed  ' }));
+  const e = ctx.entries[0];
+  check('FORCE: a guest can be put into the full, overbooked Hammam (now 11 / 8)', r.ok && countIn(ctx.state, hammam) === 11 && placeNow(ctx, stranger.ref, 'S05').activity?.id === hammam.id, r.error);
+  check('The journal marks the move as forced and keeps who approved it (spaces trimmed)', e.forced === true && e.approvedBy === 'Sam Reed', JSON.stringify({ f: e.forced, a: e.approvedBy }));
+  const batch = groupBatches(ctx.entries)[0];
+  check('The Journal says it in words: "(forced, approved by Sam Reed)"', wasForced(batch) && summarize(batch).endsWith('to Hammam and spa (forced, approved by Sam Reed)'), summarize(batch));
+
+  const noNote = makeCtx();
+  await applyChange(noNote, trip.id, forced(stranger.ref, 'S05', 'S05-2'));
+  check('The "approved by" note is optional: without it the move is still forced, and the words say "(forced)"',
+    noNote.entries[0].forced === true && noNote.entries[0].approvedBy === null && summarize(groupBatches(noNote.entries)[0]).endsWith('(forced)'));
+
+  const long = makeCtx();
+  await applyChange(long, trip.id, forced(stranger.ref, 'S05', 'S05-2', { approvedBy: 'x'.repeat(200) }));
+  check('A very long note is cut to 60 characters', long.entries[0].approvedBy.length === 60);
+
+  const refusedWithoutForce = await applyChange(makeCtx(), trip.id, moveOf(stranger.ref, 'S05', toActivity('S05-2')));
+  check('Without FORCE the full tour is still refused, exactly as before', !refusedWithoutForce.ok && /full \(10 \/ 8\)/.test(refusedWithoutForce.error));
+
+  // FORCE only counts when the tour really ends up over capacity
+  const roomy = makeCtx();
+  const roomTarget = trip.activities.find((a) => a.slotId === slot('S10').id && (a.capacity === null || countIn(trip, a) < a.capacity));
+  await applyChange(roomy, trip.id, { type: 'move', guestId: guest('G014').id, slotId: slot('S10').id, to: { kind: 'activity', activityId: roomTarget.id }, force: true, approvedBy: 'Nobody' });
+  check('If there was room after all, the move is NOT marked forced and the note is not kept', roomy.entries[0].forced === false && roomy.entries[0].approvedBy === null);
+
+  // Two guests into a full tour, in one change
+  const two = makeCtx();
+  const strangers = trip.guests.filter((g) => { const p = guestPlace(trip, g, slot('S05')); return p.kind === 'activity' && p.activity.id !== hammam.id; }).slice(0, 2);
+  const rTwo = await applyChange(two, trip.id, strangers.map((g) => forced(g.ref, 'S05', 'S05-2', { approvedBy: 'Sam' })));
+  check('A group forced into a full tour is one action, every line marked forced (12 / 8)', rTwo.ok && countIn(two.state, hammam) === 12 && two.entries.length === 2 && two.entries.every((x) => x.forced));
+
+  // A swap between two full tours does not need FORCE at all
+  const swap = makeCtx();
+  const inAlfama = trip.guests.find((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-1').id);
+  const inTram = trip.guests.find((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-2').id);
+  await applyChange(swap, trip.id, [forced(inAlfama.ref, 'S01', 'S01-2'), forced(inTram.ref, 'S01', 'S01-1')]);
+  check('A swap between two full tours stays at 20 and 16, so nothing is marked forced', swap.entries.length === 2 && swap.entries.every((x) => x.forced === false));
+
+  // What FORCE does not change
+  const cancelled = makeCtx();
+  await applyChange(cancelled, trip.id, { type: 'cancel-tour', activityId: activity('S01-1').id });
+  const intoCancelled = await applyChange(cancelled, trip.id, forced(inTram.ref, 'S01', 'S01-1'));
+  check('FORCE cannot put anybody into a cancelled tour', !intoCancelled.ok && /cancelled/.test(intoCancelled.error), intoCancelled.error);
+  const alreadyThere = await applyChange(makeCtx(), trip.id, forced(inHammam[0].ref, 'S05', 'S05-2'));
+  check('FORCE does not change the "already in this tour" rule', !alreadyThere.ok && /already in/.test(alreadyThere.error));
+  const notOwner = await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, forced(stranger.ref, 'S05', 'S05-2'));
+  check('Somebody who is not the owner cannot force', !notOwner.ok && /permission/.test(notOwner.error));
+
+  // Undo takes a forced move back, like any other
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Undo takes a forced move back (Hammam back to 10) and the journal keeps both lines',
+    countIn(ctx.state, hammam) === 10 && restoredExactly(ctx.state, trip) && groupBatches(ctx.entries).length === 2 && groupBatches(ctx.entries)[0].undone);
+  check('The undo line says what it undid, including "forced"', /^Undid: .*\(forced, approved by Sam Reed\)$/.test(summarize(groupBatches(ctx.entries)[1])), summarize(groupBatches(ctx.entries)[1]));
+  check('Forced journal lines never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(ctx.entries)));
 }
 
 // =====================================================================

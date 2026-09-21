@@ -57,10 +57,19 @@ export function summarize(batch) {
     const key = `${entry.from.label}|${entry.to.label}`;
     groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
-  return [...groups.values()]
+  const text = [...groups.values()]
     .map((list) => `Moved ${joinNames(list.map((e) => e.guestName))}${list[0].from.kind === 'blank' ? '' : ` from ${list[0].from.label}`} to ${list[0].to.label}`)
     .join('; ');
+
+  // A move into a full tour, decided by the dispatcher: say so, and who approved it if it was written down.
+  const forced = batch.entries.filter((e) => e.forced);
+  if (forced.length === 0) return text;
+  const approvers = [...new Set(forced.map((e) => e.approvedBy).filter(Boolean))];
+  return `${text} (forced${approvers.length > 0 ? `, approved by ${approvers.join(' and ')}` : ''})`;
 }
+
+// Did this action force a move into a full tour?
+export const wasForced = (batch) => batch.entries.some((e) => e.forced);
 
 // The guests an action concerns (for searching by guest).
 export const guestNamesOf = (batch) => batch.entries.filter((e) => e.type === 'move').map((e) => e.guestName);

@@ -58,12 +58,13 @@ export function startMove(ctx, trip, guest, slot) {
     const count = capacityInfo(countIn(trip, activity), activity.capacity);
     const isCurrent = here.kind === 'activity' && here.activity.id === activity.id;
     const full = activity.capacity !== null && countIn(trip, activity) >= activity.capacity;
-    // A full activity cannot be joined (but you can still leave it). A cancelled one cannot be joined at all.
+    // A full activity can still be chosen: the dispatcher may FORCE it (the confirmation warns first).
+    // A cancelled one cannot be chosen at all.
     return choiceRow({
       title: activity.name, detail: activityDetail(trip, slot, activity), side: activity.cancelled ? null : count.text,
       current: isCurrent,
       badge: activity.cancelled ? { text: 'Cancelled', bad: true } : isCurrent ? { text: '✓ Current' } : full ? { text: 'Full', bad: true } : null,
-      disabled: activity.cancelled || (full && !isCurrent),
+      disabled: activity.cancelled,
       onclick: () => (isCurrent ? closeSheet() : afterPick(ctx, trip, guest, slot, { kind: 'activity', activity })),
     });
   });
@@ -96,7 +97,7 @@ export function startAddGuest(ctx, trip, slot, activity) {
           const already = here.kind === 'activity' && here.activity.id === activity.id;
           return choiceRow({
             title: names.get(guest.id), detail: `Now: ${placeText(here)}`,
-            badge: already ? { text: '✓ Already here' } : null, disabled: already || full,
+            badge: already ? { text: '✓ Already here' } : null, disabled: already,
             onclick: () => afterPick(ctx, trip, guest, slot, { kind: 'activity', activity }),
           });
         })));
@@ -112,7 +113,7 @@ export function startAddGuest(ctx, trip, slot, activity) {
     eyebrow: 'Add guest',
     title: activity.name,
     subtitle: `${slotLabel(trip, slot)} · ${capacityInfo(now, activity.capacity).text}`,
-    body: [full ? notice('This tour is full: nobody can be added. Move a guest out of it first.') : null, search, list],
+    body: [full ? notice(`This tour is full (${now} / ${activity.capacity}). Adding a guest needs FORCE: you will be asked to confirm.`) : null, search, list],
   });
 }
 
@@ -174,14 +175,25 @@ function moveFacts(trip, guest, slot, target, movers) {
 function confirmMove(ctx, trip, guest, slot, target, movers) {
   const { names, group, who, here, to, from, detail, changes, done } = moveFacts(trip, guest, slot, target, movers);
 
-  // Warnings (shown in the warning colour): a nearly full tour, a split travel party.
+  // Warnings (shown in the warning colour): a full tour, a nearly full tour, a split travel party.
   const warnings = [];
   const limited = target.kind === 'activity' && target.activity.capacity !== null;
   const roomBefore = limited ? target.activity.capacity - countIn(trip, target.activity) : Infinity;
   const partyHere = partyMovers(trip, guest, slot);
   const leftBehind = partyHere.filter((m) => !movers.includes(m));
 
-  if (leftBehind.length > 0) {
+  // The tour is full: the dispatcher can still decide to put the guest in, by FORCING it.
+  // Only the tapped guest moves (there is no room to ask about the travel party).
+  const needsForce = limited && roomBefore < group.length;
+
+  if (needsForce) {
+    const now = countIn(trip, target.activity);
+    warnings.push(`"${target.activity.name}" is full (${now} / ${target.activity.capacity}). Forcing this makes it ${now + group.length} / ${target.activity.capacity}.`);
+    if (leftBehind.length > 0) {
+      const stay = leftBehind.length === 1 ? 'stays' : 'stay';
+      warnings.push(`Their travel party will be split: ${joinNames(leftBehind.map((m) => names.get(m.id)))} ${stay} in ${placeText(here)}.`);
+    }
+  } else if (leftBehind.length > 0) {
     // (Party members are only "in the same place" when the guest is in an activity or At leisure.)
     const stay = leftBehind.length === 1 ? 'stays' : 'stay';
     const leftNames = joinNames(leftBehind.map((m) => names.get(m.id)));
@@ -194,7 +206,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers) {
     }
   }
   // A nearly full tour (not repeated when the message above already explains the missing seats).
-  if (limited && !(leftBehind.length > 0 && roomBefore < 1 + partyHere.length)) {
+  if (limited && !needsForce && !(leftBehind.length > 0 && roomBefore < 1 + partyHere.length)) {
     const left = roomBefore - group.length;
     if (left === 0) warnings.unshift(`Only ${plural(roomBefore, 'seat')} left: the tour will be full after this.`);
     else if (left <= 3) warnings.unshift(`${plural(left, 'seat')} left after this.`);
@@ -202,7 +214,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers) {
 
   confirmSheet(ctx, trip, {
     title: `Move ${who}${from} to ${to}?`, detail, warnings,
-    confirmLabel: 'Confirm', changes, done,
+    confirmLabel: needsForce ? 'Force move' : 'Confirm', force: needsForce, changes, done,
   });
 }
 
@@ -238,15 +250,27 @@ async function saveChanges(ctx, trip, changes, done) {
 }
 
 // The confirmation sheet: a summary, warnings, and one Confirm button.
-// A tour cancellation has its own red Confirm button, so there the Cancel button stays plain.
-function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, cancelLabel, changes, done }) {
+// A tour cancellation or a forced move has its own red button, so there the Cancel button stays plain.
+// force: the move goes into a full tour. The button says "Force move", and an optional box lets you write
+// who approved it ("Approved by Sam"); it is saved in the journal with the move.
+function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, cancelLabel, changes, done }) {
+  const approval = force
+    ? h('input', {
+        class: 'text-input approval-input', type: 'text', placeholder: 'Approved by (optional)', 'aria-label': 'Approved by (optional)',
+        maxlength: '60', autocomplete: 'off', autocapitalize: 'words', spellcheck: 'false',
+      })
+    : null;
+
   const confirmButton = h('button', {
-    class: `btn${danger ? ' btn--danger' : ''}`, type: 'button',
-    onclick: () => saveChanges(ctx, trip, changes, done),
+    class: `btn${danger || force ? ' btn--danger' : ''}`, type: 'button',
+    onclick: () => saveChanges(
+      ctx, trip,
+      force ? changes.map((change) => ({ ...change, force: true, approvedBy: approval.value })) : changes,
+      force ? `${done} (forced)` : done),
   }, confirmLabel);
 
   openSheet({
-    eyebrow: 'Confirm change', title, subtitle: detail, body: [warnings.map(notice), confirmButton],
-    cancelLabel, cancelDanger: !danger,
+    eyebrow: force ? 'Over capacity' : 'Confirm change', title, subtitle: detail, body: [warnings.map(notice), approval, confirmButton],
+    cancelLabel, cancelDanger: !(danger || force),
   });
 }
