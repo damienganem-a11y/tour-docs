@@ -11,7 +11,7 @@
 // Each view is a function that returns { node }: the screen content.
 
 import { h } from './dom.js';
-import { dbAll, dbGet, dbPut } from './db.js';
+import { dbAll, dbGet, dbPut, saveTripAndJournal } from './db.js';
 import { newId } from './ids.js';
 import { makeOwner } from './users.js';
 import { closeSheet } from './ui.js';
@@ -49,9 +49,18 @@ const ctx = {
     await dbPut('trips', trip);
     state.trips.set(trip.id, trip);
   },
+
+  // Used by changes.js: save a changed trip together with its journal entries, then use the new trip.
+  async commit(trip, entries) {
+    await saveTripAndJournal(trip, entries);
+    state.trips.set(trip.id, trip);
+  },
+
+  // Redraw the current screen without jumping back to the top.
+  refresh() { render({ keepScroll: true }); },
 };
 
-function render() {
+function render({ keepScroll = false } = {}) {
   const app = document.getElementById('app');
   closeSheet(); // a pick-list left open would be pointing at an old screen
 
@@ -67,9 +76,10 @@ function render() {
     return;
   }
 
+  const scrollY = window.scrollY; // remembered so refresh() can put the page back where it was
   const params = (location.hash.match(route.pattern) || []).slice(1).map((p) => p && decodeURIComponent(p));
   app.replaceChildren(route.view(ctx, ...params).node);
-  window.scrollTo(0, 0);
+  window.scrollTo(0, keepScroll ? scrollY : 0);
 }
 
 async function start() {
@@ -84,7 +94,7 @@ async function start() {
     );
     return;
   }
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', () => render());
   render();
 }
 

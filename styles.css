@@ -129,6 +129,8 @@ a { color: inherit; text-decoration: none; }
 }
 .btn:active { opacity: 0.85; }
 .btn--plain { background: transparent; color: var(--brand); }
+.btn--small { min-height: 48px; margin-top: 0; padding: 0 16px; font-size: 16px; }
+.btn--danger { border-color: var(--bad-line); background: var(--bad-line); }
 .file-input { display: none; }
 
 .text-input {
@@ -186,11 +188,17 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Activity cards and guest name pills ---------- */
 
-.card--tap { display: block; width: 100%; font: inherit; color: inherit; text-align: left; cursor: pointer; }
-.card--tap:active { background: var(--brand-tint); }
+/* The top of an activity card is a button: tap it to open the card (all names + actions). */
+.card-head { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.card-head:active { opacity: 0.7; }
+.card-actions { display: flex; gap: 10px; margin-top: 14px; }
 .card--soft { background: var(--soft); }
+.card--cancelled { background: var(--soft); border-style: dashed; }
+.card--cancelled .act-name { text-decoration: line-through; color: var(--muted); }
+.nobody { margin: 12px 0 0; }
 .card--warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
 .card--warn .line { flex-direction: column; gap: 0; border-color: var(--warn-line); }
+.line--button { width: 100%; padding-left: 0; padding-right: 0; border-top: 0; border-left: 0; border-right: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 
 .card-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .act-name { font-size: 20px; font-weight: 700; line-height: 1.25; }
@@ -199,12 +207,17 @@ a { color: inherit; text-decoration: none; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .chip {
+  min-height: 40px;
   padding: 6px 14px;
   border: 1px solid #d5e3df;
   border-radius: 999px;
   background: #eef4f2;
+  font: inherit;
   font-size: 17px;
+  color: var(--ink);
+  cursor: pointer;
 }
+.chip:active { background: var(--brand-tint); }
 .chip--more { background: transparent; border-color: var(--line); color: var(--muted); font-weight: 700; }
 
 /* ---------- Guest list and one guest's trip ---------- */
@@ -238,6 +251,9 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--line);
   border-radius: 20px;
 }
+/* A half-day row is a button: tap it to change it. */
+button.slot { width: 100%; align-items: center; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.slot:active { filter: brightness(0.95); }
 .slot-when { flex: 0 0 92px; font-size: 14px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .slot-date { font-weight: 600; letter-spacing: 0; text-transform: none; }
 .slot-what { flex: 1; min-width: 0; }
@@ -326,15 +342,61 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 @keyframes slide-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
 
-.sheet-head h2 { margin: 0; font-size: 22px; }
-.sheet-head { margin-bottom: 12px; }
+.sheet-head h2 { margin: 4px 0 6px; font-size: 26px; line-height: 1.2; }
+.sheet-head { margin-bottom: 14px; }
 .sheet-body { flex: 1; overflow-y: auto; }
+.eyebrow--grey { color: var(--muted); }
+
+/* A warning line on a confirmation screen ("Only 2 seats left...") */
+.notice {
+  margin-bottom: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+
+/* One tappable choice in a sheet: an activity, a guest... */
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 68px;
+  margin-bottom: 8px;
+  padding: 10px 16px;
+  border: 2px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.choice:active { background: var(--brand-tint); }
+.choice.is-current { border-color: var(--brand); background: var(--brand-tint); }
+.choice:disabled { background: var(--soft); color: var(--muted); cursor: not-allowed; }
+.choice-main { flex: 1; min-width: 0; }
+.choice-title { font-weight: 700; }
+.choice-side { flex: 0 0 auto; text-align: right; font-size: 15px; font-weight: 600; }
+.slot-detail { font-size: 15px; color: var(--muted); }
+.badge {
+  display: inline-block;
+  margin-bottom: 2px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.badge--current { background: var(--brand); color: var(--brand-ink); }
+.badge--bad { background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad-ink); }
 
 .toast {
   position: fixed;
   left: 16px;
   right: 16px;
-  bottom: calc(96px + env(safe-area-inset-bottom));
+  top: calc(12px + env(safe-area-inset-top));   /* at the top, so it never covers the buttons of a sheet */
   z-index: 40;
   max-width: 688px;
   margin: 0 auto;

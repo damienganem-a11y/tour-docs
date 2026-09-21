@@ -1,13 +1,19 @@
 // Use > "By destination": pick a destination, then a half-day, and see every activity with the
 // guests on it and a count. Guests who are At leisure are a category of their own.
-// (Changing a booking comes in step 3; for now this screen only shows.)
+//
+// Tap a card to open it: you see every name and the actions (Add guest, Cancel tour).
+// Tap a name to move that guest.
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 import { byName, displayNames, whoIsWhere, capacityInfo } from '../rules.js';
 import { pageHead } from './chrome.js';
+import { startMove, startAddGuest, startCancelTour } from './move.js';
 
-const PREVIEW = 4; // names shown on a closed card; tap the card to see everybody
+const PREVIEW = 4; // names shown on a closed card
+
+// Cards the owner has opened. Kept here so a card stays open after a change redraws the screen.
+const openCards = new Set();
 
 // destinationId and slotId come from the address; if they are missing or wrong we start at the first ones.
 export function destinationPage(ctx, trip, destinationId, slotId) {
@@ -40,11 +46,20 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
     // Start time in the local time of the destination, then the meeting point.
     const detail = [activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '', activity.meeting]
       .filter(Boolean).join(' · ');
-    return guestCard({ title: activity.name, detail, countText: count.text, bad: count.tone === 'bad', guests, names });
+    return guestCard(ctx, trip, slot, {
+      key: `${slot.id}|${activity.id}`, title: activity.name, detail, guests, names,
+      countText: activity.cancelled ? 'Cancelled' : count.text, bad: activity.cancelled || count.tone === 'bad',
+      cancelled: activity.cancelled,
+      actions: activity.cancelled ? [] : [
+        { label: '+ Add guest', run: () => startAddGuest(ctx, trip, slot, activity) },
+        { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
+      ],
+    });
   });
 
-  const leisureCard = guestCard({
-    title: 'At leisure', detail: 'Not on any of our tours', countText: `${leisure.length}`, guests: leisure, names, soft: true,
+  const leisureCard = guestCard(ctx, trip, slot, {
+    key: `${slot.id}|leisure`, title: 'At leisure', detail: 'Not on any of our tours',
+    countText: `${leisure.length} guests`, guests: leisure, names, soft: true, actions: [],
   });
 
   return h('div', {},
@@ -57,7 +72,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
     }),
     cards,
     leisureCard,
-    attention.length > 0 ? attentionCard(attention, names) : null
+    attention.length > 0 ? attentionCard(ctx, trip, slot, attention, names) : null
   );
 }
 
@@ -73,42 +88,51 @@ function strip(items, small = false) {
   return node;
 }
 
-// A card with a title, a count and the guests as small name pills. Tap it to see all the names.
-function guestCard({ title, detail, countText, bad = false, guests, names, soft = false }) {
-  let open = false;
+// A card with a title, a count and the guests as name pills.
+// Tapping the top of the card opens it (all names, plus the actions); tapping a name moves that guest.
+function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, cancelled = false, soft = false, actions }) {
   const sorted = [...guests].sort(byName);
-  const pills = h('div', { class: 'chips' });
+  const body = h('div', {});
+
+  // Open or close the card (the "+4" pill does the same as tapping the top of the card).
+  const toggle = () => {
+    if (openCards.has(key)) openCards.delete(key); else openCards.add(key);
+    head.setAttribute('aria-expanded', String(openCards.has(key)));
+    fill();
+  };
 
   const fill = () => {
+    const open = openCards.has(key);
     const shown = open ? sorted : sorted.slice(0, PREVIEW);
-    const more = !open && sorted.length > PREVIEW ? [h('span', { class: 'chip chip--more' }, `+${sorted.length - PREVIEW}`)] : [];
-    pills.replaceChildren(
-      ...(sorted.length === 0 ? [h('span', { class: 'muted' }, 'Nobody')] : shown.map((g) => h('span', { class: 'chip' }, names.get(g.id)))),
-      ...more
+
+    body.replaceChildren(
+      ...(sorted.length === 0
+        ? (cancelled ? [] : [h('p', { class: 'muted nobody' }, 'Nobody')])
+        : [h('div', { class: 'chips' },
+            ...shown.map((g) => h('button', { class: 'chip', type: 'button', onclick: () => startMove(ctx, trip, g, slot) }, names.get(g.id))),
+            !open && sorted.length > PREVIEW ? h('button', { class: 'chip chip--more', type: 'button', onclick: toggle }, `+${sorted.length - PREVIEW}`) : null)]),
+      ...(open && actions.length > 0
+        ? [h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: a.run }, a.label)))]
+        : [])
     );
   };
-  fill();
 
-  return h('button', {
-    class: `card card--tap${soft ? ' card--soft' : ''}`, type: 'button', 'aria-expanded': 'false',
-    onclick: (event) => {
-      open = !open;
-      event.currentTarget.setAttribute('aria-expanded', String(open));
-      fill();
-    },
-  },
+  const head = h('button', { class: 'card-head', type: 'button', 'aria-expanded': String(openCards.has(key)), onclick: toggle },
     h('div', { class: 'card-row' },
       h('div', { class: 'act-name' }, title),
-      h('div', { class: `count${bad ? ' count--bad' : ''}` }, soft ? `${countText} guests` : countText)),
-    detail ? h('div', { class: 'muted' }, detail) : null,
-    pills
-  );
+      h('div', { class: `count${bad ? ' count--bad' : ''}` }, countText)),
+    detail ? h('div', { class: 'muted' }, detail) : null);
+
+  fill();
+  return h('div', { class: `card${soft ? ' card--soft' : ''}${cancelled ? ' card--cancelled' : ''}` }, head, body);
 }
 
 // Guests with no valid booking in this half-day. Never hidden: every guest is always counted somewhere.
-function attentionCard(attention, names) {
+// Tap a name to give that guest a proper place.
+function attentionCard(ctx, trip, slot, attention, names) {
   return h('div', { class: 'card card--warn' },
     h('div', { class: 'act-name' }, `Needs a look (${attention.length})`),
-    attention.map(({ guest, reason }) => h('div', { class: 'line' }, h('span', {}, names.get(guest.id)), h('span', {}, reason)))
-  );
+    attention.map(({ guest, reason }) =>
+      h('button', { class: 'line line--button', type: 'button', onclick: () => startMove(ctx, trip, guest, slot) },
+        h('span', {}, names.get(guest.id)), h('span', {}, reason))));
 }

@@ -1,6 +1,6 @@
 // Two small pieces of screen furniture used by several views:
 //   - a bottom sheet (a panel that slides up to let you pick something)
-//   - a toast (a short message at the bottom, e.g. "Moved Helen to Old City walk")
+//   - a toast (a short message at the top, e.g. "Moved Helen N. to Old City walk")
 
 import { h } from './dom.js';
 
@@ -17,17 +17,20 @@ export function closeSheet() {
   openBackdrop = null;
 }
 
-// title/subtitle: text at the top. body: elements to show inside.
-export function openSheet({ title, subtitle, body }) {
+// eyebrow: small label above the title. title/subtitle: text at the top. body: elements to show inside.
+// cancelLabel: the words on the button that closes the sheet.
+// Opening a sheet while another is open replaces it, so a flow can go from step to step.
+export function openSheet({ eyebrow, title, subtitle, body, cancelLabel = 'Cancel' }) {
   closeSheet();
 
   const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h('div', { class: 'sheet-head' },
+      eyebrow ? h('div', { class: 'eyebrow eyebrow--grey' }, eyebrow) : null,
       h('h2', {}, title),
       subtitle ? h('div', { class: 'muted' }, subtitle) : null
     ),
     h('div', { class: 'sheet-body' }, body),
-    h('button', { class: 'btn btn--plain', type: 'button', onclick: closeSheet }, 'Cancel')
+    h('button', { class: 'btn btn--plain', type: 'button', onclick: closeSheet }, cancelLabel)
   );
 
   // Tapping the dark area outside the sheet closes it.

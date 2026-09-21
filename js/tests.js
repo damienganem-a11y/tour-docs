@@ -3,10 +3,12 @@
 // time zones, unique IDs, saving on the device, and files with mistakes.
 
 import { buildTrip } from './loader.js';
-import { dbGet, dbPut, dbAll, dbDelete, withStores } from './db.js';
+import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal } from './db.js';
+import { applyChange, validateChanges } from './changes.js';
+import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
-import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo } from './rules.js';
+import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -198,6 +200,180 @@ check('P08 (G015 + G016) are kept apart on S10 in the guest view',
 check('A guest at leisure is reported as leisure, an empty sign-up as blank',
   guestPlace(trip, guest('G014'), slot('S10')).kind === 'blank' && trip.guests.some((g) => guestPlace(trip, g, slot('S10')).kind === 'leisure'));
 check('Dates read like "Sat 16 Jan"', formatWeekdayDate('2027-01-16') === 'Sat 16 Jan', formatWeekdayDate('2027-01-16'));
+
+// =====================================================================
+// Step 3: the one change function (changes.js)
+// These tests use copies of the trip and a fake "commit", so they never touch trips saved on this device
+// (except one test that saves a copy for real and then removes it).
+// =====================================================================
+
+const owner = makeOwner(newId(), 'Tester');
+const makeCtx = (user = owner) => {
+  const ctx = {
+    owner: user, state: structuredClone(trip), commits: [], journal: [],
+    trip: (id) => (id === ctx.state.id ? ctx.state : undefined),
+    async commit(next, entries) { ctx.commits.push(next); ctx.journal.push(...entries); ctx.state = next; },
+  };
+  return ctx;
+};
+const LEISURE = { kind: 'leisure' };
+const toActivity = (ref) => ({ kind: 'activity', activityId: activity(ref).id });
+const moveOf = (guestRef, slotRef, to) => ({ type: 'move', guestId: guest(guestRef).id, slotId: slot(slotRef).id, to });
+const placeNow = (ctx, guestRef, slotRef) => guestPlace(ctx.state, guest(guestRef), slot(slotRef));
+const tripBefore = JSON.stringify(trip);
+
+const stranger = trip.guests.find((g) => { const p = guestPlace(trip, g, slot('S05')); return p.kind === 'activity' && p.activity.id !== hammam.id; });
+
+let ctx1; // the context of the first test, reused by the storage test at the end
+
+// --- Leaving the overbooked Hammam is allowed, and is written in the journal ---
+{
+  const ctx = makeCtx();
+  const leaver = inHammam[0];
+  const r = await applyChange(ctx, trip.id, moveOf(leaver.ref, 'S05', LEISURE));
+  const e = ctx.journal[0];
+  check('Leaving the Hammam for At leisure works: one save, one journal entry', r.ok && ctx.commits.length === 1 && ctx.journal.length === 1);
+  check('The guest is now At leisure and the Hammam went from 10 to 9', placeNow(ctx, leaver.ref, 'S05').kind === 'leisure' && countIn(ctx.state, hammam) === 9);
+  check('The journal says who, what, from, to and the half-day',
+    e.who.name === 'Tester' && e.who.role === 'owner' && e.type === 'move' && e.guestId === leaver.id
+    && e.from.label === 'Hammam and spa' && e.to.kind === 'leisure' && e.slotLabel === 'Day 3 · Afternoon · Marrakech', JSON.stringify(e));
+  check('The journal keeps the exact moment, and shows it in the destination time (Marrakech)',
+    !Number.isNaN(Date.parse(e.at)) && e.place.name === 'Marrakech' && e.place.timeZone === 'Africa/Casablanca' && /^\d\d:\d\d$/.test(formatTime(e.at, e.place.timeZone)));
+  check('Every journal entry has its own UUID and knows its trip', uuidShape.test(e.id) && e.tripId === trip.id && uuidShape.test(e.batchId));
+  check('The trip loaded in the app is never changed in place (only a copy is)', JSON.stringify(trip) === tripBefore);
+  ctx1 = ctx;
+}
+
+// --- Refused moves change nothing ---
+{
+  const ctx = makeCtx();
+  const r = await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S05', toActivity('S05-2')));
+  check('Joining the full, overbooked Hammam (10 / 8) is refused, with a clear message', !r.ok && /full \(10 \/ 8\)/.test(r.error), r.error);
+  check('A refused change saves nothing and writes nothing', ctx.commits.length === 0 && ctx.journal.length === 0);
+  const same = await applyChange(ctx, trip.id, moveOf(inHammam[0].ref, 'S05', toActivity('S05-2')));
+  check('Choosing the activity a guest is already in is refused', !same.ok && /already in/.test(same.error), same.error);
+  const otherSlot = await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S05', toActivity('S01-1')));
+  check('An activity that is not offered in that half-day is refused', !otherSlot.ok && /not offered/.test(otherSlot.error), otherSlot.error);
+  const notOwner = await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('Somebody who is not the owner cannot change anything', !notOwner.ok && /permission/.test(notOwner.error), notOwner.error);
+  const archived = makeCtx(); archived.state.archivedAt = '2027-02-05T00:00:00.000Z';
+  const rArch = await applyChange(archived, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('An archived trip cannot be changed', !rArch.ok && /archived/.test(rArch.error), rArch.error);
+  const unknownKind = validateChanges(trip, owner, [{ type: 'teleport' }]);
+  check('An unknown kind of change is refused', !unknownKind.ok);
+}
+
+// --- Empty and misspelled sign-ups can be fixed, and the journal says what they were ---
+{
+  const ctx = makeCtx();
+  const target = trip.activities.find((a) => a.slotId === slot('S10').id && (a.capacity === null || countIn(trip, a) < a.capacity));
+  const r = await applyChange(ctx, trip.id, moveOf('G014', 'S10', { kind: 'activity', activityId: target.id }));
+  check('An empty sign-up (G014) can be filled; the journal says "Nothing chosen yet"', r.ok && ctx.journal[0].from.kind === 'blank' && ctx.journal[0].from.label === 'Nothing chosen yet', JSON.stringify(ctx.journal[0]?.from));
+  const ctx2 = makeCtx();
+  const target2 = trip.activities.find((a) => a.slotId === slot('S09').id && (a.capacity === null || countIn(trip, a) < a.capacity));
+  const r2 = await applyChange(ctx2, trip.id, moveOf('G022', 'S09', { kind: 'activity', activityId: target2.id }));
+  check('The misspelled activity (G022) can be fixed; the journal keeps the misspelling as typed',
+    r2.ok && ctx2.journal[0].from.kind === 'unknown' && ctx2.journal[0].from.label.includes('Topkapi palace & Hagia Sofia'), JSON.stringify(ctx2.journal[0]?.from));
+  check('After the fix, nothing needs a look in that half-day anymore', whoIsWhere(ctx2.state, slot('S09')).attention.length === 0);
+}
+
+// --- Groups: all or nothing, one save, one batch ---
+{
+  const ctx = makeCtx();
+  const refused = await applyChange(ctx, trip.id, [moveOf(inHammam[0].ref, 'S05', LEISURE), moveOf(stranger.ref, 'S05', toActivity('S05-2'))]);
+  check('A group with one refused move applies NOTHING', !refused.ok && ctx.commits.length === 0 && placeNow(ctx, inHammam[0].ref, 'S05').activity?.id === hammam.id);
+
+  const s = trip.slots.find((x) => guestPlace(trip, guest('G001'), x).kind === 'activity' && partyMovers(trip, guest('G001'), x).length === 1);
+  const good = await applyChange(ctx, trip.id, [moveOf('G001', s.ref, LEISURE), moveOf('G002', s.ref, LEISURE)]);
+  check('A couple moved together is ONE save with 2 journal entries sharing a batch id',
+    good.ok && ctx.commits.length === 1 && ctx.journal.length === 2 && ctx.journal[0].batchId === ctx.journal[1].batchId);
+  check('The travel party helper finds the partner who is in the same place (G001 -> G002)', partyMovers(trip, guest('G001'), s).map((g) => g.ref).join() === 'G002');
+  check('A split couple gets no prompt: P08 (G015) has nobody in the same place on S10', partyMovers(trip, guest('G015'), slot('S10')).length === 0);
+}
+
+// --- Capacity ---
+{
+  let target = null;
+  for (const s of trip.slots) for (const a of trip.activities.filter((x) => x.slotId === s.id)) {
+    if (target || a.capacity === null) continue;
+    const left = a.capacity - countIn(trip, a);
+    const others = trip.guests.filter((g) => { const p = guestPlace(trip, g, s); return p.kind === 'activity' && p.activity.id !== a.id; });
+    if (left >= 1 && left <= 5 && others.length > left) target = { s, a, left, others };
+  }
+  const group = (n) => target.others.slice(0, n).map((g) => ({ type: 'move', guestId: g.id, slotId: target.s.id, to: { kind: 'activity', activityId: target.a.id } }));
+  check(`A group of ${target?.left} fits the ${target?.left} places left in "${target?.a.name}"`, target && validateChanges(trip, owner, group(target.left)).ok);
+  const tooMany = target && validateChanges(trip, owner, group(target.left + 1));
+  check(`A group of ${target?.left + 1} does NOT fit, and the message says how many places are left`, target && !tooMany.ok && /Only \d+ places? left/.test(tooMany.error), tooMany?.error);
+
+  // Two full activities (S01: 20 / 20 and 16 / 16): one guest from each can swap in ONE change, because each frees a place.
+  const inAlfama = trip.guests.find((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-1').id);
+  const inTram = trip.guests.find((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity('S01-2').id);
+  const alone = validateChanges(trip, owner, [moveOf(inAlfama.ref, 'S01', toActivity('S01-2'))]);
+  check('Moving into a full tour on its own is refused ("Full")', !alone.ok && /full/.test(alone.error), alone.error);
+  const ctx = makeCtx();
+  const swap = await applyChange(ctx, trip.id, [moveOf(inAlfama.ref, 'S01', toActivity('S01-2')), moveOf(inTram.ref, 'S01', toActivity('S01-1'))]);
+  check('Two guests can swap between two full tours in one change (still 20 and 16)',
+    swap.ok && countIn(ctx.state, activity('S01-1')) === 20 && countIn(ctx.state, activity('S01-2')) === 16);
+  const outsideBeach = trip.guests.filter((g) => guestPlace(trip, g, slot('S25')).activity?.id !== activity('S25-1').id);
+  check(`An activity with no capacity never fills up: all ${outsideBeach.length} other guests can join the Welcome beach session`,
+    outsideBeach.length === 40 && validateChanges(trip, owner, outsideBeach.map((g) => ({ type: 'move', guestId: g.id, slotId: slot('S25').id, to: toActivity('S25-1') }))).ok);
+}
+
+// --- Cancel tour ---
+{
+  const ctx = makeCtx();
+  const alfama = activity('S01-1');
+  const booked = countIn(trip, alfama);
+  const r = await applyChange(ctx, trip.id, { type: 'cancel-tour', activityId: alfama.id });
+  check('Cancel tour: the activity is marked Cancelled and everybody on it is At leisure',
+    r.ok && ctx.state.activities.find((a) => a.id === alfama.id).cancelled === true && countIn(ctx.state, alfama) === 0
+    && whoIsWhere(ctx.state, slot('S01')).leisure.length === whoIsWhere(trip, slot('S01')).leisure.length + booked);
+  check(`Cancel tour writes 1 entry for the tour and ${booked} for the guests, all in one batch`,
+    ctx.commits.length === 1 && ctx.journal.length === booked + 1 && new Set(ctx.journal.map((e) => e.batchId)).size === 1
+    && ctx.journal.filter((e) => e.cause === 'cancel-tour').length === booked && ctx.journal[0].type === 'cancel-tour' && ctx.journal[0].guestCount === booked);
+  const again = await applyChange(ctx, trip.id, { type: 'cancel-tour', activityId: alfama.id });
+  check('A tour cannot be cancelled twice', !again.ok && /already cancelled/.test(again.error), again.error);
+  const into = await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S01', toActivity('S01-1')));
+  check('Nobody can be moved into a cancelled tour', !into.ok, into.error);
+  const mixed = validateChanges(trip, owner, [{ type: 'cancel-tour', activityId: alfama.id }, moveOf(stranger.ref, 'S05', LEISURE)]);
+  check('Cancelling a tour cannot be mixed with other changes', !mixed.ok);
+}
+
+// --- A failing save leaves everything as it was; quick taps are handled one after the other ---
+{
+  const ctx = makeCtx();
+  const before = JSON.stringify(ctx.state);
+  ctx.commit = async () => { throw new Error('disk full'); };
+  const r = await applyChange(ctx, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('If saving fails, the change is refused and nothing changes', !r.ok && /Nothing was changed/.test(r.error) && JSON.stringify(ctx.state) === before, r.error);
+
+  const ctx2 = makeCtx();
+  const s = trip.slots.find((x) => ['G001', 'G003'].every((ref) => guestPlace(trip, guest(ref), x).kind === 'activity'));
+  const both = await Promise.all([applyChange(ctx2, trip.id, moveOf('G001', s.ref, LEISURE)), applyChange(ctx2, trip.id, moveOf('G003', s.ref, LEISURE))]);
+  check('Two quick changes at the same time are both applied, one after the other',
+    both.every((x) => x.ok) && ctx2.commits.length === 2 && placeNow(ctx2, 'G001', s.ref).kind === 'leisure' && placeNow(ctx2, 'G003', s.ref).kind === 'leisure');
+}
+
+// --- Privacy: dietary info never reaches the journal ---
+{
+  const ctx = makeCtx();
+  const s = trip.slots.find((x) => guestPlace(trip, guest('G034'), x).kind === 'activity');
+  await applyChange(ctx, trip.id, moveOf('G034', s.ref, LEISURE));
+  const text = JSON.stringify(ctx.journal);
+  check('The journal has no dietary info (G034 has a shellfish allergy)', ctx.journal.length === 1 && !/allerg|shellfish|dietary/i.test(text), text.slice(0, 200));
+}
+
+// --- The trip and its journal entries are saved together, on the device ---
+{
+  await saveTripAndJournal(ctx1.state, ctx1.journal);
+  const savedTrip = await dbGet('trips', ctx1.state.id);
+  const savedJournal = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));
+  check('The changed trip and its journal entry are both on the device', JSON.stringify(savedTrip) === JSON.stringify(ctx1.state) && savedJournal.length === 1 && savedJournal[0].id === ctx1.journal[0].id);
+  await dbDelete('trips', ctx1.state.id);
+  for (const entry of savedJournal) await dbDelete('journal', entry.id);
+  const left = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));
+  check('The test copy and its journal are removed again (tests leave nothing behind)', (await dbGet('trips', ctx1.state.id)) === undefined && left.length === 0);
+}
 
 // --- Show the results ---
 const out = document.getElementById('out');

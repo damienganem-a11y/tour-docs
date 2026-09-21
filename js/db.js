@@ -58,6 +58,14 @@ export const dbGet = (store, key) => withStores([store], 'readonly', (s) => s[st
 export const dbAll = (store) => withStores([store], 'readonly', (s) => s[store].getAll());
 export const dbDelete = (store, key) => withStores([store], 'readwrite', (s) => s[store].delete(key));
 
+// Saves a trip and the journal entries of the change that produced it in ONE transaction:
+// either both are stored or neither is (a phone that dies half way cannot leave them disagreeing).
+export const saveTripAndJournal = (trip, entries) =>
+  withStores(['trips', 'journal'], 'readwrite', (s) => {
+    s.trips.put(trip);
+    for (const entry of entries) s.journal.put(entry);
+  });
+
 // The trips and journal drawers know their own key (the item's id). The settings drawer does not:
 // there you must give a key, for example dbPut('settings', owner, 'owner').
 export const dbPut = (store, value, key) =>

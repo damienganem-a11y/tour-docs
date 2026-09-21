@@ -105,7 +105,38 @@ export function guestPlace(trip, guest, slot) {
   return { kind: 'blank' };
 }
 
+// A readable name for a half-day, e.g. "Day 6 · Afternoon · Istanbul".
+export function slotLabel(trip, slot) {
+  const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+  return `Day ${slot.day} · ${slot.half} · ${destination.name}`;
+}
+
+// Are two places (from guestPlace) the same? Two guests "At leisure" are in the same place.
+export function samePlace(a, b) {
+  return (a.kind === 'activity' && b.kind === 'activity' && a.activity.id === b.activity.id)
+    || (a.kind === 'leisure' && b.kind === 'leisure');
+}
+
+// The other people of a guest's travel party who are in the SAME place as the guest in this half-day.
+// These are the ones we offer to move together ("Also move their travel party?"). Someone who is
+// already somewhere else is already split from the guest, so we do not ask about them.
+export function partyMovers(trip, guest, slot) {
+  const here = guestPlace(trip, guest, slot);
+  return trip.guests.filter((other) =>
+    other.partyId === guest.partyId && other.id !== guest.id && samePlace(here, guestPlace(trip, other, slot)));
+}
+
 // ---------- Capacity ----------
+
+// How many guests are booked on an activity right now.
+export function countIn(trip, activity) {
+  let count = 0;
+  for (const guest of trip.guests) {
+    if (trip.bookings[guest.id]?.[activity.slotId]?.activityId === activity.id) count++;
+  }
+  return count;
+}
+
 
 // The count shown next to an activity: "6 / 8", "8 / 8 · Full", "10 / 8 · Over by 2",
 // or just "6" when the activity has no capacity (it never fills up).

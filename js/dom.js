@@ -17,7 +17,8 @@ export function h(tag, props = {}, ...children) {
     else node.setAttribute(key, value === true ? '' : value);
   }
 
-  for (const child of children.flat()) {
+  // A child may be a list of children (or a list of lists): unwrap them all the way down.
+  for (const child of children.flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
     node.append(child); // a string becomes text, an element is inserted as is
   }

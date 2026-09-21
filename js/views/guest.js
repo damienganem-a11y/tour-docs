@@ -1,15 +1,16 @@
 // Use > "By guest": the searchable list of guests, and one guest's whole trip, half-day after half-day.
 // Typical use: sitting with a guest and going through their whole trip.
-// (Changing a booking comes in step 3; for now this screen only shows.)
+// Tap any half-day to change it.
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 import { byName, plain, displayNames, partyLabel, guestPlace } from '../rules.js';
 import { pageHead } from './chrome.js';
+import { startMove } from './move.js';
 
 export function guestPage(ctx, trip, guestId) {
   const guest = trip.guests.find((g) => g.id === guestId);
-  return guest ? guestDetail(trip, guest) : guestList(trip);
+  return guest ? guestDetail(ctx, trip, guest) : guestList(trip);
 }
 
 // ---------- The list of guests ----------
@@ -56,7 +57,7 @@ function guestList(trip) {
 
 // ---------- One guest's trip ----------
 
-function guestDetail(trip, guest) {
+function guestDetail(ctx, trip, guest) {
   const names = displayNames(trip.guests);
 
   return h('div', {},
@@ -66,12 +67,13 @@ function guestDetail(trip, guest) {
       title: names.get(guest.id),
       subtitle: [partyLabel(trip, guest, names), guest.notes].filter(Boolean).join(' · '),
     }),
-    trip.slots.map((slot) => slotRow(trip, guest, slot))
+    trip.slots.map((slot) => slotRow(ctx, trip, guest, slot))
   );
 }
 
 // One half-day row: when, what, where. What it says depends on the guest's place in that half-day.
-function slotRow(trip, guest, slot) {
+// Tapping it opens the picker to change it.
+function slotRow(ctx, trip, guest, slot) {
   const destination = trip.destinations.find((d) => d.id === slot.destinationId);
   const place = guestPlace(trip, guest, slot);
   let title, detail, kind;
@@ -96,9 +98,14 @@ function slotRow(trip, guest, slot) {
     detail = destination.name;
   }
 
-  return h('div', { class: `slot slot--${kind}` },
+  return h('button', {
+    class: `slot slot--${kind}`, type: 'button',
+    'aria-label': `Day ${slot.day} ${slot.half}: ${title}. Tap to change.`,
+    onclick: () => startMove(ctx, trip, guest, slot),
+  },
     h('div', { class: 'slot-when' }, h('div', {}, `Day ${slot.day}`), h('div', {}, slot.half), h('div', { class: 'slot-date' }, formatWeekdayDate(slot.date))),
     h('div', { class: 'slot-what' },
       h('div', { class: 'slot-title' }, title),
-      detail ? h('div', { class: 'slot-detail' }, detail) : null));
+      detail ? h('div', { class: 'slot-detail' }, detail) : null),
+    h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'));
 }
