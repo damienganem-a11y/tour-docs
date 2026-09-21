@@ -8,7 +8,7 @@
 import { joinNames, plural } from './rules.js';
 
 // The kinds of journal lines that belong to a roll call (see changes.js).
-const ROLLCALL_TYPES = new Set(['rollcall-start', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number', 'return-start', 'return-in', 'return-out']);
 
 // Entries of one action, in the order they were written (`n`), and actions in the order they happened (`seq`).
 const inBatchOrder = (a, b) => (a.n ?? 0) - (b.n ?? 0);
@@ -29,7 +29,8 @@ export function groupBatches(entries) {
     const sorted = [...list].sort(inBatchOrder);
     const first = sorted[0];
     const types = new Set(sorted.map((e) => e.type));
-    const onlyRollCall = !types.has('move') && [...types].some((t) => ROLLCALL_TYPES.has(t));
+    // End roll call also moves guests (to At leisure), but it is still a roll call action.
+    const onlyRollCall = types.has('rollcall-end') || (!types.has('move') && [...types].some((t) => ROLLCALL_TYPES.has(t)));
     return {
       batchId, entries: sorted,
       seq: Math.max(...sorted.map((e) => e.seq ?? 0)), at: first.at, who: first.who,
@@ -98,11 +99,23 @@ const alphaNames = (entries) => entries.map((e) => e.guestName).sort((a, b) => a
 function summarizeRollCall(batch) {
   const entry = batch.entries[0];
   if (entry.type === 'rollcall-start') return `Started the roll call: ${entry.activityLabel} (${entry.vehicles.join(', ')})`;
-  if (entry.type === 'checkin') {
-    if (batch.entries.length > 1) return `${joinNames(alphaNames(batch.entries))} checked in to ${entry.vehicleLabel}`;
-    return entry.fromVehicleLabel ? `${entry.guestName} moved from ${entry.fromVehicleLabel} to ${entry.vehicleLabel}` : `${entry.guestName} checked in to ${entry.vehicleLabel}`;
+  if (entry.type === 'rollcall-end') {
+    // The guests End roll call moved to At leisure are the "move" lines of the same action.
+    const moved = alphaNames(batch.entries.filter((e) => e.type === 'move'));
+    const parts = [`${entry.checkedInCount} checked in`];
+    if (moved.length > 0) parts.push(`${moved.length} moved to At leisure by End roll call (${joinNames(moved)})`);
+    if (entry.keptCount > 0) parts.push(`${entry.keptCount} stayed on the tour without a vehicle`);
+    return `Ended the roll call: ${parts.join(', ')}`;
+  }
+  if (entry.type === 'return-start') return 'Started the return count';
+  if (entry.type === 'checkin' || entry.type === 'return-in') {
+    const back = entry.type === 'return-in';
+    if (batch.entries.length > 1) return `${joinNames(alphaNames(batch.entries))} ${back ? 'counted back in' : 'checked in to'} ${entry.vehicleLabel}`;
+    if (entry.fromVehicleLabel) return `${entry.guestName} moved from ${entry.fromVehicleLabel} to ${entry.vehicleLabel}${back ? ' (return count)' : ''}`;
+    return `${entry.guestName} ${back ? 'counted back in' : 'checked in to'} ${entry.vehicleLabel}`;
   }
   if (entry.type === 'checkout') return `${entry.guestName} taken out of ${entry.fromVehicleLabel}`;
+  if (entry.type === 'return-out') return `${entry.guestName} taken out of ${entry.fromVehicleLabel} (return count)`;
   if (entry.type === 'vehicle-add') return `Added ${entry.vehicleLabel}`;
   return `${entry.fromLabel} renumbered ${entry.toLabel}`; // vehicle-number
 }

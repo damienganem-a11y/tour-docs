@@ -9,7 +9,7 @@ import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
 import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements } from './journal.js';
-import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
+import { findRollCall, vehicleLabel, rollCallState, returnState } from './rollcall.js';
 import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
@@ -798,6 +798,130 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   fire('pointerdown'); await new Promise((r) => setTimeout(r, 80)); fire('pointerup'); button.click();
   fire('pointerdown'); fire('pointercancel'); await new Promise((r) => setTimeout(r, 80));
   check('A quick touch is a tap; holding the finger is a long press and NOT also a tap; scrolling away cancels it', log.join() === 'tap,long', log.join());
+}
+
+// =====================================================================
+// Step 6b: End roll call and the return count
+// =====================================================================
+{
+  const T = 'S01-2'; // Tram 28 and viewpoints, 16 guests
+  const rcOf = (ctx) => findRollCall(ctx.state, activity(T).id);
+  const call = (ctx, type, extra = {}) => applyChange(ctx, trip.id, { type, activityId: activity(T).id, ...extra });
+  const tram = trip.guests.filter((g) => guestPlace(trip, g, slot('S01')).activity?.id === activity(T).id);
+  const inOrder = alphabetical(displayNames(trip.guests));
+  const tramSorted = [...tram].sort(inOrder);
+  const shownName = (g) => displayNames(trip.guests).get(g.id);
+
+  // A roll call where the first 10 (alphabetically) are checked in: V1 gets 5, V2 gets 5. 6 did not show up.
+  async function departed() {
+    const ctx = makeCtx();
+    await call(ctx, 'rollcall-start');
+    const [v1, v2] = rcOf(ctx).vehicles;
+    for (const [i, g] of tramSorted.slice(0, 10).entries()) await call(ctx, 'checkin', { guestId: g.id, vehicleId: (i < 5 ? v1 : v2).id });
+    return { ctx, v1, v2, present: tramSorted.slice(0, 10), absent: tramSorted.slice(10) };
+  }
+
+  // --- End roll call ---
+  const { ctx, present, absent, v1, v2 } = await departed();
+  const before = structuredClone(ctx.state);
+  const ended = await call(ctx, 'rollcall-end', { moveGuestIds: absent.map((g) => g.id) });
+  const endBatch = groupBatches(ctx.entries).at(-1);
+  check('End roll call: the 6 who did not show up go to At leisure, the roll call is closed, the 10 stay on the tour',
+    ended.ok && rcOf(ctx).endedAt && rcOf(ctx).endedBy.name === 'Tester' && absent.every((g) => guestPlace(ctx.state, g, slot('S01')).kind === 'leisure')
+    && present.every((g) => guestPlace(ctx.state, g, slot('S01')).activity?.id === activity(T).id) && countIn(ctx.state, activity(T)) === 10, ended.error);
+  check('The vehicles and who was in them are kept for the return count', present.every((g) => rcOf(ctx).checkins[g.id]) && rcOf(ctx).vehicles.length === 4);
+  check('It is ONE action: an "End roll call" line plus one "moved by End roll call" line per guest, all in one batch',
+    endBatch.kind === 'rollcall' && endBatch.entries.length === 7 && endBatch.entries[0].type === 'rollcall-end' && endBatch.entries.slice(1).every((e) => e.type === 'move' && e.cause === 'end-roll-call' && e.to.kind === 'leisure'));
+  check('The journal says: "Ended the roll call: 10 checked in, 6 moved to At leisure by End roll call (names in alphabetical order)"',
+    summarize(endBatch) === `Ended the roll call: 10 checked in, 6 moved to At leisure by End roll call (${joinNames(absent.map(shownName).sort((x, y) => x.localeCompare(y, 'en', { sensitivity: 'base' })))})`, summarize(endBatch));
+  check('After End roll call nothing more can be checked in, no vehicle added or renumbered, and it cannot end twice',
+    !(await call(ctx, 'checkin', { guestId: present[0].id, vehicleId: v2.id })).ok && !(await call(ctx, 'vehicle-add')).ok && !(await call(ctx, 'rollcall-end', { moveGuestIds: [] })).ok
+    && !(await call(ctx, 'vehicle-number', { vehicleId: v1.id, number: 9 })).ok);
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('ONE undo takes End roll call back: the roll call is open again, the 6 are back on the tour and on the list',
+    !rcOf(ctx).endedAt && restoredExactly(ctx.state, before) && rollCallState(ctx.state, rcOf(ctx)).expected.length === 6);
+
+  // --- Someone joined on site: unticked, they stay booked ---
+  const kept = await departed();
+  const movedFour = kept.absent.slice(0, 4);
+  await call(kept.ctx, 'rollcall-end', { moveGuestIds: movedFour.map((g) => g.id) });
+  const keptEntry = kept.ctx.entries.find((e) => e.type === 'rollcall-end');
+  check('Two names unticked: they stay booked on the tour (12 on it), 4 are moved, the journal counts "2 stayed on the tour without a vehicle"',
+    countIn(kept.ctx.state, activity(T)) === 12 && keptEntry.movedCount === 4 && keptEntry.keptCount === 2 && /2 stayed on the tour without a vehicle/.test(summarize(groupBatches(kept.ctx.entries).at(-1))));
+  const nobody = await departed();
+  for (const g of nobody.absent) await call(nobody.ctx, 'checkin', { guestId: g.id, vehicleId: nobody.v1.id });
+  check('If everybody is checked in, End roll call moves nobody: "Ended the roll call: 16 checked in"',
+    (await call(nobody.ctx, 'rollcall-end', { moveGuestIds: [] })).ok && summarize(groupBatches(nobody.ctx.entries).at(-1)) === 'Ended the roll call: 16 checked in');
+
+  // --- End roll call refuses what does not make sense ---
+  const bad = await departed();
+  check('Refused: moving somebody who IS checked in, somebody not booked here, the same guest twice, or no list at all',
+    !(await call(bad.ctx, 'rollcall-end', { moveGuestIds: [bad.present[0].id] })).ok
+    && !(await call(bad.ctx, 'rollcall-end', { moveGuestIds: [guest('G001').id] })).ok
+    && !(await call(bad.ctx, 'rollcall-end', { moveGuestIds: [bad.absent[0].id, bad.absent[0].id] })).ok
+    && !(await call(bad.ctx, 'rollcall-end', {})).ok);
+  check('Refused when nothing changed: the trip is untouched after all those refusals', bad.ctx.commits.length === 1 + 10);
+  check('Only the owner can end a roll call', !(await call(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), 'rollcall-end', { moveGuestIds: [] })).ok);
+
+  // --- The return count ---
+  check('The return count cannot start before the roll call has ended', !(await call(bad.ctx, 'return-start')).ok);
+  const back = await departed();
+  await call(back.ctx, 'rollcall-end', { moveGuestIds: back.absent.map((g) => g.id) });
+  const withReturn = structuredClone(back.ctx.state);
+  check('After End roll call the return count can start (once)', (await call(back.ctx, 'return-start')).ok && !(await call(back.ctx, 'return-start')).ok && rcOf(back.ctx).returnCount.returned && Object.keys(rcOf(back.ctx).returnCount.returned).length === 0);
+  const s0 = returnState(back.ctx.state, rcOf(back.ctx));
+  check('The return count starts with the 10 guests still on the tour: 10 to count, 0 back; the 6 moved to At leisure are not in it',
+    s0.toCount.length === 10 && s0.back.length === 0 && back.absent.every((g) => !s0.toCount.some((x) => x.id === g.id)));
+  check('Each vehicle knows who left in it and is not back yet: V1 5, V2 5',
+    s0.missingPerVehicle.get(back.v1.id).length === 5 && s0.missingPerVehicle.get(back.v2.id).length === 5);
+
+  const boarding = back.present.slice(0, 4);
+  await call(back.ctx, 'return-in', { guestId: boarding[0].id, vehicleId: back.v1.id });
+  await call(back.ctx, 'return-in', { guestId: boarding[1].id, vehicleId: back.v2.id });   // sits in ANOTHER vehicle than the one they left in? (boarding[1] left in V1)
+  const s1 = returnState(back.ctx.state, rcOf(back.ctx));
+  check('Guests are counted back one tap at a time into any vehicle: 2 back, 8 still to count, per-vehicle counts follow',
+    s1.back.length === 2 && s1.toCount.length === 8 && s1.backPerVehicle.get(back.v1.id).length === 1 && s1.backPerVehicle.get(back.v2.id).length === 1);
+  check('The departure lists are not touched by the return count (still 5 and 5)', rcOf(back.ctx).vehicles.every((v) => v.id !== back.v1.id || Object.values(rcOf(back.ctx).checkins).filter((x) => x === v.id).length === 5));
+  const groupBack = await applyChange(back.ctx, trip.id, [boarding[2], boarding[3]].map((g) => ({ type: 'return-in', activityId: activity(T).id, guestId: g.id, vehicleId: back.v1.id })));
+  const backBatch = groupBatches(back.ctx.entries).at(-1);
+  check('Several guests can be counted back together (a travel party): one action, told alphabetically',
+    groupBack.ok && backBatch.kind === 'rollcall' && summarize(backBatch) === `${joinNames([boarding[2], boarding[3]].map(shownName).sort((x, y) => x.localeCompare(y, 'en', { sensitivity: 'base' })))} counted back in V1`, summarize(backBatch));
+  check('Refused: counting back a guest who is not on the tour, the same vehicle twice, an unknown vehicle',
+    !(await call(back.ctx, 'return-in', { guestId: back.absent[0].id, vehicleId: back.v1.id })).ok
+    && !(await call(back.ctx, 'return-in', { guestId: boarding[0].id, vehicleId: back.v1.id })).ok
+    && !(await call(back.ctx, 'return-in', { guestId: back.present[9].id, vehicleId: 'nope' })).ok);
+  const moved = await call(back.ctx, 'return-in', { guestId: boarding[0].id, vehicleId: back.v2.id });
+  check('A guest counted into the wrong vehicle can be moved ("moved from V1 to V2 (return count)"), or taken out',
+    moved.ok && summarize(groupBatches(back.ctx.entries).at(-1)) === `${shownName(boarding[0])} moved from V1 to V2 (return count)`
+    && (await call(back.ctx, 'return-out', { guestId: boarding[0].id })).ok && !(await call(back.ctx, 'return-out', { guestId: boarding[0].id })).ok);
+  await call(back.ctx, 'return-in', { guestId: boarding[0].id, vehicleId: back.v1.id });
+  for (const g of back.present.slice(4)) await call(back.ctx, 'return-in', { guestId: g.id, vehicleId: back.v2.id });
+  check('When every guest is counted back, nobody is left to count', returnState(back.ctx.state, rcOf(back.ctx)).toCount.length === 0 && returnState(back.ctx.state, rcOf(back.ctx)).back.length === 10);
+  check('Vehicles cannot be added or renumbered during the return count (they are as they left)',
+    !(await call(back.ctx, 'vehicle-add')).ok && !(await call(back.ctx, 'vehicle-number', { vehicleId: back.v1.id, number: 9 })).ok);
+
+  // --- Undo takes back everything, step by step, all the way to before the roll call ---
+  const all = await departed();
+  const startState = structuredClone(makeCtx().state);
+  await call(all.ctx, 'rollcall-end', { moveGuestIds: all.absent.map((g) => g.id) });
+  await call(all.ctx, 'return-start');
+  await call(all.ctx, 'return-in', { guestId: all.present[0].id, vehicleId: all.v1.id });
+  await call(all.ctx, 'return-in', { guestId: all.present[1].id, vehicleId: all.v1.id });
+  await call(all.ctx, 'return-out', { guestId: all.present[1].id });
+  const steps = [];
+  for (const words of ['the count-out', 'the second count-in', 'the first count-in', 'Start return count', 'End roll call']) steps.push([words, (await applyChange(all.ctx, trip.id, { type: 'undo' })).ok]);
+  check('Undo takes back, in order: the count-out, both count-ins, the start of the return count, and End roll call', steps.every(([, ok]) => ok), JSON.stringify(steps));
+  check('...and the roll call is exactly as it was on departure: open, no return count, the 6 back on the list',
+    !rcOf(all.ctx).endedAt && rcOf(all.ctx).returnCount === null && rollCallState(all.ctx.state, rcOf(all.ctx)).expected.length === 6 && rollCallState(all.ctx.state, rcOf(all.ctx)).checkedIn.length === 10);
+  let undone = 0;
+  while ((await applyChange(all.ctx, trip.id, { type: 'undo' })).ok) undone++;
+  check(`${undone} more undos take back every check-in and the start: the trip is exactly as before the roll call`, undone === 11 && restoredExactly(all.ctx.state, startState));
+
+  // --- The Journal: everything of the roll call is ONE card, up to the return count ---
+  const items = journalItems(groupBatches(back.ctx.entries));
+  check('Start, check-ins, End roll call and the return count are ONE roll call card in the Journal',
+    items.length === 1 && items[0].kind === 'rollcall' && items[0].batches.some((b) => b.entries.some((e) => e.type === 'rollcall-end')) && items[0].batches.some((b) => b.entries.some((e) => e.type === 'return-in')));
+  check('Journal lines of the roll call and the return count never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(back.ctx.entries)));
 }
 
 // =====================================================================

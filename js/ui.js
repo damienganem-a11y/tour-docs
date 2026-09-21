@@ -18,9 +18,10 @@ export function closeSheet() {
 }
 
 // eyebrow: small label above the title. title/subtitle: text at the top. body: elements to show inside.
+// footer: something that stays in view under the scrolling list (for example the Confirm button of a long list).
 // cancelLabel: the words on the button that closes the sheet. cancelDanger: draw that button in red.
 // Opening a sheet while another is open replaces it, so a flow can go from step to step.
-export function openSheet({ eyebrow, title, subtitle, body, cancelLabel = 'Cancel', cancelDanger = false }) {
+export function openSheet({ eyebrow, title, subtitle, body, footer, cancelLabel = 'Cancel', cancelDanger = false }) {
   closeSheet();
 
   const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
@@ -30,6 +31,7 @@ export function openSheet({ eyebrow, title, subtitle, body, cancelLabel = 'Cance
       subtitle ? h('div', { class: 'muted' }, subtitle) : null
     ),
     h('div', { class: 'sheet-body' }, body),
+    footer ? h('div', { class: 'sheet-footer' }, footer) : null,
     h('button', { class: `btn ${cancelDanger ? 'btn--danger' : 'btn--plain'}`, type: 'button', onclick: closeSheet }, cancelLabel)
   );
 

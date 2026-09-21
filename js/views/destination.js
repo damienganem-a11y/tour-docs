@@ -90,7 +90,11 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
 // The "Roll call" button of an activity card: starts the roll call the first time, then just opens it.
 function rollCallAction(ctx, trip, activity) {
   const open = () => ctx.go(`#/trip/${trip.id}/rollcall/${activity.id}`);
-  if (findRollCall(trip, activity.id)) return { label: 'Continue roll call', primary: true, run: open };
+  const rollCall = findRollCall(trip, activity.id);
+  if (rollCall) {
+    const words = !rollCall.endedAt ? 'Continue roll call' : rollCall.returnCount ? 'Continue return count' : 'Return count';
+    return { label: words, primary: true, run: open };
+  }
   return {
     label: 'Start roll call', primary: true,
     run: async () => {
