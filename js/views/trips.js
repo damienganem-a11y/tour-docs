@@ -3,6 +3,7 @@
 import { h } from '../dom.js';
 import { buildTrip } from '../loader.js';
 import { tripDates } from '../time.js';
+import { APP_VERSION } from '../version.js';
 import { pageHead } from './chrome.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
@@ -75,7 +76,15 @@ export function tripsView(ctx) {
       h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Load a trip file (.json)'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: loadSample }, 'Load the sample trip'),
       fileInput,
-      message
+      message,
+      // So you can see at once which version is on the phone, and whether it can work offline.
+      h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION} · ${offlineStatus()}`)
     ),
   };
+}
+
+// Can the app open without internet? (Yes once its files are saved on the phone: after one visit with internet.)
+function offlineStatus() {
+  if (!('serviceWorker' in navigator)) return 'offline needs https';
+  return navigator.serviceWorker.controller ? 'works offline' : 'open it once more to work offline';
 }

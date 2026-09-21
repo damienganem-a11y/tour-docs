@@ -7,15 +7,16 @@ import { formatTime, formatWeekdayDate } from '../time.js';
 import { byName, plain, displayNames, partyLabel, guestPlace } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { startMove } from './move.js';
+import { undoButton } from './undo.js';
 
 export function guestPage(ctx, trip, guestId) {
   const guest = trip.guests.find((g) => g.id === guestId);
-  return guest ? guestDetail(ctx, trip, guest) : guestList(trip);
+  return guest ? guestDetail(ctx, trip, guest) : guestList(ctx, trip);
 }
 
 // ---------- The list of guests ----------
 
-function guestList(trip) {
+function guestList(ctx, trip) {
   const names = displayNames(trip.guests);
   const guests = [...trip.guests].sort(byName);
   const count = h('p', { class: 'muted count-line' });
@@ -51,7 +52,7 @@ function guestList(trip) {
   fill();
 
   return h('div', {},
-    pageHead({ eyebrow: 'By guest', title: 'Guests', subtitle: 'Tap a guest to see their whole trip' }),
+    pageHead({ eyebrow: 'By guest', title: 'Guests', subtitle: 'Tap a guest to see their whole trip', action: undoButton(ctx, trip) }),
     search, count, list);
 }
 
@@ -66,6 +67,7 @@ function guestDetail(ctx, trip, guest) {
       eyebrow: 'By guest',
       title: names.get(guest.id),
       subtitle: [partyLabel(trip, guest, names), guest.notes].filter(Boolean).join(' · '),
+      action: undoButton(ctx, trip),
     }),
     trip.slots.map((slot) => slotRow(ctx, trip, guest, slot))
   );

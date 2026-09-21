@@ -9,6 +9,9 @@ import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
 import { groupBatches, lastUndoable, summarize } from './journal.js';
+import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
+import { PASSCODE_CONFIG } from './passcode-config.js';
+import { APP_VERSION } from './version.js';
 import { plain, displayNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, slotLabel } from './rules.js';
 
 const results = [];
@@ -487,6 +490,170 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   check('The journal keeps its order even when entries are read back in a different order', groupBatches(sorted).map((b) => b.seq).join() === '1,2');
   check('Journal lines never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(ctx.entries)));
 }
+
+// =====================================================================
+// Step 5: works offline (sw.js), installs on the phone (manifest), access code (gate.js)
+// =====================================================================
+
+// --- The list of files kept for offline use must be complete ---
+const swText = await (await fetch('./sw.js', { cache: 'no-cache' })).text();
+const listed = [...swText.match(/const FILES = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+const listedMissing = [];
+for (const file of listed) if (!(await fetch(file, { cache: 'no-cache' })).ok) listedMissing.push(file);
+check(`All ${listed.length} files in the offline list exist`, listedMissing.length === 0, listedMissing.join(', '));
+
+// Follow every "import ... from './x.js'" starting from js/app.js: this is every file the app needs to start.
+const needed = new Set(['js/app.js']);
+for (const file of needed) {
+  const code = await (await fetch(file, { cache: 'no-cache' })).text();
+  for (const [, specifier] of code.matchAll(/from '(\.[^']+)'/g)) {
+    needed.add(new URL(specifier, `http://x/${file}`).pathname.slice(1));
+  }
+}
+const notListed = [...needed].filter((f) => !listed.includes(f));
+const staleEntries = listed.filter((f) => f.endsWith('.js') && f !== 'sw.js' && !needed.has(f));
+check(`Every one of the ${needed.size} scripts the app needs is in the offline list (a missing one would break offline)`, notListed.length === 0, notListed.join(', '));
+check('The offline list has no scripts the app does not use', staleEntries.length === 0, staleEntries.join(', '));
+
+const indexText = await (await fetch('./index.html', { cache: 'no-cache' })).text();
+const fromIndex = [...indexText.matchAll(/(?:href|src)="([^"#]+)"/g)].map((m) => m[1]).filter((u) => !u.startsWith('http'));
+check('Everything the home page loads (styles, icon, manifest, script) is in the offline list', fromIndex.every((f) => listed.includes(f)), fromIndex.filter((f) => !listed.includes(f)).join(', '));
+check('The sample trip is in the offline list (so "Load the sample trip" works without internet)', listed.includes('data/tour_docs_sample_trip_ZX-01.json'));
+check('The version in sw.js and in js/version.js is the same', swText.includes(`const VERSION = '${APP_VERSION}'`), APP_VERSION);
+
+// --- Installing on the phone ---
+const manifest = await (await fetch('./manifest.webmanifest')).json();
+check('The install manifest has a name, opens full screen and starts at the app',
+  manifest.name === 'Tour Docs' && manifest.display === 'standalone' && manifest.start_url === './' && /^#[0-9a-f]{6}$/i.test(manifest.theme_color));
+const loadImage = (url) => new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => resolve(null); i.src = url; });
+const iconSizes = await Promise.all(manifest.icons.map(async (icon) => { const i = await loadImage(icon.src); return i && `${i.naturalWidth}x${i.naturalHeight}` === icon.sizes; }));
+check('The manifest icons exist and have the sizes they claim (192 and 512)', manifest.icons.length >= 2 && iconSizes.every(Boolean), JSON.stringify(iconSizes));
+const touchIcon = await loadImage('./icons/apple-touch-icon.png');
+check('The iPhone home screen icon is 180 x 180', touchIcon && touchIcon.naturalWidth === 180 && touchIcon.naturalHeight === 180);
+check('The home page links the manifest and the iPhone icon', indexText.includes('rel="manifest"') && indexText.includes('rel="apple-touch-icon"') && indexText.includes('apple-mobile-web-app-capable'));
+
+// --- The service worker really installs and copies the files ---
+// (Some browsers, like the preview pane used to build this app, refuse service workers altogether. Then this
+// one check is SKIPPED; the pretend-network tests just below still cover how sw.js behaves.)
+let realWorker = false;
+try {
+  await navigator.serviceWorker.register('./sw.js');
+  await navigator.serviceWorker.ready;
+  realWorker = true;
+} catch (error) {
+  check('SKIPPED here: a real service worker (this browser does not allow them); tested on the phone instead', true, error.message.slice(0, 80));
+}
+if (realWorker) {
+  const cache = await caches.open(`tour-docs-${APP_VERSION}`);
+  const kept = (await cache.keys()).map((r) => new URL(r.url).pathname.split('/').slice(1).join('/'));
+  check(`The service worker installs and keeps a copy of all ${listed.length} files on the device`, listed.every((f) => kept.includes(f)), listed.filter((f) => !kept.includes(f)).join(', '));
+}
+
+// --- How sw.js behaves, tried with a pretend network and a pretend storage ---
+{
+  const ORIGIN = location.origin;
+  const listeners = {};
+  const stores = new Map(); // cache name -> Map(url -> Response)
+  let claimed = false, skipped = false;
+  let network = 'online';   // 'online' | 'offline' | 'slow' | 'missing'
+  const networkCalls = [];
+
+  const urlOf = (request) => (typeof request === 'string' ? new URL(request, ORIGIN).href : request.url);
+  const makeCache = (map) => ({
+    async put(request, response) { map.set(urlOf(request), response); },
+    async match(request, options = {}) {
+      const strip = (u) => (options.ignoreSearch ? u.split('?')[0] : u);
+      const wanted = strip(urlOf(request));
+      for (const [url, response] of map) if (strip(url) === wanted) return response.clone();
+      return undefined;
+    },
+    async addAll(requests) { for (const request of requests) map.set(urlOf(request), await pretendFetch(urlOf(request))); },
+    async keys() { return [...map.keys()].map((url) => ({ url })); },
+  });
+  const pretendCaches = {
+    async open(name) { if (!stores.has(name)) stores.set(name, new Map()); return makeCache(stores.get(name)); },
+    async keys() { return [...stores.keys()]; },
+    async delete(name) { return stores.delete(name); },
+  };
+  async function pretendFetch(url) {
+    networkCalls.push(url);
+    if (network === 'offline') throw new TypeError('Failed to fetch');
+    if (network === 'slow') await new Promise((r) => setTimeout(r, 400));
+    if (network === 'missing') return new Response('nope', { status: 404 });
+    return new Response(`from network: ${new URL(url).pathname}`, { status: 200 });
+  }
+
+  // Run sw.js with these pretend tools (and a 50 ms patience instead of 3 s, so the test is quick).
+  const pretendSelf = {
+    location: { origin: ORIGIN },
+    addEventListener: (type, handler) => { listeners[type] = handler; },
+    skipWaiting: () => { skipped = true; return Promise.resolve(); },
+    clients: { claim: () => { claimed = true; return Promise.resolve(); } },
+  };
+  new Function('self', 'caches', 'fetch', 'Request', 'Response', 'URL', 'setTimeout', 'clearTimeout', swText.replace('const SLOW = 3000', 'const SLOW = 50'))(
+    pretendSelf, pretendCaches, pretendFetch, Request, Response, URL, setTimeout, clearTimeout);
+
+  const run = async (type, extra = {}) => { const event = { ...extra, waitUntil(p) { event.done = p; }, respondWith(p) { event.answer = p; } }; listeners[type](event); await (event.done ?? event.answer); return event; };
+  const ask = async (path, request = {}) => { const event = await run('fetch', { request: { url: ORIGIN + path, method: 'GET', mode: 'cors', ...request } }); return event.answer ? await event.answer : null; };
+  const CACHE_NAME = `tour-docs-${APP_VERSION}`;
+
+  stores.set('tour-docs-0.0.1', new Map()); // a copy left by an older version
+  await run('install');
+  check('Install: every file of the list is copied, and the new version starts straight away', listed.every((f) => stores.get(CACHE_NAME)?.has(`${ORIGIN}/${f}`)) && skipped);
+  await run('activate');
+  check('Activate: the copies of older versions are thrown away, the current one is kept, and open pages are taken over',
+    !stores.has('tour-docs-0.0.1') && stores.has(CACHE_NAME) && claimed);
+
+  network = 'online'; networkCalls.length = 0;
+  const online = await ask('/js/app.js');
+  check('With internet, the file comes from the network (so a new upload arrives at once)', (await online.text()) === 'from network: /js/app.js' && networkCalls.length === 1);
+  check('...and the saved copy is refreshed', (await stores.get(CACHE_NAME).get(`${ORIGIN}/js/app.js`).clone().text()) === 'from network: /js/app.js');
+
+  network = 'offline';
+  check('Without internet, a saved file is served from the copy', (await (await ask('/js/app.js')).text()) === 'from network: /js/app.js');
+  check('Without internet, the app itself opens from the saved index.html (asked for as "/" or as "?x=1")',
+    (await (await ask('/', { mode: 'navigate' })).text()) === 'from network: /index.html' && (await (await ask('/index.html?x=1', { mode: 'navigate' })).text()) === 'from network: /index.html');
+  const notSaved = await ask('/js/never-saved.js');
+  check('Without internet, a file that was never saved gets a clear 503 answer (no crash)', notSaved.status === 503);
+
+  network = 'slow';
+  const started = Date.now();
+  const slow = await ask('/styles.css');
+  check('With a very slow connection, the saved copy is used instead of waiting', (await slow.text()) === 'from network: /styles.css' && Date.now() - started < 300, `${Date.now() - started} ms`);
+
+  network = 'missing';
+  const before = await stores.get(CACHE_NAME).get(`${ORIGIN}/js/db.js`).clone().text();
+  const missing = await ask('/js/db.js');
+  check('If the network says "not found", that answer is passed on and the saved copy is NOT overwritten',
+    missing.status === 404 && (await stores.get(CACHE_NAME).get(`${ORIGIN}/js/db.js`).clone().text()) === before);
+
+  check('Requests that are not plain reads, or go to other websites, are left alone',
+    (await ask('/js/app.js', { method: 'POST' })) === null && (await run('fetch', { request: { url: 'https://example.com/x.js', method: 'GET', mode: 'cors' } }).then((e) => e.answer)) === undefined);
+}
+
+// --- The access code ---
+const sixHex = 'test-1234';
+const vector = await hashPasscode(sixHex, '00112233445566778899aabbccddeeff', 1000);
+check('The code is scrambled exactly as tools/make_passcode.py does it (same result as Python)',
+  vector === '48433ce41a43712340bfc3008c38beb196137a46a8d5866c09e48e1ce0868e59', vector);
+check('Spaces before or after the code are ignored', (await hashPasscode('  test-1234 ', '00112233445566778899aabbccddeeff', 1000)) === vector);
+const testConfig = await makePasscodeConfig('Summit-2027', 1000);
+check('A new code makes its own random salt, and never contains the code', /^[0-9a-f]{32}$/.test(testConfig.salt) && /^[0-9a-f]{64}$/.test(testConfig.hash) && !JSON.stringify(testConfig).includes('Summit'));
+check('The right code is accepted, a wrong one, a different case and an empty one are not',
+  (await checkPasscode('Summit-2027', testConfig)) && !(await checkPasscode('Summit-2028', testConfig)) && !(await checkPasscode('summit-2027', testConfig)) && !(await checkPasscode('', testConfig)));
+check('Two codes made from the same words still look different (random salt)', (await makePasscodeConfig('Summit-2027', 1000)).hash !== testConfig.hash);
+const realConfigOk = PASSCODE_CONFIG === null
+  || (/^[0-9a-f]{32}$/.test(PASSCODE_CONFIG.salt) && /^[0-9a-f]{64}$/.test(PASSCODE_CONFIG.hash) && PASSCODE_CONFIG.iterations >= 100000);
+check(`The access code settings of the app are valid (${PASSCODE_CONFIG === null ? 'no code set: the app opens straight away' : 'a code is set'})`, realConfigOk);
+
+const day = 24 * 60 * 60 * 1000;
+const keptBefore = localStorage.getItem('tourdocs.unlockedUntil');
+localStorage.removeItem('tourdocs.unlockedUntil');
+check('Before the code is entered the phone is locked', isUnlocked(1000) === false);
+rememberUnlock(1000);
+check('After the code is entered, the phone stays unlocked for 30 days', isUnlocked(1000 + 30 * day - 1) === true && isUnlocked(1000 + 1 * day) === true);
+check('After 30 days the code is asked again', isUnlocked(1000 + 30 * day + 1) === false);
+if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else localStorage.setItem('tourdocs.unlockedUntil', keptBefore);
 
 // --- The trip and its journal entries are saved together, on the device ---
 {

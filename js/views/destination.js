@@ -9,6 +9,7 @@ import { formatTime, formatWeekdayDate } from '../time.js';
 import { byName, displayNames, whoIsWhere, capacityInfo } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour } from './move.js';
+import { undoButton } from './undo.js';
 
 const PREVIEW = 4; // names shown on a closed card
 
@@ -69,6 +70,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       eyebrow: 'By destination',
       title: destination.name,
       subtitle: `Day ${slot.day} · ${formatWeekdayDate(slot.date)} · ${slot.half} · ${destination.name} time`,
+      action: undoButton(ctx, trip),
     }),
     cards,
     leisureCard,

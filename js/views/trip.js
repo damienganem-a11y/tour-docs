@@ -1,5 +1,5 @@
 // Inside a trip. Two spaces, chosen with the switch at the top:
-//   Use       the day-to-day screens (bottom tabs: By destination, By guest), with the Undo button
+//   Use       the day-to-day screens (bottom tabs: By destination, By guest)
 //   Settings  setup and control (owner only)
 //
 // The Settings screens are built one step at a time (see SPEC.md "Build order"); until then the
@@ -7,9 +7,6 @@
 
 import { h } from '../dom.js';
 import { tripDates } from '../time.js';
-import { applyChange } from '../changes.js';
-import { lastUndoable, summarize } from '../journal.js';
-import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { destinationPage } from './destination.js';
 import { guestPage } from './guest.js';
@@ -66,9 +63,10 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
   }
 
   // Use: a slim bar on top (the phone screen is small), then the chosen page and the bottom tabs.
+  // (The Undo button is inside each page, next to its title.)
   const topBar = h('div', { class: 'top-bar' },
     h('a', { class: 'back-link', href: '#/' }, '‹ All trips'),
-    undoButton(ctx, trip));
+    h('span', { class: 'muted' }, trip.ref));
   const content = page === 'guest' ? guestPage(ctx, trip, first) : destinationPage(ctx, trip, first, second);
   const activePage = page === 'guest' ? 'guest' : 'destination';
   const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },
@@ -76,32 +74,6 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
       h('a', { class: `bottom-tab${t.page === activePage ? ' is-active' : ''}`, href: `#/trip/${trip.id}/use/${t.page}` }, t.label)));
 
   return { node: h('div', { class: 'screen' }, topBar, modeSwitch, content, tabs) };
-}
-
-// The Undo button: like Ctrl+Z. One tap takes back the last action of the trip, no confirmation.
-// It shows what it would undo, and is greyed out when there is nothing to undo.
-function undoButton(ctx, trip) {
-  const last = lastUndoable(ctx.journal(trip.id));
-  const what = last ? summarize(last) : 'nothing to undo';
-  let busy = false; // ignore a second tap while the first is still being saved
-
-  return h('button', {
-    class: 'undo-btn', type: 'button', disabled: !last, 'aria-label': `Undo: ${what}`,
-    onclick: async () => {
-      if (busy) return;
-      busy = true;
-      const result = await applyChange(ctx, trip.id, { type: 'undo' });
-      busy = false;
-      if (result.ok) {
-        ctx.refresh();
-        showToast(`Undone: ${result.summary}`);
-      } else {
-        showToast(result.error, true);
-      }
-    },
-  },
-    h('span', { class: 'undo-label' }, '↶ Undo'),
-    h('span', { class: 'undo-what' }, what));
 }
 
 function settingsMenu(trip) {
