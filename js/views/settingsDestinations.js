@@ -1,20 +1,36 @@
 // Settings > Destinations (step 7a/7b, owner only): edit a destination's own details and its activities.
 //
 //   List screen:    every destination, tap to open.
-//   Detail screen:  name / country / time zone (Edit details), the list of its activities (tap one to
-//                   edit it), "+ Add activity", and — tucked at the very bottom, for the rare case a
-//                   whole destination must be swapped for another — "Replace this destination".
+//   Detail screen:  name / country / time zone (Edit details), the list of its ACTIVE activities (tap one
+//                   to edit it) with cancelled ones folded away under "N cancelled tours" (so a screen
+//                   just replaced starts clean), "+ Add activity", and — tucked at the very bottom, for
+//                   the rare case a whole destination must be swapped for another — "Replace this destination".
 //
 // Every change here goes through the one change function (changes.js), so it is in the Journal and Undo works.
 
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
-import { formatTime } from '../time.js';
-import { slotLabel, countIn, plural } from '../rules.js';
+import { formatTime, formatTypedTime } from '../time.js';
+import { slotLabel, countIn, plural, bySlotOrder } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { notice } from './move.js';
+
+// A time field that adds the ":" for you after the hour: many phone keyboards (numeric ones especially)
+// have no ":" key, so typing "1830" becomes "18:30" as you type it.
+function timeField(value, label) {
+  const input = h('input', {
+    class: 'text-input', type: 'text', inputmode: 'numeric', value,
+    placeholder: 'HH:MM (optional)', maxlength: '5', 'aria-label': label,
+  });
+  input.addEventListener('input', () => { input.value = formatTypedTime(input.value); });
+  return input;
+}
+
+// Destination ids whose "N cancelled tours" are expanded (kept here so it survives a redraw, like the
+// open guest cards on By destination). Resets when the app is reloaded — that is fine, it is just a fold.
+const openCancelled = new Set();
 
 // Saves one settings change; closes the sheet and redraws on success, shows the reason on failure.
 let saving = false;
@@ -43,10 +59,15 @@ function listPage(ctx, trip) {
 }
 
 function detailPage(ctx, trip, destination) {
-  const activities = trip.activities
+  const all = trip.activities
     .filter((a) => trip.slots.find((s) => s.id === a.slotId)?.destinationId === destination.id)
     .map((a) => ({ activity: a, slot: trip.slots.find((s) => s.id === a.slotId) }))
-    .sort((x, y) => x.slot.day - y.slot.day || x.slot.half.localeCompare(y.slot.half) || (x.activity.startsAt ?? '').localeCompare(y.activity.startsAt ?? ''));
+    .sort((x, y) => bySlotOrder(x.slot, y.slot) || (x.activity.startsAt ?? '').localeCompare(y.activity.startsAt ?? ''));
+  // Cancelled tours (for example from "Replace this destination") are folded away by default: after a
+  // replace, the screen is clean and ready for the new tours, instead of cluttered with the old ones.
+  const active = all.filter(({ activity }) => !activity.cancelled);
+  const cancelled = all.filter(({ activity }) => activity.cancelled);
+  const isOpen = openCancelled.has(destination.id);
 
   return h('div', {},
     pageHead({
@@ -57,12 +78,20 @@ function detailPage(ctx, trip, destination) {
     }),
     h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => editDestination(ctx, trip, destination) }, 'Edit details'),
     h('h3', { class: 'section-title' }, 'Activities'),
-    activities.length === 0
-      ? h('p', { class: 'empty' }, 'No activities yet in this destination.')
-      : h('div', {}, activities.map(({ activity, slot }) => activityRow(ctx, trip, slot, destination, activity))),
+    active.length === 0
+      ? h('p', { class: 'empty' }, cancelled.length > 0 ? 'No active tours.' : 'No activities yet in this destination.')
+      : h('div', {}, active.map(({ activity, slot }) => activityRow(ctx, trip, slot, destination, activity))),
+    cancelled.length > 0
+      ? h('div', {},
+          h('button', {
+            class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
+            onclick: () => { if (isOpen) openCancelled.delete(destination.id); else openCancelled.add(destination.id); ctx.refresh(); },
+          }, `${isOpen ? '▾' : '▸'} ${plural(cancelled.length, 'cancelled tour')}`),
+          isOpen ? h('div', {}, cancelled.map(({ activity, slot }) => activityRow(ctx, trip, slot, destination, activity))) : null)
+      : null,
     h('button', { class: 'btn btn--plain', type: 'button', onclick: () => addActivity(ctx, trip, destination) }, '+ Add activity'),
     h('button', {
-      class: 'btn btn--plain btn--small footer-note', type: 'button', style: 'margin-top: 32px;',
+      class: 'btn btn--danger btn--small', type: 'button', style: 'margin-top: 32px;',
       onclick: () => replaceDestination(ctx, trip, destination),
     }, 'Replace this destination…'));
 }
@@ -115,10 +144,7 @@ function editDestination(ctx, trip, destination) {
 function editActivity(ctx, trip, slot, destination, activity) {
   const nameInput = h('input', { class: 'text-input', type: 'text', value: activity.name, 'aria-label': 'Name', maxlength: '80' });
   const meetingInput = h('input', { class: 'text-input', type: 'text', value: activity.meeting ?? '', placeholder: 'Meeting point (optional)', 'aria-label': 'Meeting point' });
-  const timeInput = h('input', {
-    class: 'text-input', type: 'text', value: activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '',
-    placeholder: 'HH:MM (optional)', inputmode: 'numeric', 'aria-label': 'Start time',
-  });
+  const timeInput = timeField(activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '', 'Start time');
   const capacityInput = h('input', {
     class: 'text-input', type: 'number', min: '1', value: activity.capacity ?? '', placeholder: 'No limit', inputmode: 'numeric', 'aria-label': 'Capacity',
   });
@@ -139,12 +165,12 @@ function editActivity(ctx, trip, slot, destination, activity) {
 }
 
 function addActivity(ctx, trip, destination) {
-  const slots = trip.slots.filter((s) => s.destinationId === destination.id).sort((a, b) => a.day - b.day || a.half.localeCompare(b.half));
+  const slots = trip.slots.filter((s) => s.destinationId === destination.id).sort(bySlotOrder);
   const select = h('select', { class: 'text-input', 'aria-label': 'Half-day' },
     slots.map((s) => h('option', { value: s.id }, slotLabel(trip, s))));
   const nameInput = h('input', { class: 'text-input', type: 'text', placeholder: 'Activity name', 'aria-label': 'Name', maxlength: '80' });
   const meetingInput = h('input', { class: 'text-input', type: 'text', placeholder: 'Meeting point (optional)', 'aria-label': 'Meeting point' });
-  const timeInput = h('input', { class: 'text-input', type: 'text', placeholder: 'HH:MM (optional)', inputmode: 'numeric', 'aria-label': 'Start time' });
+  const timeInput = timeField('', 'Start time');
   const capacityInput = h('input', { class: 'text-input', type: 'number', min: '1', placeholder: 'No limit', inputmode: 'numeric', 'aria-label': 'Capacity' });
 
   const confirm = h('button', {
@@ -190,11 +216,11 @@ function replaceDestination(ctx, trip, destination) {
     eyebrow: 'Rare change', title: `Replace ${destination.name} with a different place?`,
     subtitle: 'For the rare case a whole destination changes, for example a city that turns out to be impossible to visit.',
     body: [
-      notice(activeTours.length === 0
-        ? 'This destination has no active tours to cancel.'
-        : `${plural(activeTours.length, 'tour')} will be cancelled${bookedCount > 0 ? ` and ${plural(bookedCount, 'guest')} moved to At leisure` : ''}. You then rebuild the activities for the new place with "+ Add activity".`),
+      notice(`All of ${destination.name}'s activities will be cancelled and every guest on them will be moved to At leisure`
+        + `${activeTours.length > 0 ? ` (${plural(activeTours.length, 'tour')}, ${plural(bookedCount, 'guest')})` : ''}. `
+        + 'You then create the new tours for the new place, one by one, with "+ Add activity".'),
       nameInput, countryInput, zoneInput, confirm,
     ],
-    cancelLabel: 'Keep this destination',
+    cancelLabel: 'Keep this destination', cancelDanger: false,
   });
 }

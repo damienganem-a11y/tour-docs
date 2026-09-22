@@ -16,10 +16,49 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
   <link rel="stylesheet" href="styles.css">
+
+  <!-- Hints the browser to start fetching every script straight away, all at once, instead of discovering
+       them one file at a time as it reads each file's own imports. The app has grown to over two dozen
+       small files (no build step bundles them into one), so this cuts a real chunk off the time before
+       the app appears. Keep this list the same as FILES in sw.js. -->
+  <link rel="modulepreload" href="js/app.js">
+  <link rel="modulepreload" href="js/changes.js">
+  <link rel="modulepreload" href="js/db.js">
+  <link rel="modulepreload" href="js/dom.js">
+  <link rel="modulepreload" href="js/gate.js">
+  <link rel="modulepreload" href="js/ids.js">
+  <link rel="modulepreload" href="js/journal.js">
+  <link rel="modulepreload" href="js/loader.js">
+  <link rel="modulepreload" href="js/passcode-config.js">
+  <link rel="modulepreload" href="js/rollcall.js">
+  <link rel="modulepreload" href="js/rules.js">
+  <link rel="modulepreload" href="js/time.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <link rel="modulepreload" href="js/users.js">
+  <link rel="modulepreload" href="js/version.js">
+  <link rel="modulepreload" href="js/views/chrome.js">
+  <link rel="modulepreload" href="js/views/destination.js">
+  <link rel="modulepreload" href="js/views/guest.js">
+  <link rel="modulepreload" href="js/views/journal.js">
+  <link rel="modulepreload" href="js/views/move.js">
+  <link rel="modulepreload" href="js/views/passcode.js">
+  <link rel="modulepreload" href="js/views/rollcall.js">
+  <link rel="modulepreload" href="js/views/settingsDestinations.js">
+  <link rel="modulepreload" href="js/views/trip.js">
+  <link rel="modulepreload" href="js/views/trips.js">
+  <link rel="modulepreload" href="js/views/undo.js">
+  <link rel="modulepreload" href="js/views/welcome.js">
 </head>
 <body>
-  <!-- Everything you see is drawn into this one box by js/app.js -->
-  <div id="app"></div>
+  <!-- Everything you see is drawn into this one box by js/app.js, which replaces this placeholder the
+       moment it is ready. Without it, the phone shows nothing (just the plain background) for the second
+       or two it takes to start: this keeps something on screen the whole time. -->
+  <div id="app">
+    <div class="boot-splash">
+      <div class="boot-name">Tour Docs</div>
+      <div class="boot-spinner" aria-hidden="true"></div>
+    </div>
+  </div>
   <noscript>Tour Docs needs JavaScript to run.</noscript>
   <script type="module" src="js/app.js"></script>
 </body>

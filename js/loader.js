@@ -22,15 +22,9 @@
 
 import { newId } from './ids.js';
 import { isValidTimeZone, localToInstant } from './time.js';
+import { bySlotOrder } from './rules.js';
 
 const AT_LEISURE = 'at leisure'; // the words used in the file (compared in lower case)
-
-// The usual order of a day. Any other half-day name from the data is put after these.
-const HALF_ORDER = ['Morning', 'Afternoon', 'Evening'];
-const halfRank = (half) => {
-  const i = HALF_ORDER.indexOf(half);
-  return i === -1 ? HALF_ORDER.length : i;
-};
 
 // Stops with a plain-language message when something is wrong with the file.
 function need(condition, message) {
@@ -83,7 +77,7 @@ export function buildTrip(raw) {
     optionsBySlot.set(slot.id, s.options); // the activities offered in this half-day, as written in the file
     slots.push(slot);
   }
-  slots.sort((a, b) => a.day - b.day || halfRank(a.half) - halfRank(b.half));
+  slots.sort(bySlotOrder);
 
   const activityByRefName = new Map(); // "slot ref|activity name" -> activity, used for the sign-ups below
   const seenActivityRefs = new Set();

@@ -12,6 +12,16 @@ export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // ["Simon B."] -> "Simon B."   ["Simon B.", "Anne B."] -> "Simon B. and Anne B."
 export const joinNames = (list) => (list.length <= 1 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`);
 
+// The usual order of a day (Morning, Afternoon, Evening), not alphabetical (which would put Afternoon
+// before Evening before Morning). Any other half-day name from the data is put after these.
+const HALF_ORDER = ['Morning', 'Afternoon', 'Evening'];
+export const halfRank = (half) => {
+  const i = HALF_ORDER.indexOf(half);
+  return i === -1 ? HALF_ORDER.length : i;
+};
+// Half-days in trip order: by day, then Morning/Afternoon/Evening.
+export const bySlotOrder = (a, b) => a.day - b.day || halfRank(a.half) - halfRank(b.half);
+
 // ---------- Names ----------
 
 // Sorting people by last name, then first name (used to break ties).

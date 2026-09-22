@@ -7,14 +7,14 @@ import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal } from '.
 import { applyChange, validateChanges } from './changes.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
-import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone } from './time.js';
+import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime } from './time.js';
 import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements } from './journal.js';
 import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
 import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, alphabetical, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural } from './rules.js';
+import { plain, displayNames, alphabetical, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -1035,6 +1035,15 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
 
   // --- No dietary info anywhere in these journal lines ---
   check('Settings changes never write dietary info to the journal', !/allerg|shellfish|dietary/i.test(JSON.stringify([...ctx.entries, ...ctx3.entries, ...ctx5.entries, ...ctx6.entries])));
+
+  // --- A half-day picker is in trip order (Morning, Afternoon, Evening), not alphabetical ---
+  const day2Halves = trip.slots.filter((sl) => sl.destinationId === lisbon.id && sl.day === 2).sort(bySlotOrder).map((sl) => sl.half);
+  check('Half-days sort by day, then Morning/Afternoon/Evening — not A-Z (which would put Afternoon first)',
+    JSON.stringify(day2Halves) === JSON.stringify(['Morning', 'Afternoon', 'Evening']), day2Halves.join(','));
+
+  // --- Typing a time with no ":" key on the keyboard: the app adds it for you ---
+  check('Typing digits adds the ":" after the hour, live, as you type', ['1', '18', '183', '1830'].map(formatTypedTime).join(',') === '1,18,18:3,18:30');
+  check('A time already typed with its ":" is left alone, and only the first 4 digits count', formatTypedTime('18:30') === '18:30' && formatTypedTime('99999') === '99:99');
 }
 
 // =====================================================================

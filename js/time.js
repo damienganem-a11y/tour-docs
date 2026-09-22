@@ -8,6 +8,14 @@
 // The browser already knows every time zone and every daylight-saving rule (through Intl),
 // so we use it instead of adding a library.
 
+// What a time field should show as the owner types digits into it: the ":" is added automatically
+// after the hour, since many phone keyboards (numeric ones especially) have no ":" key.
+// "1" -> "1", "18" -> "18", "183" -> "18:3", "18:30" (already formatted, e.g. backspacing) -> "18:30".
+export function formatTypedTime(raw) {
+  const digits = String(raw ?? '').replace(/\D/g, '').slice(0, 4);
+  return digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits;
+}
+
 // Is this a time zone name the browser knows, such as "Asia/Tokyo"?
 export function isValidTimeZone(timeZone) {
   try {
