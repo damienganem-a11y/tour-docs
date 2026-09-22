@@ -43,19 +43,24 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Boot splash ----------
    Sits in index.html's #app placeholder, drawn straight from this stylesheet (no JS needed), so the
-   phone shows the app's name instead of a blank page while js/app.js is still starting up. The first
-   real screen replaces it automatically the moment it is ready. */
+   phone shows the app's name instead of a blank page while js/app.js is still starting up. app.js keeps
+   it up for a full two seconds (see BOOT_SPLASH_MS) so the little intro below is never just a flash,
+   even when the phone was ready sooner; the first real screen then replaces it. */
 .boot-splash {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
   min-height: 100vh; min-height: 100dvh;
 }
-.boot-name { font-family: var(--serif); font-size: 32px; font-weight: 700; color: var(--brand); }
-.boot-spinner {
-  width: 34px; height: 34px; border-radius: 50%;
-  border: 4px solid var(--track); border-top-color: var(--brand);
-  animation: boot-spin 0.9s linear infinite;
+.boot-name {
+  font-family: var(--serif); font-size: 34px; font-weight: 700; color: var(--brand);
+  opacity: 0; animation: boot-name-in 0.7s ease-out 0.15s forwards;
 }
-@keyframes boot-spin { to { transform: rotate(360deg); } }
+@keyframes boot-name-in { from { opacity: 0; transform: translateY(10px) scale(0.94); } to { opacity: 1; transform: none; } }
+.boot-bar { width: 130px; height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.boot-bar-fill {
+  height: 100%; width: 0; border-radius: 3px; background: var(--brand);
+  animation: boot-bar-fill 1.7s ease-in-out 0.3s forwards;
+}
+@keyframes boot-bar-fill { from { width: 0; } to { width: 100%; } }
 
 /* ---------- Page layout ---------- */
 

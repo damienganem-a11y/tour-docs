@@ -17,7 +17,7 @@
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled } ]
 //   trip.parties       [ { id, ref, type } ]                                   travel parties
-//   trip.guests        [ { id, ref, first, last, partyId, notes, dietary } ]
+//   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt } ]
 //   trip.bookings      { guestId: { slotId: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'unknown', raw } } }
 
 import { newId } from './ids.js';
@@ -121,6 +121,7 @@ export function buildTrip(raw) {
     const guest = {
       id: newId(), ref: g.id, first: g.first.trim(), last: g.last.trim(),
       partyId: partyByRef.get(partyRef).id, notes: g.notes ?? '', dietary: g.dietary ?? '',
+      leftAt: null, // set to the exact moment when "Guest left the trip" is used (Settings, step 7d); reversible
     };
     guests.push(guest);
     guestByRef.set(g.id, guest);

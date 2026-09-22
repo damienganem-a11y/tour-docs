@@ -1047,6 +1047,111 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
 }
 
 // =====================================================================
+// Step 7c/7d: guests and travel parties
+// =====================================================================
+{
+  const soloRef = trip.guests.find((g) => trip.parties.find((p) => p.id === g.partyId).type === 'Solo').ref;
+  // A half-day where G001 and their partner G002 are together, so leaving really removes G001 from G002's party-mover offer.
+  const s = trip.slots.find((x) => guestPlace(trip, guest('G001'), x).kind === 'activity' && partyMovers(trip, guest('G001'), x).length === 1);
+
+  // --- Edit a guest's own name ---
+  const ctx = makeCtx();
+  const before = structuredClone(ctx.state);
+  const edited = await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: 'Stone' });
+  const g001 = () => ctx.state.guests.find((g) => g.ref === 'G001');
+  check('Edit a guest\'s name: first and last change, the shown name updates with it', edited.ok && g001().first === 'Richard' && g001().last === 'Stone', edited.error);
+  check('The journal says: \'Richard S. renamed to "Richard Stone"\'', summarize(groupBatches(ctx.entries).at(-1)) === 'Richard S. renamed to "Richard Stone"', summarize(groupBatches(ctx.entries).at(-1)));
+  check('Refused: a blank first or last name', !(await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: ' ', last: 'Stone' })).ok
+    && !(await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: '' })).ok);
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Undo puts the name exactly back', restoredExactly(ctx.state, before));
+  check('Only the owner can rename a guest', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'X', last: 'Y' })).ok);
+
+  // --- Guest left the trip ---
+  const ctx2 = makeCtx();
+  const before2 = structuredClone(ctx2.state);
+  const left = await applyChange(ctx2, trip.id, { type: 'guest-left', guestId: guest('G001').id });
+  const g001of = (state) => state.guests.find((g) => g.ref === 'G001');
+  check('Guest left the trip: leftAt is set, no booking is touched', left.ok && Boolean(g001of(ctx2.state).leftAt)
+    && JSON.stringify(ctx2.state.bookings[guest('G001').id]) === JSON.stringify(trip.bookings[guest('G001').id]), left.error);
+  check('The journal says: "Richard S. left the trip"', summarize(groupBatches(ctx2.entries).at(-1)) === `${names.get(guest('G001').id)} left the trip`);
+  check('A guest who left is not counted anywhere day-to-day: not in whoIsWhere, not in countIn, freeing their seat',
+    [...whoIsWhere(ctx2.state, s).byActivity.values(), whoIsWhere(ctx2.state, s).leisure].flat().every((g) => g.id !== guest('G001').id)
+    && whoIsWhere(ctx2.state, s).attention.every(({ guest: g }) => g.id !== guest('G001').id));
+  check('If G001 was on an activity, that activity now counts one fewer', (() => {
+    const here = guestPlace(trip, guest('G001'), s);
+    return here.kind !== 'activity' || countIn(ctx2.state, ctx2.state.activities.find((a) => a.id === here.activity.id)) === countIn(trip, here.activity) - 1;
+  })());
+  check('Their travel party partner is no longer offered as a "also move" party mover', partyMovers(ctx2.state, guest('G002'), s).every((g) => g.id !== guest('G001').id));
+  check('partyLabel now reads Priya S. as travelling solo (their only party-mate left)', partyLabel(ctx2.state, guest('G002'), displayNames(ctx2.state.guests)) === 'Travelling solo');
+  check('Refused: marking somebody as left twice', !(await applyChange(ctx2, trip.id, { type: 'guest-left', guestId: guest('G001').id })).ok);
+  check('Only the owner can mark a guest as having left', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'guest-left', guestId: guest('G001').id })).ok);
+
+  // Bring them back
+  const back = await applyChange(ctx2, trip.id, { type: 'guest-return', guestId: guest('G001').id });
+  check('Guest returned: leftAt is cleared, they are exactly back where they were (still in every original booking)',
+    back.ok && !g001of(ctx2.state).leftAt && restoredExactly(ctx2.state, before2), back.error);
+  check('The journal says: "Richard S. is back on the trip"', summarize(groupBatches(ctx2.entries).at(-1)) === `${names.get(guest('G001').id)} is back on the trip`);
+  check('Refused: bringing back somebody who has not left', !(await applyChange(ctx2, trip.id, { type: 'guest-return', guestId: guest('G001').id })).ok);
+  await applyChange(ctx2, trip.id, { type: 'undo' }); // undo the return: they are marked left again
+  check('Undo of "bring back" marks the guest left again, with their exact original leftAt moment', Boolean(g001of(ctx2.state).leftAt));
+  await applyChange(ctx2, trip.id, { type: 'undo' }); // undo the original "left"
+  check('Undo of "guest left" brings the whole trip exactly back, with nothing left to undo', restoredExactly(ctx2.state, before2) && lastUndoable(ctx2.entries) === null);
+
+  // --- Undo is refused once the guest has changed again since ---
+  const ctx3 = makeCtx();
+  await applyChange(ctx3, trip.id, { type: 'guest-left', guestId: guest('G003').id });
+  await applyChange(ctx3, trip.id, { type: 'guest-return', guestId: guest('G003').id });
+  ctx3.state.guests.find((g) => g.ref === 'G003').leftAt = new Date().toISOString(); // as if marked left again by another action
+  check('Undo of "bring back" is refused if the guest has left again since', !(await applyChange(ctx3, trip.id, { type: 'undo' })).ok);
+
+  // --- Make solo ---
+  const ctx4 = makeCtx();
+  const before4 = structuredClone(ctx4.state);
+  const partyCountBefore = trip.parties.length;
+  const solo = await applyChange(ctx4, trip.id, { type: 'make-solo', guestId: guest('G001').id });
+  check('Make solo: G001 gets a brand new party of their own; Priya S. keeps the old one, alone', solo.ok
+    && ctx4.state.parties.length === partyCountBefore + 1
+    && partyLabel(ctx4.state, ctx4.state.guests.find((g) => g.ref === 'G001'), displayNames(ctx4.state.guests)) === 'Travelling solo'
+    && partyLabel(ctx4.state, guest('G002'), displayNames(ctx4.state.guests)) === 'Travelling solo', solo.error);
+  check('The journal says: "Richard S. now has their own travel party (solo)"', summarize(groupBatches(ctx4.entries).at(-1)) === `${names.get(guest('G001').id)} now has their own travel party (solo)`);
+  check('Refused: making an already-solo guest solo again', !(await applyChange(ctx4, trip.id, { type: 'make-solo', guestId: guest(soloRef).id })).ok);
+  await applyChange(ctx4, trip.id, { type: 'undo' });
+  check('Undo of make-solo: the new party is gone (as if never made), G001 is back with Priya S.', restoredExactly(ctx4.state, before4) && ctx4.state.parties.length === partyCountBefore);
+  check('Only the owner can change a travel party', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'make-solo', guestId: guest(soloRef).id })).ok);
+
+  // --- Join an existing travel party ---
+  const ctx5 = makeCtx();
+  const before5 = structuredClone(ctx5.state);
+  const g003PartyId = guest('G003').partyId; // G003 & G004 are a couple: joining it needs no new type
+  const joined = await applyChange(ctx5, trip.id, { type: 'join-party', guestId: guest(soloRef).id, partyId: g003PartyId });
+  check('Join an existing multi-person party: no type needed, the party keeps its type', joined.ok
+    && ctx5.state.guests.find((g) => g.ref === soloRef).partyId === g003PartyId
+    && ctx5.state.parties.find((p) => p.id === g003PartyId).type === trip.parties.find((p) => p.id === g003PartyId).type, joined.error);
+  check('The journal names who is already there: "... joined the travel party with Peter S. and Mary S."',
+    summarize(groupBatches(ctx5.entries).at(-1)).includes('joined the travel party with'));
+  await applyChange(ctx5, trip.id, { type: 'undo' });
+  check('Undo of join-party: back in their own solo party, the other party untouched', restoredExactly(ctx5.state, before5));
+
+  // Joining somebody who is solo needs a type (it is no longer "Solo")
+  const ctx6 = makeCtx();
+  const before6 = structuredClone(ctx6.state);
+  const otherSoloRef = trip.guests.find((g) => trip.parties.find((p) => p.id === g.partyId).type === 'Solo' && g.ref !== soloRef).ref;
+  const soloPartyId = guest(otherSoloRef).partyId;
+  check('Refused: joining a solo guest\'s party without saying what kind of party it now is', !(await applyChange(ctx6, trip.id, { type: 'join-party', guestId: guest(soloRef).id, partyId: soloPartyId })).ok);
+  const paired = await applyChange(ctx6, trip.id, { type: 'join-party', guestId: guest(soloRef).id, partyId: soloPartyId, newType: 'Friends' });
+  check('With a type: the two now share a party, no longer "Solo"', paired.ok && ctx6.state.parties.find((p) => p.id === soloPartyId).type === 'Friends'
+    && partyLabel(ctx6.state, guest(otherSoloRef), displayNames(ctx6.state.guests)).startsWith('Friends with'), paired.error);
+  check('Refused: joining a party the guest is already in', !(await applyChange(ctx6, trip.id, { type: 'join-party', guestId: guest(soloRef).id, partyId: soloPartyId })).ok);
+  await applyChange(ctx6, trip.id, { type: 'undo' });
+  check('Undo of a party-creating join: the type goes back to "Solo" too', restoredExactly(ctx6.state, before6));
+
+  // --- No dietary info anywhere in these journal lines ---
+  check('Guest and travel party changes never write dietary info to the journal',
+    !/allerg|shellfish|dietary/i.test(JSON.stringify([...ctx.entries, ...ctx2.entries, ...ctx4.entries, ...ctx5.entries, ...ctx6.entries])));
+}
+
+// =====================================================================
 // Step 5: works offline (sw.js), installs on the phone (manifest), access code (gate.js)
 // =====================================================================
 

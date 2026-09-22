@@ -111,7 +111,7 @@ export function showForcedInfo(ctx, trip, guest, slot, entry) {
 // (During a roll call the guest just joins the tour and appears in the list; they are NOT put in a vehicle.)
 export function startAddGuest(ctx, trip, slot, activity) {
   const names = displayNames(trip.guests);
-  const guests = [...trip.guests].sort(alphabetical(names));
+  const guests = trip.guests.filter((g) => !g.leftAt).sort(alphabetical(names)); // a guest who left is brought back in Settings, not here
   const list = h('div', {});
   const now = countIn(trip, activity);
   const full = activity.capacity !== null && now >= activity.capacity;

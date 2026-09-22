@@ -46,6 +46,11 @@ export function groupBatches(entries) {
         : types.has('edit-destination') ? 'edit-destination'
         : types.has('add-activity') ? 'add-activity'
         : types.has('edit-activity') ? 'edit-activity'
+        : types.has('edit-guest') ? 'edit-guest'
+        : types.has('guest-left') ? 'guest-left'
+        : types.has('guest-return') ? 'guest-return'
+        : types.has('make-solo') ? 'make-solo'
+        : types.has('join-party') ? 'join-party'
         : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
       undone: undone.has(batchId),
@@ -89,6 +94,11 @@ export function summarize(batch) {
   if (batch.kind === 'edit-destination') return summarizeEditDestination(batch.entries[0]);
   if (batch.kind === 'add-activity') { const e = batch.entries[0]; return `Added "${e.activityLabel}" (${e.slotLabel})`; }
   if (batch.kind === 'edit-activity') return summarizeEditActivity(batch.entries[0]);
+  if (batch.kind === 'edit-guest') return summarizeEditGuest(batch.entries[0]);
+  if (batch.kind === 'guest-left') return `${batch.entries[0].guestName} left the trip`;
+  if (batch.kind === 'guest-return') return `${batch.entries[0].guestName} is back on the trip`;
+  if (batch.kind === 'make-solo') return `${batch.entries[0].guestName} now has their own travel party (solo)`;
+  if (batch.kind === 'join-party') return summarizeJoinParty(batch.entries[0]);
   if (batch.kind === 'rollcall') return summarizeRollCall(batch);
 
   // Guests who went from the same place to the same place are told together.
@@ -167,6 +177,18 @@ function summarizeEditActivity(entry) {
   if (entry.from.capacity !== entry.to.capacity) changed.push(`capacity set to ${entry.to.capacity === null ? 'no limit' : entry.to.capacity}`);
   if (entry.from.startsAt !== entry.to.startsAt) changed.push('time updated');
   return `"${entry.from.name}": ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
+}
+
+// What changed about a guest's own name, in words.
+function summarizeEditGuest(entry) {
+  return `${entry.guestName} renamed to "${entry.to.first} ${entry.to.last}"`;
+}
+
+// A guest joining another travel party, named by who is already in it (if anyone is left to name).
+function summarizeJoinParty(entry) {
+  const withWhom = entry.otherMemberNames.length > 0 ? ` with ${joinNames(entry.otherMemberNames)}` : '';
+  const renamed = entry.fromType !== entry.toType ? `, now called "${entry.toType}"` : '';
+  return `${entry.guestName} joined the travel party${withWhom}${renamed}`;
 }
 
 // Did this action force a move into a full tour?

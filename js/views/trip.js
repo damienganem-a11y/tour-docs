@@ -12,12 +12,14 @@ import { destinationPage } from './destination.js';
 import { guestPage } from './guest.js';
 import { journalPage } from './journal.js';
 import { destinationsSettingsPage } from './settingsDestinations.js';
+import { partiesSettingsPage } from './settingsParties.js';
+import { guestsSettingsPage } from './settingsGuests.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
 const SETTINGS_MENU = [
   { label: 'Destinations', page: 'destinations' },
-  { label: 'Travel parties', step: 7 },
-  { label: 'Guests', step: 7 },
+  { label: 'Travel parties', page: 'parties' },
+  { label: 'Guests', page: 'guests' },
   { label: 'Journal', page: 'journal', ownerOnly: true },
   { label: 'Exports archive', step: 8 },
   { label: 'Backup', step: 9 },
@@ -43,12 +45,18 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
     };
   }
 
-  // Settings > Journal and Settings > Destinations are screens of their own.
+  // Each Settings screen beyond the menu is its own page.
   if (mode === 'settings' && page === 'journal') {
     return { node: h('div', { class: 'screen' }, journalPage(ctx, trip)) };
   }
   if (mode === 'settings' && page === 'destinations') {
     return { node: h('div', { class: 'screen' }, destinationsSettingsPage(ctx, trip, first)) };
+  }
+  if (mode === 'settings' && page === 'parties') {
+    return { node: h('div', { class: 'screen' }, partiesSettingsPage(ctx, trip)) };
+  }
+  if (mode === 'settings' && page === 'guests') {
+    return { node: h('div', { class: 'screen' }, guestsSettingsPage(ctx, trip, first)) };
   }
 
   const link = (target, label) =>

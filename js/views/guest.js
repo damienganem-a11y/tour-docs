@@ -18,7 +18,8 @@ export function guestPage(ctx, trip, guestId) {
 
 function guestList(ctx, trip) {
   const names = displayNames(trip.guests);
-  const guests = [...trip.guests].sort(alphabetical(names));
+  // A guest who left the trip (Settings > Guests) is not shown here; bring them back there if needed.
+  const guests = trip.guests.filter((g) => !g.leftAt).sort(alphabetical(names));
   const count = h('p', { class: 'muted count-line' });
   const list = h('ul', { class: 'list' });
 
@@ -69,6 +70,8 @@ function guestDetail(ctx, trip, guest) {
       subtitle: [partyLabel(trip, guest, names), guest.notes].filter(Boolean).join(' · '),
       action: undoButton(ctx, trip),
     }),
+    // Reached by an old link: this guest left the trip (Settings > Guests brings them back).
+    guest.leftAt ? h('p', { class: 'notice' }, 'This guest left the trip. Bring them back in Settings › Guests.') : null,
     trip.slots.map((slot) => slotRow(ctx, trip, guest, slot))
   );
 }

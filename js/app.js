@@ -107,6 +107,13 @@ function render({ keepScroll = false } = {}) {
   window.scrollTo(0, keepScroll ? scrollY : 0);
 }
 
+// index.html shows a boot splash (the app's name, with its own little animation) the instant the page
+// opens, before this script has even run. BOOT_SPLASH_MS is how long it always stays up for, so on a
+// fast phone it is a deliberate two-second intro rather than a flash too quick to actually see.
+const BOOT_SPLASH_MS = 2000;
+const bootStartedAt = performance.now();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
 async function start() {
   try {
     state.owner = await dbGet('settings', 'owner');
@@ -124,10 +131,12 @@ async function start() {
   }
   // The access code is only asked for when one is set AND this page can check it (see gate.js).
   state.locked = Boolean(PASSCODE_CONFIG) && gateAvailable() && !isUnlocked();
+  registerOffline(); // starts straight away, offline setup does not touch the screen
+
+  await sleep(BOOT_SPLASH_MS - (performance.now() - bootStartedAt)); // let the boot splash finish its intro
 
   window.addEventListener('hashchange', () => render());
   render();
-  registerOffline();
 }
 
 // Makes the app work without internet: the service worker (sw.js) keeps a copy of the app's files.

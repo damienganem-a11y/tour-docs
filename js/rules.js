@@ -85,7 +85,7 @@ const shortName = (guest, letters) =>
 // A readable line such as "Couple with Priya S." or "Travelling solo".
 // We match on the party, never on names: two different couples can both be called Smith.
 export function partyLabel(trip, guest, names) {
-  const others = trip.guests.filter((g) => g.partyId === guest.partyId && g.id !== guest.id);
+  const others = trip.guests.filter((g) => !g.leftAt && g.partyId === guest.partyId && g.id !== guest.id);
   if (others.length === 0) return 'Travelling solo';
   const type = trip.parties.find((p) => p.id === guest.partyId)?.type ?? 'Party';
   return `${type} with ${others.map((o) => names.get(o.id)).join(', ')}`;
@@ -103,7 +103,10 @@ export function whoIsWhere(trip, slot) {
   const leisure = [];
   const attention = [];
 
+  // A guest who left the trip (Settings, step 7d) is not shown or counted anywhere day-to-day; their
+  // history stays in the Journal, and "Guest left the trip" can always be brought back.
   for (const guest of trip.guests) {
+    if (guest.leftAt) continue;
     const booking = trip.bookings[guest.id]?.[slot.id];
     if (booking?.kind === 'activity' && byActivity.has(booking.activityId)) byActivity.get(booking.activityId).push(guest);
     else if (booking?.kind === 'leisure') leisure.push(guest);
@@ -146,7 +149,7 @@ export function samePlace(a, b) {
 export function partyMovers(trip, guest, slot) {
   const here = guestPlace(trip, guest, slot);
   return trip.guests.filter((other) =>
-    other.partyId === guest.partyId && other.id !== guest.id && samePlace(here, guestPlace(trip, other, slot)));
+    !other.leftAt && other.partyId === guest.partyId && other.id !== guest.id && samePlace(here, guestPlace(trip, other, slot)));
 }
 
 // ---------- Capacity ----------
@@ -167,7 +170,7 @@ export function partyPlan(trip, guest, slot, target) {
 export function countIn(trip, activity) {
   let count = 0;
   for (const guest of trip.guests) {
-    if (trip.bookings[guest.id]?.[activity.slotId]?.activityId === activity.id) count++;
+    if (!guest.leftAt && trip.bookings[guest.id]?.[activity.slotId]?.activityId === activity.id) count++;
   }
   return count;
 }
