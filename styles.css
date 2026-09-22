@@ -191,9 +191,15 @@ a { color: inherit; text-decoration: none; }
 
 /* The Undo button (like Ctrl+Z): next to the title of each Use screen, in orange so it is easy to see.
    It takes ALL the room left of the title, and says in full what it would undo. */
+/* A screen with no title (see pageHead): the eyebrow sits directly in .page-head, on its own line
+   above the actions, instead of next to the (missing) title — so it needs its own small gap. */
+.page-head > .eyebrow { margin-bottom: 6px; }
 .page-head-row { display: flex; align-items: flex-start; gap: 14px; }
 .page-head-text { flex: 0 1 auto; min-width: 0; }
-.head-actions { display: flex; flex: 1 1 0; min-width: 0; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.head-actions { display: flex; flex: 1 1 0; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* A plain button next to Undo (e.g. the A-Z/Seat sort switch) keeps its own small width instead of
+   the ".btn" default of stretching to fill the row, so it sits beside Undo instead of above it. */
+.head-actions > .btn { width: auto; flex: 0 0 auto; margin-top: 6px; }
 .undo-btn {
   flex: 1 1 0;
   min-width: 150px;
