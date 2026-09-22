@@ -10,7 +10,7 @@
 
 const PAGE_WIDTH = 842;  // A4, in points (1/72 inch), landscape — wide enough for tables side by side
 const PAGE_HEIGHT = 595;
-const MARGIN = 32;
+const MARGIN = 22;
 const USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const USABLE_HEIGHT = PAGE_HEIGHT - MARGIN * 2;
 
@@ -85,28 +85,30 @@ function wrapText(text, font, size, maxWidth) {
 // ---------- The shape of one small ID/Name table ----------
 //
 // Tables are laid out on a grid of same-sized "tiles", side by side and then down the page, so
-// several tours line up neatly next to each other, the same way the team's own paper lists do. A
-// table with more guests than fit in one tile (ROWS_PER_TILE) simply continues in the next tile
-// (its numbering carries on, e.g. 16, 17, 18...), rather than becoming one very tall column.
+// several tours line up neatly next to each other, the same way the team's own paper lists do —
+// small and tight, so a whole half-day (several tours) fits on the one page it belongs to (see
+// "one page per half-day" below). A table with more guests than fit in one tile (ROWS_PER_TILE)
+// simply continues in the next tile (its numbering carries on, e.g. 41, 42, 43...), rather than
+// becoming one very tall column; in practice a tile is tall enough that this rarely happens.
 
-const TILE_WIDTH = 236;
-const TILE_GAP = 16;
-const NUM_COL_W = 20;   // the "#" column, right-aligned
-const ID_COL_W = 46;    // the guest's own ID (ref), left-aligned
+const TILE_WIDTH = 124;
+const TILE_GAP = 8;
+const NUM_COL_W = 12;   // the "#" column, right-aligned
+const ID_COL_W = 26;    // the guest's own ID (ref), left-aligned
 // the rest of the tile width is the Name column
 
-const ROWS_PER_TILE = 14;
-const ROW_H = 12.5;
-const TITLE_SIZE = 10.5;
-const DETAIL_SIZE = 8;
-const HEAD_SIZE = 8.5;
-const CELL_SIZE = 9;
+const ROWS_PER_TILE = 40;
+const ROW_H = 9;
+const TITLE_SIZE = 8;
+const DETAIL_SIZE = 6;
+const HEAD_SIZE = 6.5;
+const CELL_SIZE = 7;
 // Fixed so every tile is exactly the same height, whether or not it actually has a title to show
 // (a continuing tile leaves this space blank): title (up to 2 lines) + detail line + column headings.
-const TITLE_BLOCK_H = TITLE_SIZE * 1.2 * 2 + DETAIL_SIZE * 1.3 + 6;
-const COLHEAD_H = HEAD_SIZE * 1.3 + 5;
+const TITLE_BLOCK_H = TITLE_SIZE * 1.2 * 2 + DETAIL_SIZE * 1.3 + 4;
+const COLHEAD_H = HEAD_SIZE * 1.3 + 3;
 const TILE_HEADER_H = TITLE_BLOCK_H + COLHEAD_H;
-const TILE_HEIGHT = TILE_HEADER_H + ROWS_PER_TILE * ROW_H + 6;
+const TILE_HEIGHT = TILE_HEADER_H + ROWS_PER_TILE * ROW_H + 4;
 
 // Splits one table's rows into same-sized chunks of ROWS_PER_TILE, each becoming one tile. Only the
 // first chunk carries the table's own title and detail line; later chunks just carry the column
@@ -156,11 +158,15 @@ function layoutPages(doc) {
     page.push({ type: 'rect', x: rx, y: ry, w, h: 0.75, gray });
   }
 
-  // The doc's own title and "Updated ..." line, once, at the top of the first page only.
-  const titleLines = wrapText(doc.title, FONT_BOLD, 18, USABLE_WIDTH);
-  for (const line of titleLines) { text(line, MARGIN, y, { font: FONT_BOLD, size: 18 }); y -= 22; }
-  text(doc.updatedLine, MARGIN, y, { size: 10, gray: 0.4 });
-  y -= 24;
+  // The doc's own title and "Updated ..." line, at the top of every half-day's own page (small, so
+  // it does not eat into the room the tables need).
+  function writeDocHead() {
+    const titleLines = wrapText(doc.title, FONT_BOLD, 12, USABLE_WIDTH);
+    for (const line of titleLines) { text(line, MARGIN, y, { font: FONT_BOLD, size: 12 }); y -= 14; }
+    text(doc.updatedLine, MARGIN, y, { size: 7.5, gray: 0.4 });
+    y -= 14;
+  }
+  writeDocHead();
 
   // Places tiles left to right, wrapping to further rows (and pages) as needed, then leaves y just
   // below the row(s) it used.
@@ -169,22 +175,26 @@ function layoutPages(doc) {
     for (let i = 0; i < tiles.length; i += perRow) {
       ensureRoom(TILE_HEIGHT);
       tiles.slice(i, i + perRow).forEach((tile, col) => drawTile(tile, MARGIN + col * (TILE_WIDTH + TILE_GAP), y, { text, rule }));
-      y -= TILE_HEIGHT + 10;
+      y -= TILE_HEIGHT + 6;
     }
   }
 
-  for (const group of doc.groups) {
+  // Every half-day is meant to be read (and printed) as its own single page, so — other than the
+  // very first — each one starts a fresh page rather than flowing into whatever room the previous
+  // half-day happened to leave at the bottom of its own.
+  doc.groups.forEach((group, i) => {
+    if (i > 0) { startPage(); writeDocHead(); }
     if (group.heading) {
-      ensureRoom(22);
-      text(group.heading, MARGIN, y, { font: FONT_BOLD, size: 13, gray: 0.15 });
-      y -= 22;
+      ensureRoom(16);
+      text(group.heading, MARGIN, y, { font: FONT_BOLD, size: 10, gray: 0.15 });
+      y -= 16;
     }
     // All of this half-day's tables are packed into the same flowing grid: a short table (say, "Day
     // at leisure") sits right next to the next one instead of wasting the rest of its own row, and
     // only a table with more guests than fit in one tile spills into more tiles of its own, still
     // read left to right in order (as SPEC.md's "one list per activity" — just several per row).
     placeTileRow(group.tables.flatMap(tilesFor));
-  }
+  });
   startPage(); // flush whatever is left onto the final page
   return pages;
 }
