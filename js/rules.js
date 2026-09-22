@@ -219,3 +219,39 @@ export function capacityInfo(count, capacity) {
   if (count === capacity) return { text: `${count} / ${capacity} · Full`, tone: 'bad' };
   return { text: `${count} / ${capacity}`, tone: null };
 }
+
+// ---------- Warnings (SPEC.md, "7. Warnings screen") ----------
+
+// Everything across the whole trip that needs a human to look at it:
+//   overbooked  an activity with more guests than its own capacity (a forced move allowed it)
+//   blank       a guest with nothing chosen yet for a half-day (an empty sign-up in the file)
+//   unknown     a guest whose sign-up named an activity that matches nothing (a typo in the file)
+// A guest can only ever hold ONE booking for a given half-day (that is what `trip.bookings` stores),
+// so "a guest in two places at once" — also named in SPEC.md — cannot happen in this data shape; it
+// is not listed here for that reason, not because it was overlooked.
+export function tripWarnings(trip) {
+  const overbooked = [];
+  const blank = [];
+  const unknown = [];
+
+  for (const slot of trip.slots) {
+    const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+    const { attention } = whoIsWhere(trip, slot);
+    for (const { guest, reason } of attention) {
+      const booking = trip.bookings[guest.id]?.[slot.id];
+      (booking?.kind === 'unknown' ? unknown : blank).push({ guest, slot, destination, reason });
+    }
+  }
+
+  for (const activity of trip.activities) {
+    if (activity.cancelled || activity.capacity === null) continue;
+    const count = countIn(trip, activity);
+    if (count > activity.capacity) {
+      const slot = trip.slots.find((s) => s.id === activity.slotId);
+      const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+      overbooked.push({ activity, slot, destination, count });
+    }
+  }
+
+  return { overbooked, blank, unknown };
+}

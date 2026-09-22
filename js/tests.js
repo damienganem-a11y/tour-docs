@@ -14,7 +14,7 @@ import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
+import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
@@ -1723,6 +1723,27 @@ function readZip(bytes) {
       && finalFiles['xl/worksheets/sheet3.xml'].includes('<t xml:space="preserve">Braswell, Anna</t>')
       && finalFiles['xl/worksheets/sheet3.xml'].includes('<t xml:space="preserve">At leisure</t>'));
   }
+}
+
+// --- Warnings screen ---
+{
+  const { overbooked, blank, unknown } = tripWarnings(trip);
+  check('The only overbooked activity in the sample trip is Marrakech\'s Hammam and spa, 10 / 8',
+    overbooked.length === 1 && overbooked[0].activity.id === activity('S05-2').id && overbooked[0].count === 10, JSON.stringify(overbooked.map((o) => o.activity.name)));
+  check('Every overbooked row already knows its own half-day and destination (no re-looking-up needed to link to it)',
+    overbooked[0].slot.id === slot('S05').id && overbooked[0].destination.name === 'Marrakech');
+
+  check('Exactly 5 guests have nothing chosen yet, across the whole trip', blank.length === 5, blank.length);
+  check('Exactly 1 guest has an unknown (misspelled) activity: G022 in Istanbul', unknown.length === 1
+    && unknown[0].guest.id === guest('G022').id && unknown[0].slot.id === slot('S09').id, JSON.stringify(unknown));
+  check('The unknown row keeps the misspelling exactly as typed, so the owner can recognise it', unknown[0].reason.includes('Topkapi palace & Hagia Sofia'));
+
+  check('Cancelling every booking of the overbooked activity (leaving no capacity problem) removes it from the warnings',
+    (() => {
+      const clean = structuredClone(trip);
+      for (const g of clean.guests) if (clean.bookings[g.id]?.[slot('S05').id]?.activityId === activity('S05-2').id) delete clean.bookings[g.id][slot('S05').id];
+      return tripWarnings(clean).overbooked.length === 0;
+    })());
 }
 
 // --- Show the results ---
