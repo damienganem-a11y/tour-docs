@@ -83,7 +83,7 @@ export function journalPage(ctx, trip) {
     const first = item.first;
     const isOpen = opened.has(item.rollCallId);
 
-    const lines = item.batches.map((b) => h('div', { class: `line roll-line${b.undone ? ' roll-line--undone' : ''}` },
+    const lines = [...item.batches].reverse().map((b) => h('div', { class: `line roll-line${b.undone ? ' roll-line--undone' : ''}` }, // newest first
       h('span', { class: 'muted' }, formatTime(b.at, b.place.timeZone)),
       h('span', {}, summarize(b))));
 

@@ -14,7 +14,7 @@ import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, alphabetical, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel } from './rules.js';
+import { plain, displayNames, alphabetical, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -934,6 +934,107 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   check('Start, check-ins, End roll call and Re-open roll call are ONE roll call card in the Journal',
     items.length === 1 && items[0].kind === 'rollcall' && items[0].batches.some((b) => b.entries.some((e) => e.type === 'rollcall-end')) && items[0].batches.some((b) => b.entries.some((e) => e.type === 'rollcall-reopen')));
   check('Journal lines of the roll call, End roll call and Re-open never contain dietary info', !/allerg|shellfish|dietary/i.test(JSON.stringify(again.ctx.entries)));
+}
+
+// =====================================================================
+// Step 7a/7b: Settings — destinations and activities
+// =====================================================================
+{
+  const lisbon = trip.destinations.find((d) => d.name === 'Lisbon');
+  const s = slot('S01'); // a Lisbon half-day
+
+  // --- Edit a destination's own details ---
+  const ctx = makeCtx();
+  const before = structuredClone(ctx.state);
+  const edited = await applyChange(ctx, trip.id, { type: 'edit-destination', destinationId: lisbon.id, name: 'Lisboa', country: 'Portugal', timeZone: 'Europe/Lisbon' });
+  const dest = () => ctx.state.destinations.find((d) => d.id === lisbon.id);
+  check('Edit destination: the name changes, nothing else about the trip does', edited.ok && dest().name === 'Lisboa' && dest().timeZone === 'Europe/Lisbon', edited.error);
+  check('The journal says: "Lisbon renamed to \\"Lisboa\\""', summarize(groupBatches(ctx.entries).at(-1)).includes('Lisbon renamed to "Lisboa"'), summarize(groupBatches(ctx.entries).at(-1)));
+  check('Refused: a blank name, or a time zone the phone does not know',
+    !(await applyChange(ctx, trip.id, { type: 'edit-destination', destinationId: lisbon.id, name: '  ', country: '', timeZone: 'Europe/Lisbon' })).ok
+    && !(await applyChange(ctx, trip.id, { type: 'edit-destination', destinationId: lisbon.id, name: 'Lisboa', country: '', timeZone: 'Nowhere/Fake' })).ok);
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Undo puts the destination exactly back (name, country, time zone)', restoredExactly(ctx.state, before));
+  check('Only the owner can edit a destination', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-destination', destinationId: lisbon.id, name: 'X', country: '', timeZone: 'Europe/Lisbon' })).ok);
+
+  // Undo is refused once the destination has changed again since
+  const ctx2 = makeCtx();
+  await applyChange(ctx2, trip.id, { type: 'edit-destination', destinationId: lisbon.id, name: 'Lisboa', country: 'Portugal', timeZone: 'Europe/Lisbon' });
+  ctx2.state.destinations.find((d) => d.id === lisbon.id).name = 'Something else'; // as if changed again by another action
+  check('Undo of "edit destination" is refused if the destination has changed again since', !(await applyChange(ctx2, trip.id, { type: 'undo' })).ok);
+
+  // --- Add an activity ---
+  const ctx3 = makeCtx();
+  const added = await applyChange(ctx3, trip.id, { type: 'add-activity', slotId: s.id, name: 'Sunset cruise', meeting: 'The pier', startTime: '18:30', capacity: 20 });
+  check('Add activity: it appears in the trip, with the right time zone and no bookings yet', added.ok && countIn(ctx3.state, ctx3.state.activities.find((a) => a.id === added.entries[0].activityId)) === 0);
+  const cruise = () => ctx3.state.activities.find((a) => a.id === added.entries[0].activityId);
+  check('Its start time is stored as the exact moment (18:30 Lisbon time, in January = UTC)', cruise().startsAt === '2027-01-12T18:30:00.000Z', cruise().startsAt);
+  check('The journal says: "Added \\"Sunset cruise\\" (...)"', summarize(groupBatches(ctx3.entries).at(-1)).startsWith('Added "Sunset cruise"'));
+  check('A guest can now book onto it, like any other activity', (await applyChange(ctx3, trip.id, moveOf('G001', 'S01', { kind: 'activity', activityId: cruise().id }))).ok);
+  check('Refused: a blank name, an unknown half-day, a bad time, or a capacity of 0',
+    !(await applyChange(ctx3, trip.id, { type: 'add-activity', slotId: s.id, name: '', meeting: '', startTime: '', capacity: null })).ok
+    && !(await applyChange(ctx3, trip.id, { type: 'add-activity', slotId: 'nope', name: 'X', meeting: '', startTime: '', capacity: null })).ok
+    && !(await applyChange(ctx3, trip.id, { type: 'add-activity', slotId: s.id, name: 'X', meeting: '', startTime: '25:99', capacity: null })).ok
+    && !(await applyChange(ctx3, trip.id, { type: 'add-activity', slotId: s.id, name: 'X', meeting: '', startTime: '', capacity: 0 })).ok);
+  check('An activity can be added with no time and no capacity limit',
+    (await applyChange(ctx3, trip.id, { type: 'add-activity', slotId: s.id, name: 'Free afternoon walk', meeting: '', startTime: '', capacity: null })).ok);
+
+  // Undo: works while nobody is booked, refused once somebody is
+  const ctx4 = makeCtx();
+  const added2 = await applyChange(ctx4, trip.id, { type: 'add-activity', slotId: s.id, name: 'Sunset cruise', meeting: 'The pier', startTime: '18:30', capacity: 20 });
+  const cruiseId = added2.entries[0].activityId;
+  check('Undo removes a freshly added activity, as if it was never added', (await applyChange(ctx4, trip.id, { type: 'undo' })).ok && !ctx4.state.activities.some((a) => a.id === cruiseId));
+  const added3 = await applyChange(ctx4, trip.id, { type: 'add-activity', slotId: s.id, name: 'Sunset cruise', meeting: 'The pier', startTime: '18:30', capacity: 20 });
+  ctx4.state.bookings[trip.guests[0].id] = { ...ctx4.state.bookings[trip.guests[0].id], [s.id]: { kind: 'activity', activityId: added3.entries[0].activityId } };
+  check('Undo is refused once somebody is booked on the new activity', !(await applyChange(ctx4, trip.id, { type: 'undo' })).ok);
+  check('Only the owner can add an activity', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'add-activity', slotId: s.id, name: 'X', meeting: '', startTime: '', capacity: null })).ok);
+
+  // --- Edit an activity ---
+  const ctx5 = makeCtx();
+  const tram = activity('S01-2');
+  const before5 = structuredClone(ctx5.state);
+  const editedActivity = await applyChange(ctx5, trip.id, { type: 'edit-activity', activityId: tram.id, name: 'Tram 28, Alfama and viewpoints', meeting: 'Praça do Comércio', startTime: '15:45', capacity: 24 });
+  const tramNow = () => ctx5.state.activities.find((a) => a.id === tram.id);
+  check('Edit activity: name, meeting point, time and capacity all change; existing bookings are untouched',
+    editedActivity.ok && tramNow().name === 'Tram 28, Alfama and viewpoints' && tramNow().meeting === 'Praça do Comércio' && tramNow().capacity === 24 && countIn(ctx5.state, tramNow()) === countIn(trip, tram));
+  check('The journal describes what changed: renamed, meeting point, capacity, time',
+    /renamed to .*meeting point updated.*capacity set to 24.*time updated/.test(summarize(groupBatches(ctx5.entries).at(-1))), summarize(groupBatches(ctx5.entries).at(-1)));
+  check('The time can be cleared (no time set) and the capacity can be lifted (no limit)',
+    (await applyChange(ctx5, trip.id, { type: 'edit-activity', activityId: tram.id, name: tramNow().name, meeting: tramNow().meeting, startTime: '', capacity: null })).ok
+    && tramNow().startsAt === null && tramNow().capacity === null);
+  await applyChange(ctx5, trip.id, { type: 'undo' });
+  await applyChange(ctx5, trip.id, { type: 'undo' });
+  check('Two undos put the activity exactly back as it was', restoredExactly(ctx5.state, before5));
+  const cancelledForTest = await applyChange(ctx5, trip.id, { type: 'cancel-tour', activityId: activity('S01-1').id });
+  check('Refused: editing a cancelled activity, or with a blank name', cancelledForTest.ok
+    && !(await applyChange(ctx5, trip.id, { type: 'edit-activity', activityId: activity('S01-1').id, name: 'X', meeting: '', startTime: '', capacity: null })).ok
+    && !(await applyChange(ctx5, trip.id, { type: 'edit-activity', activityId: tram.id, name: '  ', meeting: '', startTime: '', capacity: null })).ok);
+  check('Only the owner can edit an activity', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-activity', activityId: tram.id, name: 'X', meeting: '', startTime: '', capacity: null })).ok);
+
+  // --- Replace a destination (rare) ---
+  const marrakech = trip.destinations.find((d) => d.name === 'Marrakech');
+  const marrakechSlotIds = new Set(trip.slots.filter((sl) => sl.destinationId === marrakech.id).map((sl) => sl.id));
+  const marrakechTours = trip.activities.filter((a) => marrakechSlotIds.has(a.slotId) && !a.cancelled);
+  const marrakechBooked = marrakechTours.reduce((sum, a) => sum + countIn(trip, a), 0);
+  const ctx6 = makeCtx();
+  const beforeReplace = structuredClone(ctx6.state);
+  const replaced = await applyChange(ctx6, trip.id, { type: 'replace-destination', destinationId: marrakech.id, name: 'Fez', country: 'Morocco', timeZone: 'Africa/Casablanca' });
+  const fez = () => ctx6.state.destinations.find((d) => d.id === marrakech.id);
+  check('Replace destination: the name changes, every one of its tours is cancelled, everybody on them is At leisure',
+    replaced.ok && fez().name === 'Fez'
+    && marrakechTours.every((a) => ctx6.state.activities.find((x) => x.id === a.id).cancelled)
+    && marrakechTours.every((a) => countIn(ctx6.state, ctx6.state.activities.find((x) => x.id === a.id)) === 0), replaced.error);
+  check(`The journal counts it: "${plural(marrakechTours.length, 'tour')} cancelled" and the guests moved`,
+    summarize(groupBatches(ctx6.entries).at(-1)).includes(`Replaced Marrakech with Fez`) && summarize(groupBatches(ctx6.entries).at(-1)).includes(`${marrakechTours.length}`), summarize(groupBatches(ctx6.entries).at(-1)));
+  check('It is ONE action: the header, one cancel line per tour, one move line per guest, all sharing a batch id',
+    groupBatches(ctx6.entries).at(-1).entries.length === 1 + marrakechTours.length + marrakechBooked
+    && groupBatches(ctx6.entries).at(-1).kind === 'replace-destination');
+  check('ONE undo takes all of it back: the destination, its tours and every guest, exactly as before', (await applyChange(ctx6, trip.id, { type: 'undo' })).ok && restoredExactly(ctx6.state, beforeReplace));
+  check('Only the owner can replace a destination', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'replace-destination', destinationId: marrakech.id, name: 'Fez', country: '', timeZone: 'Africa/Casablanca' })).ok);
+  check('Replacing a destination with a bad time zone is refused, and nothing changes', !(await applyChange(makeCtx(), trip.id, { type: 'replace-destination', destinationId: marrakech.id, name: 'Fez', country: '', timeZone: 'Nowhere/Fake' })).ok);
+
+  // --- No dietary info anywhere in these journal lines ---
+  check('Settings changes never write dietary info to the journal', !/allerg|shellfish|dietary/i.test(JSON.stringify([...ctx.entries, ...ctx3.entries, ...ctx5.entries, ...ctx6.entries])));
 }
 
 // =====================================================================

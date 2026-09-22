@@ -11,10 +11,11 @@ import { pageHead } from './chrome.js';
 import { destinationPage } from './destination.js';
 import { guestPage } from './guest.js';
 import { journalPage } from './journal.js';
+import { destinationsSettingsPage } from './settingsDestinations.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
 const SETTINGS_MENU = [
-  { label: 'Destinations', step: 7 },
+  { label: 'Destinations', page: 'destinations' },
   { label: 'Travel parties', step: 7 },
   { label: 'Guests', step: 7 },
   { label: 'Journal', page: 'journal', ownerOnly: true },
@@ -42,9 +43,12 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
     };
   }
 
-  // Settings > Journal is a screen of its own.
+  // Settings > Journal and Settings > Destinations are screens of their own.
   if (mode === 'settings' && page === 'journal') {
     return { node: h('div', { class: 'screen' }, journalPage(ctx, trip)) };
+  }
+  if (mode === 'settings' && page === 'destinations') {
+    return { node: h('div', { class: 'screen' }, destinationsSettingsPage(ctx, trip, first)) };
   }
 
   const link = (target, label) =>

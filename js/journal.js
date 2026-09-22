@@ -38,7 +38,15 @@ export function groupBatches(entries) {
       batchId, entries: sorted,
       seq: Math.max(...sorted.map((e) => e.seq ?? 0)), at: first.at, who: first.who,
       place: first.place, slotId: first.slotId, slotLabel: first.slotLabel,
-      kind: types.has('undo') ? 'undo' : [...types].some((t) => RETURN_COUNT_TYPES.has(t)) ? 'old-return-count' : types.has('cancel-tour') ? 'cancel-tour' : onlyRollCall ? 'rollcall' : 'move',
+      kind: types.has('undo') ? 'undo'
+        : [...types].some((t) => RETURN_COUNT_TYPES.has(t)) ? 'old-return-count'
+        : types.has('replace-destination') ? 'replace-destination'
+        : types.has('cancel-tour') ? 'cancel-tour'
+        : onlyRollCall ? 'rollcall'
+        : types.has('edit-destination') ? 'edit-destination'
+        : types.has('add-activity') ? 'add-activity'
+        : types.has('edit-activity') ? 'edit-activity'
+        : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
       undone: undone.has(batchId),
     };
@@ -77,6 +85,10 @@ export function summarize(batch) {
   }
 
   if (batch.kind === 'old-return-count') return 'Return count (no longer part of the app)';
+  if (batch.kind === 'replace-destination') return summarizeReplaceDestination(batch);
+  if (batch.kind === 'edit-destination') return summarizeEditDestination(batch.entries[0]);
+  if (batch.kind === 'add-activity') { const e = batch.entries[0]; return `Added "${e.activityLabel}" (${e.slotLabel})`; }
+  if (batch.kind === 'edit-activity') return summarizeEditActivity(batch.entries[0]);
   if (batch.kind === 'rollcall') return summarizeRollCall(batch);
 
   // Guests who went from the same place to the same place are told together.
@@ -126,6 +138,35 @@ function summarizeRollCall(batch) {
   if (entry.type === 'checkout') return `${entry.guestName} taken out of ${entry.fromVehicleLabel}`;
   if (entry.type === 'vehicle-add') return `Added ${entry.vehicleLabel}`;
   return `${entry.fromLabel} renumbered ${entry.toLabel}`; // vehicle-number
+}
+
+// What changed about a destination, in words ("Marrakech renamed to Fez, time zone set to Africa/Casablanca").
+function summarizeEditDestination(entry) {
+  const changed = [];
+  if (entry.from.name !== entry.to.name) changed.push(`renamed to "${entry.to.name}"`);
+  if (entry.from.country !== entry.to.country) changed.push(`country set to "${entry.to.country}"`);
+  if (entry.from.timeZone !== entry.to.timeZone) changed.push(`time zone set to ${entry.to.timeZone}`);
+  return `${entry.from.name} ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
+}
+
+// A destination replaced by another: its tours cancelled and everybody moved to At leisure (their own lines
+// are elsewhere in the same card), then the destination's own fields changed.
+function summarizeReplaceDestination(batch) {
+  const entry = batch.entries.find((e) => e.type === 'replace-destination');
+  const parts = [];
+  if (entry.cancelledCount > 0) parts.push(`${plural(entry.cancelledCount, 'tour')} cancelled`);
+  if (entry.movedCount > 0) parts.push(`${plural(entry.movedCount, 'guest')} moved to At leisure`);
+  return `Replaced ${entry.from.name} with ${entry.to.name}${parts.length > 0 ? `: ${parts.join(', ')}` : ''}`;
+}
+
+// What changed about an activity, in words.
+function summarizeEditActivity(entry) {
+  const changed = [];
+  if (entry.from.name !== entry.to.name) changed.push(`renamed to "${entry.to.name}"`);
+  if (entry.from.meeting !== entry.to.meeting) changed.push('meeting point updated');
+  if (entry.from.capacity !== entry.to.capacity) changed.push(`capacity set to ${entry.to.capacity === null ? 'no limit' : entry.to.capacity}`);
+  if (entry.from.startsAt !== entry.to.startsAt) changed.push('time updated');
+  return `"${entry.from.name}": ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
 }
 
 // Did this action force a move into a full tour?

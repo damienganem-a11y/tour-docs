@@ -129,7 +129,10 @@ export function rollCallView(ctx, tripId, activityId) {
   // The number under each vehicle: how many guests are inside.
   const countText = (vehicle) => String(inVehicle(vehicle).length);
 
-  const vehicleButtons = rollCall.vehicles.map((vehicle) => {
+  // Once the roll call has ended, an unused vehicle is just clutter: only show vehicles that carried
+  // somebody. Re-opening brings the full fleet back (mode goes back to 'departure').
+  const vehiclesShown = mode === 'ended' ? rollCall.vehicles.filter((v) => inVehicle(v).length > 0) : rollCall.vehicles;
+  const vehicleButtons = vehiclesShown.map((vehicle) => {
     const button = h('button', {
       class: `vehicle${vehicle.id === selected.id && mode === 'departure' ? ' is-selected' : ''}`, type: 'button',
       'aria-label': `${label(vehicle)}, ${countText(vehicle)}.`,

@@ -22,6 +22,12 @@
 //   { type: 'vehicle-add', activityId }                      the next vehicle number (V5, V6...)
 //   { type: 'vehicle-number', activityId, vehicleId, number }
 //   (Several 'checkin' changes for the same roll call may be made together: a travel party checked in at once.)
+//   Settings (step 7), each on its own:
+//   { type: 'edit-destination', destinationId, name, country, timeZone }
+//   { type: 'add-activity', slotId, name, meeting, startTime, capacity }     startTime: "HH:MM" or '' for none
+//   { type: 'edit-activity', activityId, name, meeting, startTime, capacity }
+//   { type: 'replace-destination', destinationId, name, country, timeZone }  a rare fix: the destination becomes a
+//       different place. Its tours are cancelled and everybody on them goes to At leisure, in the same one action.
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
 //
@@ -31,11 +37,14 @@
 import { newId } from './ids.js';
 import { canUser } from './users.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural } from './rules.js';
+import { isValidTimeZone, localToInstant } from './time.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 
 // The changes that belong to a roll call. Each one is made on its own (never mixed with others).
 const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+// Settings changes (step 7): each is made on its own, like cancel-tour and undo.
+const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -54,10 +63,11 @@ export function validateChanges(trip, user, changes, journal = []) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
-    return fail('Cancelling a tour, undoing and roll call changes are changes of their own.');
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+    return fail('Cancelling a tour, undoing, roll call and settings changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal);
+  if (SETTINGS_TYPES.has(changes[0].type)) return validateSettingsChange(trip, changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
     if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
@@ -141,6 +151,27 @@ function validateUndo(trip, journal) {
       const activity = trip.activities.find((a) => a.id === entry.activityId);
       if (!activity || !activity.cancelled) return fail(`"${entry.activityLabel}" is not cancelled anymore, so this cannot be undone.`);
     }
+    if (entry.type === 'edit-destination' || entry.type === 'replace-destination') {
+      const destination = trip.destinations.find((d) => d.id === entry.destinationId);
+      if (!destination) return fail('This action cannot be undone: the destination no longer exists.');
+      if (destination.name !== entry.to.name || destination.country !== entry.to.country || destination.timeZone !== entry.to.timeZone) {
+        return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
+      }
+    }
+    if (entry.type === 'add-activity') {
+      const activity = trip.activities.find((a) => a.id === entry.activityId);
+      if (!activity) return fail('This action cannot be undone: the activity no longer exists.');
+      if (trip.guests.some((g) => trip.bookings[g.id]?.[entry.slotId]?.activityId === entry.activityId)) {
+        return fail(`This action cannot be undone: somebody is already booked on "${entry.activityLabel}".`);
+      }
+    }
+    if (entry.type === 'edit-activity') {
+      const activity = trip.activities.find((a) => a.id === entry.activityId);
+      if (!activity) return fail('This action cannot be undone: the activity no longer exists.');
+      if (activity.name !== entry.to.name || activity.meeting !== entry.to.meeting || activity.capacity !== entry.to.capacity || activity.startsAt !== entry.to.startsAt) {
+        return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
+      }
+    }
     if (entry.rollCallId && entry.type !== 'move') {
       const problem = rollCallUndoProblem(trip, entry);
       if (problem) return fail(problem);
@@ -158,6 +189,39 @@ function validateUndo(trip, journal) {
       return fail(`This action cannot be undone: "${entry.from.label}" no longer exists.`);
     }
   }
+  return { ok: true };
+}
+
+// A time typed as "HH:MM", or '' for no time.
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const isBlank = (text) => String(text ?? '').trim().length === 0;
+
+// Checks one settings change (see the list at the top). None of these touch bookings directly, except
+// replace-destination, which also cancels tours (checked here as "the destination exists", the tours
+// themselves are handled like normal cancel-tours when the change is applied).
+function validateSettingsChange(trip, change) {
+  if (change.type === 'add-activity') {
+    const slot = trip.slots.find((s) => s.id === change.slotId);
+    if (!slot) return fail('That half-day does not exist.');
+    if (isBlank(change.name)) return fail('Give the activity a name.');
+    if (change.startTime && !TIME_RE.test(change.startTime)) return fail('The time should look like 09:30.');
+    if (change.capacity !== null && (!Number.isInteger(change.capacity) || change.capacity < 1)) return fail('Capacity is a whole number of 1 or more, or "no limit".');
+    return { ok: true };
+  }
+  if (change.type === 'edit-activity') {
+    const activity = trip.activities.find((a) => a.id === change.activityId);
+    if (!activity) return fail('That activity does not exist.');
+    if (activity.cancelled) return fail(`"${activity.name}" is cancelled, so it cannot be edited.`);
+    if (isBlank(change.name)) return fail('Give the activity a name.');
+    if (change.startTime && !TIME_RE.test(change.startTime)) return fail('The time should look like 09:30.');
+    if (change.capacity !== null && (!Number.isInteger(change.capacity) || change.capacity < 1)) return fail('Capacity is a whole number of 1 or more, or "no limit".');
+    return { ok: true };
+  }
+  // edit-destination and replace-destination
+  const destination = trip.destinations.find((d) => d.id === change.destinationId);
+  if (!destination) return fail('That destination does not exist.');
+  if (isBlank(change.name)) return fail('Give the destination a name.');
+  if (!isValidTimeZone(change.timeZone)) return fail(`"${change.timeZone}" is not a time zone the phone knows. It should look like Europe/Lisbon.`);
   return { ok: true };
 }
 
@@ -420,6 +484,62 @@ async function doApply(ctx, tripId, changes) {
     return save(ctx, next, entries, {});
   }
 
+  // Settings changes (step 7): destinations and activities. Each is made on its own.
+  if (SETTINGS_TYPES.has(changes[0].type)) {
+    const change = changes[0];
+
+    if (change.type === 'add-activity' || change.type === 'edit-activity') {
+      const slot = trip.slots.find((s) => s.id === (change.type === 'add-activity' ? change.slotId : trip.activities.find((a) => a.id === change.activityId).slotId));
+      const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+      const name = change.name.trim();
+      const meeting = String(change.meeting ?? '').trim() || null;
+      const startsAt = change.startTime ? localToInstant(slot.date, change.startTime, destination.timeZone) : null;
+
+      if (change.type === 'add-activity') {
+        const activity = { id: newId(), slotId: slot.id, name, meeting, startsAt, capacity: change.capacity, cancelled: false };
+        next.activities.push(activity);
+        entries.push({ ...base(), type: 'add-activity', activityId: activity.id, activityLabel: name, ...where(trip, slot) });
+      } else {
+        const activity = next.activities.find((a) => a.id === change.activityId);
+        const from = { name: activity.name, meeting: activity.meeting, capacity: activity.capacity, startsAt: activity.startsAt };
+        const to = { name, meeting, capacity: change.capacity, startsAt };
+        Object.assign(activity, to);
+        entries.push({ ...base(), type: 'edit-activity', activityId: activity.id, ...where(trip, slot), from, to });
+      }
+      return save(ctx, next, entries, {});
+    }
+
+    // edit-destination and replace-destination: change the destination's own name, country, time zone.
+    const destination = next.destinations.find((d) => d.id === change.destinationId);
+    const from = { name: destination.name, country: destination.country, timeZone: destination.timeZone };
+    const to = { name: change.name.trim(), country: String(change.country ?? '').trim(), timeZone: change.timeZone };
+    // A destination-level change is not tied to one half-day: shown with the destination's own (old) name and time.
+    const destWhere = { slotId: null, slotLabel: from.name, place: { name: from.name, timeZone: from.timeZone } };
+
+    if (change.type === 'replace-destination') {
+      // A rare fix: wrong destination altogether. Its tours are cancelled (as Cancel tour does) and everybody on
+      // them goes to At leisure, all in this one action, before the destination's own name/country/zone change.
+      const slotIds = new Set(trip.slots.filter((s) => s.destinationId === destination.id).map((s) => s.id));
+      const activeTours = trip.activities.filter((a) => slotIds.has(a.slotId) && !a.cancelled);
+      let cancelledCount = 0;
+      let movedCount = 0;
+      for (const activity of activeTours) {
+        const slot = trip.slots.find((s) => s.id === activity.slotId);
+        const booked = trip.guests.filter((g) => trip.bookings[g.id]?.[slot.id]?.activityId === activity.id);
+        next.activities.find((a) => a.id === activity.id).cancelled = true;
+        entries.push({ ...base(), type: 'cancel-tour', activityId: activity.id, activityLabel: activity.name, guestCount: booked.length, ...where(trip, slot) });
+        cancelledCount += 1;
+        movedCount += booked.length;
+        for (const guest of booked) move(guest, slot, { kind: 'leisure' }, 'replace-destination');
+      }
+      entries.push({ ...base(), type: 'replace-destination', destinationId: destination.id, from, to, cancelledCount, movedCount, ...destWhere });
+    } else {
+      entries.push({ ...base(), type: 'edit-destination', destinationId: destination.id, from, to, ...destWhere });
+    }
+    Object.assign(destination, to);
+    return save(ctx, next, entries, {});
+  }
+
   for (const change of changes) {
     if (change.type === 'move') {
       const approvedBy = String(change.approvedBy ?? '').trim().slice(0, 60) || null;
@@ -493,6 +613,31 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'vehicle-number') {
     rollCall.vehicles.find((v) => v.id === entry.vehicleId).number = entry.fromNumber;
     entries.push({ ...base(), type: 'vehicle-number', cause: 'undo', ...about, vehicleId: entry.vehicleId, fromNumber: entry.toNumber, toNumber: entry.fromNumber, fromLabel: entry.toLabel, toLabel: entry.fromLabel });
+    return;
+  }
+  if (entry.type === 'edit-destination' || entry.type === 'replace-destination') {
+    // Puts the destination's own fields back (a replace-destination's cancelled tours and moved guests are put
+    // back by their own lines, elsewhere in this same batch).
+    const destination = next.destinations.find((d) => d.id === entry.destinationId);
+    Object.assign(destination, entry.from);
+    entries.push({
+      ...base(), type: 'edit-destination', cause: 'undo', destinationId: entry.destinationId,
+      slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
+    });
+    return;
+  }
+  if (entry.type === 'add-activity') {
+    next.activities = next.activities.filter((a) => a.id !== entry.activityId); // as if it was never added
+    entries.push({ ...base(), type: 'activity-remove', cause: 'undo', activityId: entry.activityId, activityLabel: entry.activityLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'edit-activity') {
+    const activity = next.activities.find((a) => a.id === entry.activityId);
+    Object.assign(activity, entry.from);
+    entries.push({
+      ...base(), type: 'edit-activity', cause: 'undo', activityId: entry.activityId,
+      slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
+    });
     return;
   }
 

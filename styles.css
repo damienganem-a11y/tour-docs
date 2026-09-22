@@ -408,6 +408,7 @@ button.slot:active { filter: brightness(0.95); }
   font-weight: 700;
 }
 .menu-row.is-soon { color: var(--muted); }
+.section-title { margin: 24px 0 8px; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: var(--muted); }
 .menu-side { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; }
 .pill {
   padding: 4px 12px;
