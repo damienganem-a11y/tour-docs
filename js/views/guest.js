@@ -132,8 +132,8 @@ function slotRow(ctx, trip, guest, slot) {
   }
 
   return h('button', {
-    class: `slot slot--${kind}`, type: 'button',
-    'aria-label': `Day ${slot.day} ${slot.half}: ${title}. Tap to change.`,
+    class: `slot slot--${kind}`, type: 'button', disabled: Boolean(trip.archivedAt),
+    'aria-label': `Day ${slot.day} ${slot.half}: ${title}.${trip.archivedAt ? '' : ' Tap to change.'}`,
     onclick: () => startMove(ctx, trip, guest, slot),
   },
     h('div', { class: 'slot-when' }, h('div', {}, `Day ${slot.day}`), h('div', {}, slot.half), h('div', { class: 'slot-date' }, formatWeekdayDate(slot.date))),

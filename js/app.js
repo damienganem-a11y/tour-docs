@@ -73,11 +73,11 @@ const ctx = {
   // original by anything but its content), keeping destinations, activities and settings, but with
   // guests, travel parties, bookings and roll calls all starting empty. Like addTrip, this is a fresh
   // trip being created, so it does not go through the single change function or the journal.
-  async duplicateTrip(trip) {
+  async duplicateTrip(trip, name = `${trip.name} (copy)`) {
     const copy = {
       ...structuredClone(trip),
       id: newId(),
-      name: `${trip.name} (copy)`,
+      name,
       loadedAt: new Date().toISOString(),
       changeCount: 0,
       archivedAt: null,

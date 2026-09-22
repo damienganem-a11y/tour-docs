@@ -49,6 +49,8 @@ export function rollCallView(ctx, tripId, activityId) {
   }
 
   const mode = rollCall.endedAt ? 'ended' : 'departure';
+  // An archived trip has no roll call: this screen only looks, whatever state the roll call was left in.
+  const readOnly = Boolean(trip.archivedAt);
   const key = `${rollCall.id}|${mode}`;
   const names = displayNames(trip.guests);
   const inOrder = alphabetical(names);
@@ -79,7 +81,7 @@ export function rollCallView(ctx, tripId, activityId) {
   // Who is inside a vehicle. During the roll call you can take somebody out or move them; after End roll call you only look.
   function showInside(vehicle) {
     const inside = [...inVehicle(vehicle)].sort(inOrder);
-    const editable = mode !== 'ended';
+    const editable = mode !== 'ended' && !readOnly;
 
     openSheet({
       eyebrow: 'Roll call', title: `${label(vehicle)} · ${plural(inside.length, 'guest')} inside`, subtitle: activity.name,
@@ -141,12 +143,12 @@ export function rollCallView(ctx, tripId, activityId) {
       h('span', { class: 'vehicle-count' }, countText(vehicle)));
     pressable(button, {
       tap: () => (mode === 'ended' || vehicle.id === selected.id ? showInside(vehicle) : chooseVehicle(vehicle)),
-      long: () => { if (mode === 'departure') renumber(vehicle); }, // only while the roll call is open
+      long: () => { if (mode === 'departure' && !readOnly) renumber(vehicle); }, // only while the roll call is open
     });
     return button;
   });
 
-  const addVehicle = h('button', {
+  const addVehicle = readOnly ? null : h('button', {
     class: 'vehicle vehicle--add', type: 'button', 'aria-label': 'Add a vehicle',
     onclick: async () => {
       const result = await change(rollCallChange('vehicle-add'));
@@ -185,6 +187,7 @@ export function rollCallView(ctx, tripId, activityId) {
     list.replaceChildren(...(shown.length === 0
       ? [h('p', { class: 'empty' }, pending.length === 0 ? 'Everybody is checked in.' : 'No guest matches that search.')]
       : shown.map((guest, index) => {
+          if (readOnly) return h('div', { class: 'rc-guest' }, h('span', {}, names.get(guest.id)));
           const row = h('button', { class: `rc-guest${isForced(guest) ? ' rc-guest--forced' : ''}`, type: 'button' },
             h('span', {}, names.get(guest.id)),
             index === 0 ? h('span', { class: 'rc-tap' }, `tap = ${label(selected)}`) : null);
@@ -258,9 +261,11 @@ export function rollCallView(ctx, tripId, activityId) {
           subtitle: [...where, `${state.checkedIn.length} checked in`, endedAt].filter(Boolean).join(' · '),
         }),
         h('div', { class: 'vehicles' }, vehicleButtons),
-        undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
-        h('button', { class: 'btn', type: 'button', onclick: async () => { await reopenRollCall(ctx, trip.id, activity); } }, 'Re-open roll call'),
-        h('p', { class: 'muted footer-note' }, 'The vehicles and who was in them are kept. Tap a vehicle to see who is inside. Re-open roll call puts back on the tour the guests End roll call moved to At leisure.')),
+        readOnly ? null : undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
+        readOnly ? null : h('button', { class: 'btn', type: 'button', onclick: async () => { await reopenRollCall(ctx, trip.id, activity); } }, 'Re-open roll call'),
+        h('p', { class: 'muted footer-note' }, readOnly
+          ? 'This trip is archived: read-only. Tap a vehicle to see who was inside.'
+          : 'The vehicles and who was in them are kept. Tap a vehicle to see who is inside. Re-open roll call puts back on the tour the guests End roll call moved to At leisure.')),
     };
   }
 
@@ -274,11 +279,11 @@ export function rollCallView(ctx, tripId, activityId) {
       }),
       search,
       h('div', { class: 'vehicles' }, vehicleButtons, addVehicle),
-      undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
+      readOnly ? null : undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
       list,
-      h('p', { class: 'rc-hint' }, 'Long-press a name: At leisure or another tour'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startAddGuest(ctx, trip, slot, activity) }, '+ Add guest'),
-      h('button', { class: 'btn', type: 'button', onclick: endRollCall }, 'End roll call')),
+      readOnly ? null : h('p', { class: 'rc-hint' }, 'Long-press a name: At leisure or another tour'),
+      readOnly ? null : h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startAddGuest(ctx, trip, slot, activity) }, '+ Add guest'),
+      readOnly ? null : h('button', { class: 'btn', type: 'button', onclick: endRollCall }, 'End roll call')),
   };
 }
 

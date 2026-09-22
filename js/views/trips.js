@@ -13,6 +13,11 @@ import { pageHead, exportFormatSheet } from './chrome.js';
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
 const PURGE_AFTER_DAYS = 30; // kept equal to app.js's own purgeExpiredTrips, just for the wording shown here
 
+// Whether the Archived / Recently deleted sections are unfolded (like the "guests who left" fold in
+// Settings > Guests). Kept here so it survives a redraw; resets when the app is reloaded, which is fine.
+let archivedOpen = false;
+let deletedOpen = false;
+
 export function tripsView(ctx) {
   const message = h('div', { class: 'message', role: 'alert', hidden: true });
 
@@ -73,14 +78,20 @@ export function tripsView(ctx) {
 
   const archivedSection = archived.length > 0
     ? h('div', {},
-        h('h3', { class: 'section-title' }, `Archived (${archived.length})`),
-        archived.map((trip) => archivedCard(ctx, trip)))
+        h('button', {
+          class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
+          onclick: () => { archivedOpen = !archivedOpen; ctx.refresh(); },
+        }, `${archivedOpen ? '▾' : '▸'} Archived (${archived.length})`),
+        archivedOpen ? h('div', {}, archived.map((trip) => archivedCard(ctx, trip))) : null)
     : null;
 
   const deletedSection = deleted.length > 0
     ? h('div', {},
-        h('h3', { class: 'section-title' }, `Recently deleted (${deleted.length})`),
-        deleted.map((trip) => deletedCard(ctx, trip)))
+        h('button', {
+          class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
+          onclick: () => { deletedOpen = !deletedOpen; ctx.refresh(); },
+        }, `${deletedOpen ? '▾' : '▸'} Recently deleted (${deleted.length})`),
+        deletedOpen ? h('div', {}, deleted.map((trip) => deletedCard(ctx, trip))) : null)
     : null;
 
   return {
@@ -123,6 +134,7 @@ function activeCard(ctx, trip) {
     h('div', { class: 'muted' }, tripDates(trip.start, trip.days)),
     h('div', { class: 'muted' }, `${trip.destinations.length} destinations · ${trip.guests.length} guests · loaded ${loadedOn(trip)}`),
     h('div', { class: 'card-actions' },
+      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => renameConfirm(ctx, trip) }, 'Rename'),
       h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => duplicateConfirm(ctx, trip) }, 'Duplicate trip'),
       h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => archiveConfirm(ctx, trip) }, 'Archive')));
 }
@@ -196,18 +208,37 @@ function reinstate(ctx, trip) {
   save(ctx, trip.id, { type: 'reinstate-trip' }, `"${trip.name}" reinstated (still archived)`);
 }
 
-// Duplicating makes a whole new trip, so it gets a plain-language confirmation. It does not go
-// through the single change function (it is a fresh trip being created, like loading one from a file).
+// Renaming the trip goes through the one change function, so it is journaled and undoable, like any
+// other change — including for a freshly loaded or duplicated trip (given a default name it may want to change).
+function renameConfirm(ctx, trip) {
+  const input = h('input', { class: 'text-input', type: 'text', value: trip.name, 'aria-label': 'Trip name', maxlength: '120' });
+  const confirm = h('button', {
+    class: 'btn', type: 'button',
+    onclick: () => save(ctx, trip.id, { type: 'rename-trip', name: input.value }, 'Trip renamed'),
+  }, 'Save');
+
+  openSheet({ eyebrow: 'Trips screen', title: 'Rename trip', body: [input, confirm], cancelLabel: 'Cancel' });
+}
+
+// Duplicating makes a whole new trip, so it gets a plain-language confirmation, with a chance to give
+// the copy its own name right away. It does not go through the single change function (it is a fresh
+// trip being created, like loading one from a file).
 function duplicateConfirm(ctx, trip) {
+  const input = h('input', {
+    class: 'text-input', type: 'text', value: `${trip.name} (copy)`, 'aria-label': 'New trip name', maxlength: '120',
+  });
+
   openSheet({
     eyebrow: 'Trips screen', title: `Duplicate "${trip.name}"?`,
     body: [
       h('p', { class: 'muted' }, 'Makes a new trip with the same destinations, activities and settings. Guests, travel parties and sign-ups start empty.'),
+      input,
       h('button', {
         class: 'btn', type: 'button',
         onclick: async () => {
+          const name = input.value.trim() || `${trip.name} (copy)`;
           closeSheet();
-          const copy = await ctx.duplicateTrip(trip);
+          const copy = await ctx.duplicateTrip(trip, name);
           ctx.go(`#/trip/${copy.id}/settings`);
         },
       }, 'Duplicate trip'),

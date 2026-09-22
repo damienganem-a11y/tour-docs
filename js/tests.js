@@ -1841,6 +1841,27 @@ function readZip(bytes) {
     && summarize(batches.find((b) => b.kind === 'reinstate-trip')) === 'Reinstated the trip');
 }
 
+// --- Renaming the trip ---
+{
+  const ren = makeCtx();
+  const renamed = await applyChange(ren, trip.id, { type: 'rename-trip', name: '  Around the World, revised  ' });
+  check('Renaming the trip trims the name and writes one journal entry',
+    renamed.ok && ren.state.name === 'Around the World, revised' && ren.entries.length === 1 && ren.entries[0].type === 'rename-trip');
+  check('Renaming is summarized as "Renamed X to Y"', summarize(groupBatches(ren.entries)[0]) === `Renamed "${trip.name}" to "Around the World, revised"`);
+
+  const blankName = await applyChange(ren, trip.id, { type: 'rename-trip', name: '   ' });
+  check('An empty trip name is refused', !blankName.ok && /Give the trip a name/.test(blankName.error), blankName.error);
+
+  const undoRename = await applyChange(ren, trip.id, { type: 'undo' });
+  check('Undoing a rename puts the old name back', undoRename.ok && ren.state.name === trip.name);
+
+  const renArchived = makeCtx();
+  await applyChange(renArchived, trip.id, { type: 'archive-trip' });
+  const blockedRename = await applyChange(renArchived, trip.id, { type: 'rename-trip', name: 'Should not work' });
+  check('Renaming is refused while the trip is archived, unlike archive/un-archive/delete/reinstate themselves',
+    !blockedRename.ok && /archived/.test(blockedRename.error), blockedRename.error);
+}
+
 // --- Show the results ---
 const out = document.getElementById('out');
 for (const r of results) {

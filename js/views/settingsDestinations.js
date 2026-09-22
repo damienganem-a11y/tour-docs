@@ -33,6 +33,14 @@ function timeField(value, label) {
 // open guest cards on By destination). Resets when the app is reloaded — that is fine, it is just a fold.
 const openCancelled = new Set();
 
+// True, with a toast, if the trip is archived: read-only. Checked before opening any sheet that would
+// lead to a change, so an archived trip never lets you fill in a whole form only to be refused at Save.
+function blockedIfArchived(trip) {
+  if (!trip.archivedAt) return false;
+  showToast('This trip is archived: read-only. Un-archive it on the Trips screen to make changes.', true);
+  return true;
+}
+
 // Saves one settings change; closes the sheet and redraws on success, shows the reason on failure.
 let saving = false;
 async function save(ctx, tripId, change, done) {
@@ -77,7 +85,11 @@ function detailPage(ctx, trip, destination) {
       subtitle: [destination.country, destination.timeZone].filter(Boolean).join(' · '),
       action: undoButton(ctx, trip, { scope: DESTINATION_UNDO_SCOPE }),
     }),
-    h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => editDestination(ctx, trip, destination) }, 'Edit details'),
+    trip.archivedAt ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes.') : null,
+    h('button', {
+      class: 'btn btn--plain btn--small', type: 'button', disabled: Boolean(trip.archivedAt),
+      onclick: () => editDestination(ctx, trip, destination),
+    }, 'Edit details'),
     h('h3', { class: 'section-title' }, 'Activities'),
     active.length === 0
       ? h('p', { class: 'empty' }, cancelled.length > 0 ? 'No active tours.' : 'No activities yet in this destination.')
@@ -90,9 +102,12 @@ function detailPage(ctx, trip, destination) {
           }, `${isOpen ? '▾' : '▸'} ${plural(cancelled.length, 'cancelled tour')}`),
           isOpen ? h('div', {}, cancelled.map(({ activity, slot }) => activityRow(ctx, trip, slot, destination, activity))) : null)
       : null,
-    h('button', { class: 'btn btn--plain', type: 'button', onclick: () => addActivity(ctx, trip, destination) }, '+ Add activity'),
     h('button', {
-      class: 'btn btn--danger btn--small', type: 'button', style: 'margin-top: 32px;',
+      class: 'btn btn--plain', type: 'button', disabled: Boolean(trip.archivedAt),
+      onclick: () => addActivity(ctx, trip, destination),
+    }, '+ Add activity'),
+    h('button', {
+      class: 'btn btn--danger btn--small', type: 'button', style: 'margin-top: 32px;', disabled: Boolean(trip.archivedAt),
       onclick: () => replaceDestination(ctx, trip, destination),
     }, 'Replace this destination…'));
 }
@@ -107,7 +122,7 @@ function activityRow(ctx, trip, slot, destination, activity) {
   const count = activity.cancelled ? 'Cancelled' : activity.capacity === null ? 'No limit' : `Capacity ${activity.capacity}`;
 
   const head = h('button', {
-    class: 'card-head', type: 'button', disabled: activity.cancelled,
+    class: 'card-head', type: 'button', disabled: activity.cancelled || Boolean(trip.archivedAt),
     onclick: () => editActivity(ctx, trip, slot, destination, activity),
   },
     h('div', { class: 'card-row' },

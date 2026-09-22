@@ -63,8 +63,10 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       cancelled: activity.cancelled,
       actions: activity.cancelled ? [] : [
         ...rollCallActions(ctx, trip, activity),
-        { label: '+ Add guest', run: () => startAddGuest(ctx, trip, slot, activity) },
-        { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
+        ...(trip.archivedAt ? [] : [
+          { label: '+ Add guest', run: () => startAddGuest(ctx, trip, slot, activity) },
+          { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
+        ]),
       ],
     });
   });
@@ -92,9 +94,12 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
 
 // The roll call buttons of an activity card: start the roll call the first time, then open it. Once it has ended:
 // look at it, or re-open it (the guests End roll call moved to At leisure come back on the tour).
+// An archived trip has no roll call: a roll call already started can only be looked at (read-only), and
+// there is no way to start, continue or re-open one.
 function rollCallActions(ctx, trip, activity) {
   const open = () => ctx.go(`#/trip/${trip.id}/rollcall/${activity.id}`);
   const rollCall = findRollCall(trip, activity.id);
+  if (trip.archivedAt) return rollCall ? [{ label: 'View roll call', run: open }] : [];
   if (rollCall?.endedAt) {
     return [
       { label: 'Re-open roll call', primary: true, run: () => reopenRollCall(ctx, trip.id, activity) },
@@ -169,6 +174,7 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
               const entry = forcedOf?.(g);
               return h('button', {
                 class: `chip${entry ? ' chip--forced' : ''}`, type: 'button',
+                disabled: Boolean(trip.archivedAt),
                 'aria-label': entry ? `${names.get(g.id)}, forced into this tour. Tap to see who approved it.` : null,
                 onclick: () => (entry ? showForcedInfo(ctx, trip, g, slot, entry) : startMove(ctx, trip, g, slot)),
               }, names.get(g.id));
@@ -196,6 +202,8 @@ function attentionCard(ctx, trip, slot, attention, names) {
   return h('div', { class: 'card card--warn' },
     h('div', { class: 'act-name' }, `Needs a look (${attention.length})`),
     [...attention].sort((a, b) => alphabetical(names)(a.guest, b.guest)).map(({ guest, reason }) =>
-      h('button', { class: 'line line--button', type: 'button', onclick: () => startMove(ctx, trip, guest, slot) },
-        h('span', {}, names.get(guest.id)), h('span', {}, reason))));
+      h('button', {
+        class: 'line line--button', type: 'button', disabled: Boolean(trip.archivedAt),
+        onclick: () => startMove(ctx, trip, guest, slot),
+      }, h('span', {}, names.get(guest.id)), h('span', {}, reason))));
 }

@@ -45,6 +45,7 @@
 //   { type: 'delete-trip' }                                   only an archived trip can be deleted; it moves to
 //       "Recently deleted" and is purged for good after 30 days
 //   { type: 'reinstate-trip' }                                brings a deleted trip back (still archived)
+//   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
 //
@@ -64,8 +65,12 @@ const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reop
 const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination']);
 // Guest and travel party changes (step 7c/7d): also each on its own.
 const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']);
-// The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own.
+// The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own. Allowed even when
+// the trip is archived (see validateChanges below) — that is how these get taken back.
 const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 'reinstate-trip']);
+// The trip's own name. Its own kind: unlike TRIP_TYPES, renaming is blocked while archived, like any
+// other change — nothing about the trip changes while it is read-only.
+const TRIP_INFO_TYPES = new Set(['rename-trip']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -88,13 +93,14 @@ export function validateChanges(trip, user, changes, journal = []) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
   if (SETTINGS_TYPES.has(changes[0].type)) return validateSettingsChange(trip, changes[0]);
   if (GUEST_TYPES.has(changes[0].type)) return validateGuestChange(trip, changes[0]);
   if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
+  if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
     if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
@@ -232,6 +238,7 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'unarchive-trip' && trip.archivedAt) return fail('This action cannot be undone: the trip has been archived again since.');
     if (entry.type === 'delete-trip' && !trip.deletedAt) return fail('This action cannot be undone: the trip is not deleted anymore.');
     if (entry.type === 'reinstate-trip' && trip.deletedAt) return fail('This action cannot be undone: the trip has been deleted again since.');
+    if (entry.type === 'rename-trip' && trip.name !== entry.to) return fail('This action cannot be undone: the trip has been renamed again since.');
     if (entry.rollCallId && entry.type !== 'move') {
       const problem = rollCallUndoProblem(trip, entry);
       if (problem) return fail(problem);
@@ -330,6 +337,11 @@ function validateTripChange(trip, change) {
     return trip.deletedAt ? fail('This trip is already deleted.') : { ok: true };
   }
   return trip.deletedAt ? { ok: true } : fail('This trip is not deleted.'); // reinstate-trip
+}
+
+// Checks a trip rename (see the list at the top).
+function validateRenameTrip(change) {
+  return isBlank(change.name) ? fail('Give the trip a name.') : { ok: true };
 }
 
 // Checks one roll call change (see the list at the top).
@@ -730,6 +742,16 @@ async function doApply(ctx, tripId, changes) {
     return save(ctx, next, entries, {});
   }
 
+  // The trip's own name. Not tied to one half-day, so it uses the same "local, right now" place as
+  // guest, travel party and other trip-level changes.
+  if (TRIP_INFO_TYPES.has(changes[0].type)) {
+    const from = trip.name;
+    const to = changes[0].name.trim();
+    next.name = to;
+    entries.push({ ...base(), type: 'rename-trip', ...guestWhere, from, to });
+    return save(ctx, next, entries, {});
+  }
+
   for (const change of changes) {
     if (change.type === 'move') {
       const approvedBy = String(change.approvedBy ?? '').trim().slice(0, 60) || null;
@@ -782,6 +804,11 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'reinstate-trip') {
     next.deletedAt = entry.previousDeletedAt;
     entries.push({ ...base(), type: 'delete-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'rename-trip') {
+    next.name = entry.from;
+    entries.push({ ...base(), type: 'rename-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from });
     return;
   }
 

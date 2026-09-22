@@ -43,9 +43,19 @@ function activityDetail(trip, slot, activity) {
 
 // ---------- 1. Pick a place for a guest ----------
 
+// True, with a toast, if the trip is archived: read-only, no booking changes. Every screen that starts
+// a change (a tap on a guest, Add guest, Cancel tour, roll call...) checks this FIRST, before opening
+// anything, so an archived trip never lets you get halfway through a change only to be refused at the end.
+function blockedIfArchived(trip) {
+  if (!trip.archivedAt) return false;
+  showToast('This trip is archived: read-only. Un-archive it on the Trips screen to make changes.', true);
+  return true;
+}
+
 // guest, slot: who and which half-day. Called from a tap on a guest anywhere in the app.
 // options.askParty === false: no travel party question (the roll call: speed first).
 export function startMove(ctx, trip, guest, slot, options = {}) {
+  if (blockedIfArchived(trip)) return;
   const names = displayNames(trip.guests);
   const here = guestPlace(trip, guest, slot);
 
@@ -110,6 +120,7 @@ export function showForcedInfo(ctx, trip, guest, slot, entry) {
 // Search all guests, see where each one is now, tap one to bring them into this activity.
 // (During a roll call the guest just joins the tour and appears in the list; they are NOT put in a vehicle.)
 export function startAddGuest(ctx, trip, slot, activity) {
+  if (blockedIfArchived(trip)) return;
   const names = displayNames(trip.guests);
   const guests = trip.guests.filter((g) => !g.leftAt).sort(alphabetical(names)); // a guest who left is brought back in Settings, not here
   const list = h('div', {});
@@ -251,6 +262,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
 // ---------- Cancel tour ----------
 
 export function startCancelTour(ctx, trip, slot, activity) {
+  if (blockedIfArchived(trip)) return;
   const booked = countIn(trip, activity);
   confirmSheet(ctx, trip, {
     title: `Cancel ${activity.name}?`,

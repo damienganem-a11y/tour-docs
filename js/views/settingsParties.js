@@ -12,7 +12,7 @@ import { openSheet, closeSheet, showToast } from '../ui.js';
 import { alphabetical, displayNames, joinNames, plain, plural } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
-import { choiceRow } from './move.js';
+import { choiceRow, notice } from './move.js';
 import { GUEST_UNDO_SCOPE } from '../journal.js';
 
 let saving = false;
@@ -47,8 +47,12 @@ export function partiesSettingsPage(ctx, trip) {
       subtitle: `${parties.length} travel part${parties.length === 1 ? 'y' : 'ies'} · tap a guest to see them`,
       action: undoButton(ctx, trip, { scope: GUEST_UNDO_SCOPE }),
     }),
+    trip.archivedAt ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes.') : null,
     h('div', {}, parties.map((members) => partyCard(ctx, trip, members, names))),
-    h('button', { class: 'btn btn--plain', type: 'button', style: 'margin-top: 12px;', onclick: () => createParty(ctx, trip) }, '+ Create a new travel party'));
+    h('button', {
+      class: 'btn btn--plain', type: 'button', style: 'margin-top: 12px;', disabled: Boolean(trip.archivedAt),
+      onclick: () => createParty(ctx, trip),
+    }, '+ Create a new travel party'));
 }
 
 function partyCard(ctx, trip, members, names) {
@@ -62,7 +66,7 @@ function partyCard(ctx, trip, members, names) {
         g.leftAt ? h('div', { class: 'row-sub' }, 'Left the trip') : null),
       h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')))),
     h('button', {
-      class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 4px;',
+      class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 4px;', disabled: Boolean(trip.archivedAt),
       onclick: () => addPerson(ctx, trip, members, names),
     }, '+ Add a person'));
 }

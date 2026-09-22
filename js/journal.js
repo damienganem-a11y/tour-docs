@@ -56,6 +56,7 @@ export function groupBatches(entries) {
         : types.has('unarchive-trip') ? 'unarchive-trip'
         : types.has('delete-trip') ? 'delete-trip'
         : types.has('reinstate-trip') ? 'reinstate-trip'
+        : types.has('rename-trip') ? 'rename-trip'
         : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
       undone: undone.has(batchId),
@@ -129,6 +130,7 @@ export function summarize(batch) {
   if (batch.kind === 'unarchive-trip') return 'Un-archived the trip';
   if (batch.kind === 'delete-trip') return 'Deleted the trip';
   if (batch.kind === 'reinstate-trip') return 'Reinstated the trip';
+  if (batch.kind === 'rename-trip') { const e = batch.entries[0]; return `Renamed "${e.from}" to "${e.to}"`; }
 
   // Guests who went from the same place to the same place are told together.
   const groups = new Map();

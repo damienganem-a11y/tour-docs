@@ -75,10 +75,17 @@ function detailPage(ctx, trip, guest) {
       action: undoButton(ctx, trip, { scope: GUEST_UNDO_SCOPE }),
     }),
     guest.leftAt ? notice(`Left the trip on ${new Date(guest.leftAt).toLocaleString()}.`) : null,
-    h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => editDetails(ctx, trip, guest) }, 'Edit details'),
-    h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => changeParty(ctx, trip, guest) }, 'Change travel party'),
+    trip.archivedAt ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes.') : null,
     h('button', {
-      class: `btn btn--small ${guest.leftAt ? '' : 'btn--danger'}`, type: 'button', style: 'margin-top: 32px;',
+      class: 'btn btn--plain btn--small', type: 'button', disabled: Boolean(trip.archivedAt),
+      onclick: () => editDetails(ctx, trip, guest),
+    }, 'Edit details'),
+    h('button', {
+      class: 'btn btn--plain btn--small', type: 'button', disabled: Boolean(trip.archivedAt),
+      onclick: () => changeParty(ctx, trip, guest),
+    }, 'Change travel party'),
+    h('button', {
+      class: `btn btn--small ${guest.leftAt ? '' : 'btn--danger'}`, type: 'button', style: 'margin-top: 32px;', disabled: Boolean(trip.archivedAt),
       onclick: () => (guest.leftAt
         ? save(ctx, trip.id, { type: 'guest-return', guestId: guest.id }, `${names.get(guest.id)} is back on the trip`)
         : leftConfirm(ctx, trip, guest)),
