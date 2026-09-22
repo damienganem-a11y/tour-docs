@@ -16,6 +16,7 @@ import { slotLabel, countIn, plural, bySlotOrder } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { notice } from './move.js';
+import { DESTINATION_UNDO_SCOPE } from '../journal.js';
 
 // A time field that adds the ":" for you after the hour: many phone keyboards (numeric ones especially)
 // have no ":" key, so typing "1830" becomes "18:30" as you type it.
@@ -74,7 +75,7 @@ function detailPage(ctx, trip, destination) {
       back: { href: `#/trip/${trip.id}/settings/destinations`, label: 'Destinations' },
       eyebrow: 'Destination', title: destination.name,
       subtitle: [destination.country, destination.timeZone].filter(Boolean).join(' · '),
-      action: undoButton(ctx, trip),
+      action: undoButton(ctx, trip, { scope: DESTINATION_UNDO_SCOPE }),
     }),
     h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => editDestination(ctx, trip, destination) }, 'Edit details'),
     h('h3', { class: 'section-title' }, 'Activities'),

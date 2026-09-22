@@ -61,8 +61,27 @@ export function groupBatches(entries) {
 
 // What the Undo button would undo: the latest action that is not an undo and not already undone.
 // Pressing Undo again then reaches the action before it, and so on (like Ctrl+Z). Returns null if none.
-export function lastUndoable(entries) {
-  const candidates = groupBatches(entries).filter((b) => b.kind !== 'undo' && b.kind !== 'old-return-count' && !b.undone);
+// Undo scopes (see lastUndoable below), one per "section" of the app, so each screen's Undo only ever
+// offers to take back something that belongs there.
+export const USE_UNDO_SCOPE = ['move', 'cancel-tour'];                // By destination, By guest
+export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity']; // Settings > Destinations
+export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
+// (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
+
+// scope narrows which action counts as "the last one", so each screen's Undo only offers to take back
+// something that belongs there — opening a guest's page should never offer to undo a change made on a
+// destination's tour, and vice versa. Omit it for the true trip-wide last action (used by Undo itself,
+// which must always resolve to exactly what the button that was tapped showed).
+//   scope undefined        any action
+//   scope ['kind', ...]    only batches of one of these kinds (see groupBatches)
+//   scope { rollCallId }   only batches of that one roll call (its start, check-ins, End roll call...)
+export function lastUndoable(entries, scope) {
+  const matches = (batch) => {
+    if (!scope) return true;
+    if (Array.isArray(scope)) return scope.includes(batch.kind);
+    return batch.rollCallId === scope.rollCallId;
+  };
+  const candidates = groupBatches(entries).filter((b) => b.kind !== 'undo' && b.kind !== 'old-return-count' && !b.undone && matches(b));
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }
 
@@ -183,7 +202,10 @@ function summarizeEditActivity(entry) {
 
 // What changed about a guest's own name, in words.
 function summarizeEditGuest(entry) {
-  return `${entry.guestName} renamed to "${entry.to.first} ${entry.to.last}"`;
+  const changed = [];
+  if (entry.from.first !== entry.to.first || entry.from.last !== entry.to.last) changed.push(`renamed to "${entry.to.first} ${entry.to.last}"`);
+  if ((entry.from.seat ?? null) !== (entry.to.seat ?? null)) changed.push(entry.to.seat ? `seat set to ${entry.to.seat}` : 'seat cleared');
+  return `${entry.guestName}${changed.length > 0 ? ` ${changed.join(', ')}` : ' updated (nothing actually changed)'}`;
 }
 
 // A guest joining another travel party, named by who is already in it (if anyone is left to name).

@@ -12,7 +12,8 @@
 //       force: true lets a move go into a full tour (the dispatcher has authority; owner only). The journal
 //       then says "forced", with the optional note approvedBy ("Approved by Sam").
 //   { type: 'cancel-tour', activityId }        everybody on it goes to At leisure, it stays as "Cancelled"
-//   { type: 'undo' }                           takes back the last action of the trip (like Ctrl+Z)
+//   { type: 'undo', scope? }                    takes back the last action (like Ctrl+Z); scope narrows
+//       "last" to one screen's own kind of actions (see journal.js's lastUndoable) — omit for trip-wide
 //   Roll call (see rollcall.js), each one on its own:
 //   { type: 'rollcall-start', activityId }
 //   { type: 'rollcall-end', activityId, moveGuestIds }       End roll call: those guests go to At leisure ("moved by End roll call")
@@ -77,7 +78,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings and guest changes are changes of their own.');
   }
-  if (changes[0].type === 'undo') return validateUndo(trip, journal);
+  if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
   if (SETTINGS_TYPES.has(changes[0].type)) return validateSettingsChange(trip, changes[0]);
   if (GUEST_TYPES.has(changes[0].type)) return validateGuestChange(trip, changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
@@ -154,8 +155,8 @@ export function validateChanges(trip, user, changes, journal = []) {
 
 // Undo is only possible if the trip still looks the way that action left it. (It always does, as the
 // last action is the last thing that happened; this check protects against surprises.)
-function validateUndo(trip, journal) {
-  const target = lastUndoable(journal);
+function validateUndo(trip, journal, scope) {
+  const target = lastUndoable(journal, scope);
   if (!target) return fail('There is nothing to undo.');
 
   for (const entry of target.entries) {
@@ -187,7 +188,9 @@ function validateUndo(trip, journal) {
     if (entry.type === 'edit-guest') {
       const guest = trip.guests.find((g) => g.id === entry.guestId);
       if (!guest) return fail('This action cannot be undone: the guest no longer exists.');
-      if (guest.first !== entry.to.first || guest.last !== entry.to.last) return fail(`This action cannot be undone: ${entry.guestName} has changed since.`);
+      if (guest.first !== entry.to.first || guest.last !== entry.to.last || (guest.seat ?? null) !== (entry.to.seat ?? null)) {
+        return fail(`This action cannot be undone: ${entry.guestName} has changed since.`);
+      }
     }
     if (entry.type === 'guest-left') {
       const guest = trip.guests.find((g) => g.id === entry.guestId);
@@ -432,9 +435,9 @@ async function doApply(ctx, tripId, changes) {
     batchId,
   });
 
-  // Undo: take back the last action of the trip, and write what was taken back.
+  // Undo: take back the last action (of the given scope, if any), and write what was taken back.
   if (changes[0].type === 'undo') {
-    const target = lastUndoable(journal);
+    const target = lastUndoable(journal, changes[0].scope);
     const summary = summarize(target);
     const [firstEntry] = target.entries;
     entries.push({
@@ -637,10 +640,11 @@ async function doApply(ctx, tripId, changes) {
     const guestName = names.get(guest.id); // the name as it was BEFORE this change (a rename still reads right)
 
     if (change.type === 'edit-guest') {
-      const from = { first: guest.first, last: guest.last };
+      const from = { first: guest.first, last: guest.last, seat: guest.seat ?? null };
       guest.first = change.first.trim();
       guest.last = change.last.trim();
-      entries.push({ ...base(), type: 'edit-guest', ...guestWhere, guestId: guest.id, guestName, from, to: { first: guest.first, last: guest.last } });
+      guest.seat = String(change.seat ?? '').trim() || null;
+      entries.push({ ...base(), type: 'edit-guest', ...guestWhere, guestId: guest.id, guestName, from, to: { first: guest.first, last: guest.last, seat: guest.seat } });
     } else if (change.type === 'guest-left') {
       guest.leftAt = at;
       entries.push({ ...base(), type: 'guest-left', ...guestWhere, guestId: guest.id, guestName });

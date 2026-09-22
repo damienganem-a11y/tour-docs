@@ -7,14 +7,14 @@ import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal } from '.
 import { applyChange, validateChanges } from './changes.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
-import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime } from './time.js';
-import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements } from './journal.js';
+import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow } from './time.js';
+import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE } from './journal.js';
 import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
 import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, alphabetical, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
+import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -199,8 +199,8 @@ check('At leisure is counted per half-day, not as an activity', perSlot.every((x
   const c = capacityInfo(inHammamNow.length, hammam.capacity);
   check('Hammam and spa reads "10 / 8 · Over by 2" in the warning colour', c.text === '10 / 8 · Over by 2' && c.tone === 'bad', c.text);
 }
-check('Capacity wording: "6 / 8", "8 / 8 · Full", and just "12" with no capacity',
-  capacityInfo(6, 8).text === '6 / 8' && capacityInfo(6, 8).tone === null && capacityInfo(8, 8).text === '8 / 8 · Full' && capacityInfo(8, 8).tone === 'bad' && capacityInfo(12, null).text === '12');
+check('Capacity wording: "6 / 8", "8 / 8 · Full", and "12 / ∞" with no capacity',
+  capacityInfo(6, 8).text === '6 / 8' && capacityInfo(6, 8).tone === null && capacityInfo(8, 8).text === '8 / 8 · Full' && capacityInfo(8, 8).tone === 'bad' && capacityInfo(12, null).text === '12 / ∞');
 check('P08 (G015 + G016) are kept apart on S10 in the guest view',
   guestPlace(trip, guest('G015'), slot('S10')).activity.name !== guestPlace(trip, guest('G016'), slot('S10')).activity.name);
 check('A guest at leisure is reported as leisure, an empty sign-up as blank',
@@ -1054,18 +1054,34 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   // A half-day where G001 and their partner G002 are together, so leaving really removes G001 from G002's party-mover offer.
   const s = trip.slots.find((x) => guestPlace(trip, guest('G001'), x).kind === 'activity' && partyMovers(trip, guest('G001'), x).length === 1);
 
-  // --- Edit a guest's own name ---
+  // --- Edit a guest's own name and seat ---
+  check('The sample trip gives every guest a seat, "1A" style', guest('G001').seat === '1A' && guest('G002').seat === '1C' && guest('G005').seat === '2A');
   const ctx = makeCtx();
   const before = structuredClone(ctx.state);
-  const edited = await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: 'Stone' });
+  const edited = await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: 'Stone', seat: guest('G001').seat });
   const g001 = () => ctx.state.guests.find((g) => g.ref === 'G001');
-  check('Edit a guest\'s name: first and last change, the shown name updates with it', edited.ok && g001().first === 'Richard' && g001().last === 'Stone', edited.error);
+  check('Edit a guest\'s name: first and last change, the shown name updates with it, the seat is untouched',
+    edited.ok && g001().first === 'Richard' && g001().last === 'Stone' && g001().seat === '1A', edited.error);
   check('The journal says: \'Richard S. renamed to "Richard Stone"\'', summarize(groupBatches(ctx.entries).at(-1)) === 'Richard S. renamed to "Richard Stone"', summarize(groupBatches(ctx.entries).at(-1)));
-  check('Refused: a blank first or last name', !(await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: ' ', last: 'Stone' })).ok
-    && !(await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: '' })).ok);
+  const reseated = await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: 'Stone', seat: '5B' });
+  check('The seat can be changed on its own: "seat set to 5B"', reseated.ok && g001().seat === '5B'
+    && summarize(groupBatches(ctx.entries).at(-1)) === 'Richard S. seat set to 5B', summarize(groupBatches(ctx.entries).at(-1)));
+  const unseated = await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: 'Stone', seat: '' });
+  check('The seat can be cleared: "seat cleared"', unseated.ok && g001().seat === null
+    && summarize(groupBatches(ctx.entries).at(-1)) === 'Richard S. seat cleared');
+  check('Refused: a blank first or last name', !(await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: ' ', last: 'Stone', seat: '' })).ok
+    && !(await applyChange(ctx, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Richard', last: '', seat: '' })).ok);
   await applyChange(ctx, trip.id, { type: 'undo' });
-  check('Undo puts the name exactly back', restoredExactly(ctx.state, before));
-  check('Only the owner can rename a guest', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'X', last: 'Y' })).ok);
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  await applyChange(ctx, trip.id, { type: 'undo' });
+  check('Three undos put the name and the seat exactly back', restoredExactly(ctx.state, before));
+  check('Only the owner can rename a guest', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'X', last: 'Y', seat: '' })).ok);
+
+  // --- Sort by seat: "1A" before "1C" before "2A"; nobody without a seat in this sample ---
+  const seatSorted = [...trip.guests].sort(bySeat(displayNames(trip.guests)));
+  check('Guests sort by seat: row first, then letter ("1A", "1C", "1D", "1F", "2A", "2C"...)',
+    seatSorted.slice(0, 6).map((g) => g.seat).join(',') === '1A,1C,1D,1F,2A,2C', seatSorted.slice(0, 6).map((g) => g.seat).join(','));
+  check('A guest with no seat set sorts after everybody who has one', bySeat(displayNames(trip.guests))({ seat: null }, { seat: '1A' }) > 0);
 
   // --- Guest left the trip ---
   const ctx2 = makeCtx();
@@ -1170,6 +1186,72 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   // --- No dietary info anywhere in these journal lines ---
   check('Guest and travel party changes never write dietary info to the journal',
     !/allerg|shellfish|dietary/i.test(JSON.stringify([...ctx.entries, ...ctx2.entries, ...ctx4.entries, ...ctx5.entries, ...ctx6.entries, ...ctx7.entries])));
+}
+
+// =====================================================================
+// v0.10.0: seat sort, "Earlier in the trip", no-limit shows "/ ∞", scoped Undo
+// =====================================================================
+{
+  // --- "Earlier in the trip": a whole day already over sinks to the bottom, per destination time zone ---
+  const fixedToday = (fixed) => () => fixed; // a fake "today" so the test never depends on when it runs
+  const { upcoming: up1, earlier: early1 } = splitPastSlots(trip, fixedToday('2027-01-14'));
+  check('Everything up to and including 13 Jan is "earlier"; 14 Jan onwards is still upcoming',
+    early1.every((s) => s.date < '2027-01-14') && up1.every((s) => s.date >= '2027-01-14')
+    && early1.length > 0 && up1.length > 0 && early1.length + up1.length === trip.slots.length);
+  const { upcoming: up0, earlier: early0 } = splitPastSlots(trip, fixedToday('2000-01-01'));
+  check('Before the trip starts: nothing is "earlier" yet', early0.length === 0 && up0.length === trip.slots.length);
+  const { upcoming: upAll, earlier: earlyAll } = splitPastSlots(trip, fixedToday('2099-01-01'));
+  check('Long after the trip: everything is "earlier"', earlyAll.length === trip.slots.length && upAll.length === 0);
+  const zonesAsked = new Set();
+  splitPastSlots(trip, (tz) => { zonesAsked.add(tz); return '2000-01-01'; });
+  check('Each half-day is judged in its OWN destination\'s time zone (Lisbon and Kyoto both asked)',
+    zonesAsked.has('Europe/Lisbon') && zonesAsked.has('Asia/Tokyo'));
+  check('localDateNow gives today\'s date as YYYY-MM-DD', /^\d{4}-\d{2}-\d{2}$/.test(localDateNow('Europe/Lisbon')));
+
+  // --- Sort by seat (the sample data check for "1A", "1C"... lives with the edit-guest tests above) ---
+  check('bySeat puts a guest with no seat after everybody who has one, and ties break alphabetically',
+    bySeat(displayNames(trip.guests))({ seat: null, id: guest('G001').id }, { seat: null, id: guest('G002').id })
+      === alphabetical(displayNames(trip.guests))({ id: guest('G001').id }, { id: guest('G002').id }));
+
+  // --- No-limit activities read "x / ∞" ---
+  check('capacityInfo with no capacity limit reads "x / ∞"', capacityInfo(0, null).text === '0 / ∞' && capacityInfo(40, null).text === '40 / ∞');
+
+  // --- Undo is scoped: each screen only ever offers to undo its own kind of action ---
+  const ctx9 = makeCtx();
+  const zed = await applyChange(ctx9, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Zed', last: 'Guest', seat: '' });
+  const s9 = trip.slots.find((x) => guestPlace(trip, guest('G010'), x).kind === 'activity');
+  await applyChange(ctx9, trip.id, moveOf('G010', s9.ref, LEISURE));
+  check('Unscoped Undo takes back the true last action (the move), not the earlier guest edit',
+    zed.ok && (await applyChange(ctx9, trip.id, { type: 'undo' })).ok && placeNow(ctx9, 'G010', s9.ref).kind !== 'leisure'
+    && ctx9.state.guests.find((g) => g.ref === 'G001').first === 'Zed');
+  const scoped = await applyChange(ctx9, trip.id, { type: 'undo', scope: GUEST_UNDO_SCOPE });
+  check('Undo scoped to Guests skips the move (already undone above) and reaches the guest edit before it',
+    scoped.ok && ctx9.state.guests.find((g) => g.ref === 'G001').first === 'Richard', scoped.error);
+  check('Undo scoped to a kind with nothing to undo is refused, even if something else could be undone',
+    !(await applyChange(ctx9, trip.id, { type: 'undo', scope: DESTINATION_UNDO_SCOPE })).ok);
+
+  // A guest edit made WHILE a booking move is more recent: Use screens never offer to undo it
+  const ctx10 = makeCtx();
+  await applyChange(ctx10, trip.id, moveOf('G010', s9.ref, LEISURE));
+  await applyChange(ctx10, trip.id, { type: 'edit-guest', guestId: guest('G001').id, first: 'Zed', last: 'Guest', seat: '' });
+  const useScoped = await applyChange(ctx10, trip.id, { type: 'undo', scope: USE_UNDO_SCOPE });
+  check('Undo scoped to Use screens (By destination/By guest) skips the more recent guest edit and undoes the move',
+    useScoped.ok && placeNow(ctx10, 'G010', s9.ref).kind !== 'leisure' && ctx10.state.guests.find((g) => g.ref === 'G001').first === 'Zed', useScoped.error);
+
+  // Two roll calls at once: each one's Undo only ever touches its own
+  const ctx11 = makeCtx();
+  const alfamaActivity = activity('S01-1');
+  const tram = activity('S01-2'); // a different tour in the same half-day as Alfama
+  await applyChange(ctx11, trip.id, { type: 'rollcall-start', activityId: alfamaActivity.id });
+  await applyChange(ctx11, trip.id, { type: 'rollcall-start', activityId: tram.id });
+  const alfamaCall = findRollCall(ctx11.state, alfamaActivity.id);
+  const tramCall = findRollCall(ctx11.state, tram.id);
+  await applyChange(ctx11, trip.id, { type: 'vehicle-add', activityId: tram.id }); // the most recent action overall: on Tram 28's roll call
+  check('Alfama\'s roll call has nothing of its own to undo once Tram 28\'s vehicle-add is the last action',
+    lastUndoable(ctx11.entries, { rollCallId: alfamaCall.id })?.entries.some((e) => e.type === 'rollcall-start'));
+  const alfamaUndo = await applyChange(ctx11, trip.id, { type: 'undo', scope: { rollCallId: alfamaCall.id } });
+  check('Undoing Alfama\'s roll call (scoped) removes ONLY Alfama\'s roll call, Tram 28\'s extra vehicle stays',
+    alfamaUndo.ok && !findRollCall(ctx11.state, alfamaActivity.id) && findRollCall(ctx11.state, tram.id)?.vehicles.length === 5);
 }
 
 // =====================================================================

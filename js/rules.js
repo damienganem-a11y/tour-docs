@@ -22,6 +22,22 @@ export const halfRank = (half) => {
 // Half-days in trip order: by day, then Morning/Afternoon/Evening.
 export const bySlotOrder = (a, b) => a.day - b.day || halfRank(a.half) - halfRank(b.half);
 
+// "2A" -> { row: 2, letter: 'A' }; anything else (blank, not set) -> null.
+const seatParts = (seat) => {
+  const m = /^(\d+)\s*([A-Za-z]*)$/.exec(String(seat ?? '').trim());
+  return m ? { row: Number(m[1]), letter: m[2].toUpperCase() } : null;
+};
+// Guests by seat (row, then letter: "1A" before "1C" before "2A"), for reconfirming names on board.
+// A guest with no seat set sorts after everybody who has one, alphabetical among themselves.
+export const bySeat = (names) => (a, b) => {
+  const sa = seatParts(a.seat);
+  const sb = seatParts(b.seat);
+  if (sa && sb) return sa.row - sb.row || sa.letter.localeCompare(sb.letter, 'en');
+  if (sa) return -1;
+  if (sb) return 1;
+  return alphabetical(names)(a, b);
+};
+
 // ---------- Names ----------
 
 // Sorting people by last name, then first name (used to break ties).
@@ -155,6 +171,21 @@ export function partyMovers(trip, guest, slot) {
     !other.leftAt && other.partyId === guest.partyId && other.id !== guest.id && samePlace(here, guestPlace(trip, other, slot)));
 }
 
+// Splits a trip's half-days into "still to come" and "earlier in the trip" (a whole calendar day already
+// over — not the half-day itself), each keeping the trip's own order. Compared day by day in EACH
+// half-day's own destination time zone, since a trip spanning time zones has no single "today".
+// `today(timeZone)` returns today's date ("2027-01-12") in that zone — pass localDateNow (time.js) for the
+// real, current split; tests pass a fixed function so the result never depends on when they happen to run.
+export function splitPastSlots(trip, today) {
+  const upcoming = [];
+  const earlier = [];
+  for (const slot of trip.slots) {
+    const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+    (slot.date < today(destination.timeZone) ? earlier : upcoming).push(slot);
+  }
+  return { upcoming, earlier };
+}
+
 // ---------- Capacity ----------
 
 // How a guest (and the travel party who is with them) fit into a place they might be moved to.
@@ -183,7 +214,7 @@ export function countIn(trip, activity) {
 // or just "6" when the activity has no capacity (it never fills up).
 // tone 'bad' means "draw it in the warning colour".
 export function capacityInfo(count, capacity) {
-  if (capacity === null) return { text: `${count}`, tone: null };
+  if (capacity === null) return { text: `${count} / ∞`, tone: null };
   if (count > capacity) return { text: `${count} / ${capacity} · Over by ${count - capacity}`, tone: 'bad' };
   if (count === capacity) return { text: `${count} / ${capacity} · Full`, tone: 'bad' };
   return { text: `${count} / ${capacity}`, tone: null };

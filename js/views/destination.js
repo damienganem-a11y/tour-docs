@@ -11,7 +11,7 @@ import { alphabetical, displayNames, whoIsWhere, capacityInfo } from '../rules.j
 import { pageHead } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo } from './move.js';
 import { undoButton } from './undo.js';
-import { forcedPlacements } from '../journal.js';
+import { forcedPlacements, USE_UNDO_SCOPE } from '../journal.js';
 import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
 import { showToast } from '../ui.js';
@@ -80,7 +80,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       eyebrow: 'By destination',
       title: destination.name,
       subtitle: `Day ${slot.day} · ${formatWeekdayDate(slot.date)} · ${slot.half} · ${destination.name} time`,
-      action: undoButton(ctx, trip),
+      action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
     }),
     cards,
     leisureCard,

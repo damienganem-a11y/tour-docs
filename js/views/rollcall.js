@@ -258,7 +258,7 @@ export function rollCallView(ctx, tripId, activityId) {
           subtitle: [...where, `${state.checkedIn.length} checked in`, endedAt].filter(Boolean).join(' · '),
         }),
         h('div', { class: 'vehicles' }, vehicleButtons),
-        undoButton(ctx, trip, { wide: true }),
+        undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
         h('button', { class: 'btn', type: 'button', onclick: async () => { await reopenRollCall(ctx, trip.id, activity); } }, 'Re-open roll call'),
         h('p', { class: 'muted footer-note' }, 'The vehicles and who was in them are kept. Tap a vehicle to see who is inside. Re-open roll call puts back on the tour the guests End roll call moved to At leisure.')),
     };
@@ -274,7 +274,7 @@ export function rollCallView(ctx, tripId, activityId) {
       }),
       search,
       h('div', { class: 'vehicles' }, vehicleButtons, addVehicle),
-      undoButton(ctx, trip, { wide: true }),
+      undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
       list,
       h('p', { class: 'rc-hint' }, 'Long-press a name: At leisure or another tour'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startAddGuest(ctx, trip, slot, activity) }, '+ Add guest'),

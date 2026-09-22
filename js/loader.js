@@ -17,7 +17,7 @@
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled } ]
 //   trip.parties       [ { id, ref, type } ]                                   travel parties
-//   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt } ]
+//   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt, seat } ]
 //   trip.bookings      { guestId: { slotId: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'unknown', raw } } }
 
 import { newId } from './ids.js';
@@ -122,6 +122,7 @@ export function buildTrip(raw) {
       id: newId(), ref: g.id, first: g.first.trim(), last: g.last.trim(),
       partyId: partyByRef.get(partyRef).id, notes: g.notes ?? '', dietary: g.dietary ?? '',
       leftAt: null, // set to the exact moment when "Guest left the trip" is used (Settings, step 7d); reversible
+      seat: isText(g.seat) ? g.seat.trim() : null, // e.g. "2C", optional; used to sort By guest for reconfirming names on board
     };
     guests.push(guest);
     guestByRef.set(g.id, guest);

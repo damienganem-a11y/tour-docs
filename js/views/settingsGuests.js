@@ -18,6 +18,7 @@ import { alphabetical, displayNames, partyLabel, plain, plural } from '../rules.
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { notice, choiceRow } from './move.js';
+import { GUEST_UNDO_SCOPE } from '../journal.js';
 
 // Whether the "guests who left" section is unfolded. Module-level like the cancelled-tours fold, so it
 // survives a redraw; there is only ever one guest list, so a single flag (not a Set) is enough.
@@ -69,11 +70,12 @@ function detailPage(ctx, trip, guest) {
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings/guests`, label: 'Guests' },
-      eyebrow: 'Guest', title: names.get(guest.id), subtitle: partyLabel(trip, guest, names),
-      action: undoButton(ctx, trip),
+      eyebrow: 'Guest', title: names.get(guest.id),
+      subtitle: [guest.seat ? `Seat ${guest.seat}` : null, partyLabel(trip, guest, names)].filter(Boolean).join(' · '),
+      action: undoButton(ctx, trip, { scope: GUEST_UNDO_SCOPE }),
     }),
     guest.leftAt ? notice(`Left the trip on ${new Date(guest.leftAt).toLocaleString()}.`) : null,
-    h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => editName(ctx, trip, guest) }, 'Edit name'),
+    h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => editDetails(ctx, trip, guest) }, 'Edit details'),
     h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => changeParty(ctx, trip, guest) }, 'Change travel party'),
     h('button', {
       class: `btn btn--small ${guest.leftAt ? '' : 'btn--danger'}`, type: 'button', style: 'margin-top: 32px;',
@@ -85,19 +87,25 @@ function detailPage(ctx, trip, guest) {
 
 // ---------- Sheets ----------
 
-function editName(ctx, trip, guest) {
+function editDetails(ctx, trip, guest) {
   const firstInput = h('input', { class: 'text-input', type: 'text', value: guest.first, placeholder: 'First name', 'aria-label': 'First name', maxlength: '60' });
   const lastInput = h('input', { class: 'text-input', type: 'text', value: guest.last, placeholder: 'Last name', 'aria-label': 'Last name', maxlength: '60' });
+  const seatInput = h('input', {
+    class: 'text-input', type: 'text', value: guest.seat ?? '', placeholder: 'Seat (optional, e.g. 2C)', 'aria-label': 'Seat',
+    autocapitalize: 'characters', spellcheck: 'false', maxlength: '10',
+  });
 
   const confirm = h('button', {
     class: 'btn', type: 'button',
-    onclick: () => save(ctx, trip.id, { type: 'edit-guest', guestId: guest.id, first: firstInput.value, last: lastInput.value }, 'Name updated'),
+    onclick: () => save(ctx, trip.id, {
+      type: 'edit-guest', guestId: guest.id, first: firstInput.value, last: lastInput.value, seat: seatInput.value,
+    }, 'Guest updated'),
   }, 'Save');
 
   openSheet({
-    eyebrow: 'Guest', title: 'Edit name',
-    subtitle: 'The name shown on screen (like "John S.") is worked out from this automatically.',
-    body: [firstInput, lastInput, confirm], cancelLabel: 'Cancel',
+    eyebrow: 'Guest', title: 'Edit guest details',
+    subtitle: 'The name shown on screen (like "John S.") is worked out from the name automatically. The seat is used to sort By guest for reconfirming names on board.',
+    body: [firstInput, lastInput, seatInput, confirm], cancelLabel: 'Cancel',
   });
 }
 

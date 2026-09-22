@@ -68,6 +68,13 @@ export function formatMoment(instant, timeZone) {
   return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')}`;
 }
 
+// Today's date (e.g. "2027-01-12") in a given time zone. A trip that spans time zones does not have one
+// single "today": Kyoto can already be tomorrow while Lisbon is still on today. Used to tell a half-day
+// that is over from one that is not (see "Earlier in the trip" on a guest's page).
+export function localDateNow(timeZone) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
 // ---------- Calendar dates (a day, with no time and no time zone) ----------
 
 // "2027-01-12" plus 23 days -> "2027-02-04"
