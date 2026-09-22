@@ -7,14 +7,16 @@
 //     `doc` shape, shared with xlsx.js): no file-format knowledge here, just "what goes on the page".
 //   - nextVersion           a plain, testable rule: how a new export's version number is worked out.
 //   - exportAndShare        builds the file (PDF or Excel), saves it as a version, then shares it.
+//   - exportFinalTrip       the same, for the final export of the whole trip: every tour, and every
+//     guest's own whole itinerary, in one file (its own content-building functions sit just above it).
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
 //   - shareOrDownloadFile   hands a finished file to the OS share sheet (Web Share API, the same
 //     mechanism WhatsApp itself sits behind), or saves it as a download if that is not available.
 
-import { buildListsPdf } from './pdf.js';
-import { buildListsXlsx } from './xlsx.js';
+import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
+import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment } from './time.js';
-import { whoIsWhere, capacityInfo, byName, bySlotOrder } from './rules.js';
+import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace } from './rules.js';
 import { newId } from './ids.js';
 import { showToast } from './ui.js';
 
@@ -83,6 +85,67 @@ export function destinationExportDoc(trip, destination, slot, updatedBy) {
   };
 }
 
+// The local time of the phone doing the exporting: used only for the final trip export's header,
+// since — unlike a single destination — the whole trip has no one time zone to show the moment in.
+const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Every half-day's tours, across every destination, in trip order — the same shape
+// destinationExportDoc builds, just spanning the whole trip instead of one destination.
+export function finalTripToursDoc(trip, updatedBy) {
+  const slots = [...trip.slots].sort(bySlotOrder);
+  const groups = slots.map((slot) => {
+    const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+    return { heading: `Day ${slot.day} · ${slot.half} · ${destination.name}`, tables: activityTables(trip, slot, destination) };
+  });
+  return {
+    title: `${trip.name} — Every tour`,
+    updatedLine: `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`,
+    groups,
+  };
+}
+
+// Every guest's own day-by-day itinerary, in trip order: the same rule the By guest screen itself
+// uses (guestPlace) to say where someone is in a half-day. Shared by the PDF and Excel builders
+// below, which each lay the same information out differently.
+function guestItineraries(trip) {
+  const slots = [...trip.slots].sort(bySlotOrder);
+  return trip.guests.filter((g) => !g.leftAt).sort(byName).map((guest) => ({
+    guest,
+    entries: slots.map((slot) => {
+      const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+      const place = guestPlace(trip, guest, slot);
+      const what = place.kind === 'activity' ? place.activity.name
+        : place.kind === 'leisure' ? 'At leisure'
+        : place.kind === 'unknown' ? `Unknown: "${place.raw}"`
+        : 'Nothing chosen yet';
+      return { when: `Day ${slot.day} · ${slot.half}`, destination: destination.name, what };
+    }),
+  }));
+}
+
+// PDF: one small tile per guest (their name as its heading, their ID underneath, one row per
+// half-day). `id`/`name` here just mean "when" and "where · what" — the tile only draws two data
+// columns and does not care what they mean (pdf.js's GUEST_TILE names them properly on the page).
+export function finalTripGuestsDocForPdf(trip, updatedBy) {
+  return {
+    title: `${trip.name} — Every guest's trip`,
+    updatedLine: `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`,
+    groups: [{
+      heading: null,
+      tables: guestItineraries(trip).map(({ guest, entries }) => ({
+        heading: `${guest.last}, ${guest.first}`, detail: `ID ${guest.ref}`, count: null,
+        rows: entries.map((e) => ({ id: e.when, name: `${e.destination} · ${e.what}` })),
+      })),
+    }],
+  };
+}
+
+// Excel: one flat row per (guest, half-day) pair, the shape Excel itself is for (sortable, filterable).
+export function finalTripGuestsRowsForXlsx(trip) {
+  return guestItineraries(trip).flatMap(({ guest, entries }) =>
+    entries.map((e) => ({ id: guest.ref, name: `${guest.last}, ${guest.first}`, when: e.when, destination: e.destination, what: e.what })));
+}
+
 // A plain file name from a title: "Kyoto — Day 6 · Morning" -> "kyoto-day-6-morning.pdf".
 function fileNameFor(title, extension) {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '');
@@ -119,6 +182,34 @@ export async function exportAndShare(ctx, trip, doc, format) {
     showToast('Could not save this export to the archive, but sharing it anyway.', true);
   }
   await shareOrDownloadFile(blob, fileNameFor(doc.title, spec.extension), spec.mimeType);
+}
+
+// The final export of the whole trip (SPEC.md, "5. Export"): every tour's guest list, and every
+// guest's own whole trip, in one file. Available any time (and later offered when archiving a trip —
+// step 9). No dietary info in it, same as every other export: activityTables never reads it.
+export async function exportFinalTrip(ctx, trip, format) {
+  const updatedBy = ctx.owner?.name ?? 'the owner';
+  let blob;
+  try {
+    blob = format === 'pdf'
+      ? buildFinalTripPdf(finalTripToursDoc(trip, updatedBy), finalTripGuestsDocForPdf(trip, updatedBy))
+      : buildFinalTripXlsx(finalTripToursDoc(trip, updatedBy), finalTripGuestsRowsForXlsx(trip));
+  } catch {
+    showToast(`Could not build the ${FORMATS[format].label} file.`, true);
+    return;
+  }
+  const title = `${trip.name} — Final export`;
+  const updatedLine = `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`;
+  const record = {
+    id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title),
+    updatedLine, createdAt: new Date().toISOString(), format, blob,
+  };
+  try {
+    await ctx.saveExport(trip.id, record);
+  } catch {
+    showToast('Could not save this export to the archive, but sharing it anyway.', true);
+  }
+  await shareOrDownloadFile(blob, fileNameFor(title, FORMATS[format].extension), FORMATS[format].mimeType);
 }
 
 // Re-shares a version already sitting in the archive: no rebuilding, just the same file again.

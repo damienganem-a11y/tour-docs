@@ -8,13 +8,13 @@
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 import { alphabetical, displayNames, whoIsWhere, capacityInfo } from '../rules.js';
-import { pageHead } from './chrome.js';
+import { pageHead, exportFormatSheet } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo } from './move.js';
 import { undoButton } from './undo.js';
 import { forcedPlacements, USE_UNDO_SCOPE } from '../journal.js';
 import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
-import { showToast, openSheet, closeSheet } from '../ui.js';
+import { showToast } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
 import { destinationExportDoc, exportAndShare } from '../export.js';
 
@@ -117,22 +117,14 @@ function rollCallActions(ctx, trip, activity) {
 // starting a second file while the first is still being built.
 let busy = false;
 function exportButton(ctx, trip, destination, slot, label) {
-  const start = async (format) => {
-    closeSheet();
-    if (busy) return;
-    busy = true;
-    const doc = destinationExportDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner');
-    await exportAndShare(ctx, trip, doc, format);
-    busy = false;
-  };
   return h('button', {
     class: 'btn btn--plain btn--small', type: 'button',
-    onclick: () => openSheet({
-      title: 'Export as...',
-      body: [
-        h('button', { class: 'btn', type: 'button', onclick: () => start('pdf') }, 'PDF — for WhatsApp and printing'),
-        h('button', { class: 'btn btn--plain', type: 'button', onclick: () => start('xlsx') }, 'Excel (.xlsx) — to edit the list further'),
-      ],
+    onclick: () => exportFormatSheet(async (format) => {
+      if (busy) return;
+      busy = true;
+      const doc = destinationExportDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner');
+      await exportAndShare(ctx, trip, doc, format);
+      busy = false;
     }),
   }, label);
 }

@@ -15,9 +15,9 @@ import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUn
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
-import { buildListsPdf } from './pdf.js';
-import { buildListsXlsx } from './xlsx.js';
-import { destinationExportDoc, nextVersion } from './export.js';
+import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
+import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
+import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -1522,6 +1522,17 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
   const longNameText = new TextDecoder('iso-8859-1').decode(new Uint8Array(await buildListsPdf(longNameDoc).arrayBuffer()));
   check('A name too long for its column is shortened with "…", not with "?"', longNameText.includes('…)') && !/[A-Za-z]\?\)/.test(longNameText));
 
+  // The infinity sign an uncapped activity's count uses ("6 / ∞") has no WinAnsi byte at all (found
+  // by actually rendering the sample trip's "Farewell gala dinner", which has no capacity limit):
+  // it must become readable text ("no limit"), not silently turn into a lone "?".
+  const noLimitDoc = {
+    title: 'No limit test', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester',
+    groups: [{ heading: null, tables: [{ heading: 'Gala dinner', detail: '', count: '79 / ∞', rows: [{ id: '1', name: 'Braswell, Anna' }] }] }],
+  };
+  const noLimitText = new TextDecoder('iso-8859-1').decode(new Uint8Array(await buildListsPdf(noLimitDoc).arrayBuffer()));
+  check('An uncapped activity\'s "/ ∞" becomes "/ no limit" in the PDF, not "/ ?"',
+    noLimitText.includes('79 / no limit') && !noLimitText.includes('79 / ?'));
+
   // The index at the end of the file (xref) must point exactly at each object's own "N 0 obj" line,
   // or a real PDF reader (the one on the phone) would refuse to open the file.
   const xrefAt = Number(/startxref\s+(\d+)/.exec(text)[1]);
@@ -1569,48 +1580,49 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
     needsALook.rows.length > 0 && needsALook.rows.every((r) => typeof r.id === 'string' && r.id.length > 0));
 }
 
+// A .xlsx file is a .zip file: read it back the way any .zip reader would (the end-of-central-
+// directory record, then the central directory, then each file's own local header) and check the
+// whole thing is internally consistent — not just "some bytes came out". Shared by the Excel tests
+// below (the regular export, and the final trip export).
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+const zipU16 = (b, i) => b[i] | (b[i + 1] << 8);
+const zipU32 = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
+
+function readZip(bytes) {
+  // No file comment is ever written, so the end-of-central-directory record is always the last 22 bytes.
+  const eocd = bytes.length - 22;
+  if (zipU32(bytes, eocd) !== 0x06054b50) throw new Error('no end-of-central-directory record where expected');
+  const count = zipU16(bytes, eocd + 10);
+  let p = zipU32(bytes, eocd + 16); // where the central directory starts
+  const files = {};
+  for (let i = 0; i < count; i++) {
+    if (zipU32(bytes, p) !== 0x02014b50) throw new Error(`central directory entry ${i} has the wrong signature`);
+    const crc = zipU32(bytes, p + 16), size = zipU32(bytes, p + 20), nameLen = zipU16(bytes, p + 28), extraLen = zipU16(bytes, p + 30), commentLen = zipU16(bytes, p + 32);
+    const localOffset = zipU32(bytes, p + 42);
+    const name = new TextDecoder().decode(bytes.slice(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+
+    if (zipU32(bytes, localOffset) !== 0x04034b50) throw new Error(`${name}: local file header has the wrong signature`);
+    const localNameLen = zipU16(bytes, localOffset + 26), localExtraLen = zipU16(bytes, localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+    const data = bytes.slice(dataStart, dataStart + size);
+    if (crc32(data) !== crc) throw new Error(`${name}: the data does not match its own checksum`);
+    files[name] = new TextDecoder().decode(data);
+  }
+  return files;
+}
+
 // --- Export: Excel ---
 {
-  // A .xlsx file is a .zip file: read it back the way any .zip reader would (the end-of-central-
-  // directory record, then the central directory, then each file's own local header) and check the
-  // whole thing is internally consistent — not just "some bytes came out".
-  const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    return c >>> 0;
-  });
-  const crc32 = (bytes) => {
-    let c = 0xffffffff;
-    for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-  };
-  const u16 = (b, i) => b[i] | (b[i + 1] << 8);
-  const u32 = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
-
-  function readZip(bytes) {
-    // No file comment is ever written, so the end-of-central-directory record is always the last 22 bytes.
-    const eocd = bytes.length - 22;
-    if (u32(bytes, eocd) !== 0x06054b50) throw new Error('no end-of-central-directory record where expected');
-    const count = u16(bytes, eocd + 10);
-    let p = u32(bytes, eocd + 16); // where the central directory starts
-    const files = {};
-    for (let i = 0; i < count; i++) {
-      if (u32(bytes, p) !== 0x02014b50) throw new Error(`central directory entry ${i} has the wrong signature`);
-      const crc = u32(bytes, p + 16), size = u32(bytes, p + 20), nameLen = u16(bytes, p + 28), extraLen = u16(bytes, p + 30), commentLen = u16(bytes, p + 32);
-      const localOffset = u32(bytes, p + 42);
-      const name = new TextDecoder().decode(bytes.slice(p + 46, p + 46 + nameLen));
-      p += 46 + nameLen + extraLen + commentLen;
-
-      if (u32(bytes, localOffset) !== 0x04034b50) throw new Error(`${name}: local file header has the wrong signature`);
-      const localNameLen = u16(bytes, localOffset + 26), localExtraLen = u16(bytes, localOffset + 28);
-      const dataStart = localOffset + 30 + localNameLen + localExtraLen;
-      const data = bytes.slice(dataStart, dataStart + size);
-      if (crc32(data) !== crc) throw new Error(`${name}: the data does not match its own checksum`);
-      files[name] = new TextDecoder().decode(data);
-    }
-    return files;
-  }
-
   const doc = {
     title: 'Lisbon — Day 1', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester',
     groups: [
@@ -1643,6 +1655,73 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
     check('The title, the header line, and every row\'s own ID and name are in the first sheet, as plain readable text',
       files['xl/worksheets/sheet1.xml'].includes('<t xml:space="preserve">Lisbon — Day 1</t>')
       && files['xl/worksheets/sheet1.xml'].includes('<t xml:space="preserve">501</t>') && files['xl/worksheets/sheet1.xml'].includes('<t xml:space="preserve">Braswell, Anna</t>'));
+  }
+}
+
+// --- Export: the final export of the whole trip ---
+{
+  const toursDoc = finalTripToursDoc(trip, 'Tester');
+  check('The final tours doc covers every half-day of the whole trip, not just one destination',
+    toursDoc.groups.length === trip.slots.length && toursDoc.title === `${trip.name} — Every tour`);
+  check('Each group is named with its day, half and destination (spanning several destinations, unlike a single destination\'s export)',
+    toursDoc.groups.every((g) => /^Day \d+ · (Morning|Afternoon|Evening) · .+/.test(g.heading))
+    && new Set(toursDoc.groups.map((g) => g.heading.split(' · ')[2])).size === trip.destinations.length);
+
+  const guestsDoc = finalTripGuestsDocForPdf(trip, 'Tester');
+  const activeGuests = trip.guests.filter((g) => !g.leftAt);
+  check('The final guests doc has one table per guest who has not left the trip, one row per half-day',
+    guestsDoc.groups.length === 1 && guestsDoc.groups[0].tables.length === activeGuests.length
+    && guestsDoc.groups[0].tables.every((t) => t.rows.length === trip.slots.length));
+
+  const g022Table = guestsDoc.groups[0].tables.find((t) => t.detail === `ID ${guest('G022').ref}`);
+  const s09Index = [...trip.slots].sort(bySlotOrder).findIndex((s) => s.id === slot('S09').id);
+  check('G022\'s own itinerary still shows their misspelled Istanbul activity as "Unknown", the same as the Warnings-style tables do',
+    g022Table && g022Table.rows[s09Index].name.includes('Unknown: "Topkapi palace & Hagia Sofia"'), JSON.stringify(g022Table?.rows[s09Index]));
+
+  const flatRows = finalTripGuestsRowsForXlsx(trip);
+  check('The Excel version of the same content is a flat row per (guest, half-day) pair',
+    flatRows.length === activeGuests.length * trip.slots.length);
+  const g022Flat = flatRows.find((r) => r.id === guest('G022').ref && r.when === `Day ${slot('S09').day} · ${slot('S09').half}`);
+  check('...with the same content per row as the PDF version, just flattened', g022Flat && g022Flat.what.includes('Unknown'));
+
+  // The combined PDF: built from small synthetic docs (not the whole sample trip, so the check stays
+  // fast and easy to read) — one two-page-forcing tours part, one flowing guests part, one file.
+  const smallTours = {
+    title: 'Test trip — Every tour', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester',
+    groups: [
+      { heading: 'Day 1 · Morning · Lisbon', tables: [{ heading: 'Walk', detail: '', count: '1', rows: [{ id: '501', name: 'Braswell, Anna' }] }] },
+      { heading: 'Day 1 · Afternoon · Lisbon', tables: [{ heading: 'Museum', detail: '', count: '1', rows: [{ id: '502', name: 'Coyle, Carl' }] }] },
+    ],
+  };
+  const smallGuests = {
+    title: 'Test trip — Every guest\'s trip', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester',
+    groups: [{ heading: null, tables: [
+      { heading: 'Braswell, Anna', detail: 'ID 501', count: null, rows: [{ id: 'Day 1 · Morning', name: 'Lisbon · Walk' }, { id: 'Day 1 · Afternoon', name: 'Lisbon · At leisure' }] },
+    ] }],
+  };
+  const finalBlob = buildFinalTripPdf(smallTours, smallGuests);
+  const finalText = new TextDecoder('iso-8859-1').decode(new Uint8Array(await finalBlob.arrayBuffer()));
+  const finalPageCount = [...finalText.matchAll(/\/Type \/Page /g)].length;
+  check('The combined PDF has the tours\' own forced pages (2, one per half-day) plus the guest section\'s own page(s)',
+    finalPageCount >= 3, `${finalPageCount} pages`);
+  check('Both parts\' own titles and content are in the file', finalText.includes('Every tour') && finalText.includes('Braswell, Anna') && finalText.includes('At leisure'));
+
+  const finalXlsxBlob = buildFinalTripXlsx(smallTours, [
+    { id: '501', name: 'Braswell, Anna', when: 'Day 1 · Morning', destination: 'Lisbon', what: 'Walk' },
+    { id: '501', name: 'Braswell, Anna', when: 'Day 1 · Afternoon', destination: 'Lisbon', what: 'At leisure' },
+  ]);
+  const finalXlsxBytes = new Uint8Array(await finalXlsxBlob.arrayBuffer());
+  let finalFiles;
+  try { finalFiles = readZip(finalXlsxBytes); } catch (error) { check('The final Excel export is a well-formed zip file', false, error.message); }
+  if (finalFiles) {
+    check('The final Excel export is a well-formed zip file', true);
+    check('It has one sheet per half-day (2) plus one flat "All guests" sheet (3 total)',
+      Boolean(finalFiles['xl/worksheets/sheet1.xml'] && finalFiles['xl/worksheets/sheet2.xml'] && finalFiles['xl/worksheets/sheet3.xml'] && !finalFiles['xl/worksheets/sheet4.xml']));
+    check('The workbook names the last sheet "All guests"', finalFiles['xl/workbook.xml'].includes('name="All guests"'));
+    check('The flat guest sheet has the header row and both of Anna\'s rows',
+      finalFiles['xl/worksheets/sheet3.xml'].includes('<t xml:space="preserve">Doing what</t>')
+      && finalFiles['xl/worksheets/sheet3.xml'].includes('<t xml:space="preserve">Braswell, Anna</t>')
+      && finalFiles['xl/worksheets/sheet3.xml'].includes('<t xml:space="preserve">At leisure</t>'));
   }
 }
 

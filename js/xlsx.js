@@ -199,24 +199,22 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
   + `<cellXfs count="2"><xf numFmtId="0" fontId="0" xfId="0"/><xf numFmtId="0" fontId="1" xfId="0" applyFont="1"/></cellXfs>`
   + `</styleSheet>`;
 
-// The one thing the rest of the app calls: doc (see pdf.js's layoutPages for its shape) -> a
-// ready-to-share .xlsx Blob.
-export function buildListsXlsx(doc) {
-  const usedNames = new Set();
-  const names = doc.groups.map((g) => sheetName(g.heading ?? doc.title, usedNames));
-
-  const sheetOverrides = names.map((_, i) =>
+// Assembles a whole workbook (all the fixed parts, plus one worksheet per given { name, xml }) into
+// a ready-to-share .xlsx Blob. Shared by buildListsXlsx and buildFinalTripXlsx below, which differ
+// only in which sheets they hand it.
+function assembleWorkbook(sheets) {
+  const sheetOverrides = sheets.map((_, i) =>
     `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
   ).join('');
 
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
     + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
-    + `<sheets>${names.map((n, i) => `<sheet name="${xmlEscape(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>`
+    + `<sheets>${sheets.map((s, i) => `<sheet name="${xmlEscape(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>`
     + `</workbook>`;
 
   const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
     + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
-    + names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+    + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
     + `<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`
     + `</Relationships>`;
 
@@ -228,9 +226,49 @@ export function buildListsXlsx(doc) {
     { name: 'xl/workbook.xml', text: workbook },
     { name: 'xl/_rels/workbook.xml.rels', text: workbookRels },
     { name: 'xl/styles.xml', text: STYLES },
-    ...doc.groups.map((group, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(doc, group) })),
+    ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, text: s.xml })),
   ];
 
   const bytes = buildZip(entries);
   return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+// A flat, sortable table — one row per (guest, half-day) pair — rather than the small side-by-side
+// tiles the PDF uses (which only exist to make things fit on a printed page; a spreadsheet has no
+// such limit, and a flat table is the more useful shape to sort or filter in Excel itself).
+function guestsFlatSheetXml(doc, guestRows) {
+  const headers = ['ID', 'Name', 'When', 'Destination', 'Doing what'];
+  const rows = [
+    rowXml(1, [{ col: 0, text: doc.title, bold: true }]),
+    rowXml(2, [{ col: 0, text: doc.updatedLine }]),
+    rowXml(4, headers.map((text, col) => ({ col, text, bold: true }))),
+    ...guestRows.map((r, i) => rowXml(5 + i, [
+      { col: 0, text: r.id }, { col: 1, text: r.name }, { col: 2, text: r.when }, { col: 3, text: r.destination }, { col: 4, text: r.what },
+    ])),
+  ];
+  const widths = [10, 22, 16, 14, 30];
+  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
+    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<cols>${cols}</cols>`
+    + `<sheetData>${rows.join('')}</sheetData>`
+    + `</worksheet>`;
+}
+
+// The one thing most of the app calls: doc (see pdf.js's layoutPages for its shape) -> a
+// ready-to-share .xlsx Blob.
+export function buildListsXlsx(doc) {
+  const usedNames = new Set();
+  const sheets = doc.groups.map((group) => ({ name: sheetName(group.heading ?? doc.title, usedNames), xml: sheetXml(doc, group) }));
+  return assembleWorkbook(sheets);
+}
+
+// The final export of the whole trip (SPEC.md, "5. Export"): every half-day's tours as their own
+// sheet (toursDoc, the same shape buildListsXlsx takes — just spanning every destination), plus one
+// more sheet with every guest's own day-by-day itinerary as a flat table.
+export function buildFinalTripXlsx(toursDoc, guestRows) {
+  const usedNames = new Set();
+  const tourSheets = toursDoc.groups.map((group) => ({ name: sheetName(group.heading ?? toursDoc.title, usedNames), xml: sheetXml(toursDoc, group) }));
+  const guestSheet = { name: sheetName('All guests', usedNames), xml: guestsFlatSheetXml(toursDoc, guestRows) };
+  return assembleWorkbook([...tourSheets, guestSheet]);
 }

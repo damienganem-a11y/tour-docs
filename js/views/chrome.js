@@ -1,6 +1,7 @@
 // Pieces shared by several screens.
 
 import { h } from '../dom.js';
+import { openSheet, closeSheet } from '../ui.js';
 
 // The top of a screen: an optional "‹ back" link, a small label, the big title, a line of detail.
 // action: an optional button shown on the right of the title, taking all the room that is left
@@ -22,4 +23,17 @@ export function pageHead({ back, eyebrow, title, subtitle, action }) {
     action ? h('div', { class: 'page-head-row' }, heading, action) : heading,
     detail
   );
+}
+
+// The small sheet every "Export" button opens to ask PDF or Excel (SPEC.md, "5. Export"): tapping
+// either one closes the sheet and runs `format => ...` with 'pdf' or 'xlsx'.
+export function exportFormatSheet(run) {
+  const go = (format) => { closeSheet(); run(format); };
+  openSheet({
+    title: 'Export as...',
+    body: [
+      h('button', { class: 'btn', type: 'button', onclick: () => go('pdf') }, 'PDF — for WhatsApp and printing'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => go('xlsx') }, 'Excel (.xlsx) — to edit the list further'),
+    ],
+  });
 }
