@@ -14,6 +14,7 @@ import { journalPage } from './journal.js';
 import { destinationsSettingsPage } from './settingsDestinations.js';
 import { partiesSettingsPage } from './settingsParties.js';
 import { guestsSettingsPage } from './settingsGuests.js';
+import { exportsSettingsPage } from './settingsExports.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
 const SETTINGS_MENU = [
@@ -21,7 +22,7 @@ const SETTINGS_MENU = [
   { label: 'Travel parties', page: 'parties' },
   { label: 'Guests', page: 'guests' },
   { label: 'Journal', page: 'journal', ownerOnly: true },
-  { label: 'Exports archive', step: 8 },
+  { label: 'Exports archive', page: 'exports' },
   { label: 'Backup', step: 9 },
 ];
 
@@ -57,6 +58,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
   }
   if (mode === 'settings' && page === 'guests') {
     return { node: h('div', { class: 'screen' }, guestsSettingsPage(ctx, trip, first)) };
+  }
+  if (mode === 'settings' && page === 'exports') {
+    return { node: h('div', { class: 'screen' }, exportsSettingsPage(ctx, trip)) };
   }
 
   const link = (target, label) =>

@@ -121,7 +121,7 @@ function exportButton(ctx, trip, destination, slot, label) {
       if (busy) return;
       busy = true;
       const doc = destinationExportDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner');
-      await exportAndShare(doc.title, doc);
+      await exportAndShare(ctx, trip, doc);
       busy = false;
     },
   }, label);

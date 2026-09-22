@@ -16,7 +16,7 @@ import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
 import { buildListsPdf } from './pdf.js';
-import { destinationExportDoc } from './export.js';
+import { destinationExportDoc, nextVersion } from './export.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -1463,6 +1463,29 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
   for (const entry of savedJournal) await dbDelete('journal', entry.id);
   const left = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));
   check('The test copy and its journal are removed again (tests leave nothing behind)', (await dbGet('trips', ctx1.state.id)) === undefined && left.length === 0);
+}
+
+// --- Exports archive: a saved version is a real file on the device ---
+{
+  check('Version numbers are counted per title, not across the whole archive',
+    nextVersion([], 'Lisbon') === 1
+    && nextVersion([{ title: 'Lisbon' }], 'Lisbon') === 2
+    && nextVersion([{ title: 'Lisbon' }, { title: 'Lisbon' }, { title: 'Marrakech' }], 'Lisbon') === 3
+    && nextVersion([{ title: 'Lisbon' }], 'Marrakech') === 1);
+
+  const record = {
+    id: newId(), tripId: ctx1.state.id, title: 'Lisbon', version: 1,
+    updatedLine: 'Updated 1 Jan 2027, 09:00 (Lisbon time), by Tester', createdAt: new Date().toISOString(),
+    blob: new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }),
+  };
+  await dbPut('exports', record);
+  const saved = await dbGet('exports', record.id);
+  check('A saved export keeps its own PDF file, byte for byte',
+    saved?.title === 'Lisbon' && saved.blob instanceof Blob && saved.blob.type === 'application/pdf' && saved.blob.size === record.blob.size);
+  const byTrip = await withStores(['exports'], 'readonly', (s) => s.exports.index('tripId').getAll(ctx1.state.id));
+  check('It can be found again by trip, like the journal', byTrip.length === 1 && byTrip[0].id === record.id);
+  await dbDelete('exports', record.id);
+  check('The test copy is removed again (tests leave nothing behind)', (await dbGet('exports', record.id)) === undefined);
 }
 
 // --- Export: PDF ---

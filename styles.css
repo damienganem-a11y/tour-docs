@@ -390,11 +390,15 @@ button.strip-item.is-active { color: var(--brand-ink); }
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-height: var(--tap);
   padding: 10px 18px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 20px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
 }
 .row:active { background: var(--brand-tint); }
 .row-main { flex: 1; min-width: 0; }

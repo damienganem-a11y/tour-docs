@@ -25,9 +25,9 @@ import { tripView } from './views/trip.js';
 import { rollCallView } from './views/rollcall.js';
 
 // What the app knows right now: who the owner is, every trip on this phone (by id), and the
-// journal entries of each trip (by trip id; also stored on the phone, this is a copy in memory).
-// `locked` is true while the access code has not been entered (see gate.js).
-const state = { owner: undefined, trips: new Map(), journal: new Map(), locked: false };
+// journal entries and saved export versions of each trip (by trip id; also stored on the phone,
+// this is a copy in memory). `locked` is true while the access code has not been entered (see gate.js).
+const state = { owner: undefined, trips: new Map(), journal: new Map(), exports: new Map(), locked: false };
 
 // The list of screens. The first one whose pattern matches the address is used.
 const routes = [
@@ -42,6 +42,7 @@ const ctx = {
   get trips() { return [...state.trips.values()]; },
   trip: (id) => state.trips.get(id),
   journal: (tripId) => state.journal.get(tripId) ?? [],
+  exportsFor: (tripId) => state.exports.get(tripId) ?? [],
   go(hash) { location.hash = hash; },
 
   // Check the access code. If it is right, the phone remembers it for 30 days and the app opens.
@@ -73,6 +74,12 @@ const ctx = {
     await saveTripAndJournal(trip, entries);
     state.trips.set(trip.id, trip);
     state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
+  },
+
+  // Used by export.js: keep a PDF that was just built, so it can be found again in the Exports archive.
+  async saveExport(tripId, record) {
+    await dbPut('exports', record);
+    state.exports.set(tripId, [...ctx.exportsFor(tripId), record]);
   },
 
   // Redraw the current screen without jumping back to the top.
@@ -117,6 +124,9 @@ async function start() {
     for (const trip of await dbAll('trips')) state.trips.set(trip.id, trip);
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
+    }
+    for (const record of await dbAll('exports')) {
+      state.exports.set(record.tripId, [...(state.exports.get(record.tripId) ?? []), record]);
     }
     // Ask the browser not to clear our saved data when the phone is short on space.
     navigator.storage?.persist?.();

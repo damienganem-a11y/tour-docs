@@ -1,16 +1,17 @@
 // Saving and loading data on the phone.
 //
 // Uses IndexedDB, the browser's built-in storage. It works offline and survives closing the app.
-// It has three "drawers" (called stores):
+// It has four "drawers" (called stores):
 //   trips     one item per trip: all of its guests, destinations, activities and bookings
 //   journal   one item per change ever made (empty until changes exist; one entry per change)
+//   exports   one item per PDF ever exported (the file itself, so a past version can be found again)
 //   settings  small things about this phone, for example the owner's name
 //
 // The change function (step 3) writes a trip AND its journal entry in ONE go with withStores(),
 // so the two can never disagree, even if the phone dies half way.
 
 const DB_NAME = 'tour-docs';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let opening; // we open the database once and reuse it
 
@@ -26,6 +27,9 @@ function openDb() {
         if (!db.objectStoreNames.contains('trips')) db.createObjectStore('trips', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('journal')) {
           db.createObjectStore('journal', { keyPath: 'id' }).createIndex('tripId', 'tripId');
+        }
+        if (!db.objectStoreNames.contains('exports')) {
+          db.createObjectStore('exports', { keyPath: 'id' }).createIndex('tripId', 'tripId');
         }
         if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings');
       };

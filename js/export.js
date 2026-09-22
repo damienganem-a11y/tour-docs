@@ -1,15 +1,20 @@
-// Turning a destination (or one of its half-days) into a PDF and handing it to the phone's share
-// sheet, so it can go straight to WhatsApp (SPEC.md, "5. Export").
+// Turning a destination (or one of its half-days) into a PDF, saving it as a version in the Exports
+// archive (SPEC.md, "5. Export"), and handing it to the phone's share sheet so it can go straight to
+// WhatsApp.
 //
-// Two pieces:
+// The pieces:
 //   - destinationExportDoc  reads the trip and builds the plain, printable content (see pdf.js's
 //     `doc` shape): no PDF knowledge here, just "what goes on the page".
+//   - nextVersion           a plain, testable rule: how a new export's version number is worked out.
+//   - exportAndShare        builds the PDF, saves it as a version, then shares it.
+//   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
 //   - shareOrDownloadPdf    hands a finished PDF to the OS share sheet (Web Share API, the same
 //     mechanism WhatsApp itself sits behind), or saves it as a download if that is not available.
 
 import { buildListsPdf } from './pdf.js';
 import { formatTime, formatFullMoment } from './time.js';
 import { whoIsWhere, displayNames, capacityInfo, alphabetical, bySlotOrder } from './rules.js';
+import { newId } from './ids.js';
 import { showToast } from './ui.js';
 
 // One activity (or "At leisure") of one half-day, ready for the page: its name, its time and meeting
@@ -73,9 +78,17 @@ function fileNameFor(title) {
   return `${slug || 'export'}.pdf`;
 }
 
-// Builds the PDF and opens the share sheet (or, if the browser has no share sheet, downloads the
-// file instead — still usable, just one extra tap to attach it in WhatsApp by hand).
-export async function exportAndShare(title, doc) {
+// Versions are counted per title ("Lisbon", "Lisbon — Day 1 · Afternoon", ... each start at 1 and
+// count up on their own), so "Kyoto tours, version 3" means the third time that exact list was
+// exported, however many other things were exported in between.
+export function nextVersion(records, title) {
+  return records.filter((r) => r.title === title).length + 1;
+}
+
+// Builds the PDF, saves it as a new version in the Exports archive, and opens the share sheet (or,
+// if the browser has no share sheet, downloads the file instead — still usable, just one extra tap
+// to attach it in WhatsApp by hand).
+export async function exportAndShare(ctx, trip, doc) {
   let blob;
   try {
     blob = buildListsPdf(doc);
@@ -83,8 +96,21 @@ export async function exportAndShare(title, doc) {
     showToast('Could not build the PDF.', true);
     return;
   }
-  const filename = fileNameFor(title);
-  await shareOrDownloadPdf(blob, filename);
+  const record = {
+    id: newId(), tripId: trip.id, title: doc.title, version: nextVersion(ctx.exportsFor(trip.id), doc.title),
+    updatedLine: doc.updatedLine, createdAt: new Date().toISOString(), blob,
+  };
+  try {
+    await ctx.saveExport(trip.id, record);
+  } catch {
+    showToast('Could not save this export to the archive, but sharing it anyway.', true);
+  }
+  await shareOrDownloadPdf(blob, fileNameFor(doc.title));
+}
+
+// Re-shares a version already sitting in the archive: no rebuilding, just the same file again.
+export async function shareSavedExport(record) {
+  await shareOrDownloadPdf(record.blob, fileNameFor(`${record.title} v${record.version}`));
 }
 
 async function shareOrDownloadPdf(blob, filename) {
