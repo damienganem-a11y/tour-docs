@@ -22,10 +22,11 @@ export function exportsSettingsPage(ctx, trip) {
 }
 
 function exportRow(record) {
+  const formatLabel = record.format === 'xlsx' ? 'Excel' : 'PDF'; // older records saved before Excel existed are PDFs
   return h('li', {},
     h('button', { class: 'row', type: 'button', onclick: () => shareSavedExport(record) },
       h('div', { class: 'row-main' },
-        h('div', { class: 'row-title' }, `${record.title}, version ${record.version}`),
+        h('div', { class: 'row-title' }, `${record.title}, version ${record.version}`, h('span', { class: 'tag' }, formatLabel)),
         h('div', { class: 'row-sub' }, record.updatedLine)),
       h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')));
 }

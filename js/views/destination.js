@@ -14,7 +14,7 @@ import { undoButton } from './undo.js';
 import { forcedPlacements, USE_UNDO_SCOPE } from '../journal.js';
 import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
-import { showToast } from '../ui.js';
+import { showToast, openSheet, closeSheet } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
 import { destinationExportDoc, exportAndShare } from '../export.js';
 
@@ -111,19 +111,29 @@ function rollCallActions(ctx, trip, activity) {
   }];
 }
 
-// Builds and shares the PDF for one half-day (a slot) or a whole destination (slot left out).
-// `busy` stops a second tap from starting a second PDF while the first is still being built.
+// Builds and shares one half-day (a slot) or a whole destination (slot left out), as a PDF or an
+// Excel file — asked with a small sheet each time you tap Export, since either is useful for
+// different things (PDF for WhatsApp, Excel for reworking the list). `busy` stops a second tap from
+// starting a second file while the first is still being built.
 let busy = false;
 function exportButton(ctx, trip, destination, slot, label) {
+  const start = async (format) => {
+    closeSheet();
+    if (busy) return;
+    busy = true;
+    const doc = destinationExportDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner');
+    await exportAndShare(ctx, trip, doc, format);
+    busy = false;
+  };
   return h('button', {
     class: 'btn btn--plain btn--small', type: 'button',
-    onclick: async () => {
-      if (busy) return;
-      busy = true;
-      const doc = destinationExportDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner');
-      await exportAndShare(ctx, trip, doc);
-      busy = false;
-    },
+    onclick: () => openSheet({
+      title: 'Export as...',
+      body: [
+        h('button', { class: 'btn', type: 'button', onclick: () => start('pdf') }, 'PDF — for WhatsApp and printing'),
+        h('button', { class: 'btn btn--plain', type: 'button', onclick: () => start('xlsx') }, 'Excel (.xlsx) — to edit the list further'),
+      ],
+    }),
   }, label);
 }
 

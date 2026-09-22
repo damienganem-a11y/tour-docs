@@ -1,21 +1,29 @@
-// Turning a destination (or one of its half-days) into a PDF, saving it as a version in the Exports
-// archive (SPEC.md, "5. Export"), and handing it to the phone's share sheet so it can go straight to
-// WhatsApp.
+// Turning a destination (or one of its half-days) into a PDF or an Excel file, saving it as a
+// version in the Exports archive (SPEC.md, "5. Export"), and handing it to the phone's share sheet
+// so it can go straight to WhatsApp.
 //
 // The pieces:
 //   - destinationExportDoc  reads the trip and builds the plain, printable content (see pdf.js's
-//     `doc` shape): no PDF knowledge here, just "what goes on the page".
+//     `doc` shape, shared with xlsx.js): no file-format knowledge here, just "what goes on the page".
 //   - nextVersion           a plain, testable rule: how a new export's version number is worked out.
-//   - exportAndShare        builds the PDF, saves it as a version, then shares it.
+//   - exportAndShare        builds the file (PDF or Excel), saves it as a version, then shares it.
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
-//   - shareOrDownloadPdf    hands a finished PDF to the OS share sheet (Web Share API, the same
+//   - shareOrDownloadFile   hands a finished file to the OS share sheet (Web Share API, the same
 //     mechanism WhatsApp itself sits behind), or saves it as a download if that is not available.
 
 import { buildListsPdf } from './pdf.js';
+import { buildListsXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment } from './time.js';
 import { whoIsWhere, capacityInfo, byName, bySlotOrder } from './rules.js';
 import { newId } from './ids.js';
 import { showToast } from './ui.js';
+
+// The two export formats: how to build each one's file, its extension and its MIME type (the
+// "kind of file" tag the share sheet and downloads use to recognise it).
+const FORMATS = {
+  pdf: { build: buildListsPdf, extension: 'pdf', mimeType: 'application/pdf', label: 'PDF' },
+  xlsx: { build: buildListsXlsx, extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', label: 'Excel' },
+};
 
 // The row for one guest in an exported table: their ID (the code from the file they were loaded
 // from, e.g. "806" — kept as `ref`, see loader.js) and their full name, "Last, First" as it is
@@ -76,48 +84,52 @@ export function destinationExportDoc(trip, destination, slot, updatedBy) {
 }
 
 // A plain file name from a title: "Kyoto — Day 6 · Morning" -> "kyoto-day-6-morning.pdf".
-function fileNameFor(title) {
+function fileNameFor(title, extension) {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '');
-  return `${slug || 'export'}.pdf`;
+  return `${slug || 'export'}.${extension}`;
 }
 
 // Versions are counted per title ("Lisbon", "Lisbon — Day 1 · Afternoon", ... each start at 1 and
 // count up on their own), so "Kyoto tours, version 3" means the third time that exact list was
-// exported, however many other things were exported in between.
+// exported, however many other things were exported in between — PDF and Excel share the same count,
+// since they are the same export, just in a different file.
 export function nextVersion(records, title) {
   return records.filter((r) => r.title === title).length + 1;
 }
 
-// Builds the PDF, saves it as a new version in the Exports archive, and opens the share sheet (or,
-// if the browser has no share sheet, downloads the file instead — still usable, just one extra tap
-// to attach it in WhatsApp by hand).
-export async function exportAndShare(ctx, trip, doc) {
+// Builds the file (format: 'pdf' or 'xlsx'), saves it as a new version in the Exports archive, and
+// opens the share sheet (or, if the browser has no share sheet, downloads the file instead — still
+// usable, just one extra tap to attach it in WhatsApp by hand).
+export async function exportAndShare(ctx, trip, doc, format) {
+  const spec = FORMATS[format];
   let blob;
   try {
-    blob = buildListsPdf(doc);
+    blob = spec.build(doc);
   } catch {
-    showToast('Could not build the PDF.', true);
+    showToast(`Could not build the ${spec.label} file.`, true);
     return;
   }
   const record = {
     id: newId(), tripId: trip.id, title: doc.title, version: nextVersion(ctx.exportsFor(trip.id), doc.title),
-    updatedLine: doc.updatedLine, createdAt: new Date().toISOString(), blob,
+    updatedLine: doc.updatedLine, createdAt: new Date().toISOString(), format, blob,
   };
   try {
     await ctx.saveExport(trip.id, record);
   } catch {
     showToast('Could not save this export to the archive, but sharing it anyway.', true);
   }
-  await shareOrDownloadPdf(blob, fileNameFor(doc.title));
+  await shareOrDownloadFile(blob, fileNameFor(doc.title, spec.extension), spec.mimeType);
 }
 
 // Re-shares a version already sitting in the archive: no rebuilding, just the same file again.
+// `format` defaults to 'pdf' for a version saved before Excel export existed.
 export async function shareSavedExport(record) {
-  await shareOrDownloadPdf(record.blob, fileNameFor(`${record.title} v${record.version}`));
+  const spec = FORMATS[record.format ?? 'pdf'];
+  await shareOrDownloadFile(record.blob, fileNameFor(`${record.title} v${record.version}`, spec.extension), spec.mimeType);
 }
 
-async function shareOrDownloadPdf(blob, filename) {
-  const file = new File([blob], filename, { type: 'application/pdf' });
+async function shareOrDownloadFile(blob, filename, mimeType) {
+  const file = new File([blob], filename, { type: mimeType });
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
@@ -128,7 +140,7 @@ async function shareOrDownloadPdf(blob, filename) {
     }
   }
   downloadBlob(blob, filename);
-  showToast('Your phone has no share sheet for files here, so the PDF was saved to your downloads instead.');
+  showToast('Your phone has no share sheet for files here, so the file was saved to your downloads instead.');
 }
 
 function downloadBlob(blob, filename) {

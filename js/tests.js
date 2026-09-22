@@ -16,6 +16,7 @@ import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
 import { buildListsPdf } from './pdf.js';
+import { buildListsXlsx } from './xlsx.js';
 import { destinationExportDoc, nextVersion } from './export.js';
 
 const results = [];
@@ -1566,6 +1567,83 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
 
   check('Every row carries the guest\'s own ID (the code from the file they were loaded from), not a made-up one',
     needsALook.rows.length > 0 && needsALook.rows.every((r) => typeof r.id === 'string' && r.id.length > 0));
+}
+
+// --- Export: Excel ---
+{
+  // A .xlsx file is a .zip file: read it back the way any .zip reader would (the end-of-central-
+  // directory record, then the central directory, then each file's own local header) and check the
+  // whole thing is internally consistent — not just "some bytes came out".
+  const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc32 = (bytes) => {
+    let c = 0xffffffff;
+    for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const u16 = (b, i) => b[i] | (b[i + 1] << 8);
+  const u32 = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
+
+  function readZip(bytes) {
+    // No file comment is ever written, so the end-of-central-directory record is always the last 22 bytes.
+    const eocd = bytes.length - 22;
+    if (u32(bytes, eocd) !== 0x06054b50) throw new Error('no end-of-central-directory record where expected');
+    const count = u16(bytes, eocd + 10);
+    let p = u32(bytes, eocd + 16); // where the central directory starts
+    const files = {};
+    for (let i = 0; i < count; i++) {
+      if (u32(bytes, p) !== 0x02014b50) throw new Error(`central directory entry ${i} has the wrong signature`);
+      const crc = u32(bytes, p + 16), size = u32(bytes, p + 20), nameLen = u16(bytes, p + 28), extraLen = u16(bytes, p + 30), commentLen = u16(bytes, p + 32);
+      const localOffset = u32(bytes, p + 42);
+      const name = new TextDecoder().decode(bytes.slice(p + 46, p + 46 + nameLen));
+      p += 46 + nameLen + extraLen + commentLen;
+
+      if (u32(bytes, localOffset) !== 0x04034b50) throw new Error(`${name}: local file header has the wrong signature`);
+      const localNameLen = u16(bytes, localOffset + 26), localExtraLen = u16(bytes, localOffset + 28);
+      const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+      const data = bytes.slice(dataStart, dataStart + size);
+      if (crc32(data) !== crc) throw new Error(`${name}: the data does not match its own checksum`);
+      files[name] = new TextDecoder().decode(data);
+    }
+    return files;
+  }
+
+  const doc = {
+    title: 'Lisbon — Day 1', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester',
+    groups: [
+      { heading: 'Day 1 · Morning', tables: [{ heading: 'Old town walk', detail: '09:00 · Lobby', count: '2 / 8', rows: [{ id: '501', name: 'Braswell, Anna' }, { id: '502', name: 'Coyle, Carl' }] }] },
+      { heading: 'Day 1 · Afternoon', tables: [{ heading: 'Museum', detail: '', count: '1', rows: [{ id: '503', name: 'Delacroix, Luca' }] }] },
+    ],
+  };
+  const blob = buildListsXlsx(doc);
+  check('An Excel file is built as a real .xlsx (a zip file, with the right file type)',
+    blob.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' && blob.size > 500);
+
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  check('It starts with the zip file marker ("PK")', bytes[0] === 0x50 && bytes[1] === 0x4b);
+
+  let files;
+  try {
+    files = readZip(bytes);
+  } catch (error) {
+    check('The zip file is internally consistent (every checksum matches, every header points where it should)', false, error.message);
+  }
+  if (files) {
+    check('The zip file is internally consistent (every checksum matches, every header points where it should)', true);
+    check('It has the parts a spreadsheet reader expects: the workbook, one worksheet per half-day, and its styles',
+      files['xl/workbook.xml'] && files['xl/worksheets/sheet1.xml'] && files['xl/worksheets/sheet2.xml'] && files['xl/styles.xml']);
+    check('Every part is well-formed XML (no unescaped "&", "<" or ">" slipped through from a guest name)',
+      Object.values(files).every((text) => !new DOMParser().parseFromString(text, 'application/xml').querySelector('parsererror')));
+    check('Each half-day is its own sheet, named after it, and the workbook lists both in order',
+      files['xl/workbook.xml'].includes('name="Day 1 \xb7 Morning"') && files['xl/workbook.xml'].includes('name="Day 1 \xb7 Afternoon"')
+      && files['xl/workbook.xml'].indexOf('Morning') < files['xl/workbook.xml'].indexOf('Afternoon'));
+    check('The title, the header line, and every row\'s own ID and name are in the first sheet, as plain readable text',
+      files['xl/worksheets/sheet1.xml'].includes('<t xml:space="preserve">Lisbon — Day 1</t>')
+      && files['xl/worksheets/sheet1.xml'].includes('<t xml:space="preserve">501</t>') && files['xl/worksheets/sheet1.xml'].includes('<t xml:space="preserve">Braswell, Anna</t>'));
+  }
 }
 
 // --- Show the results ---
