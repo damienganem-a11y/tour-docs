@@ -38,6 +38,13 @@
 //   { type: 'join-party', guestId, partyId }                the guest leaves their travel party and joins another one
 //   { type: 'create-party', guestIds: [id, id, ...] }        at least 2 guests, each leaving their old travel
 //       party (if any), form a brand new one together
+//   The trip itself (step 9), each on its own:
+//   { type: 'archive-trip' }                                 the trip becomes read-only (views, journal, exports
+//       still work; bookings and roll call do not, except undoing this or un-archiving)
+//   { type: 'unarchive-trip' }                                the trip can be changed again
+//   { type: 'delete-trip' }                                   only an archived trip can be deleted; it moves to
+//       "Recently deleted" and is purged for good after 30 days
+//   { type: 'reinstate-trip' }                                brings a deleted trip back (still archived)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
 //
@@ -57,6 +64,8 @@ const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reop
 const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination']);
 // Guest and travel party changes (step 7c/7d): also each on its own.
 const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']);
+// The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own.
+const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 'reinstate-trip']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -68,19 +77,24 @@ const fail = (error) => ({ ok: false, error });
 export function validateChanges(trip, user, changes, journal = []) {
   if (!canUser(user, 'change')) return fail('You do not have permission to change bookings.');
   if (!trip) return fail('This trip is not on this phone.');
-  if (trip.archivedAt) return fail('This trip is archived. Un-archive it to change it.');
+  // Archived trips are read-only, except for undoing and the archive/delete actions themselves (so
+  // a trip can be un-archived, or a deleted trip reinstated, without needing to be un-archived first).
+  if (trip.archivedAt && changes[0]?.type !== 'undo' && !TRIP_TYPES.has(changes[0]?.type)) {
+    return fail('This trip is archived. Un-archive it to change it.');
+  }
   if (!Array.isArray(changes) || changes.length === 0) return fail('There is nothing to change.');
 
   const names = displayNames(trip.guests);
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
-    return fail('Cancelling a tour, undoing, roll call, settings and guest changes are changes of their own.');
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+    return fail('Cancelling a tour, undoing, roll call, settings, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
   if (SETTINGS_TYPES.has(changes[0].type)) return validateSettingsChange(trip, changes[0]);
   if (GUEST_TYPES.has(changes[0].type)) return validateGuestChange(trip, changes[0]);
+  if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
     if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
@@ -158,6 +172,11 @@ export function validateChanges(trip, user, changes, journal = []) {
 function validateUndo(trip, journal, scope) {
   const target = lastUndoable(journal, scope);
   if (!target) return fail('There is nothing to undo.');
+  // An archived trip is read-only, except undoing a trip-level action itself (archive, un-archive,
+  // delete, reinstate): that is how an accidental "Archive" or "Delete" gets taken back.
+  if (trip.archivedAt && !target.entries.every((e) => TRIP_TYPES.has(e.type))) {
+    return fail('This trip is archived. Un-archive it to change it.');
+  }
 
   for (const entry of target.entries) {
     if (entry.type === 'cancel-tour') {
@@ -209,6 +228,10 @@ function validateUndo(trip, journal, scope) {
         return fail('This action cannot be undone: that travel party has changed since.');
       }
     }
+    if (entry.type === 'archive-trip' && !trip.archivedAt) return fail('This action cannot be undone: the trip is not archived anymore.');
+    if (entry.type === 'unarchive-trip' && trip.archivedAt) return fail('This action cannot be undone: the trip has been archived again since.');
+    if (entry.type === 'delete-trip' && !trip.deletedAt) return fail('This action cannot be undone: the trip is not deleted anymore.');
+    if (entry.type === 'reinstate-trip' && trip.deletedAt) return fail('This action cannot be undone: the trip has been deleted again since.');
     if (entry.rollCallId && entry.type !== 'move') {
       const problem = rollCallUndoProblem(trip, entry);
       if (problem) return fail(problem);
@@ -295,6 +318,18 @@ function validateGuestChange(trip, change) {
   if (!party) return fail('That travel party does not exist.');
   if (party.id === guest.partyId) return fail('That guest is already in this travel party.');
   return { ok: true };
+}
+
+// Checks one trip-level change (archive, un-archive, delete, reinstate). A trip must be archived
+// before it can be deleted, and a trip must be deleted before it can be reinstated.
+function validateTripChange(trip, change) {
+  if (change.type === 'archive-trip') return trip.archivedAt ? fail('This trip is already archived.') : { ok: true };
+  if (change.type === 'unarchive-trip') return trip.archivedAt ? { ok: true } : fail('This trip is not archived.');
+  if (change.type === 'delete-trip') {
+    if (!trip.archivedAt) return fail('Only an archived trip can be deleted.');
+    return trip.deletedAt ? fail('This trip is already deleted.') : { ok: true };
+  }
+  return trip.deletedAt ? { ok: true } : fail('This trip is not deleted.'); // reinstate-trip
 }
 
 // Checks one roll call change (see the list at the top).
@@ -675,6 +710,26 @@ async function doApply(ctx, tripId, changes) {
     return save(ctx, next, entries, {});
   }
 
+  // The trip itself (step 9): archive, un-archive, delete, reinstate. Each made on its own. Not tied to
+  // one half-day, so it uses the same "local, right now" place as guest and travel party changes.
+  if (TRIP_TYPES.has(changes[0].type)) {
+    const change = changes[0];
+    if (change.type === 'archive-trip') {
+      next.archivedAt = at;
+      entries.push({ ...base(), type: 'archive-trip', ...guestWhere });
+    } else if (change.type === 'unarchive-trip') {
+      entries.push({ ...base(), type: 'unarchive-trip', ...guestWhere, previousArchivedAt: trip.archivedAt });
+      next.archivedAt = null;
+    } else if (change.type === 'delete-trip') {
+      next.deletedAt = at;
+      entries.push({ ...base(), type: 'delete-trip', ...guestWhere });
+    } else {
+      entries.push({ ...base(), type: 'reinstate-trip', ...guestWhere, previousDeletedAt: trip.deletedAt });
+      next.deletedAt = null;
+    }
+    return save(ctx, next, entries, {});
+  }
+
   for (const change of changes) {
     if (change.type === 'move') {
       const approvedBy = String(change.approvedBy ?? '').trim().slice(0, 60) || null;
@@ -706,6 +761,27 @@ function undoEntry(next, entry, base, entries) {
 
   if (entry.type === 'cancel-tour') {
     next.activities.find((a) => a.id === entry.activityId).cancelled = false; // the tour is back
+    return;
+  }
+
+  if (entry.type === 'archive-trip') {
+    next.archivedAt = null;
+    entries.push({ ...base(), type: 'unarchive-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'unarchive-trip') {
+    next.archivedAt = entry.previousArchivedAt;
+    entries.push({ ...base(), type: 'archive-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'delete-trip') {
+    next.deletedAt = null;
+    entries.push({ ...base(), type: 'reinstate-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'reinstate-trip') {
+    next.deletedAt = entry.previousDeletedAt;
+    entries.push({ ...base(), type: 'delete-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
     return;
   }
 

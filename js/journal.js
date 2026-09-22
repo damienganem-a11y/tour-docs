@@ -52,6 +52,10 @@ export function groupBatches(entries) {
         : types.has('make-solo') ? 'make-solo'
         : types.has('join-party') ? 'join-party'
         : types.has('create-party') ? 'create-party'
+        : types.has('archive-trip') ? 'archive-trip'
+        : types.has('unarchive-trip') ? 'unarchive-trip'
+        : types.has('delete-trip') ? 'delete-trip'
+        : types.has('reinstate-trip') ? 'reinstate-trip'
         : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
       undone: undone.has(batchId),
@@ -121,6 +125,10 @@ export function summarize(batch) {
   if (batch.kind === 'join-party') return summarizeJoinParty(batch.entries[0]);
   if (batch.kind === 'create-party') return `New travel party: ${joinNames(batch.entries[0].guestNames)}`;
   if (batch.kind === 'rollcall') return summarizeRollCall(batch);
+  if (batch.kind === 'archive-trip') return 'Archived the trip';
+  if (batch.kind === 'unarchive-trip') return 'Un-archived the trip';
+  if (batch.kind === 'delete-trip') return 'Deleted the trip';
+  if (batch.kind === 'reinstate-trip') return 'Reinstated the trip';
 
   // Guests who went from the same place to the same place are told together.
   const groups = new Map();

@@ -19,6 +19,7 @@
 //   trip.parties       [ { id, ref, type } ]                                   travel parties
 //   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt, seat } ]
 //   trip.bookings      { guestId: { slotId: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'unknown', raw } } }
+//   trip.archivedAt, trip.deletedAt   null until "Archive" / "Delete" (Trips screen, step 9) are used
 
 import { newId } from './ids.js';
 import { isValidTimeZone, localToInstant } from './time.js';
@@ -167,5 +168,7 @@ export function buildTrip(raw) {
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
     rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)
+    archivedAt: null,                               // set by "Archive" (Trips screen, step 9): the trip becomes read-only
+    deletedAt: null,                                // set by "Delete" (Trips screen, step 9): purged for good after 30 days
   };
 }

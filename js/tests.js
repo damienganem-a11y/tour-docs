@@ -1791,6 +1791,56 @@ function readZip(bytes) {
   }
 }
 
+// --- The trip itself: archive, un-archive, delete, reinstate (step 9) ---
+{
+  check('A freshly loaded trip starts not archived and not deleted', trip.archivedAt === null && trip.deletedAt === null);
+
+  const mixedTrip = validateChanges(trip, owner, [{ type: 'archive-trip' }, moveOf(inHammam[0].ref, 'S05', LEISURE)]);
+  check('A trip-level change (archive, delete...) cannot be mixed with other changes', !mixedTrip.ok);
+
+  const arc = makeCtx();
+  const archived1 = await applyChange(arc, trip.id, { type: 'archive-trip' });
+  check('Archiving the trip sets archivedAt and writes one journal entry',
+    archived1.ok && Boolean(arc.state.archivedAt) && arc.entries.length === 1 && arc.entries[0].type === 'archive-trip');
+  check('Archiving is summarized in plain words', summarize(groupBatches(arc.entries)[0]) === 'Archived the trip');
+
+  const alreadyArchived = await applyChange(arc, trip.id, { type: 'archive-trip' });
+  check('Archiving an already archived trip is refused', !alreadyArchived.ok && /already archived/.test(alreadyArchived.error), alreadyArchived.error);
+
+  const blockedMove = await applyChange(arc, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('Booking changes are refused while archived', !blockedMove.ok && /archived/.test(blockedMove.error), blockedMove.error);
+
+  const undoArchive = await applyChange(arc, trip.id, { type: 'undo' });
+  check('Undoing "Archive" un-archives the trip, even though the trip is still archived at the moment Undo is pressed',
+    undoArchive.ok && !arc.state.archivedAt);
+  check('The undo writes an "unarchive-trip" line, and says in plain words what it undid',
+    arc.entries.at(-1).type === 'unarchive-trip' && undoArchive.summary === 'Archived the trip');
+
+  const notArchived = makeCtx();
+  const failUnarchive = await applyChange(notArchived, trip.id, { type: 'unarchive-trip' });
+  check('Un-archiving a trip that is not archived is refused', !failUnarchive.ok && /not archived/.test(failUnarchive.error), failUnarchive.error);
+  const failDelete = await applyChange(notArchived, trip.id, { type: 'delete-trip' });
+  check('Only an archived trip can be deleted', !failDelete.ok && /Only an archived trip/.test(failDelete.error), failDelete.error);
+
+  const lifecycle = makeCtx();
+  await applyChange(lifecycle, trip.id, { type: 'archive-trip' });
+  const del = await applyChange(lifecycle, trip.id, { type: 'delete-trip' });
+  check('An archived trip can be deleted; it moves to "deleted" but stays archived (SPEC.md: "it comes back as archived")',
+    del.ok && Boolean(lifecycle.state.deletedAt) && Boolean(lifecycle.state.archivedAt));
+  const delAgain = await applyChange(lifecycle, trip.id, { type: 'delete-trip' });
+  check('Deleting an already deleted trip is refused', !delAgain.ok && /already deleted/.test(delAgain.error), delAgain.error);
+
+  const reinst = await applyChange(lifecycle, trip.id, { type: 'reinstate-trip' });
+  check('Reinstating clears deletedAt', reinst.ok && !lifecycle.state.deletedAt && Boolean(lifecycle.state.archivedAt));
+  const reinstAgain = await applyChange(lifecycle, trip.id, { type: 'reinstate-trip' });
+  check('Reinstating a trip that is not deleted is refused', !reinstAgain.ok && /not deleted/.test(reinstAgain.error), reinstAgain.error);
+
+  const batches = groupBatches(lifecycle.entries);
+  check('Deleting and reinstating are each summarized in plain words',
+    summarize(batches.find((b) => b.kind === 'delete-trip')) === 'Deleted the trip'
+    && summarize(batches.find((b) => b.kind === 'reinstate-trip')) === 'Reinstated the trip');
+}
+
 // --- Show the results ---
 const out = document.getElementById('out');
 for (const r of results) {

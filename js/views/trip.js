@@ -17,6 +17,7 @@ import { guestsSettingsPage } from './settingsGuests.js';
 import { exportsSettingsPage } from './settingsExports.js';
 import { warningsSettingsPage } from './settingsWarnings.js';
 import { backupSettingsPage } from './settingsBackup.js';
+import { notice } from './move.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
 const SETTINGS_MENU = [
@@ -76,6 +77,12 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
     h('a', { class: `switch-item${mode === target ? ' is-active' : ''}`, href: `#/trip/${trip.id}/${target}` }, label);
   const modeSwitch = h('nav', { class: 'switch', 'aria-label': 'Use or Settings' }, link('use', 'Use'), link('settings', 'Settings'));
 
+  // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
+  // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
+  const readOnlyNotice = trip.archivedAt
+    ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes again.')
+    : null;
+
   // Settings: the full trip heading and the menu.
   if (mode === 'settings') {
     const head = pageHead({
@@ -84,7 +91,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
       title: trip.name,
       subtitle: `${tripDates(trip.start, trip.days)} · ${trip.destinations.length} destinations · ${trip.guests.length} guests`,
     });
-    return { node: h('div', { class: 'screen' }, head, modeSwitch, settingsMenu(trip)) };
+    return { node: h('div', { class: 'screen' }, head, modeSwitch, readOnlyNotice, settingsMenu(trip)) };
   }
 
   // Use: a slim bar on top (the phone screen is small), then the chosen page and the bottom tabs.
@@ -98,7 +105,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
     USE_TABS.map((t) =>
       h('a', { class: `bottom-tab${t.page === activePage ? ' is-active' : ''}`, href: `#/trip/${trip.id}/use/${t.page}` }, t.label)));
 
-  return { node: h('div', { class: 'screen' }, topBar, modeSwitch, content, tabs) };
+  return { node: h('div', { class: 'screen' }, topBar, modeSwitch, readOnlyNotice, content, tabs) };
 }
 
 function settingsMenu(trip) {

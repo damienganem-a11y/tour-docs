@@ -69,6 +69,29 @@ const ctx = {
     state.trips.set(trip.id, trip);
   },
 
+  // Used by trips.js: "Duplicate trip" (step 9). A brand new trip (its own id, not tied to the
+  // original by anything but its content), keeping destinations, activities and settings, but with
+  // guests, travel parties, bookings and roll calls all starting empty. Like addTrip, this is a fresh
+  // trip being created, so it does not go through the single change function or the journal.
+  async duplicateTrip(trip) {
+    const copy = {
+      ...structuredClone(trip),
+      id: newId(),
+      name: `${trip.name} (copy)`,
+      loadedAt: new Date().toISOString(),
+      changeCount: 0,
+      archivedAt: null,
+      deletedAt: null,
+      parties: [],
+      guests: [],
+      bookings: {},
+      rollCalls: [],
+    };
+    await dbPut('trips', copy);
+    state.trips.set(copy.id, copy);
+    return copy;
+  },
+
   // Used by backup.js: restores a trip and its whole journal from a backup file (Settings >
   // Backup), replacing whatever this phone already has for that trip id (if anything).
   async restoreBackup(trip, journalEntries) {
@@ -141,6 +164,7 @@ async function start() {
     for (const record of await dbAll('exports')) {
       state.exports.set(record.tripId, [...(state.exports.get(record.tripId) ?? []), record]);
     }
+    await purgeExpiredTrips();
     // Ask the browser not to clear our saved data when the phone is short on space.
     navigator.storage?.persist?.();
   } catch (error) {
@@ -155,6 +179,28 @@ async function start() {
 
   window.addEventListener('hashchange', () => render());
   render();
+}
+
+// A deleted trip (Trips screen, step 9) is erased for good, together with its journal and exports,
+// 30 days after it was deleted, automatically, the next time the app opens.
+const PURGE_AFTER_DAYS = 30;
+
+async function purgeExpiredTrips() {
+  const cutoff = Date.now() - PURGE_AFTER_DAYS * 24 * 60 * 60 * 1000;
+  const expired = [...state.trips.values()].filter((t) => t.deletedAt && new Date(t.deletedAt).getTime() < cutoff);
+
+  for (const trip of expired) {
+    const journalKeys = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAllKeys(trip.id));
+    const exportKeys = await withStores(['exports'], 'readonly', (s) => s.exports.index('tripId').getAllKeys(trip.id));
+    await withStores(['trips', 'journal', 'exports'], 'readwrite', (s) => {
+      s.trips.delete(trip.id);
+      for (const key of journalKeys) s.journal.delete(key);
+      for (const key of exportKeys) s.exports.delete(key);
+    });
+    state.trips.delete(trip.id);
+    state.journal.delete(trip.id);
+    state.exports.delete(trip.id);
+  }
 }
 
 // Makes the app work without internet: the service worker (sw.js) keeps a copy of the app's files.
