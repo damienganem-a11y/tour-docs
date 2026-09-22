@@ -87,8 +87,11 @@ const shortName = (guest, letters) =>
 export function partyLabel(trip, guest, names) {
   const others = trip.guests.filter((g) => !g.leftAt && g.partyId === guest.partyId && g.id !== guest.id);
   if (others.length === 0) return 'Travelling solo';
-  const type = trip.parties.find((p) => p.id === guest.partyId)?.type ?? 'Party';
-  return `${type} with ${others.map((o) => names.get(o.id)).join(', ')}`;
+  const who = others.map((o) => names.get(o.id)).join(', ');
+  // A party made without being given a type (Settings > Travel parties: no type is ever asked) just says
+  // who it is with, plainly, instead of showing a made-up word.
+  const type = trip.parties.find((p) => p.id === guest.partyId)?.type;
+  return type ? `${type} with ${who}` : `Travelling with ${who}`;
 }
 
 // ---------- Who is where ----------

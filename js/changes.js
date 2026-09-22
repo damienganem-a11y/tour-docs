@@ -34,8 +34,9 @@
 //       list and count from now on, without touching a single booking. Reversible (guest-return, or Undo).
 //   { type: 'guest-return', guestId }                        brings a guest back who had left
 //   { type: 'make-solo', guestId }                           the guest gets a brand new travel party of their own
-//   { type: 'join-party', guestId, partyId, newType? }       the guest leaves their travel party and joins another
-//       one; newType is required when that party currently has only one other person (so it is no longer "Solo")
+//   { type: 'join-party', guestId, partyId }                the guest leaves their travel party and joins another one
+//   { type: 'create-party', guestIds: [id, id, ...] }        at least 2 guests, each leaving their old travel
+//       party (if any), form a brand new one together
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
 //
@@ -54,7 +55,7 @@ const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reop
 // Settings changes (step 7): each is made on its own, like cancel-tour and undo.
 const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination']);
 // Guest and travel party changes (step 7c/7d): also each on its own.
-const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party']);
+const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -200,6 +201,11 @@ function validateUndo(trip, journal) {
       const guest = trip.guests.find((g) => g.id === entry.guestId);
       if (!guest || guest.partyId !== entry.toPartyId) return fail(`This action cannot be undone: ${entry.guestName}'s travel party has changed since.`);
     }
+    if (entry.type === 'create-party') {
+      if (entry.guestIds.some((id) => trip.guests.find((g) => g.id === id)?.partyId !== entry.toPartyId)) {
+        return fail('This action cannot be undone: that travel party has changed since.');
+      }
+    }
     if (entry.rollCallId && entry.type !== 'move') {
       const problem = rollCallUndoProblem(trip, entry);
       if (problem) return fail(problem);
@@ -255,6 +261,15 @@ function validateSettingsChange(trip, change) {
 
 // Checks one guest or travel party change (see the list at the top).
 function validateGuestChange(trip, change) {
+  if (change.type === 'create-party') {
+    if (!Array.isArray(change.guestIds) || change.guestIds.length < 2) return fail('Pick at least 2 guests to start a new travel party.');
+    if (new Set(change.guestIds).size !== change.guestIds.length) return fail('The same guest appears twice.');
+    for (const id of change.guestIds) {
+      if (!trip.guests.some((g) => g.id === id)) return fail('One of those guests is not in this trip.');
+    }
+    return { ok: true };
+  }
+
   const guest = trip.guests.find((g) => g.id === change.guestId);
   if (!guest) return fail('That guest is not in this trip.');
 
@@ -276,10 +291,6 @@ function validateGuestChange(trip, change) {
   const party = trip.parties.find((p) => p.id === change.partyId);
   if (!party) return fail('That travel party does not exist.');
   if (party.id === guest.partyId) return fail('That guest is already in this travel party.');
-  const othersThere = trip.guests.filter((g) => g.partyId === party.id).length;
-  if (othersThere <= 1 && isBlank(change.newType)) {
-    return fail('This creates a new travel party: give it a type (Couple, Family, Friends...).');
-  }
   return { ok: true };
 }
 
@@ -389,6 +400,11 @@ async function doApply(ctx, tripId, changes) {
   const batchId = newId();                  // links changes made together (a couple, a cancelled tour)
   const at = new Date().toISOString();      // the exact moment
   const entries = [];
+
+  // A guest or travel party change (step 7c/7d) is not tied to one half-day or destination, unlike a move
+  // or a roll call line: the Journal still needs *some* place and time zone to show it by, so it uses the
+  // phone's own, local, right now.
+  const guestWhere = { slotId: null, slotLabel: null, place: { name: 'local', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } };
 
   // Every action gets the next number in the trip's own order (`seq`), so the journal keeps its order even
   // when two actions happen in the same millisecond. (Journals from before this had no numbers: they count as 0.)
@@ -601,6 +617,22 @@ async function doApply(ctx, tripId, changes) {
   // Guests and travel parties (step 7c/7d): each made on its own.
   if (GUEST_TYPES.has(changes[0].type)) {
     const change = changes[0];
+
+    if (change.type === 'create-party') {
+      // At least 2 guests, each leaving their old travel party (if any), form a brand new one together.
+      // No type is asked: a fresh party just says "Travelling with ..." until the owner gives it one (rare).
+      const partyGuests = change.guestIds.map((id) => next.guests.find((g) => g.id === id));
+      const fromPartyIds = Object.fromEntries(partyGuests.map((g) => [g.id, g.partyId]));
+      const party = { id: newId(), ref: '', type: '' };
+      next.parties.push(party);
+      for (const g of partyGuests) g.partyId = party.id;
+      entries.push({
+        ...base(), type: 'create-party', ...guestWhere, guestIds: change.guestIds,
+        guestNames: partyGuests.map((g) => names.get(g.id)), fromPartyIds, toPartyId: party.id,
+      });
+      return save(ctx, next, entries, {});
+    }
+
     const guest = next.guests.find((g) => g.id === change.guestId);
     const guestName = names.get(guest.id); // the name as it was BEFORE this change (a rename still reads right)
 
@@ -608,30 +640,33 @@ async function doApply(ctx, tripId, changes) {
       const from = { first: guest.first, last: guest.last };
       guest.first = change.first.trim();
       guest.last = change.last.trim();
-      entries.push({ ...base(), type: 'edit-guest', guestId: guest.id, guestName, from, to: { first: guest.first, last: guest.last } });
+      entries.push({ ...base(), type: 'edit-guest', ...guestWhere, guestId: guest.id, guestName, from, to: { first: guest.first, last: guest.last } });
     } else if (change.type === 'guest-left') {
       guest.leftAt = at;
-      entries.push({ ...base(), type: 'guest-left', guestId: guest.id, guestName });
+      entries.push({ ...base(), type: 'guest-left', ...guestWhere, guestId: guest.id, guestName });
     } else if (change.type === 'guest-return') {
       const previousLeftAt = guest.leftAt; // the exact moment they left, kept so Undo of THIS action puts it back precisely
       guest.leftAt = null;
-      entries.push({ ...base(), type: 'guest-return', guestId: guest.id, guestName, previousLeftAt });
+      entries.push({ ...base(), type: 'guest-return', ...guestWhere, guestId: guest.id, guestName, previousLeftAt });
     } else if (change.type === 'make-solo') {
       const fromPartyId = guest.partyId;
       const party = { id: newId(), ref: '', type: 'Solo' };
       next.parties.push(party);
       guest.partyId = party.id;
-      entries.push({ ...base(), type: 'make-solo', guestId: guest.id, guestName, fromPartyId, toPartyId: party.id });
+      entries.push({ ...base(), type: 'make-solo', ...guestWhere, guestId: guest.id, guestName, fromPartyId, toPartyId: party.id });
     } else {
       // join-party: leaves their current travel party (which may now be down to one person, shown as "solo"
-      // automatically) and joins another. If that party had only one other person, it is no longer "Solo".
+      // automatically) and joins another. No type is asked: if the target was travelling solo, its old
+      // "Solo" label no longer fits a group, so it is cleared (shown as "Travelling with ...", not "Solo with").
       const fromPartyId = guest.partyId;
       const party = next.parties.find((p) => p.id === change.partyId);
-      const otherMemberNames = trip.guests.filter((g) => g.partyId === party.id).map((g) => names.get(g.id));
+      const otherMembers = trip.guests.filter((g) => g.partyId === party.id);
+      const otherMemberNames = otherMembers.map((g) => names.get(g.id));
       const fromType = party.type;
       if (change.newType) party.type = change.newType.trim();
+      else if (otherMembers.length <= 1) party.type = '';
       guest.partyId = party.id;
-      entries.push({ ...base(), type: 'join-party', guestId: guest.id, guestName, fromPartyId, toPartyId: party.id, fromType, toType: party.type, otherMemberNames });
+      entries.push({ ...base(), type: 'join-party', ...guestWhere, guestId: guest.id, guestName, fromPartyId, toPartyId: party.id, fromType, toType: party.type, otherMemberNames });
     }
     return save(ctx, next, entries, {});
   }
@@ -739,23 +774,23 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'edit-guest') {
     const guest = next.guests.find((g) => g.id === entry.guestId);
     Object.assign(guest, entry.from);
-    entries.push({ ...base(), type: 'edit-guest', cause: 'undo', guestId: entry.guestId, guestName: entry.guestName, from: entry.to, to: entry.from });
+    entries.push({ ...base(), type: 'edit-guest', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestId: entry.guestId, guestName: entry.guestName, from: entry.to, to: entry.from });
     return;
   }
   if (entry.type === 'guest-left') {
     next.guests.find((g) => g.id === entry.guestId).leftAt = null;
-    entries.push({ ...base(), type: 'guest-return', cause: 'undo', guestId: entry.guestId, guestName: entry.guestName });
+    entries.push({ ...base(), type: 'guest-return', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestId: entry.guestId, guestName: entry.guestName });
     return;
   }
   if (entry.type === 'guest-return') {
     next.guests.find((g) => g.id === entry.guestId).leftAt = entry.previousLeftAt; // the exact original moment, restored
-    entries.push({ ...base(), type: 'guest-left', cause: 'undo', guestId: entry.guestId, guestName: entry.guestName });
+    entries.push({ ...base(), type: 'guest-left', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestId: entry.guestId, guestName: entry.guestName });
     return;
   }
   if (entry.type === 'make-solo') {
     next.guests.find((g) => g.id === entry.guestId).partyId = entry.fromPartyId;
     next.parties = next.parties.filter((p) => p.id !== entry.toPartyId); // the fresh solo party is removed, as if never made
-    entries.push({ ...base(), type: 'party-remove', cause: 'undo', guestId: entry.guestId, guestName: entry.guestName });
+    entries.push({ ...base(), type: 'party-remove', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestId: entry.guestId, guestName: entry.guestName });
     return;
   }
   if (entry.type === 'join-party') {
@@ -763,9 +798,16 @@ function undoEntry(next, entry, base, entries) {
     const party = next.parties.find((p) => p.id === entry.toPartyId);
     if (party) party.type = entry.fromType; // put its type back too, if joining had changed it
     entries.push({
-      ...base(), type: 'join-party', cause: 'undo', guestId: entry.guestId, guestName: entry.guestName,
+      ...base(), type: 'join-party', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place,
+      guestId: entry.guestId, guestName: entry.guestName,
       fromPartyId: entry.toPartyId, toPartyId: entry.fromPartyId, fromType: entry.toType, toType: entry.fromType,
     });
+    return;
+  }
+  if (entry.type === 'create-party') {
+    for (const id of entry.guestIds) next.guests.find((g) => g.id === id).partyId = entry.fromPartyIds[id];
+    next.parties = next.parties.filter((p) => p.id !== entry.toPartyId); // the fresh party is removed, as if never made
+    entries.push({ ...base(), type: 'party-remove', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestIds: entry.guestIds, guestNames: entry.guestNames });
     return;
   }
 

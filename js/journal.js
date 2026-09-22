@@ -51,6 +51,7 @@ export function groupBatches(entries) {
         : types.has('guest-return') ? 'guest-return'
         : types.has('make-solo') ? 'make-solo'
         : types.has('join-party') ? 'join-party'
+        : types.has('create-party') ? 'create-party'
         : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
       undone: undone.has(batchId),
@@ -99,6 +100,7 @@ export function summarize(batch) {
   if (batch.kind === 'guest-return') return `${batch.entries[0].guestName} is back on the trip`;
   if (batch.kind === 'make-solo') return `${batch.entries[0].guestName} now has their own travel party (solo)`;
   if (batch.kind === 'join-party') return summarizeJoinParty(batch.entries[0]);
+  if (batch.kind === 'create-party') return `New travel party: ${joinNames(batch.entries[0].guestNames)}`;
   if (batch.kind === 'rollcall') return summarizeRollCall(batch);
 
   // Guests who went from the same place to the same place are told together.

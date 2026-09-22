@@ -134,7 +134,7 @@ function changeParty(ctx, trip, guest) {
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
       : shown.map((g) => choiceRow({
           title: names.get(g.id), detail: partyLabel(trip, g, names), current: g.partyId === guest.partyId,
-          onclick: () => pickTarget(g),
+          onclick: () => save(ctx, trip.id, { type: 'join-party', guestId: guest.id, partyId: g.partyId }, `${names.get(guest.id)} joined the travel party`),
         }))));
   }
 
@@ -144,28 +144,6 @@ function changeParty(ctx, trip, guest) {
     oninput: fill,
   });
   fill();
-
-  // Joining somebody who is travelling solo makes a brand new party of two: ask what to call it
-  // (it is no longer "Solo"). Joining an existing Couple/Family/Friends keeps its type as is.
-  function pickTarget(target) {
-    const partyNow = trip.guests.filter((g) => g.partyId === target.partyId);
-    if (partyNow.length > 1) {
-      save(ctx, trip.id, { type: 'join-party', guestId: guest.id, partyId: target.partyId }, `${names.get(guest.id)} joined the travel party`);
-      return;
-    }
-    const typeInput = h('input', {
-      class: 'text-input', type: 'text', placeholder: 'Couple, Family, Friends...', 'aria-label': 'Travel party type', maxlength: '40',
-    });
-    const confirm = h('button', {
-      class: 'btn', type: 'button',
-      onclick: () => save(ctx, trip.id, { type: 'join-party', guestId: guest.id, partyId: target.partyId, newType: typeInput.value }, `${names.get(guest.id)} and ${names.get(target.id)} now travel together`),
-    }, 'Save');
-    openSheet({
-      eyebrow: 'New travel party', title: `${names.get(guest.id)} and ${names.get(target.id)}`,
-      subtitle: 'What kind of travel party is this?',
-      body: [typeInput, confirm], cancelLabel: 'Cancel',
-    });
-  }
 
   const solo = h('button', {
     class: 'btn btn--plain', type: 'button',

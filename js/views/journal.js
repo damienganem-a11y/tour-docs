@@ -61,12 +61,16 @@ export function journalPage(ctx, trip) {
   // One card per action (a couple moved together, a cancelled tour, an undo).
   function entryCard(batch) {
     const guests = guestNamesOf(batch).length;
+    // A place should always be there (every entry that writes one uses the device's own local time zone
+    // when there is no destination to speak of); this is only a safety net for any older line saved before
+    // that was added, so the Journal never breaks on data already on someone's phone.
+    const place = batch.place ?? { name: 'local', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     return h('div', { class: `entry${batch.undone || batch.kind === 'undo' ? ' entry--muted' : ''}` },
       h('div', { class: 'entry-title' }, summarize(batch)),
       h('div', { class: 'muted' }, batch.slotLabel),
       h('div', { class: 'entry-meta' },
         // The time is shown in the local time of the place concerned, with the place named.
-        `${formatMoment(batch.at, batch.place.timeZone)} ${batch.place.name} time · ${batch.who.name}`,
+        `${formatMoment(batch.at, place.timeZone)} ${place.name} time · ${batch.who.name}`,
         batch.undone ? h('span', { class: 'tag' }, 'Undone') : null,
         wasForced(batch) ? h('span', { class: 'tag tag--warn' }, 'Forced') : null,
         batch.kind === 'undo' ? h('span', { class: 'tag' }, 'Undo') : null,
