@@ -1,6 +1,7 @@
-// Two small pieces of screen furniture used by several views:
+// A few small pieces used by several views:
 //   - a bottom sheet (a panel that slides up to let you pick something)
 //   - a toast (a short message at the top, e.g. "Moved Helen N. to Old City walk")
+//   - handing a file to the phone's share sheet, or downloading it if there is none
 
 import { h } from './dom.js';
 
@@ -55,4 +56,34 @@ export function showToast(text, isError = false) {
   toast = h('div', { class: `toast${isError ? ' toast--error' : ''}`, role: 'status' }, text);
   document.body.append(toast);
   toastTimer = setTimeout(() => toast?.remove(), isError ? 6000 : 3000);
+}
+
+// ---------- Sharing or downloading a file ----------
+
+// Hands a file to the OS share sheet (the same mechanism WhatsApp itself sits behind, and — for a
+// sensitive file like a backup — also "Save to Files"), or downloads it if the browser has none.
+export async function shareOrDownloadFile(blob, filename, mimeType) {
+  const file = new File([blob], filename, { type: mimeType });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch (error) {
+      if (error?.name === 'AbortError') return; // the owner backed out of the share sheet: nothing to say
+      // any other error: fall through and offer a download instead
+    }
+  }
+  downloadBlob(blob, filename);
+  showToast('Your phone has no share sheet for files here, so the file was saved to your downloads instead.');
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }

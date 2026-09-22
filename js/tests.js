@@ -18,6 +18,7 @@ import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, p
 import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
+import { buildBackup, parseBackup, backupFileName } from './backup.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -1744,6 +1745,50 @@ function readZip(bytes) {
       for (const g of clean.guests) if (clean.bookings[g.id]?.[slot('S05').id]?.activityId === activity('S05-2').id) delete clean.bookings[g.id][slot('S05').id];
       return tripWarnings(clean).overbooked.length === 0;
     })());
+}
+
+// --- Backup ---
+{
+  // Unlike every other export, a backup DOES carry dietary info (the owner's own decision) — that is
+  // exactly why it is sensitive. Checked against the real sample trip, which plants dietary info on 4 guests.
+  const blob = buildBackup(trip, ctx1.entries);
+  check('A backup is a real JSON file', blob.type === 'application/json' && blob.size > 100);
+  const text = await blob.text();
+  check('A backup keeps dietary info (unlike a PDF, an Excel file, or the journal)', text.includes('Shellfish allergy'));
+
+  const restored = parseBackup(text);
+  check('Reading a backup back gives the exact same trip and journal', JSON.stringify(restored.trip) === JSON.stringify(trip) && JSON.stringify(restored.journal) === JSON.stringify(ctx1.entries));
+
+  checkRefused('A backup file with the wrong "kind" is refused, with a plain-language message', () => parseBackup(JSON.stringify({ trip: {}, journal: [] })), /not a Tour Docs backup/);
+  checkRefused('The original trip file (from "Load a trip file") is refused as a backup, not silently misread', () => parseBackup(JSON.stringify(raw)), /not a Tour Docs backup/);
+  checkRefused('Plain garbage text is refused as "not valid JSON", not a crash', () => parseBackup('not json at all'), /not valid JSON/);
+  checkRefused('A backup missing its trip or journal is refused rather than restoring something broken',
+    () => parseBackup(JSON.stringify({ kind: 'tour-docs-backup', formatVersion: 1, trip: { id: 'x' } })), /missing its trip or its journal/);
+
+  check('The backup file name is plain and includes today\'s date', backupFileName(trip) === `around-the-world-12-january-fictional-backup-${new Date().toISOString().slice(0, 10)}.json`, backupFileName(trip));
+
+  // The device-storage half of restoring (see app.js's ctx.restoreBackup): a fresh trip+journal
+  // replaces whatever this device already had for that trip id — nothing stale left behind.
+  {
+    const staleEntry = { ...ctx1.entries[0], id: newId() };
+    await saveTripAndJournal(ctx1.state, [staleEntry]); // as if an older, now-superseded change was on this phone
+    const freshTrip = { ...ctx1.state, name: 'Restored name' };
+    const staleKeys = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAllKeys(ctx1.state.id));
+    await withStores(['trips', 'journal'], 'readwrite', (s) => {
+      s.trips.put(freshTrip);
+      for (const key of staleKeys) s.journal.delete(key);
+      for (const entry of ctx1.entries) s.journal.put(entry);
+    });
+    const savedTrip = await dbGet('trips', ctx1.state.id);
+    const savedJournal = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));
+    check('Restoring replaces the trip and swaps the whole journal, leaving nothing stale behind (same shape ctx.restoreBackup writes)',
+      savedTrip.name === 'Restored name' && savedJournal.length === ctx1.entries.length && savedJournal.every((e) => e.id === ctx1.entries[0].id));
+
+    await dbDelete('trips', ctx1.state.id);
+    for (const entry of savedJournal) await dbDelete('journal', entry.id);
+    const left = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));
+    check('The test copy and its journal are removed again (tests leave nothing behind)', (await dbGet('trips', ctx1.state.id)) === undefined && left.length === 0);
+  }
 }
 
 // --- Show the results ---

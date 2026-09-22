@@ -10,15 +10,14 @@
 //   - exportFinalTrip       the same, for the final export of the whole trip: every tour, and every
 //     guest's own whole itinerary, in one file (its own content-building functions sit just above it).
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
-//   - shareOrDownloadFile   hands a finished file to the OS share sheet (Web Share API, the same
-//     mechanism WhatsApp itself sits behind), or saves it as a download if that is not available.
+// (shareOrDownloadFile itself now lives in ui.js, shared with Settings > Backup.)
 
 import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment } from './time.js';
 import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace } from './rules.js';
 import { newId } from './ids.js';
-import { showToast } from './ui.js';
+import { showToast, shareOrDownloadFile } from './ui.js';
 
 // The two export formats: how to build each one's file, its extension and its MIME type (the
 // "kind of file" tag the share sheet and downloads use to recognise it).
@@ -217,30 +216,4 @@ export async function exportFinalTrip(ctx, trip, format) {
 export async function shareSavedExport(record) {
   const spec = FORMATS[record.format ?? 'pdf'];
   await shareOrDownloadFile(record.blob, fileNameFor(`${record.title} v${record.version}`, spec.extension), spec.mimeType);
-}
-
-async function shareOrDownloadFile(blob, filename, mimeType) {
-  const file = new File([blob], filename, { type: mimeType });
-  if (navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file] });
-      return;
-    } catch (error) {
-      if (error?.name === 'AbortError') return; // the owner backed out of the share sheet: nothing to say
-      // any other error: fall through and offer a download instead
-    }
-  }
-  downloadBlob(blob, filename);
-  showToast('Your phone has no share sheet for files here, so the file was saved to your downloads instead.');
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }

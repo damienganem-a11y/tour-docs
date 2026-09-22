@@ -12,7 +12,7 @@
 // Each view is a function that returns { node }: the screen content.
 
 import { h } from './dom.js';
-import { dbAll, dbGet, dbPut, saveTripAndJournal } from './db.js';
+import { dbAll, dbGet, dbPut, saveTripAndJournal, withStores } from './db.js';
 import { newId } from './ids.js';
 import { makeOwner } from './users.js';
 import { closeSheet } from './ui.js';
@@ -67,6 +67,19 @@ const ctx = {
   async addTrip(trip) {
     await dbPut('trips', trip);
     state.trips.set(trip.id, trip);
+  },
+
+  // Used by backup.js: restores a trip and its whole journal from a backup file (Settings >
+  // Backup), replacing whatever this phone already has for that trip id (if anything).
+  async restoreBackup(trip, journalEntries) {
+    const staleKeys = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAllKeys(trip.id));
+    await withStores(['trips', 'journal'], 'readwrite', (s) => {
+      s.trips.put(trip);
+      for (const key of staleKeys) s.journal.delete(key);
+      for (const entry of journalEntries) s.journal.put(entry);
+    });
+    state.trips.set(trip.id, trip);
+    state.journal.set(trip.id, journalEntries);
   },
 
   // Used by changes.js: save a changed trip together with its journal entries, then use the new trip.
