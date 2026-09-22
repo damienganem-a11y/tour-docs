@@ -15,6 +15,8 @@ import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUn
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder } from './rules.js';
+import { buildListsPdf } from './pdf.js';
+import { destinationExportDoc } from './export.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -1461,6 +1463,65 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
   for (const entry of savedJournal) await dbDelete('journal', entry.id);
   const left = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAll(ctx1.state.id));
   check('The test copy and its journal are removed again (tests leave nothing behind)', (await dbGet('trips', ctx1.state.id)) === undefined && left.length === 0);
+}
+
+// --- Export: PDF ---
+{
+  // A tiny hand-written PDF file has a fixed, well-known shape: read it back and check every part of it.
+  const smallDoc = {
+    title: 'Test trip', updatedLine: 'Updated 1 Jan 2027, 09:00 (Test time), by Tester',
+    groups: [{ heading: null, sections: [{ heading: 'Morning walk', detail: '09:00 · Main square', count: '2 / 8', names: ['Anna B.', 'Carl D.'] }] }],
+  };
+  const blob = buildListsPdf(smallDoc);
+  check('A PDF is built as a real PDF file', blob.type === 'application/pdf' && blob.size > 200);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const text = new TextDecoder('iso-8859-1').decode(bytes); // 1 byte = 1 character, same as the file itself
+  check('It starts with the PDF file marker and ends with the PDF end-of-file marker', text.startsWith('%PDF-1.4') && text.trimEnd().endsWith('%%EOF'));
+  check('The title, the header line and the guest names are all in the file, as plain readable text',
+    text.includes('(Test trip)') && text.includes('(Updated 1 Jan 2027, 09:00 \\(Test time\\), by Tester)') && text.includes('(Anna B., Carl D.)'));
+
+  // The index at the end of the file (xref) must point exactly at each object's own "N 0 obj" line,
+  // or a real PDF reader (the one on the phone) would refuse to open the file.
+  const xrefAt = Number(/startxref\s+(\d+)/.exec(text)[1]);
+  const objectCount = Number(/trailer\s*<<[^>]*\/Size (\d+)/.exec(text)[1]) - 1;
+  const offsets = [...text.slice(xrefAt).matchAll(/(\d{10}) 00000 n /g)].map((m) => Number(m[1]));
+  const allObjectsFound = offsets.length === objectCount
+    && offsets.every((offset, i) => text.slice(offset, offset + `${i + 1} 0 obj`.length) === `${i + 1} 0 obj`);
+  check('Every object in the file is exactly where the index says it is', allObjectsFound, JSON.stringify(offsets));
+
+  // A page full of long guest lists must overflow onto a second page rather than run off the bottom.
+  const manyNames = trip.guests.map((g) => `${g.first} ${g.last}`);
+  const bigDoc = {
+    title: 'Big export', updatedLine: 'Updated 1 Jan 2027, 09:00 (Test time), by Tester',
+    groups: Array.from({ length: 6 }, (_, i) => ({
+      heading: `Group ${i + 1}`,
+      sections: [{ heading: `Activity ${i + 1}`, detail: '09:00 · Somewhere', count: `${manyNames.length}`, names: manyNames }],
+    })),
+  };
+  const bigText = new TextDecoder('iso-8859-1').decode(new Uint8Array(await buildListsPdf(bigDoc).arrayBuffer()));
+  const pageCount = [...bigText.matchAll(/\/Type \/Page /g)].length;
+  check('A big export spreads itself over more than one page', pageCount > 1, `${pageCount} pages`);
+}
+
+// --- Export: what goes on the page ---
+{
+  const istanbul = trip.destinations.find((d) => d.id === slot('S09').destinationId);
+  const wholeDestination = destinationExportDoc(trip, istanbul, undefined, 'Tester');
+  const halfDays = trip.slots.filter((s) => s.destinationId === istanbul.id);
+  check('Exporting a whole destination covers every one of its half-days, each under its own heading',
+    wholeDestination.groups.length === halfDays.length && wholeDestination.groups.every((g) => halfDays.length > 1 ? /^Day \d+ · /.test(g.heading) : true));
+
+  const oneHalfDay = destinationExportDoc(trip, istanbul, slot('S09'), 'Tester');
+  check('Exporting one half-day gives just that half-day, with no repeated heading (the title already says which one)',
+    oneHalfDay.groups.length === 1 && oneHalfDay.groups[0].heading === null && oneHalfDay.title.includes('Day') && oneHalfDay.title.includes(slot('S09').half));
+
+  const s09Sections = oneHalfDay.groups[0].sections;
+  check('It has one section per activity of that half-day, plus "At leisure"',
+    s09Sections.filter((s) => s.heading !== 'At leisure' && s.heading !== 'Needs a look').length === trip.activities.filter((a) => a.slotId === slot('S09').id).length
+    && s09Sections.some((s) => s.heading === 'At leisure'));
+  const needsALook = s09Sections.find((s) => s.heading === 'Needs a look');
+  check('G022, whose Istanbul sign-up is misspelled, is not left off the printed list: a "Needs a look" section names them',
+    needsALook && needsALook.names.includes(displayNames(trip.guests).get(guest('G022').id)), JSON.stringify(needsALook));
 }
 
 // --- Show the results ---

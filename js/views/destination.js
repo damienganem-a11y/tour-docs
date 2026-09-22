@@ -16,6 +16,7 @@ import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
 import { showToast } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
+import { destinationExportDoc, exportAndShare } from '../export.js';
 
 const PREVIEW = 4; // names shown on a closed card
 
@@ -76,11 +77,12 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   return h('div', {},
     destinationStrip,
     slotStrip,
+    h('div', { class: 'export-row' }, exportButton(ctx, trip, destination, undefined, `Export all of ${destination.name}`)),
     pageHead({
       eyebrow: 'By destination',
       title: destination.name,
       subtitle: `Day ${slot.day} · ${formatWeekdayDate(slot.date)} · ${slot.half} · ${destination.name} time`,
-      action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
+      action: h('div', { class: 'head-actions' }, exportButton(ctx, trip, destination, slot, '⇩ Export'), undoButton(ctx, trip, { scope: USE_UNDO_SCOPE })),
     }),
     cards,
     leisureCard,
@@ -107,6 +109,22 @@ function rollCallActions(ctx, trip, activity) {
       if (result.ok) open(); else showToast(result.error, true);
     },
   }];
+}
+
+// Builds and shares the PDF for one half-day (a slot) or a whole destination (slot left out).
+// `busy` stops a second tap from starting a second PDF while the first is still being built.
+let busy = false;
+function exportButton(ctx, trip, destination, slot, label) {
+  return h('button', {
+    class: 'btn btn--plain btn--small', type: 'button',
+    onclick: async () => {
+      if (busy) return;
+      busy = true;
+      const doc = destinationExportDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner');
+      await exportAndShare(doc.title, doc);
+      busy = false;
+    },
+  }, label);
 }
 
 // A row of tappable pills that scrolls sideways.

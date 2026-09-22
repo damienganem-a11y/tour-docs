@@ -68,6 +68,15 @@ export function formatMoment(instant, timeZone) {
   return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')}`;
 }
 
+// An exact moment as a full date and time in a time zone, for export headers and version labels:
+// ("2027-01-14T05:32:00.000Z", "Asia/Tokyo") -> "14 Jan 2027, 14:32".
+export function formatFullMoment(instant, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date(instant));
+  const part = (type) => parts.find((p) => p.type === type).value;
+  return `${part('day')} ${part('month')} ${part('year')}, ${part('hour')}:${part('minute')}`;
+}
+
 // Today's date (e.g. "2027-01-12") in a given time zone. A trip that spans time zones does not have one
 // single "today": Kyoto can already be tomorrow while Lisbon is still on today. Used to tell a half-day
 // that is over from one that is not (see "Earlier in the trip" on a guest's page).
