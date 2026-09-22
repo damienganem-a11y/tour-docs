@@ -13,19 +13,23 @@
 
 import { buildListsPdf } from './pdf.js';
 import { formatTime, formatFullMoment } from './time.js';
-import { whoIsWhere, displayNames, capacityInfo, alphabetical, bySlotOrder } from './rules.js';
+import { whoIsWhere, capacityInfo, byName, bySlotOrder } from './rules.js';
 import { newId } from './ids.js';
 import { showToast } from './ui.js';
 
-// One activity (or "At leisure") of one half-day, ready for the page: its name, its time and meeting
-// point, its count, and its guests' names in the order they are shown everywhere else in the app.
-function activitySections(trip, slot, destination, names) {
+// The row for one guest in an exported table: their ID (the code from the file they were loaded
+// from, e.g. "806" — kept as `ref`, see loader.js) and their full name, "Last, First" as it is
+// written on the paper lists the team already uses, so the two match.
+const rowFor = (guest) => ({ id: guest.ref, name: `${guest.last}, ${guest.first}` });
+
+// One activity (or "At leisure") of one half-day, ready for the page: its name, its time and
+// meeting point, its count, and its guests as ID + name rows, sorted by last name.
+function activityTables(trip, slot, destination) {
   const activities = trip.activities.filter((a) => a.slotId === slot.id);
   const { byActivity, leisure, attention } = whoIsWhere(trip, slot);
-  const order = alphabetical(names);
 
-  const sections = activities.map((activity) => {
-    const guests = [...(byActivity.get(activity.id) ?? [])].sort(order);
+  const tables = activities.map((activity) => {
+    const guests = [...(byActivity.get(activity.id) ?? [])].sort(byName);
     const count = capacityInfo(guests.length, activity.capacity);
     const detail = [activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '', activity.meeting]
       .filter(Boolean).join(' · ');
@@ -33,36 +37,35 @@ function activitySections(trip, slot, destination, names) {
       heading: activity.name,
       detail,
       count: activity.cancelled ? 'Cancelled' : count.text,
-      names: guests.map((g) => names.get(g.id)),
+      rows: guests.map(rowFor),
     };
   });
 
-  sections.push({
+  tables.push({
     heading: 'At leisure', detail: '', count: String(leisure.length),
-    names: [...leisure].sort(order).map((g) => names.get(g.id)),
+    rows: [...leisure].sort(byName).map(rowFor),
   });
 
   // Every guest is always counted somewhere (SPEC.md), so a guest with no valid booking still goes
   // on the printed list, not just on the (not yet built) Warnings screen: otherwise they would simply
   // be missing from a headcount the owner relies on.
   if (attention.length > 0) {
-    sections.push({
+    tables.push({
       heading: 'Needs a look', detail: 'Nothing chosen yet, or an unknown activity', count: String(attention.length),
-      names: [...attention].sort((a, b) => order(a.guest, b.guest)).map((a) => names.get(a.guest.id)),
+      rows: [...attention].sort((a, b) => byName(a.guest, b.guest)).map((a) => rowFor(a.guest)),
     });
   }
-  return sections;
+  return tables;
 }
 
 // The printable content for a destination. Pass a slot to export just that one half-day; leave it
 // out to export every half-day of the destination, one after another (SPEC.md: "a destination or a
 // half-day"). `updatedBy` is the name that goes in the header ("Updated ..., by ...").
 export function destinationExportDoc(trip, destination, slot, updatedBy) {
-  const names = displayNames(trip.guests);
   const slots = slot ? [slot] : trip.slots.filter((s) => s.destinationId === destination.id).sort(bySlotOrder);
   const groups = slots.map((s) => ({
     heading: slots.length > 1 ? `Day ${s.day} · ${s.half}` : null,
-    sections: activitySections(trip, s, destination, names),
+    tables: activityTables(trip, s, destination),
   }));
 
   return {

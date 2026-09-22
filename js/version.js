@@ -2,4 +2,4 @@
 // new upload has arrived on the phone. Change it with every upload, and change the same number in
 // sw.js (the tests page checks that the two match).
 
-export const APP_VERSION = '0.12.0';
+export const APP_VERSION = '0.13.0';

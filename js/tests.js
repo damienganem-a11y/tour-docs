@@ -1493,15 +1493,33 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
   // A tiny hand-written PDF file has a fixed, well-known shape: read it back and check every part of it.
   const smallDoc = {
     title: 'Test trip', updatedLine: 'Updated 1 Jan 2027, 09:00 (Test time), by Tester',
-    groups: [{ heading: null, sections: [{ heading: 'Morning walk', detail: '09:00 · Main square', count: '2 / 8', names: ['Anna B.', 'Carl D.'] }] }],
+    groups: [{ heading: null, tables: [{ heading: 'Morning walk', detail: '09:00 · Main square', count: '2 / 8', rows: [{ id: '501', name: 'Braswell, Anna' }, { id: '502', name: 'Coyle, Carl' }] }] }],
   };
   const blob = buildListsPdf(smallDoc);
   check('A PDF is built as a real PDF file', blob.type === 'application/pdf' && blob.size > 200);
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const text = new TextDecoder('iso-8859-1').decode(bytes); // 1 byte = 1 character, same as the file itself
   check('It starts with the PDF file marker and ends with the PDF end-of-file marker', text.startsWith('%PDF-1.4') && text.trimEnd().endsWith('%%EOF'));
-  check('The title, the header line and the guest names are all in the file, as plain readable text',
-    text.includes('(Test trip)') && text.includes('(Updated 1 Jan 2027, 09:00 \\(Test time\\), by Tester)') && text.includes('(Anna B., Carl D.)'));
+  check('The title, the header line, and every row\'s own ID and name are all in the file, as plain readable text',
+    text.includes('(Test trip)') && text.includes('(Updated 1 Jan 2027, 09:00 \\(Test time\\), by Tester)')
+    && text.includes('(501)') && text.includes('(Braswell, Anna)') && text.includes('(502)') && text.includes('(Coyle, Carl)'));
+
+  // An em dash (used in "Lisbon — Day 1 · Afternoon") and a shortened name's "…" are ordinary
+  // punctuation in WinAnsiEncoding, but NOT at their own Unicode number: written the naive way they
+  // would silently turn into "?" instead. `TextDecoder('iso-8859-1')` decodes bytes back the same way
+  // a PDF reader would (the WHATWG spec actually treats that label as windows-1252, the same table
+  // WinAnsiEncoding uses), so reading the right character back here means the file has the right byte.
+  const dashDoc = { title: 'Lisbon — Day 1', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester', groups: [] };
+  const dashBytes = new Uint8Array(await buildListsPdf(dashDoc).arrayBuffer());
+  const dashText = new TextDecoder('iso-8859-1').decode(dashBytes);
+  check('An em dash in the title is written as itself, not as "?"', dashText.includes('Lisbon — Day 1') && !dashText.includes('Lisbon ? Day 1'));
+
+  const longNameDoc = {
+    title: 'Long name test', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester',
+    groups: [{ heading: null, tables: [{ heading: 'Tour', detail: '', count: '1', rows: [{ id: '1', name: 'A very long name indeed, Someone Whose Whole Name Does Not Fit In One Column' }] }] }],
+  };
+  const longNameText = new TextDecoder('iso-8859-1').decode(new Uint8Array(await buildListsPdf(longNameDoc).arrayBuffer()));
+  check('A name too long for its column is shortened with "…", not with "?"', longNameText.includes('…)') && !/[A-Za-z]\?\)/.test(longNameText));
 
   // The index at the end of the file (xref) must point exactly at each object's own "N 0 obj" line,
   // or a real PDF reader (the one on the phone) would refuse to open the file.
@@ -1512,13 +1530,13 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
     && offsets.every((offset, i) => text.slice(offset, offset + `${i + 1} 0 obj`.length) === `${i + 1} 0 obj`);
   check('Every object in the file is exactly where the index says it is', allObjectsFound, JSON.stringify(offsets));
 
-  // A page full of long guest lists must overflow onto a second page rather than run off the bottom.
-  const manyNames = trip.guests.map((g) => `${g.first} ${g.last}`);
+  // A page full of tables must overflow onto a second page rather than run off the bottom.
+  const manyRows = trip.guests.map((g) => ({ id: g.ref, name: `${g.last}, ${g.first}` }));
   const bigDoc = {
     title: 'Big export', updatedLine: 'Updated 1 Jan 2027, 09:00 (Test time), by Tester',
     groups: Array.from({ length: 6 }, (_, i) => ({
       heading: `Group ${i + 1}`,
-      sections: [{ heading: `Activity ${i + 1}`, detail: '09:00 · Somewhere', count: `${manyNames.length}`, names: manyNames }],
+      tables: [{ heading: `Activity ${i + 1}`, detail: '09:00 · Somewhere', count: `${manyRows.length}`, rows: manyRows }],
     })),
   };
   const bigText = new TextDecoder('iso-8859-1').decode(new Uint8Array(await buildListsPdf(bigDoc).arrayBuffer()));
@@ -1538,13 +1556,16 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
   check('Exporting one half-day gives just that half-day, with no repeated heading (the title already says which one)',
     oneHalfDay.groups.length === 1 && oneHalfDay.groups[0].heading === null && oneHalfDay.title.includes('Day') && oneHalfDay.title.includes(slot('S09').half));
 
-  const s09Sections = oneHalfDay.groups[0].sections;
-  check('It has one section per activity of that half-day, plus "At leisure"',
-    s09Sections.filter((s) => s.heading !== 'At leisure' && s.heading !== 'Needs a look').length === trip.activities.filter((a) => a.slotId === slot('S09').id).length
-    && s09Sections.some((s) => s.heading === 'At leisure'));
-  const needsALook = s09Sections.find((s) => s.heading === 'Needs a look');
-  check('G022, whose Istanbul sign-up is misspelled, is not left off the printed list: a "Needs a look" section names them',
-    needsALook && needsALook.names.includes(displayNames(trip.guests).get(guest('G022').id)), JSON.stringify(needsALook));
+  const s09Tables = oneHalfDay.groups[0].tables;
+  check('It has one table per activity of that half-day, plus "At leisure"',
+    s09Tables.filter((t) => t.heading !== 'At leisure' && t.heading !== 'Needs a look').length === trip.activities.filter((a) => a.slotId === slot('S09').id).length
+    && s09Tables.some((t) => t.heading === 'At leisure'));
+  const needsALook = s09Tables.find((t) => t.heading === 'Needs a look');
+  check('G022, whose Istanbul sign-up is misspelled, is not left off the printed list: a "Needs a look" table names them, with their own ID',
+    needsALook && needsALook.rows.some((r) => r.id === guest('G022').ref && r.name === `${guest('G022').last}, ${guest('G022').first}`), JSON.stringify(needsALook));
+
+  check('Every row carries the guest\'s own ID (the code from the file they were loaded from), not a made-up one',
+    needsALook.rows.length > 0 && needsALook.rows.every((r) => typeof r.id === 'string' && r.id.length > 0));
 }
 
 // --- Show the results ---
