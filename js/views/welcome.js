@@ -95,11 +95,22 @@ function confirmNameScreen(ctx) {
   };
 }
 
+// True when running as an app icon added to the home screen, not a plain browser tab (the
+// non-standard `navigator.standalone` is Apple's own iOS Safari flag; other platforms report it
+// through the standard `display-mode` media feature).
+const isStandalone = () => navigator.standalone === true || (window.matchMedia?.('(display-mode: standalone)').matches ?? false);
+
 function sentScreen(ctx) {
   return {
     node: h('div', { class: 'screen' },
       pageHead({ eyebrow: 'Tour Docs', title: 'Check your email', subtitle: `We sent a sign-in link to ${pendingEmail}.` }),
       h('p', { class: 'muted' }, 'Open it on this phone to continue. It can take a minute to arrive.'),
+      // Tapping the link from Mail often opens Safari instead of the installed app icon on the
+      // iPhone (a quirk of "Add to Home Screen" apps, not something the app can avoid). Warning
+      // about it here, right before they go tap it, turns a confusing moment into an expected one.
+      isStandalone()
+        ? h('p', { class: 'notice' }, 'On iPhone, the link may open in Safari instead of this app icon — that is normal. Once it says you are signed in there, close this app fully (swipe it away) and reopen it from its icon.')
+        : null,
       h('button', {
         class: 'btn btn--plain', type: 'button',
         onclick: () => { step = 'form'; ctx.refresh(); },
