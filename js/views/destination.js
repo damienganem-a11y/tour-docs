@@ -82,9 +82,11 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       eyebrow: 'By destination',
       title: destination.name,
       // The destination is the title right above and the day/half is already highlighted in the
-      // strip above that, so the only thing worth repeating here is the calendar date — small, so
-      // this row stays no taller than the compact Undo button beside it.
+      // strip above that, so the only thing worth repeating here is the calendar date — small, and
+      // tucked under the title (tightSubtitle) rather than spanning full width below the row, so it
+      // never sits lower than the compact Undo button beside it.
       subtitle: h('span', { class: 'subtitle-note' }, formatWeekdayDate(slot.date)),
+      tightSubtitle: true,
       action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
     }),
     cards,
