@@ -75,7 +75,7 @@ function guestList(ctx, trip) {
 
   return h('div', {},
     pageHead({
-      eyebrow: 'By guest', subtitle: 'Tap a guest to see their whole trip',
+      eyebrow: 'By guest',
       action: h('div', { class: 'head-actions' }, sortToggle(ctx), undoButton(ctx, trip, { scope: USE_UNDO_SCOPE })),
     }),
     search, count, list);
