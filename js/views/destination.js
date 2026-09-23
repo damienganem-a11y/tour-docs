@@ -81,7 +81,12 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
     pageHead({
       eyebrow: 'By destination',
       title: destination.name,
-      subtitle: `Day ${slot.day} · ${formatWeekdayDate(slot.date)} · ${slot.half} · ${destination.name} time`,
+      // The destination is already the title right above, so naming it again here (only to say
+      // times are in ITS local time, not the phone's) is kept, but small: it stays on one line,
+      // which keeps this row no taller than the (now compact) Undo button beside it.
+      subtitle: h('span', {},
+        `Day ${slot.day} · ${formatWeekdayDate(slot.date)} · ${slot.half}`,
+        h('span', { class: 'subtitle-note' }, ` · ${destination.name} time`)),
       action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
     }),
     cards,
