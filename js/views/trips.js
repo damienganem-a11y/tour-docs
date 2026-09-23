@@ -8,7 +8,7 @@ import { openSheet, closeSheet, showToast } from '../ui.js';
 import { tripDates } from '../time.js';
 import { APP_VERSION } from '../version.js';
 import { exportFinalTrip } from '../export.js';
-import { pageHead, exportFormatSheet } from './chrome.js';
+import { pageHead, exportFormatSheet, syncDot } from './chrome.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
 const PURGE_AFTER_DAYS = 30; // kept equal to app.js's own purgeExpiredTrips, just for the wording shown here
@@ -96,7 +96,7 @@ export function tripsView(ctx) {
 
   return {
     node: h('div', { class: 'screen' },
-      pageHead({ eyebrow: 'Tour Docs', title: 'Your trips', subtitle: `Hello ${ctx.owner.name}` }),
+      pageHead({ eyebrow: 'Tour Docs', title: 'Your trips', subtitle: `Hello ${ctx.owner.name}`, action: syncDot(ctx) }),
       activeSection,
       h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Load a trip file (.json)'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: loadSample }, 'Load the sample trip'),

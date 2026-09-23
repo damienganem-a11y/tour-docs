@@ -31,6 +31,15 @@ export function pageHead({ back, eyebrow, title, subtitle, action, tightSubtitle
   );
 }
 
+// A small light showing whether trips are backed up to the owner's account right now (Phase 2, step
+// 2a): green = online and everything pushed, orange = online with a push still in flight, red = no
+// internet. It never blocks or asks anything — just a glance, like a phone's signal bars.
+const SYNC_LABEL = { synced: 'Backed up', pending: 'Saving to your account…', offline: 'Offline' };
+export function syncDot(ctx) {
+  const status = ctx.syncStatus;
+  return h('span', { class: `sync-dot sync-dot--${status}`, role: 'status', 'aria-label': SYNC_LABEL[status], title: SYNC_LABEL[status] });
+}
+
 // The small sheet every "Export" button opens to ask PDF or Excel (SPEC.md, "5. Export"): tapping
 // either one closes the sheet and runs `format => ...` with 'pdf' or 'xlsx'.
 export function exportFormatSheet(run) {

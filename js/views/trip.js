@@ -7,7 +7,7 @@
 
 import { h } from '../dom.js';
 import { tripDates } from '../time.js';
-import { pageHead } from './chrome.js';
+import { pageHead, syncDot } from './chrome.js';
 import { destinationPage } from './destination.js';
 import { guestPage } from './guest.js';
 import { journalPage } from './journal.js';
@@ -78,11 +78,13 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
   const modeSwitch = h('nav', { class: 'switch switch--compact', 'aria-label': 'Use or Settings' }, link('use', 'Use'), link('settings', 'Settings'));
 
   // One slim row for both modes: back link, the Use/Settings switch (small — it is tapped rarely,
-  // so it should not compete with the actual screen for room), and, in Use, the trip's own code.
+  // so it should not compete with the actual screen for room), the trip's own code (Use only), and
+  // the sync light (Phase 2, step 2a).
   const topBar = h('div', { class: 'top-bar' },
     h('a', { class: 'back-link', href: '#/' }, '‹ All trips'),
     modeSwitch,
-    mode === 'use' ? h('span', { class: 'muted' }, trip.ref) : null);
+    mode === 'use' ? h('span', { class: 'muted' }, trip.ref) : null,
+    syncDot(ctx));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.

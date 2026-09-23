@@ -17,6 +17,7 @@ import { newId } from './ids.js';
 import { makeOwner } from './users.js';
 import { closeSheet } from './ui.js';
 import { signOut as authSignOut } from './auth.js';
+import { pushTrip, pushJournalEntries, pullTripList } from './sync.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { passcodeView } from './views/passcode.js';
@@ -30,6 +31,34 @@ import { rollCallView } from './views/rollcall.js';
 // this is a copy in memory). `locked` is true while the access code has not been entered (see gate.js).
 const state = { owner: undefined, trips: new Map(), journal: new Map(), exports: new Map(), locked: false };
 
+// The small sync light shown on the Trips screen and inside a trip (see chrome.js's syncDot):
+//   'offline'  no internet right now (navigator.onLine)
+//   'pending'  online, but at least one push to Supabase has not finished/been confirmed yet
+//   'synced'   online, nothing waiting
+// pendingPushes counts pushes currently in flight; trackPush wraps every push call site (addTrip,
+// duplicateTrip, commit, the boot-time backfill) so the light always reflects reality, and redraws
+// the screen the moment it changes — the owner asked for it to update live, not just on navigation.
+let pendingPushes = 0;
+function trackPush(promise) {
+  pendingPushes++;
+  // Render right away so "pending" (orange) shows the instant a push starts, not only when the
+  // owner happens to navigate while one is in flight — the light must update on its own, not just
+  // as a side effect of some other redraw.
+  if (state.owner) render({ keepScroll: true });
+  // .finally() returns its OWN promise, separate from the one below that callers .catch() — and
+  // .finally() re-throws after running its callback, so without this .catch() here too, a failed
+  // push (e.g. offline) becomes an unhandled rejection even though the caller's .catch() runs fine.
+  promise.finally(() => {
+    pendingPushes--;
+    if (state.owner) render({ keepScroll: true }); // reactive: clears back to "synced" without waiting for a navigation
+  }).catch(() => {});
+  return promise;
+}
+function syncStatus() {
+  if (!navigator.onLine) return 'offline';
+  return pendingPushes > 0 ? 'pending' : 'synced';
+}
+
 // The list of screens. The first one whose pattern matches the address is used.
 const routes = [
   { pattern: /^#\/trip\/([^/]+)\/rollcall\/([^/]+)$/, view: rollCallView },
@@ -40,6 +69,7 @@ const routes = [
 // Things every view is allowed to use.
 const ctx = {
   get owner() { return state.owner; },
+  get syncStatus() { return syncStatus(); },
   get trips() { return [...state.trips.values()]; },
   trip: (id) => state.trips.get(id),
   journal: (tripId) => state.journal.get(tripId) ?? [],
@@ -75,10 +105,13 @@ const ctx = {
     location.reload(); // also clears welcome.js's own leftover state from any earlier attempt
   },
 
-  // Save a newly loaded trip on the phone.
+  // Save a newly loaded trip on the phone. Also pushed to Supabase (Phase 2, step 2a: a safety-net
+  // backup; pulling it onto another device is step 2b) — best-effort, not awaited: the local save
+  // above is what matters, and already happened by the time this runs.
   async addTrip(trip) {
     await dbPut('trips', trip);
     state.trips.set(trip.id, trip);
+    trackPush(pushTrip(trip)).catch(() => {});
   },
 
   // Used by trips.js: "Duplicate trip" (step 9). A brand new trip (its own id, not tied to the
@@ -101,6 +134,7 @@ const ctx = {
     };
     await dbPut('trips', copy);
     state.trips.set(copy.id, copy);
+    trackPush(pushTrip(copy)).catch(() => {});
     return copy;
   },
 
@@ -118,10 +152,14 @@ const ctx = {
   },
 
   // Used by changes.js: save a changed trip together with its journal entries, then use the new trip.
+  // Also pushed to Supabase (Phase 2, step 2a) — fire-and-forget: this promise resolves as soon as
+  // the LOCAL save above completes, same as before this step, so a slow or absent connection never
+  // makes changes.js's own change queue wait on the network (offline-first stays intact).
   async commit(trip, entries) {
     await saveTripAndJournal(trip, entries);
     state.trips.set(trip.id, trip);
     state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
+    trackPush(pushTrip(trip).then(({ accepted }) => { if (accepted) return pushJournalEntries(trip.id, entries); })).catch(() => {});
   },
 
   // Used by export.js: keep a PDF that was just built, so it can be found again in the Exports archive.
@@ -190,7 +228,28 @@ async function start() {
   registerOffline(); // starts straight away, offline setup does not touch the screen
 
   window.addEventListener('hashchange', () => render());
+  // The sync light (see syncStatus above) reacts to the phone's own connectivity changes, not just
+  // to navigating: going through a tunnel or landing after a flight updates it right away.
+  window.addEventListener('online', () => { if (state.owner) render({ keepScroll: true }); });
+  window.addEventListener('offline', () => { if (state.owner) render({ keepScroll: true }); });
   render();
+
+  // Phase 2, step 2a: a trip loaded before this step shipped has nothing on the server yet (it
+  // only gets pushed by its NEXT change). Runs after render(), in the background, so it never
+  // delays the offline boot paint; safe to add now because nothing pulls yet (step 2b).
+  if (state.owner) trackPush(backfillPush()).catch(() => {});
+}
+
+async function backfillPush() {
+  let remote;
+  try { remote = await pullTripList(); } catch { return; } // offline, or not reachable yet: try again next boot
+  const remoteById = new Map(remote.map((r) => [r.id, r.change_count]));
+  for (const trip of state.trips.values()) {
+    const serverCount = remoteById.get(trip.id);
+    if (serverCount === undefined || serverCount < (trip.changeCount ?? 0)) {
+      try { await pushTrip(trip); } catch { /* try again next boot */ }
+    }
+  }
 }
 
 // A deleted trip (Trips screen, step 9) is erased for good, together with its journal and exports,

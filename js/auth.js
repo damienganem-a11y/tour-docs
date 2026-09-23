@@ -10,8 +10,11 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-let clientPromise; // memoized: Supabase warns against creating more than one GoTrueClient
-function getClient() {
+// Exported so sync.js (Phase 2, step 2) reuses this exact same memoized client, instead of a
+// second independent one — Supabase warns against creating more than one GoTrueClient, since
+// competing instances can race each other refreshing the same session token.
+let clientPromise;
+export function getClient() {
   if (!clientPromise) {
     clientPromise = import(SDK_URL).then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
