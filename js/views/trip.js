@@ -75,7 +75,14 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
 
   const link = (target, label) =>
     h('a', { class: `switch-item${mode === target ? ' is-active' : ''}`, href: `#/trip/${trip.id}/${target}` }, label);
-  const modeSwitch = h('nav', { class: 'switch', 'aria-label': 'Use or Settings' }, link('use', 'Use'), link('settings', 'Settings'));
+  const modeSwitch = h('nav', { class: 'switch switch--compact', 'aria-label': 'Use or Settings' }, link('use', 'Use'), link('settings', 'Settings'));
+
+  // One slim row for both modes: back link, the Use/Settings switch (small — it is tapped rarely,
+  // so it should not compete with the actual screen for room), and, in Use, the trip's own code.
+  const topBar = h('div', { class: 'top-bar' },
+    h('a', { class: 'back-link', href: '#/' }, '‹ All trips'),
+    modeSwitch,
+    mode === 'use' ? h('span', { class: 'muted' }, trip.ref) : null);
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
@@ -86,26 +93,21 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
   // Settings: the full trip heading and the menu.
   if (mode === 'settings') {
     const head = pageHead({
-      back: { href: '#/', label: 'All trips' },
       eyebrow: 'Trip',
       title: trip.name,
       subtitle: `${tripDates(trip.start, trip.days)} · ${trip.destinations.length} destinations · ${trip.guests.length} guests`,
     });
-    return { node: h('div', { class: 'screen' }, head, modeSwitch, readOnlyNotice, settingsMenu(trip)) };
+    return { node: h('div', { class: 'screen' }, topBar, head, readOnlyNotice, settingsMenu(trip)) };
   }
 
-  // Use: a slim bar on top (the phone screen is small), then the chosen page and the bottom tabs.
-  // (The Undo button is inside each page, next to its title.)
-  const topBar = h('div', { class: 'top-bar' },
-    h('a', { class: 'back-link', href: '#/' }, '‹ All trips'),
-    h('span', { class: 'muted' }, trip.ref));
+  // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
   const content = page === 'guest' ? guestPage(ctx, trip, first) : destinationPage(ctx, trip, first, second);
   const activePage = page === 'guest' ? 'guest' : 'destination';
   const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },
     USE_TABS.map((t) =>
       h('a', { class: `bottom-tab${t.page === activePage ? ' is-active' : ''}`, href: `#/trip/${trip.id}/use/${t.page}` }, t.label)));
 
-  return { node: h('div', { class: 'screen' }, topBar, modeSwitch, readOnlyNotice, content, tabs) };
+  return { node: h('div', { class: 'screen' }, topBar, readOnlyNotice, content, tabs) };
 }
 
 function settingsMenu(trip) {
