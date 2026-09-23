@@ -37,7 +37,7 @@ export function exportsSettingsPage(ctx, trip) {
       back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
       eyebrow: 'Exports archive',
       title: 'Exports archive',
-      subtitle: 'Every list you have exported, newest first. Tap one to share it again.',
+      subtitle: 'Every list you have exported, newest first.',
     }),
     finalExportButton,
     h('p', { class: 'muted count-line' }, 'Every tour’s guest list, and every guest’s own whole trip, in one file.'),

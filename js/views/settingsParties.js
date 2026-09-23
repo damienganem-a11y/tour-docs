@@ -44,7 +44,7 @@ export function partiesSettingsPage(ctx, trip) {
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Settings', title: 'Travel parties',
-      subtitle: `${parties.length} travel part${parties.length === 1 ? 'y' : 'ies'} · tap a guest to see them`,
+      subtitle: `${parties.length} travel part${parties.length === 1 ? 'y' : 'ies'}`,
       action: undoButton(ctx, trip, { scope: GUEST_UNDO_SCOPE }),
     }),
     trip.archivedAt ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes.') : null,
