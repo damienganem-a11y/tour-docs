@@ -4,24 +4,28 @@
 // 14 Jan 14:32, by Damien"), exactly as before.
 //
 // Flow:
-//   1. Enter name + email, "Send me a sign-in link" -> an email arrives with a magic link.
-//   2. Tapping the link in the email brings the phone back here with a token in the address.
-//      Usually that is the SAME phone that asked for the link, so the name typed in step 1
-//      (kept in localStorage while waiting) is already known and sign-in finishes right away.
-//   3. If the link is opened somewhere else (a different device, or the name was lost), a short
-//      "What should we call you?" step asks for it instead of failing silently.
+//   1. Enter name + email, "Send me a sign-in link" -> an email arrives with a magic link. The
+//      name travels inside that link (see auth.js's sendMagicLink), not in local storage: the
+//      phone's mail app often opens the link in a browsing context that does not share storage
+//      with the installed app, so anything only saved locally while sending the link can be gone
+//      by the time it is clicked.
+//   2. Tapping the link brings the phone back here, signed in. A short "Confirm your name" step
+//      always follows — pre-filled with the name from step 1 when it made it through the link,
+//      blank on the rare occasion it did not (an email service that rewrites/strips links) — so
+//      there is always a chance to fix a typo, and never a silent "was that even me?" moment.
 
 import { h } from '../dom.js';
 import { pageHead } from './chrome.js';
 import { looksLikeAuthCallback, sendMagicLink, completeSignIn, saveNameToAccount } from '../auth.js';
 
-const PENDING_NAME_KEY = 'tourdocs.pendingName';
+const PENDING_NAME_KEY = 'tourdocs.pendingName'; // best-effort fallback only; the link itself is the real carrier
 
 // Survives a redraw (like the fold flags elsewhere in the app); reset by a full page reload,
 // which is exactly what happens after signing in or out.
-let step = 'form';      // 'form' | 'callback' | 'need-name' | 'sent' | 'error'
-let pendingEmail = '';  // shown on "check your email" and, after a cross-device callback, "what's your name"
-let pendingId = null;   // set once completeSignIn() succeeds but no pending name was found locally
+let step = 'form';      // 'form' | 'callback' | 'confirm-name' | 'sent' | 'error'
+let pendingEmail = '';  // shown on "check your email" and on "confirm your name"
+let pendingId = null;   // set once completeSignIn() succeeds, used by the "confirm your name" step
+let pendingName = '';   // best guess at the name, to pre-fill "confirm your name" (may be blank)
 let errorText = '';
 
 export function welcomeView(ctx) {
@@ -31,25 +35,26 @@ export function welcomeView(ctx) {
   }
 
   if (step === 'callback') return callbackScreen();
-  if (step === 'need-name') return nameScreen(ctx);
+  if (step === 'confirm-name') return confirmNameScreen(ctx);
   if (step === 'sent') return sentScreen(ctx);
   return formScreen(ctx); // 'form' and 'error' share the same screen
 }
 
 async function finishCallback(ctx) {
+  // Read before completeSignIn() runs: it scrubs the address once it has used what it needs.
+  let nameFromLink = '';
+  try { nameFromLink = new URLSearchParams(location.search).get('name') ?? ''; } catch { /* ignore */ }
+
   try {
     const { id, email } = await completeSignIn();
-    let name = '';
-    try { name = localStorage.getItem(PENDING_NAME_KEY) ?? ''; } catch { /* storage blocked */ }
-    if (name) {
-      try { localStorage.removeItem(PENDING_NAME_KEY); } catch { /* storage blocked */ }
-      saveNameToAccount(name); // fire-and-forget: the local cache below is what actually matters here
-      await ctx.saveOwner(name, id); // navigates to the Trips screen; welcome.js is not shown again
-      return;
-    }
     pendingId = id;
     pendingEmail = email;
-    step = 'need-name';
+    pendingName = nameFromLink;
+    if (!pendingName) {
+      try { pendingName = localStorage.getItem(PENDING_NAME_KEY) ?? ''; } catch { /* storage blocked */ }
+    }
+    try { localStorage.removeItem(PENDING_NAME_KEY); } catch { /* storage blocked */ }
+    step = 'confirm-name';
   } catch (error) {
     step = 'error';
     errorText = error.message;
@@ -64,12 +69,12 @@ function callbackScreen() {
   };
 }
 
-// The email is known (from the sign-in link itself), but not a name: this device never asked for
-// the link, or lost track of what was typed. One short question closes the gap.
-function nameScreen(ctx) {
+// Always shown once signed in: a chance to keep or fix the name, never a silent step and never a
+// blank re-ask when it is already known (see finishCallback).
+function confirmNameScreen(ctx) {
   const input = h('input', {
     class: 'text-input', type: 'text', placeholder: 'Your name', autocomplete: 'given-name',
-    'aria-label': 'Your name', maxlength: '60',
+    'aria-label': 'Your name', maxlength: '60', value: pendingName,
   });
 
   const form = h('form', {
@@ -78,14 +83,14 @@ function nameScreen(ctx) {
       const name = input.value.trim();
       if (name === '') { input.focus(); return; }
       saveNameToAccount(name); // fire-and-forget
-      await ctx.saveOwner(name, pendingId);
+      await ctx.saveOwner(name, pendingId); // navigates to the Trips screen; welcome.js is not shown again
     },
-  }, input, h('button', { class: 'btn', type: 'submit' }, 'Continue'));
+  }, input, h('button', { class: 'btn', type: 'submit' }, pendingName ? 'Continue' : 'Save'));
 
   return {
     node: h('div', { class: 'screen' },
-      pageHead({ eyebrow: 'Tour Docs', title: 'Welcome', subtitle: `Signed in as ${pendingEmail}. What should we call you?` }),
-      h('p', { class: 'muted' }, 'Your name goes in the journal and on the lists you export, so everyone knows who changed what.'),
+      pageHead({ eyebrow: 'Tour Docs', title: 'Welcome', subtitle: `Signed in as ${pendingEmail}` }),
+      h('p', { class: 'muted' }, 'This is your name in the journal and on the lists you export, so everyone knows who changed what. Keep it, or change it below.'),
       form),
   };
 }
@@ -108,7 +113,7 @@ function formScreen(ctx) {
 
   const nameInput = h('input', {
     class: 'text-input', type: 'text', placeholder: 'Your name', autocomplete: 'given-name',
-    'aria-label': 'Your name', maxlength: '60',
+    'aria-label': 'Your name', maxlength: '60', value: pendingName,
   });
   const emailInput = h('input', {
     class: 'text-input', type: 'email', placeholder: 'Your email', autocomplete: 'email', value: pendingEmail,
@@ -125,10 +130,11 @@ function formScreen(ctx) {
       if (email === '') { emailInput.focus(); return; }
       if (sending) return;
       sending = true;
-      try { localStorage.setItem(PENDING_NAME_KEY, name); } catch { /* storage blocked: the name-screen fallback still works */ }
+      pendingName = name;   // kept for a retry after an error, whether or not this attempt succeeds
+      pendingEmail = email;
+      try { localStorage.setItem(PENDING_NAME_KEY, name); } catch { /* storage blocked: the name travels in the link itself anyway */ }
       try {
-        await sendMagicLink(email);
-        pendingEmail = email;
+        await sendMagicLink(email, name);
         step = 'sent';
       } catch (error) {
         step = 'error';

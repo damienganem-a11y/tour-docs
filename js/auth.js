@@ -37,14 +37,21 @@ export function looksLikeAuthCallback(hash, search) {
   return false;
 }
 
-// Sends the magic link. Throws a plain-language error on failure (e.g. no internet).
-export async function sendMagicLink(email) {
+// Sends the magic link. The name travels inside the link itself (as a query parameter, next to
+// the token Supabase adds), not in localStorage: the phone's mail app often opens the link in a
+// browsing context that does not share storage with the installed app, so anything saved locally
+// while sending the link can be gone by the time it is clicked. The name is not sensitive (it is
+// about to be shown on screen anyway), so this is a fine place for it.
+// Throws a plain-language error on failure — the REAL reason from Supabase when it answered at
+// all (for example a rate limit after several tries), or a connection message when it could not
+// even be reached.
+export async function sendMagicLink(email, name) {
   let supabase;
   try { supabase = await getClient(); }
   catch { throw new Error('Could not reach the sign-in service. Check your connection and try again.'); }
-  const redirectTo = location.origin + location.pathname;
+  const redirectTo = `${location.origin}${location.pathname}?name=${encodeURIComponent(name)}`;
   const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo, shouldCreateUser: true } });
-  if (error) throw new Error('Could not send the sign-in link. Check your connection and try again.');
+  if (error) throw new Error(error.message);
 }
 
 // Call once the page has loaded with a magic-link redirect in the address. Returns {id, email}
