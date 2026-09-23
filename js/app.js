@@ -12,10 +12,11 @@
 // Each view is a function that returns { node }: the screen content.
 
 import { h } from './dom.js';
-import { dbAll, dbGet, dbPut, saveTripAndJournal, withStores } from './db.js';
+import { dbAll, dbDelete, dbGet, dbPut, saveTripAndJournal, withStores } from './db.js';
 import { newId } from './ids.js';
 import { makeOwner } from './users.js';
 import { closeSheet } from './ui.js';
+import { signOut as authSignOut } from './auth.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { passcodeView } from './views/passcode.js';
@@ -54,13 +55,24 @@ const ctx = {
     return true;
   },
 
-  // Save the owner's name (asked once, on first launch) and show the app.
-  async saveOwner(name) {
-    const owner = makeOwner(newId(), name);
+  // Save the signed-in owner (asked once, on first launch — see welcome.js) and show the app.
+  // id comes from the Supabase account, not a locally generated one (see auth.js).
+  async saveOwner(name, id) {
+    const owner = makeOwner(id, name);
     await dbPut('settings', owner, 'owner');
     state.owner = owner;
     location.hash = '#/';
     render();
+  },
+
+  // Used by trips.js: "Sign out" (mainly for testing sign-in again; also useful if the phone
+  // changes hands). Clears the local sign-in, which is the real gate for offline use — the
+  // Supabase call is best-effort and not awaited, so this never blocks on the network.
+  async signOut() {
+    await dbDelete('settings', 'owner');
+    authSignOut();
+    location.hash = '#/';
+    location.reload(); // also clears welcome.js's own leftover state from any earlier attempt
   },
 
   // Save a newly loaded trip on the phone.

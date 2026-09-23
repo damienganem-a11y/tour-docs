@@ -15,7 +15,7 @@
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.18.1'; // keep equal to js/version.js
+const VERSION = '0.19.0'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
 const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)
@@ -30,6 +30,7 @@ const FILES = [
   'icons/icon-512.png',
   'data/tour_docs_sample_trip_ZX-01.json',
   'js/app.js',
+  'js/auth.js',
   'js/backup.js',
   'js/changes.js',
   'js/db.js',
@@ -43,6 +44,7 @@ const FILES = [
   'js/pdf.js',
   'js/rollcall.js',
   'js/rules.js',
+  'js/supabase-config.js',
   'js/time.js',
   'js/ui.js',
   'js/users.js',

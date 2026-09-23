@@ -19,6 +19,7 @@ import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
+import { looksLikeAuthCallback } from './auth.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -1860,6 +1861,18 @@ function readZip(bytes) {
   const blockedRename = await applyChange(renArchived, trip.id, { type: 'rename-trip', name: 'Should not work' });
   check('Renaming is refused while the trip is archived, unlike archive/un-archive/delete/reinstate themselves',
     !blockedRename.ok && /archived/.test(blockedRename.error), blockedRename.error);
+}
+
+// --- Accounts: sign-in link detection (v0.19.0) ---
+// Pure string checks only: the actual sign-in (network, email, Supabase) cannot be tested here
+// and is verified by hand on a real phone (see SPEC.md).
+{
+  check('looksLikeAuthCallback: a real magic-link redirect hash',
+    looksLikeAuthCallback('#access_token=abc&refresh_token=def&expires_in=3600&token_type=bearer&type=magiclink', ''));
+  check('looksLikeAuthCallback: an expired/invalid link redirect',
+    looksLikeAuthCallback('#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired', ''));
+  check('looksLikeAuthCallback: a plain empty visit is not a callback', !looksLikeAuthCallback('', ''));
+  check('looksLikeAuthCallback: an OAuth/PKCE-style ?code= redirect', looksLikeAuthCallback('', '?code=abc123'));
 }
 
 // --- Show the results ---

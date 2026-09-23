@@ -104,6 +104,10 @@ export function tripsView(ctx) {
       message,
       archivedSection,
       deletedSection,
+      h('button', {
+        class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 24px;',
+        onclick: () => ctx.signOut(),
+      }, 'Sign out'),
       // So you can see at once which version is on the phone, and whether it can work offline.
       h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION} · ${offlineStatus()}`)
     ),
