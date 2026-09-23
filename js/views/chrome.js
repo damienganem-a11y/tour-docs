@@ -11,14 +11,17 @@ import { openSheet, closeSheet } from '../ui.js';
 // beside it that the action button does not fill.
 // title is optional: a list screen already named by its eyebrow and its bottom tab (By guest, By
 // destination) does not need to repeat itself in a second, bigger heading. With no title, the
-// eyebrow and the action each get their own full-width line instead of sharing one row, so
-// buttons (e.g. the A-Z/Seat switch next to Undo) have real room to sit side by side.
+// eyebrow sits right above the action (Sort/Undo) — its own line, but tight against it (see
+// .page-head-eyebrow-only in styles.css), since squeezing both onto one row leaves the action's
+// own content (e.g. Sort + Undo together) too little room and forces an awkward wrap.
 export function pageHead({ back, eyebrow, title, subtitle, action, tightSubtitle = false }) {
   const eyebrowEl = eyebrow ? h('div', { class: 'eyebrow' }, eyebrow) : null;
   const detail = subtitle ? h('div', { class: 'subtitle' }, subtitle) : null;
   const backLink = back ? h('a', { class: 'back-link', href: back.href }, `‹ ${back.label}`) : null;
 
-  if (!title) return h('header', { class: 'page-head' }, backLink, eyebrowEl, action, detail);
+  if (!title) {
+    return h('header', { class: 'page-head page-head-eyebrow-only' }, backLink, eyebrowEl, action, detail);
+  }
 
   const heading = h('div', { class: 'page-head-text' }, eyebrowEl, h('h1', { class: 'title' }, title), tightSubtitle ? detail : null);
   return h('header', { class: 'page-head' },
