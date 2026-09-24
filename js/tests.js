@@ -14,7 +14,7 @@ import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings } from './rules.js';
+import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, dinnerFit, dinnerPartyCandidates } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
@@ -1040,8 +1040,8 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
     type: 'add-restaurant', destinationId: lisbon.id, name: 'O Pátio', seatings: ['20:00'], mode: 'strict',
     seatsPerSeating: null, maxTableSize: null, tableSizes: [4, 4, 6, 8], joinable: true,
   });
-  check('Add restaurant (Strict): tables and "joinable" are saved', addedStrict.ok
-    && ctx6r.state.restaurants.find((r) => r.id === addedStrict.entries[0].restaurantId)?.tableSizes.join(',') === '4,4,6,8'
+  check('Add restaurant (Strict): tables (each with their own id) and "joinable" are saved', addedStrict.ok
+    && ctx6r.state.restaurants.find((r) => r.id === addedStrict.entries[0].restaurantId)?.tables.map((t) => t.size).join(',') === '4,4,6,8'
     && ctx6r.state.restaurants.find((r) => r.id === addedStrict.entries[0].restaurantId)?.joinable === true);
   check('Refused (Strict): no tables, or a table size that is not a whole number',
     !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [], joinable: false })).ok
@@ -1068,7 +1068,7 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   const casaDoRioNow = () => ctx8r.state.restaurants.find((r) => r.id === casaDoRio);
   check('Edit restaurant: name, seatings and mode all change (switching Flexible to Strict clears the old mode\'s fields)',
     editedRestaurant.ok && casaDoRioNow().name === 'Casa do Rio (riverside)' && casaDoRioNow().mode === 'strict'
-    && casaDoRioNow().seatsPerSeating === null && casaDoRioNow().maxTableSize === null && casaDoRioNow().tableSizes.join(',') === '4,6');
+    && casaDoRioNow().seatsPerSeating === null && casaDoRioNow().maxTableSize === null && casaDoRioNow().tables.map((t) => t.size).join(',') === '4,6');
   check('The journal describes what changed: renamed, seating times, mode',
     /renamed to .*seating times updated.*mode set to strict/.test(summarize(groupBatches(ctx8r.entries).at(-1))), summarize(groupBatches(ctx8r.entries).at(-1)));
   await applyChange(ctx8r, trip.id, { type: 'undo' });
@@ -1077,6 +1077,95 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
     !(await applyChange(ctx8r, trip.id, { type: 'edit-restaurant', restaurantId: 'nope', name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok
     && !(await applyChange(ctx8r, trip.id, { type: 'edit-restaurant', restaurantId: casaDoRio, name: '  ', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok);
   check('Only the owner can edit a restaurant', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-restaurant', restaurantId: casaDoRio, name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok);
+
+  // =====================================================================
+  // Phase 3 step 2a: booking a dinner table
+  // =====================================================================
+  const evening = slot('S04'); // Lisbon's evening half-day (already has 4 sample "Dinner: X" activities —
+                                // booking a real dinner must still work: "no dinner yet" means kind !== 'dinner', not kind === blank)
+  const [g1, g2, g3, g4, g5, g6, g7, g8, g9] = trip.guests;
+
+  // --- dinnerFit (Flexible): seating capacity and max table size are independent limits ---
+  const ctxDF = makeCtx();
+  const seatingLimited = (await applyChange(ctxDF, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Small Seating', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 4, maxTableSize: 4, tableSizes: [], joinable: false })).entries[0].restaurantId;
+  const tableLimited = (await applyChange(ctxDF, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Small Tables', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 100, maxTableSize: 3, tableSizes: [], joinable: false })).entries[0].restaurantId;
+  const rDF = (id) => ctxDF.state.restaurants.find((r) => r.id === id);
+  check('dinnerFit (Flexible): a group that uses exactly the seating capacity fits',
+    dinnerFit(ctxDF.state, rDF(seatingLimited), evening, '19:00', 4).status === 'confirmed');
+  await applyChange(ctxDF, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: seatingLimited, seating: '19:00', guestIds: [g1.id, g2.id, g3.id, g4.id] });
+  check('dinnerFit (Flexible): once the seating is full, one more guest is a Special request, not refused',
+    dinnerFit(ctxDF.state, rDF(seatingLimited), evening, '19:00', 1).status === 'special-request');
+  check('dinnerFit (Flexible): a group bigger than the max table size does not fit, even with plenty of seats',
+    dinnerFit(ctxDF.state, rDF(tableLimited), evening, '19:00', 4).status === 'special-request'
+    && dinnerFit(ctxDF.state, rDF(tableLimited), evening, '19:00', 3).status === 'confirmed');
+
+  // --- dinnerFit (Strict): smallest free table, then joined pairs, then Special request ---
+  const ctxDS = makeCtx();
+  const strictNoJoin = (await applyChange(ctxDS, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'O Pátio', seatings: ['20:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4, 6], joinable: false })).entries[0].restaurantId;
+  const rDS = () => ctxDS.state.restaurants.find((r) => r.id === strictNoJoin);
+  check('dinnerFit (Strict): a group of 4 takes the 4-table, not the 6 (smallest that fits)',
+    dinnerFit(ctxDS.state, rDS(), evening, '20:00', 4).tableIds[0] === rDS().tables.find((t) => t.size === 4).id);
+  const booked4 = await applyChange(ctxDS, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: strictNoJoin, seating: '20:00', guestIds: [g1.id, g2.id, g3.id, g4.id] });
+  check('dinnerFit (Strict): with the 4-table taken, a group of 5 takes the 6-table', dinnerFit(ctxDS.state, rDS(), evening, '20:00', 5).tableIds[0] === rDS().tables.find((t) => t.size === 6).id);
+  await applyChange(ctxDS, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: strictNoJoin, seating: '20:00', guestIds: [g5.id, g6.id, g7.id, g8.id, g9.id] }); // takes the 6-table, leaving only the 2-table free
+  check('dinnerFit (Strict): only the 2-table is left; a group of 3 does not fit and joining is off, so it is a Special request',
+    dinnerFit(ctxDS.state, rDS(), evening, '20:00', 3).status === 'special-request' && dinnerFit(ctxDS.state, rDS(), evening, '20:00', 3).tableIds.length === 0);
+
+  const ctxJoin = makeCtx();
+  const joinable = (await applyChange(ctxJoin, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Terrace', seatings: ['20:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [3, 3], joinable: true })).entries[0].restaurantId;
+  const rJoin = () => ctxJoin.state.restaurants.find((r) => r.id === joinable);
+  check('dinnerFit (Strict, joinable): a group of 5 does not fit one table but fits both joined',
+    dinnerFit(ctxJoin.state, rJoin(), evening, '20:00', 5).status === 'confirmed' && dinnerFit(ctxJoin.state, rJoin(), evening, '20:00', 5).tableIds.length === 2);
+
+  // --- Book a table (the change itself) ---
+  const ctxB = makeCtx();
+  const flexible = (await applyChange(ctxB, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Casa do Rio', seatings: ['19:00', '21:00'], mode: 'flexible', seatsPerSeating: 40, maxTableSize: 8, tableSizes: [], joinable: false })).entries[0].restaurantId;
+  const before9 = structuredClone(ctxB.state);
+  const booking = await applyChange(ctxB, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexible, seating: '19:00', guestIds: [g1.id, g2.id] });
+  check('Book a table: creates the table (Confirmed) and moves both guests onto it',
+    booking.ok && booking.status === 'confirmed'
+    && guestPlace(ctxB.state, g1, evening).kind === 'dinner' && guestPlace(ctxB.state, g2, evening).kind === 'dinner');
+  check('The journal says: "Booked table for ... at Casa do Rio, 19:00"', summarize(groupBatches(ctxB.entries).at(-1)).startsWith('Booked table for') && summarize(groupBatches(ctxB.entries).at(-1)).includes('Casa do Rio, 19:00'));
+  check('A dinner-booked guest is not "nothing chosen yet": whoIsWhere keeps them in attention (so headcounts stay correct) with a truthful reason, but Warnings does not flag them',
+    whoIsWhere(ctxB.state, evening).attention.some((a) => a.guest.id === g1.id && a.reason.startsWith('Dining:'))
+    && !tripWarnings(ctxB.state).blank.some((b) => b.guest.id === g1.id) && !tripWarnings(ctxB.state).unknown.some((b) => b.guest.id === g1.id));
+  check('Refused: an unknown slot or restaurant, no guests, the same guest twice, a seating the restaurant does not offer, or a guest already booked for dinner this evening',
+    !(await applyChange(ctxB, trip.id, { type: 'book-dinner', slotId: 'nope', restaurantId: flexible, seating: '19:00', guestIds: [g3.id] })).ok
+    && !(await applyChange(ctxB, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: 'nope', seating: '19:00', guestIds: [g3.id] })).ok
+    && !(await applyChange(ctxB, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexible, seating: '19:00', guestIds: [] })).ok
+    && !(await applyChange(ctxB, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexible, seating: '19:00', guestIds: [g3.id, g3.id] })).ok
+    && !(await applyChange(ctxB, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexible, seating: '23:00', guestIds: [g3.id] })).ok
+    && !(await applyChange(ctxB, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexible, seating: '21:00', guestIds: [g1.id] })).ok);
+  check('Only the owner can book a table', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexible, seating: '19:00', guestIds: [g3.id] })).ok);
+
+  await applyChange(ctxB, trip.id, { type: 'undo' });
+  check('Undo removes the table and restores both guests to exactly what they had before (their planted sample activity)', restoredExactly(ctxB.state, before9));
+
+  // --- Moving a dinner-booked guest away (the ordinary Move sheet) frees their table once EVERYONE
+  // on it has left (2a never partially refills an existing table — that is a later step), and Undo
+  // restores the dinner rather than leaving the guest blank.
+  const ctxM = makeCtx();
+  const single = (await applyChange(ctxM, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'One Table', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2], joinable: false })).entries[0].restaurantId;
+  await applyChange(ctxM, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: single, seating: '19:00', guestIds: [g1.id] });
+  const rM = () => ctxM.state.restaurants.find((r) => r.id === single);
+  check('The only table is taken by one guest: a new booking does not fit it (2a never partially fills a table)',
+    dinnerFit(ctxM.state, rM(), evening, '19:00', 1).status === 'special-request');
+  await applyChange(ctxM, trip.id, { type: 'move', guestId: g1.id, slotId: evening.id, to: { kind: 'leisure' } });
+  check('Journal is truthful about leaving a dinner (not "from nothing chosen")',
+    summarize(groupBatches(ctxM.entries).at(-1)).includes('from One Table, 19:00'), summarize(groupBatches(ctxM.entries).at(-1)));
+  check('The table is free again once its only guest leaves (occupancy is derived live, never cached)',
+    dinnerFit(ctxM.state, rM(), evening, '19:00', 1).status === 'confirmed' && guestPlace(ctxM.state, g1, evening).kind === 'leisure');
+  await applyChange(ctxM, trip.id, { type: 'undo' });
+  check('Undoing that move restores the guest to the dinner booking, not blank', guestPlace(ctxM.state, g1, evening).kind === 'dinner');
+
+  // --- Travel-party candidates for dining ---
+  const ctxP = makeCtx();
+  const partyRestaurant = (await applyChange(ctxP, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Party Test', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 8, tableSizes: [], joinable: false })).entries[0].restaurantId;
+  await applyChange(ctxP, trip.id, { type: 'create-party', guestIds: [g1.id, g2.id] });
+  const g1InP = () => ctxP.state.guests.find((g) => g.id === g1.id); // fresh: create-party updated ctxP.state, not the original g1 object
+  check('dinnerPartyCandidates: offers an unbooked travel-party member', dinnerPartyCandidates(ctxP.state, g1InP(), evening).some((g) => g.id === g2.id));
+  await applyChange(ctxP, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: partyRestaurant, seating: '19:00', guestIds: [g2.id] });
+  check('dinnerPartyCandidates: excludes a party member already booked for dinner', !dinnerPartyCandidates(ctxP.state, g1InP(), evening).some((g) => g.id === g2.id));
 
   // --- Replace a destination (rare) ---
   const marrakech = trip.destinations.find((d) => d.name === 'Marrakech');

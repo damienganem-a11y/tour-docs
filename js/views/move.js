@@ -16,6 +16,7 @@ import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, p
 const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :
   place.kind === 'leisure' ? 'At leisure' :
+  place.kind === 'dinner' ? `dining at ${place.restaurant.name} (${place.booking.seating})` :
   place.kind === 'unknown' ? `unknown activity "${place.raw}"` : 'nothing chosen yet';
 
 // ---------- Small building blocks ----------

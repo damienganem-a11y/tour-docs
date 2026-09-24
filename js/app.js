@@ -3,7 +3,8 @@
 // The app has a handful of screens ("views"). The address after the # in the URL says which one
 // to show:
 //     #/                              the Trips screen
-//     #/trip/<id>/use/destination[/<destinationId>[/<slotId>]]   Use, By destination
+//     #/trip/<id>/use/destination[/<destinationId>[/<slotId>]]   Use, Touring
+//     #/trip/<id>/use/dining[/<destinationId>[/<slotId>]]        Use, Dining
 //     #/trip/<id>/use/guest[/<guestId>]                          Use, By guest (a list, or one guest)
 //     #/trip/<id>/settings                                       Settings
 //     #/trip/<id>/rollcall/<activityId>                          the roll call of one activity
@@ -130,6 +131,7 @@ const ctx = {
       parties: [],
       guests: [],
       bookings: {},
+      dinnerBookings: [],
       rollCalls: [],
     };
     await dbPut('trips', copy);
@@ -141,7 +143,7 @@ const ctx = {
   // Used by backup.js: restores a trip and its whole journal from a backup file (Settings >
   // Backup), replacing whatever this phone already has for that trip id (if anything).
   async restoreBackup(trip, journalEntries) {
-    trip.restaurants ??= []; // a backup made before restaurants existed (Phase 3 step 1)
+    migrateTrip(trip); // a backup made before a later step shipped (see migrateTrip below)
     const staleKeys = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAllKeys(trip.id));
     await withStores(['trips', 'journal'], 'readwrite', (s) => {
       s.trips.put(trip);
@@ -201,6 +203,25 @@ function render({ keepScroll = false } = {}) {
   window.scrollTo(0, keepScroll ? scrollY : 0);
 }
 
+// A trip saved before a later step shipped is missing whatever that step added. Applied to every
+// trip loaded from IndexedDB or a backup file, before it is used.
+//   Phase 3 step 1: `restaurants` may not exist yet.
+//   Phase 3 step 2a: `dinnerBookings` may not exist yet; a Strict-mode restaurant saved before this
+//     step stored `tableSizes` (plain numbers) instead of `tables` (each with a stable id, needed so
+//     a booking can say exactly which table it occupies) — converted here, fresh ids all round since
+//     nothing could reference a table before this step existed.
+function migrateTrip(trip) {
+  trip.restaurants ??= [];
+  trip.dinnerBookings ??= [];
+  for (const r of trip.restaurants) {
+    if (r.mode === 'strict' && !r.tables && r.tableSizes) {
+      r.tables = r.tableSizes.map((size) => ({ id: newId(), size }));
+      delete r.tableSizes;
+    }
+  }
+  return trip;
+}
+
 // index.html shows a boot splash (the app's name, with its own little animation) the instant the page
 // opens, before this script has even run, so the phone never shows a blank screen while it starts.
 // It is replaced by the real screen the moment start() below is ready — no artificial wait.
@@ -208,8 +229,7 @@ function render({ keepScroll = false } = {}) {
 async function start() {
   try {
     state.owner = await dbGet('settings', 'owner');
-    // A trip saved before restaurants existed (Phase 3 step 1) has no `restaurants` array yet.
-    for (const trip of await dbAll('trips')) { trip.restaurants ??= []; state.trips.set(trip.id, trip); }
+    for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); }
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
     }

@@ -115,8 +115,12 @@ export function partyLabel(trip, guest, names) {
 // Everybody's place in one half-day. Every guest lands in exactly one of three groups:
 //   byActivity  Map: activity id -> guests booked on it
 //   leisure     guests At leisure
-//   attention   guests with no valid booking: [{ guest, reason }]  (nothing chosen yet, or an
-//               activity name that matched nothing). The Warnings screen (step 9) lists these too.
+//   attention   guests with no Touring booking: [{ guest, reason }]  (nothing chosen yet, an activity
+//               name that matched nothing, OR a dinner booking — Touring itself has nothing to show
+//               for them, but they are NOT a problem, unlike the other two: tripWarnings below skips
+//               them, and they stay in this array rather than a bucket of their own so nobody
+//               reading `attention`'s length (Touring's own card, every export's headcount) silently
+//               undercounts guests once dining exists.
 export function whoIsWhere(trip, slot) {
   const byActivity = new Map(trip.activities.filter((a) => a.slotId === slot.id).map((a) => [a.id, []]));
   const leisure = [];
@@ -129,16 +133,24 @@ export function whoIsWhere(trip, slot) {
     const booking = trip.bookings[guest.id]?.[slot.id];
     if (booking?.kind === 'activity' && byActivity.has(booking.activityId)) byActivity.get(booking.activityId).push(guest);
     else if (booking?.kind === 'leisure') leisure.push(guest);
-    else attention.push({ guest, reason: attentionReason(booking) });
+    else attention.push({ guest, reason: attentionReason(trip, booking) });
   }
   return { byActivity, leisure, attention };
 }
 
-const attentionReason = (booking) =>
-  booking?.kind === 'unknown' ? `Unknown activity: "${booking.raw}"` : 'Nothing chosen yet';
+function attentionReason(trip, booking) {
+  if (booking?.kind === 'unknown') return `Unknown activity: "${booking.raw}"`;
+  if (booking?.kind === 'dinner') {
+    const dinnerBooking = trip.dinnerBookings.find((b) => b.id === booking.bookingId);
+    const restaurant = dinnerBooking && trip.restaurants.find((r) => r.id === dinnerBooking.restaurantId);
+    return restaurant ? `Dining: ${restaurant.name}, ${dinnerBooking.seating}` : 'Dining';
+  }
+  return 'Nothing chosen yet';
+}
 
 // One guest's place in one half-day, ready to show:
-//   { kind: 'activity', activity } | { kind: 'leisure' } | { kind: 'blank' } | { kind: 'unknown', raw }
+//   { kind: 'activity', activity } | { kind: 'leisure' } | { kind: 'dinner', booking, restaurant }
+//   | { kind: 'blank' } | { kind: 'unknown', raw }
 export function guestPlace(trip, guest, slot) {
   const booking = trip.bookings[guest.id]?.[slot.id];
   if (booking?.kind === 'activity') {
@@ -146,6 +158,11 @@ export function guestPlace(trip, guest, slot) {
     if (activity) return { kind: 'activity', activity };
   }
   if (booking?.kind === 'leisure') return { kind: 'leisure' };
+  if (booking?.kind === 'dinner') {
+    const dinnerBooking = trip.dinnerBookings.find((b) => b.id === booking.bookingId);
+    const restaurant = dinnerBooking && trip.restaurants.find((r) => r.id === dinnerBooking.restaurantId);
+    if (dinnerBooking && restaurant) return { kind: 'dinner', booking: dinnerBooking, restaurant };
+  }
   if (booking?.kind === 'unknown') return { kind: 'unknown', raw: booking.raw };
   return { kind: 'blank' };
 }
@@ -159,7 +176,8 @@ export function slotLabel(trip, slot) {
 // Are two places (from guestPlace) the same? Two guests "At leisure" are in the same place.
 export function samePlace(a, b) {
   return (a.kind === 'activity' && b.kind === 'activity' && a.activity.id === b.activity.id)
-    || (a.kind === 'leisure' && b.kind === 'leisure');
+    || (a.kind === 'leisure' && b.kind === 'leisure')
+    || (a.kind === 'dinner' && b.kind === 'dinner' && a.booking.id === b.booking.id);
 }
 
 // The other people of a guest's travel party who are in the SAME place as the guest in this half-day.
@@ -220,6 +238,60 @@ export function capacityInfo(count, capacity) {
   return { text: `${count} / ${capacity}`, tone: null };
 }
 
+// ---------- Dining (Phase 3 step 2a) ----------
+
+// How many guests are currently on a dinner table, right now — derived the same way countIn works
+// for an activity (never cached on the booking itself), so a table someone left later frees back up.
+export function dinnerCountIn(trip, dinnerBooking) {
+  let count = 0;
+  for (const guest of trip.guests) {
+    if (!guest.leftAt && trip.bookings[guest.id]?.[dinnerBooking.slotId]?.bookingId === dinnerBooking.id) count++;
+  }
+  return count;
+}
+
+// Would a group of `guestCount` guests fit at this restaurant, this evening, this seating? Returns
+// { status: 'confirmed' | 'special-request', tableIds }. Never a refusal — a group that fits nowhere
+// is still bookable, just flagged for the local team (the owner's choice, 24 Sep 2026: "flexible with
+// a waitlist"). Deliberately simple rules (ROADMAP.md: "fixed rules, not AI"): Strict mode tries one
+// free table big enough, then (if joinable) the best-fitting pair of free tables — never three or more.
+export function dinnerFit(trip, restaurant, slot, seating, guestCount) {
+  const bookingsHere = trip.dinnerBookings.filter((b) =>
+    b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0);
+
+  if (restaurant.mode === 'flexible') {
+    const used = bookingsHere.reduce((sum, b) => sum + dinnerCountIn(trip, b), 0);
+    const fits = used + guestCount <= restaurant.seatsPerSeating && guestCount <= restaurant.maxTableSize;
+    return { status: fits ? 'confirmed' : 'special-request', tableIds: [] };
+  }
+
+  const usedTableIds = new Set(bookingsHere.flatMap((b) => b.tableIds));
+  const free = restaurant.tables.filter((t) => !usedTableIds.has(t.id)).sort((a, b) => a.size - b.size);
+  const single = free.find((t) => t.size >= guestCount);
+  if (single) return { status: 'confirmed', tableIds: [single.id] };
+
+  if (restaurant.joinable) {
+    let best = null;
+    for (let i = 0; i < free.length; i++) {
+      for (let j = i + 1; j < free.length; j++) {
+        const total = free[i].size + free[j].size;
+        if (total >= guestCount && (!best || total < best.total)) best = { total, ids: [free[i].id, free[j].id] };
+      }
+    }
+    if (best) return { status: 'confirmed', tableIds: best.ids };
+  }
+  return { status: 'special-request', tableIds: [] };
+}
+
+// The guest's travel party members who are not yet booked for dinner this evening — offered as
+// "also book their table?" candidates. Not partyMovers: that answers "who's already co-located",
+// which makes no sense before the table exists; this answers "who else might join it".
+export function dinnerPartyCandidates(trip, guest, slot) {
+  return trip.guests.filter((other) =>
+    !other.leftAt && other.partyId === guest.partyId && other.id !== guest.id
+    && guestPlace(trip, other, slot).kind !== 'dinner');
+}
+
 // ---------- Warnings (SPEC.md, "7. Warnings screen") ----------
 
 // Everything across the whole trip that needs a human to look at it:
@@ -239,6 +311,7 @@ export function tripWarnings(trip) {
     const { attention } = whoIsWhere(trip, slot);
     for (const { guest, reason } of attention) {
       const booking = trip.bookings[guest.id]?.[slot.id];
+      if (booking?.kind === 'dinner') continue; // booked for dinner: not a problem, nothing to warn about
       (booking?.kind === 'unknown' ? unknown : blank).push({ guest, slot, destination, reason });
     }
   }

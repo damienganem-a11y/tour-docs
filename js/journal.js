@@ -18,7 +18,7 @@ const inBatchOrder = (a, b) => (a.n ?? 0) - (b.n ?? 0);
 const inTimeOrder = (a, b) => a.seq - b.seq || a.at.localeCompare(b.at);
 
 // All the actions of a trip, oldest first. An action looks like:
-//   { batchId, seq, at, who, place, slotId, slotLabel, entries, kind: 'move' | 'cancel-tour' | 'undo', undone: true/false }
+//   { batchId, seq, at, who, place, slotId, slotLabel, entries, kind: 'move' | 'cancel-tour' | 'book-dinner' | 'undo', undone: true/false }
 // `undone` is true when a later Undo took this action back.
 export function groupBatches(entries) {
   const byBatch = new Map();
@@ -48,6 +48,9 @@ export function groupBatches(entries) {
         : types.has('edit-activity') ? 'edit-activity'
         : types.has('add-restaurant') ? 'add-restaurant'
         : types.has('edit-restaurant') ? 'edit-restaurant'
+        // A book-dinner batch also contains one 'move' entry per guest — must classify as
+        // book-dinner, not fall through to the generic 'move' handling below.
+        : types.has('book-dinner') ? 'book-dinner'
         : types.has('edit-guest') ? 'edit-guest'
         : types.has('guest-left') ? 'guest-left'
         : types.has('guest-return') ? 'guest-return'
@@ -73,6 +76,10 @@ export function groupBatches(entries) {
 export const USE_UNDO_SCOPE = ['move', 'cancel-tour'];                // By destination, By guest
 export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity']; // Settings > Touring
 export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant']; // Settings > Dining
+// Use > Dining's own Undo (Phase 3 step 2a). A guest later moved off a table through the ordinary
+// Move sheet is a plain 'move' batch — undoable from Touring/By guest's own Undo, not this one; a
+// known, minor, accepted edge (see the step's plan).
+export const DINING_USE_UNDO_SCOPE = ['book-dinner'];
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
 
@@ -124,6 +131,7 @@ export function summarize(batch) {
   if (batch.kind === 'edit-activity') return summarizeEditActivity(batch.entries[0]);
   if (batch.kind === 'add-restaurant') { const e = batch.entries[0]; return `Added "${e.restaurantLabel}" (${e.slotLabel})`; }
   if (batch.kind === 'edit-restaurant') return summarizeEditRestaurant(batch.entries[0]);
+  if (batch.kind === 'book-dinner') return summarizeBookDinner(batch);
   if (batch.kind === 'edit-guest') return summarizeEditGuest(batch.entries[0]);
   if (batch.kind === 'guest-left') return `${batch.entries[0].guestName} left the trip`;
   if (batch.kind === 'guest-return') return `${batch.entries[0].guestName} is back on the trip`;
@@ -222,8 +230,18 @@ function summarizeEditRestaurant(entry) {
   if (JSON.stringify(entry.from.seatings) !== JSON.stringify(entry.to.seatings)) changed.push('seating times updated');
   if (entry.from.mode !== entry.to.mode) changed.push(`mode set to ${entry.to.mode}`);
   else if (entry.to.mode === 'flexible' && (entry.from.seatsPerSeating !== entry.to.seatsPerSeating || entry.from.maxTableSize !== entry.to.maxTableSize)) changed.push('capacity updated');
-  else if (entry.to.mode === 'strict' && (JSON.stringify(entry.from.tableSizes) !== JSON.stringify(entry.to.tableSizes) || entry.from.joinable !== entry.to.joinable)) changed.push('tables updated');
+  // Compare by size only (not id): reconcileTables (changes.js) may give an unchanged-size table a
+  // fresh id incidentally; that alone must never read as "tables updated".
+  else if (entry.to.mode === 'strict' && (JSON.stringify((entry.from.tables ?? []).map((t) => t.size)) !== JSON.stringify(entry.to.tables.map((t) => t.size)) || entry.from.joinable !== entry.to.joinable)) changed.push('tables updated');
   return `"${entry.from.name}": ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
+}
+
+// One table booked: who, where, when, and whether it needs the local team's attention.
+function summarizeBookDinner(batch) {
+  const entry = batch.entries.find((e) => e.type === 'book-dinner');
+  const guestNames = alphaNames(batch.entries.filter((e) => e.type === 'move'));
+  const tag = entry.status === 'special-request' ? ' — Special request' : '';
+  return `Booked table for ${joinNames(guestNames)} at ${entry.restaurantLabel}, ${entry.seating}${tag}`;
 }
 
 // What changed about a guest's own name, in words.

@@ -117,7 +117,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
   const content = page === 'guest' ? guestPage(ctx, trip, first)
-    : page === 'dining' ? diningPage(ctx, trip)
+    : page === 'dining' ? diningPage(ctx, trip, first, second)
     : destinationPage(ctx, trip, first, second);
   const activePage = page === 'guest' ? 'guest' : page === 'dining' ? 'dining' : 'destination';
   const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },

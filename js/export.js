@@ -115,6 +115,7 @@ function guestItineraries(trip) {
       const place = guestPlace(trip, guest, slot);
       const what = place.kind === 'activity' ? place.activity.name
         : place.kind === 'leisure' ? 'At leisure'
+        : place.kind === 'dinner' ? `Dining: ${place.restaurant.name} (${place.booking.seating})`
         : place.kind === 'unknown' ? `Unknown: "${place.raw}"`
         : 'Nothing chosen yet';
       return { when: `Day ${slot.day} · ${slot.half}`, destination: destination.name, what };

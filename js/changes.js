@@ -8,9 +8,10 @@
 //   3. the journal says who, what, from, to and when (the exact moment).
 //
 // A change is one of:
-//   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' }, force?, approvedBy? }
+//   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'dinner', bookingId, label }, force?, approvedBy? }
 //       force: true lets a move go into a full tour (the dispatcher has authority; owner only). The journal
-//       then says "forced", with the optional note approvedBy ("Approved by Sam").
+//       then says "forced", with the optional note approvedBy ("Approved by Sam"). A dinner `to` is written
+//       by book-dinner below, never asked for directly (there is no "just move to this dinner" picker yet).
 //   { type: 'cancel-tour', activityId }        everybody on it goes to At leisure, it stays as "Cancelled"
 //   { type: 'undo', scope? }                    takes back the last action (like Ctrl+Z); scope narrows
 //       "last" to one screen's own kind of actions (see journal.js's lastUndoable) — omit for trip-wide
@@ -30,10 +31,19 @@
 //   { type: 'replace-destination', destinationId, name, country, timeZone }  a rare fix: the destination becomes a
 //       different place. Its tours are cancelled and everybody on them goes to At leisure, in the same one action.
 //   { type: 'add-restaurant', destinationId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes, joinable }
-//       Phase 3 step 1: settings only, nothing can be booked onto a restaurant yet. seatings: array of
-//       "HH:MM" strings (at least one). mode: 'flexible' (seatsPerSeating + maxTableSize set, the other
-//       two null) or 'strict' (tableSizes + joinable set, the other two null).
+//       Settings only. seatings: array of "HH:MM" strings (at least one). mode: 'flexible'
+//       (seatsPerSeating + maxTableSize set, the other two null) or 'strict' (tableSizes + joinable
+//       set, the other two null). tableSizes here is the FORM's plain list of numbers (e.g. [4,4,6,8]);
+//       doApply turns it into the restaurant's stored `tables: [{id,size}]` (see reconcileTables below)
+//       — a specific table needs a stable id once bookings can reference "this exact table" (step 2a).
 //   { type: 'edit-restaurant', restaurantId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes, joinable }
+//   { type: 'book-dinner', slotId, restaurantId, seating, guestIds: [id, ...] }
+//       Phase 3 step 2a: always creates a NEW table (adding to/moving an existing one is a later step).
+//       Never rejected for "no room" — if it does not fit, it is saved anyway as a Special request
+//       (see dinnerFit in rules.js). Applied alone, like cancel-tour. Internally this is one
+//       'book-dinner' journal entry (the table itself) plus one 'move' entry per guest (to:{kind:'dinner'}),
+//       reusing the ordinary move machinery — Undo, the Journal's guest-name search and per-guest
+//       history all come from that for free.
 //   Guests and travel parties (step 7c/7d), each on its own:
 //   { type: 'edit-guest', guestId, first, last }             the guest's own name (the shown name is worked out from it)
 //   { type: 'guest-left', guestId }                          "Guest left the trip": removed from every day-to-day
@@ -59,7 +69,7 @@
 
 import { newId } from './ids.js';
 import { canUser } from './users.js';
-import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural } from './rules.js';
+import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
@@ -68,6 +78,8 @@ import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // Settings changes (step 7): each is made on its own, like cancel-tour and undo.
 const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant']);
+// Booking a dinner table (Phase 3 step 2a): also made on its own, like cancel-tour.
+const DINING_BOOKING_TYPES = new Set(['book-dinner']);
 // Guest and travel party changes (step 7c/7d): also each on its own.
 const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']);
 // The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own. Allowed even when
@@ -98,11 +110,12 @@ export function validateChanges(trip, user, changes, journal = []) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
-    return fail('Cancelling a tour, undoing, roll call, settings, guest and trip changes are changes of their own.');
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+    return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
   if (SETTINGS_TYPES.has(changes[0].type)) return validateSettingsChange(trip, changes[0]);
+  if (DINING_BOOKING_TYPES.has(changes[0].type)) return validateBookDinner(trip, changes[0]);
   if (GUEST_TYPES.has(changes[0].type)) return validateGuestChange(trip, changes[0]);
   if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
   if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
@@ -223,10 +236,13 @@ function validateUndo(trip, journal, scope) {
       if (!restaurant) return fail('This action cannot be undone: the restaurant no longer exists.');
       if (restaurant.name !== entry.to.name || JSON.stringify(restaurant.seatings) !== JSON.stringify(entry.to.seatings)
         || restaurant.mode !== entry.to.mode || restaurant.seatsPerSeating !== entry.to.seatsPerSeating
-        || restaurant.maxTableSize !== entry.to.maxTableSize || JSON.stringify(restaurant.tableSizes) !== JSON.stringify(entry.to.tableSizes)
+        || restaurant.maxTableSize !== entry.to.maxTableSize || JSON.stringify(restaurant.tables) !== JSON.stringify(entry.to.tables)
         || restaurant.joinable !== entry.to.joinable) {
         return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
       }
+    }
+    if (entry.type === 'book-dinner') {
+      if (!trip.dinnerBookings.some((b) => b.id === entry.bookingId)) return fail('This action cannot be undone: the table no longer exists.');
     }
     if (entry.type === 'edit-guest') {
       const guest = trip.guests.find((g) => g.id === entry.guestId);
@@ -280,6 +296,19 @@ function validateUndo(trip, journal, scope) {
 // A time typed as "HH:MM", or '' for no time.
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const isBlank = (text) => String(text ?? '').trim().length === 0;
+
+// Turns a Strict restaurant's typed table sizes (plain numbers, e.g. [4,4,6,8]) into stable table
+// entities ({id,size}) a booking can reference. Matches by SIZE, not position, so reordering the
+// typed list (e.g. "6, 4" -> "4, 6", same tables) never reassigns ids — only an actual change to the
+// bag of sizes (added, removed, resized) does. Each existing table is matched at most once.
+function reconcileTables(existingTables, newSizes) {
+  const pool = [...(existingTables ?? [])];
+  return newSizes.map((size) => {
+    const i = pool.findIndex((t) => t.size === size);
+    if (i === -1) return { id: newId(), size };
+    return pool.splice(i, 1)[0];
+  });
+}
 
 // Checks one settings change (see the list at the top). None of these touch bookings directly, except
 // replace-destination, which also cancels tours (checked here as "the destination exists", the tours
@@ -336,6 +365,28 @@ function validateRestaurantFields(change) {
     if (!change.tableSizes.every((n) => Number.isInteger(n) && n >= 1)) return fail('Each table size is a whole number of 1 or more.');
   } else {
     return fail('Choose Flexible or Strict.');
+  }
+  return { ok: true };
+}
+
+// Checks one book-dinner change (see the list at the top). Never refuses for "no room" — that just
+// changes the outcome (Confirmed vs. Special request), decided later in doApply by dinnerFit.
+function validateBookDinner(trip, change) {
+  const slot = trip.slots.find((s) => s.id === change.slotId);
+  if (!slot) return fail('That half-day does not exist.');
+  const restaurant = trip.restaurants.find((r) => r.id === change.restaurantId);
+  if (!restaurant) return fail('That restaurant does not exist.');
+  if (restaurant.destinationId !== slot.destinationId) return fail('That restaurant is not in this destination.');
+  if (!restaurant.seatings.includes(change.seating)) return fail('That is not one of this restaurant\'s seating times.');
+  if (!Array.isArray(change.guestIds) || change.guestIds.length === 0) return fail('Pick at least one guest for the table.');
+  if (new Set(change.guestIds).size !== change.guestIds.length) return fail('The same guest appears twice.');
+
+  for (const guestId of change.guestIds) {
+    const guest = trip.guests.find((g) => g.id === guestId);
+    if (!guest || guest.leftAt) return fail('One of those guests is not on this trip.');
+    if (guestPlace(trip, guest, slot).kind === 'dinner') {
+      return fail(`${displayNames(trip.guests).get(guestId)} is already booked for dinner this evening.`);
+    }
   }
   return { ok: true };
 }
@@ -545,12 +596,15 @@ async function doApply(ctx, tripId, changes) {
     return save(ctx, next, entries, { summary });
   }
 
-  // A "move" of one guest in one half-day.
+  // A "move" of one guest in one half-day. to.kind 'dinner' is written only by book-dinner below
+  // (there is no direct "move to this dinner" picker yet) — it never forces, so `forced` stays false.
   const move = (guest, slot, to, cause, force = false, approvedBy = null) => {
     const before = guestPlace(trip, guest, slot);
     const forced = force && to.kind === 'activity' && willBeOver(to.activityId);
     next.bookings[guest.id] ??= {};
-    next.bookings[guest.id][slot.id] = to.kind === 'leisure' ? { kind: 'leisure' } : { kind: 'activity', activityId: to.activityId };
+    next.bookings[guest.id][slot.id] = to.kind === 'leisure' ? { kind: 'leisure' }
+      : to.kind === 'dinner' ? { kind: 'dinner', bookingId: to.bookingId }
+      : { kind: 'activity', activityId: to.activityId };
 
     // Names are copied in as text, so the journal still reads correctly even if things are renamed later.
     entries.push({
@@ -560,6 +614,7 @@ async function doApply(ctx, tripId, changes) {
       ...where(trip, slot),
       from: describe(before),
       to: to.kind === 'leisure' ? { kind: 'leisure', label: 'At leisure' }
+        : to.kind === 'dinner' ? { kind: 'dinner', bookingId: to.bookingId, label: to.label }
         : { kind: 'activity', activityId: to.activityId, label: trip.activities.find((a) => a.id === to.activityId).name },
     });
   };
@@ -682,16 +737,19 @@ async function doApply(ctx, tripId, changes) {
     }
 
     if (change.type === 'add-restaurant' || change.type === 'edit-restaurant') {
+      const existing = change.type === 'edit-restaurant' ? next.restaurants.find((r) => r.id === change.restaurantId) : null;
       const destination = change.type === 'add-restaurant'
         ? trip.destinations.find((d) => d.id === change.destinationId)
-        : trip.destinations.find((d) => d.id === trip.restaurants.find((r) => r.id === change.restaurantId).destinationId);
+        : trip.destinations.find((d) => d.id === existing.destinationId);
       const name = change.name.trim();
       const seatings = [...change.seatings].sort();
       // Only the fields for the chosen mode are kept; the other mode's fields are null, so a restaurant
-      // never carries stale numbers from a mode it is no longer in.
+      // never carries stale numbers from a mode it is no longer in. Strict mode's tables keep their
+      // stable ids across an edit where their size did not change (see reconcileTables) — a booking
+      // (step 2a) references a table by id, so an edit must not silently orphan it.
       const fields = change.mode === 'flexible'
-        ? { mode: 'flexible', seatsPerSeating: change.seatsPerSeating, maxTableSize: change.maxTableSize, tableSizes: null, joinable: null }
-        : { mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [...change.tableSizes], joinable: Boolean(change.joinable) };
+        ? { mode: 'flexible', seatsPerSeating: change.seatsPerSeating, maxTableSize: change.maxTableSize, tables: null, joinable: null }
+        : { mode: 'strict', seatsPerSeating: null, maxTableSize: null, tables: reconcileTables(existing?.tables, change.tableSizes), joinable: Boolean(change.joinable) };
       // A restaurant is destination-level, not tied to one half-day, so it is shown in the Journal by
       // the destination's own name and time zone, like edit-destination below.
       const destWhere = { slotId: null, slotLabel: destination.name, place: { name: destination.name, timeZone: destination.timeZone } };
@@ -701,11 +759,10 @@ async function doApply(ctx, tripId, changes) {
         next.restaurants.push(restaurant);
         entries.push({ ...base(), type: 'add-restaurant', restaurantId: restaurant.id, restaurantLabel: name, ...destWhere });
       } else {
-        const restaurant = next.restaurants.find((r) => r.id === change.restaurantId);
-        const from = { name: restaurant.name, seatings: restaurant.seatings, mode: restaurant.mode, seatsPerSeating: restaurant.seatsPerSeating, maxTableSize: restaurant.maxTableSize, tableSizes: restaurant.tableSizes, joinable: restaurant.joinable };
+        const from = { name: existing.name, seatings: existing.seatings, mode: existing.mode, seatsPerSeating: existing.seatsPerSeating, maxTableSize: existing.maxTableSize, tables: existing.tables, joinable: existing.joinable };
         const to = { name, seatings, ...fields };
-        Object.assign(restaurant, to);
-        entries.push({ ...base(), type: 'edit-restaurant', restaurantId: restaurant.id, ...destWhere, from, to });
+        Object.assign(existing, to);
+        entries.push({ ...base(), type: 'edit-restaurant', restaurantId: existing.id, ...destWhere, from, to });
       }
       return save(ctx, next, entries, {});
     }
@@ -739,6 +796,29 @@ async function doApply(ctx, tripId, changes) {
     }
     Object.assign(destination, to);
     return save(ctx, next, entries, {});
+  }
+
+  // Booking a dinner table (Phase 3 step 2a). Never rejected for "no room" — dinnerFit decides
+  // Confirmed vs. Special request; either way the table is created and the guests are moved onto it.
+  // One 'book-dinner' entry (the table itself) plus one 'move' entry per guest (reusing move() above,
+  // so Undo, the Journal's guest-name search and per-guest history all come from the existing,
+  // tested machinery instead of a second, parallel implementation).
+  if (DINING_BOOKING_TYPES.has(changes[0].type)) {
+    const change = changes[0];
+    const slot = trip.slots.find((s) => s.id === change.slotId);
+    const restaurant = trip.restaurants.find((r) => r.id === change.restaurantId);
+    const { status, tableIds } = dinnerFit(trip, restaurant, slot, change.seating, change.guestIds.length);
+    const booking = { id: newId(), slotId: slot.id, restaurantId: restaurant.id, seating: change.seating, tableIds, status };
+    next.dinnerBookings.push(booking);
+    entries.push({
+      ...base(), type: 'book-dinner', bookingId: booking.id, restaurantId: restaurant.id,
+      restaurantLabel: restaurant.name, seating: change.seating, status, ...where(trip, slot),
+    });
+    const label = `${restaurant.name}, ${change.seating}`;
+    for (const guestId of change.guestIds) {
+      move(trip.guests.find((g) => g.id === guestId), slot, { kind: 'dinner', bookingId: booking.id, label }, 'book-dinner');
+    }
+    return save(ctx, next, entries, { status });
   }
 
   // Guests and travel parties (step 7c/7d): each made on its own.
@@ -969,6 +1049,14 @@ function undoEntry(next, entry, base, entries) {
     });
     return;
   }
+  // The table itself; each guest who was on it is put back by their own 'move' entry, undone
+  // separately (see doApply's book-dinner handling — the guest moves are pushed after this entry,
+  // so they are undone BEFORE it, in reverse order, and this only ever removes an empty table).
+  if (entry.type === 'book-dinner') {
+    next.dinnerBookings = next.dinnerBookings.filter((b) => b.id !== entry.bookingId);
+    entries.push({ ...base(), type: 'dinner-remove', cause: 'undo', bookingId: entry.bookingId, restaurantLabel: entry.restaurantLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
   if (entry.type === 'edit-guest') {
     const guest = next.guests.find((g) => g.id === entry.guestId);
     Object.assign(guest, entry.from);
@@ -1013,6 +1101,7 @@ function undoEntry(next, entry, base, entries) {
   const row = (next.bookings[entry.guestId] ??= {});
   if (entry.from.kind === 'blank') delete row[entry.slotId];
   else if (entry.from.kind === 'leisure') row[entry.slotId] = { kind: 'leisure' };
+  else if (entry.from.kind === 'dinner') row[entry.slotId] = { kind: 'dinner', bookingId: entry.from.bookingId };
   else if (entry.from.kind === 'unknown') row[entry.slotId] = { kind: 'unknown', raw: entry.from.raw };
   else row[entry.slotId] = { kind: 'activity', activityId: entry.from.activityId };
 
@@ -1041,10 +1130,14 @@ function where(trip, slot) {
   return { slotId: slot.id, slotLabel: slotLabel(trip, slot), place: { name: destination.name, timeZone: destination.timeZone } };
 }
 
-// A guest's place before a change, as text for the journal.
+// A guest's place before a change, as text for the journal. The dinner case matters even though
+// nothing here directly offers "move to this dinner": the ordinary Move sheet (move.js) is a
+// generic entry point into any slot booking, so a dinner-booked guest moved through it must be
+// described truthfully (not as "nothing chosen") — and undone correctly, see undoEntry's fallback.
 function describe(place) {
   if (place.kind === 'activity') return { kind: 'activity', activityId: place.activity.id, label: place.activity.name };
   if (place.kind === 'leisure') return { kind: 'leisure', label: 'At leisure' };
+  if (place.kind === 'dinner') return { kind: 'dinner', bookingId: place.booking.id, label: `${place.restaurant.name}, ${place.booking.seating}` };
   if (place.kind === 'unknown') return { kind: 'unknown', raw: place.raw, label: `"${place.raw}" (unknown activity)` };
   return { kind: 'blank', label: 'Nothing chosen yet' };
 }

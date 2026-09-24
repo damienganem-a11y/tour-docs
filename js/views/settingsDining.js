@@ -57,7 +57,7 @@ export function diningSettingsPage(ctx, trip) {
 function restaurantSummary(r) {
   const mode = r.mode === 'flexible'
     ? `Flexible · ${r.seatsPerSeating} seats/seating · max table ${r.maxTableSize}`
-    : `Strict · ${plural(r.tableSizes.length, 'table')} (${r.tableSizes.join(', ')})${r.joinable ? ', joinable' : ''}`;
+    : `Strict · ${plural(r.tables.length, 'table')} (${r.tables.map((t) => t.size).join(', ')})${r.joinable ? ', joinable' : ''}`;
   return `${mode} · ${r.seatings.join(', ')}`;
 }
 
@@ -108,7 +108,7 @@ function restaurantFields(trip, restaurant) {
   const flexibleFields = h('div', {}, seatsPerSeatingInput, maxTableSizeInput);
 
   const tableSizesInput = h('input', {
-    class: 'text-input', type: 'text', value: restaurant?.tableSizes?.join(', ') ?? '', placeholder: 'Table sizes, e.g. 4, 4, 6, 8', 'aria-label': 'Table sizes',
+    class: 'text-input', type: 'text', value: restaurant?.tables?.map((t) => t.size).join(', ') ?? '', placeholder: 'Table sizes, e.g. 4, 4, 6, 8', 'aria-label': 'Table sizes',
   });
   const joinableBox = h('input', { type: 'checkbox', checked: Boolean(restaurant?.joinable), 'aria-label': 'Tables can be joined' });
   const strictFields = h('div', {}, tableSizesInput, h('label', { class: 'tick-row' }, joinableBox, h('span', {}, 'Tables can be joined')));

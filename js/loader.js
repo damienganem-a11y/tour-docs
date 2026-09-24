@@ -17,10 +17,13 @@
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled } ]
 //   trip.restaurants   [ { id, destinationId, name, seatings, mode, seatsPerSeating, maxTableSize,
-//                          tableSizes, joinable } ]   Phase 3 step 1 (Settings only; nothing books yet)
+//                          tables: [{id,size}], joinable } ]   Phase 3 step 1 (Settings)
+//   trip.dinnerBookings [ { id, slotId, restaurantId, seating, tableIds, status } ]  Phase 3 step 2a:
+//                          one per table; membership is derived from trip.bookings, like activities
 //   trip.parties       [ { id, ref, type } ]                                   travel parties
 //   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt, seat } ]
-//   trip.bookings      { guestId: { slotId: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'unknown', raw } } }
+//   trip.bookings      { guestId: { slotId: { kind: 'activity', activityId } | { kind: 'leisure' }
+//                          | { kind: 'dinner', bookingId } | { kind: 'unknown', raw } } }
 //   trip.archivedAt, trip.deletedAt   null until "Archive" / "Delete" (Trips screen, step 9) are used
 
 import { newId } from './ids.js';
@@ -170,6 +173,7 @@ export function buildTrip(raw) {
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
     restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
+    dinnerBookings: [],                             // Phase 3 step 2a: tables, booked one at a time in Use > Dining
     rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)
     archivedAt: null,                               // set by "Archive" (Trips screen, step 9): the trip becomes read-only
     deletedAt: null,                                // set by "Delete" (Trips screen, step 9): purged for good after 30 days

@@ -121,6 +121,11 @@ function slotRow(ctx, trip, guest, slot) {
     kind = 'leisure';
     title = 'At leisure';
     detail = destination.name;
+  } else if (place.kind === 'dinner') {
+    kind = 'dinner';
+    title = place.restaurant.name;
+    detail = [destination.name, place.booking.seating, place.booking.status === 'special-request' ? 'Special request' : null]
+      .filter(Boolean).join(' · ');
   } else if (place.kind === 'unknown') {
     kind = 'unknown';
     title = '⚠ Unknown activity';
