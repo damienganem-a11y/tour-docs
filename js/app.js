@@ -141,6 +141,7 @@ const ctx = {
   // Used by backup.js: restores a trip and its whole journal from a backup file (Settings >
   // Backup), replacing whatever this phone already has for that trip id (if anything).
   async restoreBackup(trip, journalEntries) {
+    trip.restaurants ??= []; // a backup made before restaurants existed (Phase 3 step 1)
     const staleKeys = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAllKeys(trip.id));
     await withStores(['trips', 'journal'], 'readwrite', (s) => {
       s.trips.put(trip);
@@ -207,7 +208,8 @@ function render({ keepScroll = false } = {}) {
 async function start() {
   try {
     state.owner = await dbGet('settings', 'owner');
-    for (const trip of await dbAll('trips')) state.trips.set(trip.id, trip);
+    // A trip saved before restaurants existed (Phase 3 step 1) has no `restaurants` array yet.
+    for (const trip of await dbAll('trips')) { trip.restaurants ??= []; state.trips.set(trip.id, trip); }
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
     }

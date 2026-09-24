@@ -16,6 +16,8 @@
 //   trip.destinations  [ { id, ref, order, name, country, timeZone, firstDay, lastDay } ]
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled } ]
+//   trip.restaurants   [ { id, destinationId, name, seatings, mode, seatsPerSeating, maxTableSize,
+//                          tableSizes, joinable } ]   Phase 3 step 1 (Settings only; nothing books yet)
 //   trip.parties       [ { id, ref, type } ]                                   travel parties
 //   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt, seat } ]
 //   trip.bookings      { guestId: { slotId: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'unknown', raw } } }
@@ -167,6 +169,7 @@ export function buildTrip(raw) {
     vehicleLabel: raw.trip.vehicle_label ?? 'V',   // what vehicles are called: V1, V2...
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
+    restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
     rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)
     archivedAt: null,                               // set by "Archive" (Trips screen, step 9): the trip becomes read-only
     deletedAt: null,                                // set by "Delete" (Trips screen, step 9): purged for good after 30 days

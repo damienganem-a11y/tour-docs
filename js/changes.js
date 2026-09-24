@@ -29,6 +29,11 @@
 //   { type: 'edit-activity', activityId, name, meeting, startTime, capacity }
 //   { type: 'replace-destination', destinationId, name, country, timeZone }  a rare fix: the destination becomes a
 //       different place. Its tours are cancelled and everybody on them goes to At leisure, in the same one action.
+//   { type: 'add-restaurant', destinationId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes, joinable }
+//       Phase 3 step 1: settings only, nothing can be booked onto a restaurant yet. seatings: array of
+//       "HH:MM" strings (at least one). mode: 'flexible' (seatsPerSeating + maxTableSize set, the other
+//       two null) or 'strict' (tableSizes + joinable set, the other two null).
+//   { type: 'edit-restaurant', restaurantId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes, joinable }
 //   Guests and travel parties (step 7c/7d), each on its own:
 //   { type: 'edit-guest', guestId, first, last }             the guest's own name (the shown name is worked out from it)
 //   { type: 'guest-left', guestId }                          "Guest left the trip": removed from every day-to-day
@@ -62,7 +67,7 @@ import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 // The changes that belong to a roll call. Each one is made on its own (never mixed with others).
 const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // Settings changes (step 7): each is made on its own, like cancel-tour and undo.
-const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination']);
+const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant']);
 // Guest and travel party changes (step 7c/7d): also each on its own.
 const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']);
 // The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own. Allowed even when
@@ -210,6 +215,19 @@ function validateUndo(trip, journal, scope) {
         return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
       }
     }
+    if (entry.type === 'add-restaurant') {
+      if (!trip.restaurants.some((r) => r.id === entry.restaurantId)) return fail('This action cannot be undone: the restaurant no longer exists.');
+    }
+    if (entry.type === 'edit-restaurant') {
+      const restaurant = trip.restaurants.find((r) => r.id === entry.restaurantId);
+      if (!restaurant) return fail('This action cannot be undone: the restaurant no longer exists.');
+      if (restaurant.name !== entry.to.name || JSON.stringify(restaurant.seatings) !== JSON.stringify(entry.to.seatings)
+        || restaurant.mode !== entry.to.mode || restaurant.seatsPerSeating !== entry.to.seatsPerSeating
+        || restaurant.maxTableSize !== entry.to.maxTableSize || JSON.stringify(restaurant.tableSizes) !== JSON.stringify(entry.to.tableSizes)
+        || restaurant.joinable !== entry.to.joinable) {
+        return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
+      }
+    }
     if (entry.type === 'edit-guest') {
       const guest = trip.guests.find((g) => g.id === entry.guestId);
       if (!guest) return fail('This action cannot be undone: the guest no longer exists.');
@@ -284,11 +302,41 @@ function validateSettingsChange(trip, change) {
     if (change.capacity !== null && (!Number.isInteger(change.capacity) || change.capacity < 1)) return fail('Capacity is a whole number of 1 or more, or "no limit".');
     return { ok: true };
   }
+  if (change.type === 'add-restaurant') {
+    if (!trip.destinations.some((d) => d.id === change.destinationId)) return fail('That destination does not exist.');
+    return validateRestaurantFields(change);
+  }
+  if (change.type === 'edit-restaurant') {
+    if (!trip.restaurants.some((r) => r.id === change.restaurantId)) return fail('That restaurant does not exist.');
+    return validateRestaurantFields(change);
+  }
   // edit-destination and replace-destination
   const destination = trip.destinations.find((d) => d.id === change.destinationId);
   if (!destination) return fail('That destination does not exist.');
   if (isBlank(change.name)) return fail('Give the destination a name.');
   if (!isValidTimeZone(change.timeZone)) return fail(`"${change.timeZone}" is not a time zone the phone knows. It should look like Europe/Lisbon.`);
+  return { ok: true };
+}
+
+// Checks the fields shared by add-restaurant and edit-restaurant (see the list at the top).
+function validateRestaurantFields(change) {
+  if (isBlank(change.name)) return fail('Give the restaurant a name.');
+  if (!Array.isArray(change.seatings) || change.seatings.length === 0) return fail('Add at least one seating time.');
+  for (const time of change.seatings) {
+    if (!TIME_RE.test(time)) return fail('Each seating time should look like 19:00.');
+  }
+  if (new Set(change.seatings).size !== change.seatings.length) return fail('The same seating time appears twice.');
+
+  if (change.mode === 'flexible') {
+    if (!Number.isInteger(change.seatsPerSeating) || change.seatsPerSeating < 1) return fail('Seats per seating is a whole number of 1 or more.');
+    if (!Number.isInteger(change.maxTableSize) || change.maxTableSize < 1) return fail('Max table size is a whole number of 1 or more.');
+    if (change.maxTableSize > change.seatsPerSeating) return fail('Max table size cannot be more than the seats per seating.');
+  } else if (change.mode === 'strict') {
+    if (!Array.isArray(change.tableSizes) || change.tableSizes.length === 0) return fail('Add at least one table.');
+    if (!change.tableSizes.every((n) => Number.isInteger(n) && n >= 1)) return fail('Each table size is a whole number of 1 or more.');
+  } else {
+    return fail('Choose Flexible or Strict.');
+  }
   return { ok: true };
 }
 
@@ -633,6 +681,35 @@ async function doApply(ctx, tripId, changes) {
       return save(ctx, next, entries, {});
     }
 
+    if (change.type === 'add-restaurant' || change.type === 'edit-restaurant') {
+      const destination = change.type === 'add-restaurant'
+        ? trip.destinations.find((d) => d.id === change.destinationId)
+        : trip.destinations.find((d) => d.id === trip.restaurants.find((r) => r.id === change.restaurantId).destinationId);
+      const name = change.name.trim();
+      const seatings = [...change.seatings].sort();
+      // Only the fields for the chosen mode are kept; the other mode's fields are null, so a restaurant
+      // never carries stale numbers from a mode it is no longer in.
+      const fields = change.mode === 'flexible'
+        ? { mode: 'flexible', seatsPerSeating: change.seatsPerSeating, maxTableSize: change.maxTableSize, tableSizes: null, joinable: null }
+        : { mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [...change.tableSizes], joinable: Boolean(change.joinable) };
+      // A restaurant is destination-level, not tied to one half-day, so it is shown in the Journal by
+      // the destination's own name and time zone, like edit-destination below.
+      const destWhere = { slotId: null, slotLabel: destination.name, place: { name: destination.name, timeZone: destination.timeZone } };
+
+      if (change.type === 'add-restaurant') {
+        const restaurant = { id: newId(), destinationId: destination.id, name, seatings, ...fields };
+        next.restaurants.push(restaurant);
+        entries.push({ ...base(), type: 'add-restaurant', restaurantId: restaurant.id, restaurantLabel: name, ...destWhere });
+      } else {
+        const restaurant = next.restaurants.find((r) => r.id === change.restaurantId);
+        const from = { name: restaurant.name, seatings: restaurant.seatings, mode: restaurant.mode, seatsPerSeating: restaurant.seatsPerSeating, maxTableSize: restaurant.maxTableSize, tableSizes: restaurant.tableSizes, joinable: restaurant.joinable };
+        const to = { name, seatings, ...fields };
+        Object.assign(restaurant, to);
+        entries.push({ ...base(), type: 'edit-restaurant', restaurantId: restaurant.id, ...destWhere, from, to });
+      }
+      return save(ctx, next, entries, {});
+    }
+
     // edit-destination and replace-destination: change the destination's own name, country, time zone.
     const destination = next.destinations.find((d) => d.id === change.destinationId);
     const from = { name: destination.name, country: destination.country, timeZone: destination.timeZone };
@@ -874,6 +951,20 @@ function undoEntry(next, entry, base, entries) {
     Object.assign(activity, entry.from);
     entries.push({
       ...base(), type: 'edit-activity', cause: 'undo', activityId: entry.activityId,
+      slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
+    });
+    return;
+  }
+  if (entry.type === 'add-restaurant') {
+    next.restaurants = next.restaurants.filter((r) => r.id !== entry.restaurantId); // as if it was never added
+    entries.push({ ...base(), type: 'restaurant-remove', cause: 'undo', restaurantId: entry.restaurantId, restaurantLabel: entry.restaurantLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'edit-restaurant') {
+    const restaurant = next.restaurants.find((r) => r.id === entry.restaurantId);
+    Object.assign(restaurant, entry.from);
+    entries.push({
+      ...base(), type: 'edit-restaurant', cause: 'undo', restaurantId: entry.restaurantId,
       slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
     });
     return;

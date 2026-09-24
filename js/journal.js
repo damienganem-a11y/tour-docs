@@ -46,6 +46,8 @@ export function groupBatches(entries) {
         : types.has('edit-destination') ? 'edit-destination'
         : types.has('add-activity') ? 'add-activity'
         : types.has('edit-activity') ? 'edit-activity'
+        : types.has('add-restaurant') ? 'add-restaurant'
+        : types.has('edit-restaurant') ? 'edit-restaurant'
         : types.has('edit-guest') ? 'edit-guest'
         : types.has('guest-left') ? 'guest-left'
         : types.has('guest-return') ? 'guest-return'
@@ -69,7 +71,7 @@ export function groupBatches(entries) {
 // Undo scopes (see lastUndoable below), one per "section" of the app, so each screen's Undo only ever
 // offers to take back something that belongs there.
 export const USE_UNDO_SCOPE = ['move', 'cancel-tour'];                // By destination, By guest
-export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity']; // Settings > Destinations
+export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity', 'add-restaurant', 'edit-restaurant']; // Settings > Destinations
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
 
@@ -119,6 +121,8 @@ export function summarize(batch) {
   if (batch.kind === 'edit-destination') return summarizeEditDestination(batch.entries[0]);
   if (batch.kind === 'add-activity') { const e = batch.entries[0]; return `Added "${e.activityLabel}" (${e.slotLabel})`; }
   if (batch.kind === 'edit-activity') return summarizeEditActivity(batch.entries[0]);
+  if (batch.kind === 'add-restaurant') { const e = batch.entries[0]; return `Added "${e.restaurantLabel}" (${e.slotLabel})`; }
+  if (batch.kind === 'edit-restaurant') return summarizeEditRestaurant(batch.entries[0]);
   if (batch.kind === 'edit-guest') return summarizeEditGuest(batch.entries[0]);
   if (batch.kind === 'guest-left') return `${batch.entries[0].guestName} left the trip`;
   if (batch.kind === 'guest-return') return `${batch.entries[0].guestName} is back on the trip`;
@@ -207,6 +211,17 @@ function summarizeEditActivity(entry) {
   if (entry.from.meeting !== entry.to.meeting) changed.push('meeting point updated');
   if (entry.from.capacity !== entry.to.capacity) changed.push(`capacity set to ${entry.to.capacity === null ? 'no limit' : entry.to.capacity}`);
   if (entry.from.startsAt !== entry.to.startsAt) changed.push('time updated');
+  return `"${entry.from.name}": ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
+}
+
+// What changed about a restaurant, in words.
+function summarizeEditRestaurant(entry) {
+  const changed = [];
+  if (entry.from.name !== entry.to.name) changed.push(`renamed to "${entry.to.name}"`);
+  if (JSON.stringify(entry.from.seatings) !== JSON.stringify(entry.to.seatings)) changed.push('seating times updated');
+  if (entry.from.mode !== entry.to.mode) changed.push(`mode set to ${entry.to.mode}`);
+  else if (entry.to.mode === 'flexible' && (entry.from.seatsPerSeating !== entry.to.seatsPerSeating || entry.from.maxTableSize !== entry.to.maxTableSize)) changed.push('capacity updated');
+  else if (entry.to.mode === 'strict' && (JSON.stringify(entry.from.tableSizes) !== JSON.stringify(entry.to.tableSizes) || entry.from.joinable !== entry.to.joinable)) changed.push('tables updated');
   return `"${entry.from.name}": ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
 }
 

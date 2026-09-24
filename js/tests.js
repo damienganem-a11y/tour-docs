@@ -47,6 +47,7 @@ const copyOfRaw = () => structuredClone(raw);
 // --- The file loads ---
 check('Loads the trip: name, start date, 24 days, 4 vehicles by default',
   trip.name.startsWith('Around the World') && trip.start === '2027-01-12' && trip.days === 24 && trip.defaultVehicles === 4);
+check('A freshly loaded trip has no restaurants yet (Phase 3, set up in Settings)', Array.isArray(trip.restaurants) && trip.restaurants.length === 0);
 check('Loads 80 guests, 44 travel parties, 39 half-days, 12 destinations',
   trip.guests.length === 80 && trip.parties.length === 44 && trip.slots.length === 39 && trip.destinations.length === 12,
   `${trip.guests.length} guests, ${trip.parties.length} parties, ${trip.slots.length} slots, ${trip.destinations.length} destinations`);
@@ -1015,6 +1016,67 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
     && !(await applyChange(ctx5, trip.id, { type: 'edit-activity', activityId: activity('S01-1').id, name: 'X', meeting: '', startTime: '', capacity: null })).ok
     && !(await applyChange(ctx5, trip.id, { type: 'edit-activity', activityId: tram.id, name: '  ', meeting: '', startTime: '', capacity: null })).ok);
   check('Only the owner can edit an activity', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-activity', activityId: tram.id, name: 'X', meeting: '', startTime: '', capacity: null })).ok);
+
+  // --- Add a restaurant (Phase 3 step 1: set-up only, nothing books onto it yet) ---
+  const ctx6r = makeCtx();
+  const addedFlex = await applyChange(ctx6r, trip.id, {
+    type: 'add-restaurant', destinationId: lisbon.id, name: 'Casa do Rio',
+    seatings: ['21:00', '19:00'], mode: 'flexible', seatsPerSeating: 40, maxTableSize: 8, tableSizes: [], joinable: false,
+  });
+  check('Add restaurant (Flexible): it appears in the trip, seatings sorted', addedFlex.ok
+    && ctx6r.state.restaurants.find((r) => r.id === addedFlex.entries[0].restaurantId)?.seatings.join(',') === '19:00,21:00');
+  check('The journal says: "Added \\"Casa do Rio\\" (...)"', summarize(groupBatches(ctx6r.entries).at(-1)).startsWith('Added "Casa do Rio"'));
+  check('Refused: blank name, no seatings, a bad seating time, an unknown destination',
+    !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: '', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok
+    && !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: [], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok
+    && !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['25:99'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok
+    && !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: 'nope', name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok);
+  check('Refused (Flexible): missing seats per seating, missing max table size, or max table size bigger than seats per seating',
+    !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: null, maxTableSize: 4, tableSizes: [], joinable: false })).ok
+    && !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: null, tableSizes: [], joinable: false })).ok
+    && !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 4, maxTableSize: 8, tableSizes: [], joinable: false })).ok);
+
+  const addedStrict = await applyChange(ctx6r, trip.id, {
+    type: 'add-restaurant', destinationId: lisbon.id, name: 'O Pátio', seatings: ['20:00'], mode: 'strict',
+    seatsPerSeating: null, maxTableSize: null, tableSizes: [4, 4, 6, 8], joinable: true,
+  });
+  check('Add restaurant (Strict): tables and "joinable" are saved', addedStrict.ok
+    && ctx6r.state.restaurants.find((r) => r.id === addedStrict.entries[0].restaurantId)?.tableSizes.join(',') === '4,4,6,8'
+    && ctx6r.state.restaurants.find((r) => r.id === addedStrict.entries[0].restaurantId)?.joinable === true);
+  check('Refused (Strict): no tables, or a table size that is not a whole number',
+    !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [], joinable: false })).ok
+    && !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4, 0], joinable: false })).ok);
+  check('Refused: an unknown mode', !(await applyChange(ctx6r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'buffet', seatsPerSeating: null, maxTableSize: null, tableSizes: [], joinable: false })).ok);
+  check('Only the owner can add a restaurant', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok);
+
+  // Undo: a freshly added restaurant can be removed, as if it was never added (nothing can be booked
+  // onto it yet in this step, so there is no "somebody is already booked" guard to test here).
+  const ctx7r = makeCtx();
+  const addedForUndo = await applyChange(ctx7r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Casa do Rio', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 40, maxTableSize: 8, tableSizes: [], joinable: false });
+  const addedRestaurantId = addedForUndo.entries[0].restaurantId;
+  check('Undo removes a freshly added restaurant, as if it was never added',
+    (await applyChange(ctx7r, trip.id, { type: 'undo' })).ok && !ctx7r.state.restaurants.some((r) => r.id === addedRestaurantId));
+
+  // --- Edit a restaurant ---
+  const ctx8r = makeCtx();
+  const casaDoRio = (await applyChange(ctx8r, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Casa do Rio', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 40, maxTableSize: 8, tableSizes: [], joinable: false })).entries[0].restaurantId;
+  const beforeEdit = structuredClone(ctx8r.state);
+  const editedRestaurant = await applyChange(ctx8r, trip.id, {
+    type: 'edit-restaurant', restaurantId: casaDoRio, name: 'Casa do Rio (riverside)', seatings: ['19:00', '21:00'],
+    mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4, 6], joinable: true,
+  });
+  const casaDoRioNow = () => ctx8r.state.restaurants.find((r) => r.id === casaDoRio);
+  check('Edit restaurant: name, seatings and mode all change (switching Flexible to Strict clears the old mode\'s fields)',
+    editedRestaurant.ok && casaDoRioNow().name === 'Casa do Rio (riverside)' && casaDoRioNow().mode === 'strict'
+    && casaDoRioNow().seatsPerSeating === null && casaDoRioNow().maxTableSize === null && casaDoRioNow().tableSizes.join(',') === '4,6');
+  check('The journal describes what changed: renamed, seating times, mode',
+    /renamed to .*seating times updated.*mode set to strict/.test(summarize(groupBatches(ctx8r.entries).at(-1))), summarize(groupBatches(ctx8r.entries).at(-1)));
+  await applyChange(ctx8r, trip.id, { type: 'undo' });
+  check('Undo puts the restaurant exactly back (name, seatings, mode, capacity fields)', restoredExactly(ctx8r.state, beforeEdit));
+  check('Refused: editing a restaurant that does not exist, or with a blank name',
+    !(await applyChange(ctx8r, trip.id, { type: 'edit-restaurant', restaurantId: 'nope', name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok
+    && !(await applyChange(ctx8r, trip.id, { type: 'edit-restaurant', restaurantId: casaDoRio, name: '  ', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok);
+  check('Only the owner can edit a restaurant', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-restaurant', restaurantId: casaDoRio, name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [], joinable: false })).ok);
 
   // --- Replace a destination (rare) ---
   const marrakech = trip.destinations.find((d) => d.name === 'Marrakech');
