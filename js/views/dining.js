@@ -18,7 +18,7 @@ import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import {
-  alphabetical, displayNames, guestPlace, dinnerFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates,
+  alphabetical, plain, displayNames, guestPlace, dinnerFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates,
   capacityInfo, bySlotOrder, joinNames, plural,
 } from '../rules.js';
 import { pageHead } from './chrome.js';
@@ -298,10 +298,10 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
     return;
   }
 
-  const groups = groupByParty(trip, guests, names);
   const checked = new Set();
   const status = h('div', { class: 'notice' });
   const confirmBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => onConfirm([...checked]) }, confirmLabel);
+  const list = h('div', {});
 
   const say = () => {
     confirmBtn.disabled = checked.size === 0;
@@ -310,18 +310,38 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
     const total = baseUsed + checked.size;
     status.textContent = total > ceiling ? `${capacityInfo(total, ceiling).text} — will be saved as a Special request.` : capacityInfo(total, ceiling).text;
   };
+
+  // The search matches by name only, exactly like the ordinary "Add guest" search elsewhere in the
+  // app (move.js's startAddGuest) — never "also show their travel party" (the owner's call: searching
+  // "Robert" must not surface Suzanne just because they travel together). "Travelling together" only
+  // shows when more than one member of a party is still in the FILTERED list, so it naturally
+  // disappears once a search narrows things down to one name — no special-casing needed. Ticks are
+  // kept in `checked` across searches (not just what's currently on screen), so picking Robert, then
+  // searching "Suzanne" and picking her too, adds both when confirmed.
+  const fill = () => {
+    const words = plain(search.value).split(/\s+/).filter(Boolean);
+    const shown = guests.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
+    const groups = groupByParty(trip, shown, names);
+    list.replaceChildren(...(shown.length === 0
+      ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
+      : groups.flatMap((members) => [
+          members.length > 1 ? h('div', { class: 'muted' }, 'Travelling together') : null,
+          ...members.map((guest) => {
+            const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });
+            box.addEventListener('change', () => { if (box.checked) checked.add(guest.id); else checked.delete(guest.id); say(); });
+            return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
+          }),
+        ]).filter(Boolean)));
+  };
+
+  const search = h('input', {
+    class: 'text-input', type: 'search', placeholder: 'Search guests',
+    autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Search guests', oninput: fill,
+  });
+
   say();
-
-  const rows = groups.flatMap((members) => [
-    members.length > 1 ? h('div', { class: 'muted' }, 'Travelling together') : null,
-    ...members.map((guest) => {
-      const box = h('input', { type: 'checkbox', 'aria-label': names.get(guest.id) });
-      box.addEventListener('change', () => { if (box.checked) checked.add(guest.id); else checked.delete(guest.id); say(); });
-      return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
-    }),
-  ]).filter(Boolean);
-
-  openSheet({ eyebrow, title, subtitle, body: [status, ...rows, confirmBtn], cancelLabel: 'Cancel' });
+  fill();
+  openSheet({ eyebrow, title, subtitle, body: [status, search, list, confirmBtn], cancelLabel: 'Cancel' });
 }
 
 function pickForEmptyTable(ctx, trip, slot, restaurant, seatingTime, table) {
