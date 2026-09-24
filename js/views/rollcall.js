@@ -38,7 +38,7 @@ export function rollCallView(ctx, tripId, activityId) {
 
   const slot = trip.slots.find((s) => s.id === activity.slotId);
   const destination = trip.destinations.find((d) => d.id === slot.destinationId);
-  const backTo = { href: `#/trip/${trip.id}/use/destination/${destination.id}/${slot.id}`, label: 'By destination' };
+  const backTo = { href: `#/trip/${trip.id}/use/destination/${destination.id}/${slot.id}`, label: 'Touring' };
   const rollCall = findRollCall(trip, activity.id);
 
   if (!rollCall) {

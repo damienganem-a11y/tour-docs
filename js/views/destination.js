@@ -1,5 +1,6 @@
-// Use > "By destination": pick a destination, then a half-day, and see every activity with the
-// guests on it and a count. Guests who are At leisure are a category of their own.
+// Use > "Touring" (the bottom tab; internal route name is still "destination" — see trip.js): pick
+// a destination, then a half-day, and see every activity with the guests on it and a count. Guests
+// who are At leisure are a category of their own.
 //
 // Tap a card to open it: you see every name and the actions (Add guest, Cancel tour).
 // Tap a name to move that guest. A guest who is in the tour by force (a move into a full tour) is shown in
@@ -39,7 +40,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
 
   if (!slot) {
     return h('div', {}, destinationStrip,
-      pageHead({ eyebrow: 'By destination', title: destination.name }),
+      pageHead({ eyebrow: 'Touring', title: destination.name }),
       h('p', { class: 'empty' }, 'This destination has no half-days yet.'));
   }
 
@@ -79,7 +80,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
     destinationStrip,
     slotStrip,
     pageHead({
-      eyebrow: 'By destination',
+      eyebrow: 'Touring',
       title: destination.name,
       // The destination is the title right above and the day/half is already highlighted in the
       // strip above that, so the only thing worth repeating here is the calendar date — small, and

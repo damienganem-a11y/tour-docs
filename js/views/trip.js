@@ -1,6 +1,11 @@
 // Inside a trip. Two spaces, chosen with the switch at the top:
-//   Use       the day-to-day screens (bottom tabs: By destination, By guest)
+//   Use       the day-to-day screens (bottom tabs: Touring, Dining, By guest)
 //   Settings  setup and control (owner only)
+//
+// Touring and Dining are two clearly separate places to work in (owner's call, 24 Sep 2026): not
+// every destination has dine-around, so folding restaurants into "By destination" would mean
+// clutter on most destinations. Touring keeps the old "By destination" internal route name
+// (`destination`) and behavior — only its label changed; Dining is new (dining.js).
 //
 // The Settings screens are built one step at a time (see SPEC.md "Build order"); until then the
 // menu shows which step each one arrives in.
@@ -9,9 +14,11 @@ import { h } from '../dom.js';
 import { tripDates } from '../time.js';
 import { pageHead, syncDot } from './chrome.js';
 import { destinationPage } from './destination.js';
+import { diningPage } from './dining.js';
 import { guestPage } from './guest.js';
 import { journalPage } from './journal.js';
-import { destinationsSettingsPage } from './settingsDestinations.js';
+import { touringSettingsPage } from './settingsTouring.js';
+import { diningSettingsPage } from './settingsDining.js';
 import { partiesSettingsPage } from './settingsParties.js';
 import { guestsSettingsPage } from './settingsGuests.js';
 import { exportsSettingsPage } from './settingsExports.js';
@@ -21,7 +28,8 @@ import { notice } from './move.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
 const SETTINGS_MENU = [
-  { label: 'Destinations', page: 'destinations' },
+  { label: 'Touring', page: 'touring' },
+  { label: 'Dining', page: 'dining' },
   { label: 'Travel parties', page: 'parties' },
   { label: 'Guests', page: 'guests' },
   { label: 'Journal', page: 'journal', ownerOnly: true },
@@ -31,7 +39,8 @@ const SETTINGS_MENU = [
 ];
 
 const USE_TABS = [
-  { page: 'destination', label: 'By destination' },
+  { page: 'destination', label: 'Touring' },
+  { page: 'dining', label: 'Dining' },
   { page: 'guest', label: 'By guest' },
 ];
 
@@ -54,8 +63,11 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
   if (mode === 'settings' && page === 'journal') {
     return { node: h('div', { class: 'screen' }, journalPage(ctx, trip)) };
   }
-  if (mode === 'settings' && page === 'destinations') {
-    return { node: h('div', { class: 'screen' }, destinationsSettingsPage(ctx, trip, first)) };
+  if (mode === 'settings' && page === 'touring') {
+    return { node: h('div', { class: 'screen' }, touringSettingsPage(ctx, trip, first)) };
+  }
+  if (mode === 'settings' && page === 'dining') {
+    return { node: h('div', { class: 'screen' }, diningSettingsPage(ctx, trip)) };
   }
   if (mode === 'settings' && page === 'parties') {
     return { node: h('div', { class: 'screen' }, partiesSettingsPage(ctx, trip)) };
@@ -104,8 +116,10 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
   }
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
-  const content = page === 'guest' ? guestPage(ctx, trip, first) : destinationPage(ctx, trip, first, second);
-  const activePage = page === 'guest' ? 'guest' : 'destination';
+  const content = page === 'guest' ? guestPage(ctx, trip, first)
+    : page === 'dining' ? diningPage(ctx, trip)
+    : destinationPage(ctx, trip, first, second);
+  const activePage = page === 'guest' ? 'guest' : page === 'dining' ? 'dining' : 'destination';
   const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },
     USE_TABS.map((t) =>
       h('a', { class: `bottom-tab${t.page === activePage ? ' is-active' : ''}`, href: `#/trip/${trip.id}/use/${t.page}` }, t.label)));

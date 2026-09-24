@@ -507,7 +507,8 @@ button.slot:disabled { cursor: not-allowed; opacity: 0.6; }
   bottom: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-auto-flow: column;   /* as many equal-width columns as there are tabs (2 today, 3 with Dining) */
+  grid-auto-columns: 1fr;
   gap: 10px;
   padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
   background: var(--soft);

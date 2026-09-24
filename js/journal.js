@@ -71,7 +71,8 @@ export function groupBatches(entries) {
 // Undo scopes (see lastUndoable below), one per "section" of the app, so each screen's Undo only ever
 // offers to take back something that belongs there.
 export const USE_UNDO_SCOPE = ['move', 'cancel-tour'];                // By destination, By guest
-export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity', 'add-restaurant', 'edit-restaurant']; // Settings > Destinations
+export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity']; // Settings > Touring
+export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant']; // Settings > Dining
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
 
