@@ -57,7 +57,7 @@ export function diningSettingsPage(ctx, trip) {
 function restaurantSummary(r) {
   const mode = r.mode === 'flexible'
     ? `Flexible · ${r.seatsPerSeating} seats/seating · max table ${r.maxTableSize}`
-    : `Strict · ${plural(r.tables.length, 'table')} (${r.tables.map((t) => t.size).join(', ')})${r.joinable ? ', joinable' : ''}`;
+    : `Strict · ${plural(r.tables.length, 'table')} (${r.tables.map((t) => t.size).join(', ')})`;
   return `${mode} · ${r.seatings.join(', ')}`;
 }
 
@@ -81,6 +81,8 @@ function restaurantRow(ctx, trip, destination, restaurant) {
 //   Strict     the restaurant's actual tables, one size per table, and whether tables can be pushed together
 // Seating times and table sizes are typed as a comma-separated list (e.g. "19:00, 21:00" or "4, 4, 6, 8")
 // rather than one row per entry: simple to type, and a restaurant rarely has more than a couple of each.
+// No "tables can be joined" option (removed 24 Sep 2026, the owner's call): a Strict booking always
+// fits on exactly one table or becomes a Special request.
 // A destination picker is included when adding (unlike Touring's activity form, which infers the
 // destination from the screen it is opened on) since Dining's own list is flat, not
 // destination-first. Not shown when editing: which destination a restaurant belongs to does not
@@ -110,8 +112,7 @@ function restaurantFields(trip, restaurant) {
   const tableSizesInput = h('input', {
     class: 'text-input', type: 'text', value: restaurant?.tables?.map((t) => t.size).join(', ') ?? '', placeholder: 'Table sizes, e.g. 4, 4, 6, 8', 'aria-label': 'Table sizes',
   });
-  const joinableBox = h('input', { type: 'checkbox', checked: Boolean(restaurant?.joinable), 'aria-label': 'Tables can be joined' });
-  const strictFields = h('div', {}, tableSizesInput, h('label', { class: 'tick-row' }, joinableBox, h('span', {}, 'Tables can be joined')));
+  const strictFields = h('div', {}, tableSizesInput);
 
   const showMode = () => {
     flexibleFields.hidden = modeSelect.value !== 'flexible';
@@ -130,7 +131,6 @@ function restaurantFields(trip, restaurant) {
     seatsPerSeating: seatsPerSeatingInput.value.trim() === '' ? null : Number(seatsPerSeatingInput.value),
     maxTableSize: maxTableSizeInput.value.trim() === '' ? null : Number(maxTableSizeInput.value),
     tableSizes: tableSizesInput.value.trim() === '' ? [] : tableSizesInput.value.split(',').map((t) => Number(t.trim())),
-    joinable: joinableBox.checked,
   });
   return { nameInput, nodes, buildChange, destinationSelect };
 }

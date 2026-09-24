@@ -45,11 +45,13 @@ const USE_TABS = [
 ];
 
 // Routes:  #/trip/<id>/use/destination/<destinationId>/<slotId>
+//          #/trip/<id>/use/dining/<destinationId>/<slotId>/<restaurantId>/<seating>   By table (step 2b)
 //          #/trip/<id>/use/guest/<guestId>
 //          #/trip/<id>/settings
 //          #/trip/<id>/settings/journal
-// `first` and `second` are the parts after the page name (they may be missing).
-export function tripView(ctx, tripId, mode, page = 'destination', first, second) {
+// `first` and `second` are the parts after the page name (they may be missing); Dining alone also
+// takes `third`/`fourth` (a restaurant and seating, for its "By table" grid).
+export function tripView(ctx, tripId, mode, page = 'destination', first, second, third, fourth) {
   const trip = ctx.trip(tripId);
   if (!trip) {
     return {
@@ -117,7 +119,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
   const content = page === 'guest' ? guestPage(ctx, trip, first)
-    : page === 'dining' ? diningPage(ctx, trip, first, second)
+    : page === 'dining' ? diningPage(ctx, trip, first, second, third, fourth)
     : destinationPage(ctx, trip, first, second);
   const activePage = page === 'guest' ? 'guest' : page === 'dining' ? 'dining' : 'destination';
   const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },

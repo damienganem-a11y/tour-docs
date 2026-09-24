@@ -17,7 +17,7 @@
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled } ]
 //   trip.restaurants   [ { id, destinationId, name, seatings, mode, seatsPerSeating, maxTableSize,
-//                          tables: [{id,size}], joinable } ]   Phase 3 step 1 (Settings)
+//                          tables: [{id,size}] } ]   Phase 3 step 1 (Settings)
 //   trip.dinnerBookings [ { id, slotId, restaurantId, seating, tableIds, status } ]  Phase 3 step 2a:
 //                          one per table; membership is derived from trip.bookings, like activities
 //   trip.parties       [ { id, ref, type } ]                                   travel parties

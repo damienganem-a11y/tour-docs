@@ -238,7 +238,7 @@ export function capacityInfo(count, capacity) {
   return { text: `${count} / ${capacity}`, tone: null };
 }
 
-// ---------- Dining (Phase 3 step 2a) ----------
+// ---------- Dining (Phase 3 step 2a/2b) ----------
 
 // How many guests are currently on a dinner table, right now — derived the same way countIn works
 // for an activity (never cached on the booking itself), so a table someone left later frees back up.
@@ -250,37 +250,74 @@ export function dinnerCountIn(trip, dinnerBooking) {
   return count;
 }
 
+// The table ids currently occupied by a live booking at this restaurant/slot/seating. Shared by
+// dinnerFit, dinnerTableGrid, and book-dinner's own-table validation (changes.js), instead of three
+// copies that could drift apart.
+export function dinnerUsedTableIds(trip, restaurant, slot, seating) {
+  return new Set(trip.dinnerBookings
+    .filter((b) => b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0)
+    .flatMap((b) => b.tableIds));
+}
+
 // Would a group of `guestCount` guests fit at this restaurant, this evening, this seating? Returns
 // { status: 'confirmed' | 'special-request', tableIds }. Never a refusal — a group that fits nowhere
 // is still bookable, just flagged for the local team (the owner's choice, 24 Sep 2026: "flexible with
-// a waitlist"). Deliberately simple rules (ROADMAP.md: "fixed rules, not AI"): Strict mode tries one
-// free table big enough, then (if joinable) the best-fitting pair of free tables — never three or more.
+// a waitlist"). Deliberately simple rules (ROADMAP.md: "fixed rules, not AI"): Strict mode fits on
+// exactly one free table, or becomes a Special request — no table-joining (removed 24 Sep 2026: not
+// always clear in practice which restaurants allow it, or up to how many people, so it is simpler to
+// drop it everywhere than to keep a rule nobody can rely on).
 export function dinnerFit(trip, restaurant, slot, seating, guestCount) {
-  const bookingsHere = trip.dinnerBookings.filter((b) =>
-    b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0);
-
   if (restaurant.mode === 'flexible') {
+    const bookingsHere = trip.dinnerBookings.filter((b) =>
+      b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0);
     const used = bookingsHere.reduce((sum, b) => sum + dinnerCountIn(trip, b), 0);
     const fits = used + guestCount <= restaurant.seatsPerSeating && guestCount <= restaurant.maxTableSize;
     return { status: fits ? 'confirmed' : 'special-request', tableIds: [] };
   }
 
-  const usedTableIds = new Set(bookingsHere.flatMap((b) => b.tableIds));
+  const usedTableIds = dinnerUsedTableIds(trip, restaurant, slot, seating);
   const free = restaurant.tables.filter((t) => !usedTableIds.has(t.id)).sort((a, b) => a.size - b.size);
   const single = free.find((t) => t.size >= guestCount);
-  if (single) return { status: 'confirmed', tableIds: [single.id] };
+  return single ? { status: 'confirmed', tableIds: [single.id] } : { status: 'special-request', tableIds: [] };
+}
 
-  if (restaurant.joinable) {
-    let best = null;
-    for (let i = 0; i < free.length; i++) {
-      for (let j = i + 1; j < free.length; j++) {
-        const total = free[i].size + free[j].size;
-        if (total >= guestCount && (!best || total < best.total)) best = { total, ids: [free[i].id, free[j].id] };
-      }
-    }
-    if (best) return { status: 'confirmed', tableIds: best.ids };
+// Would `addCount` more guests still fit on a table that ALREADY has a booking (Phase 3 step 2b's
+// "add to an existing table") — not a fresh search, the table/group is already decided; this only
+// asks whether it still fits once more guests join it. The status is always recomputed fresh from
+// the new total (never "accumulated"), the same principle as dinnerCountIn itself never caching.
+export function dinnerAddFit(trip, restaurant, booking, addCount) {
+  const newTotal = dinnerCountIn(trip, booking) + addCount;
+  if (restaurant.mode === 'flexible') {
+    const usedByOthers = trip.dinnerBookings
+      .filter((b) => b.id !== booking.id && b.restaurantId === restaurant.id && b.slotId === booking.slotId && b.seating === booking.seating && dinnerCountIn(trip, b) > 0)
+      .reduce((sum, b) => sum + dinnerCountIn(trip, b), 0);
+    const fits = usedByOthers + newTotal <= restaurant.seatsPerSeating && newTotal <= restaurant.maxTableSize;
+    return { status: fits ? 'confirmed' : 'special-request' };
   }
-  return { status: 'special-request', tableIds: [] };
+  if (booking.tableIds.length === 0) return { status: 'special-request' }; // already an unfilled special request: stays one
+  const capacity = restaurant.tables.find((t) => t.id === booking.tableIds[0]).size;
+  return { status: newTotal <= capacity ? 'confirmed' : 'special-request' };
+}
+
+// Everything to draw the "By table" grid (Phase 3 step 2b) for one restaurant + seating.
+//   Strict: one row per physical table, even empty ones, so the owner can start a fresh table on a
+//   specific one they pick, or add to one that already has a booking.
+//   Flexible: one row per live booking (there are no fixed physical tables to enumerate), plus the
+//   seating's running total — the UI always offers "start a new table" regardless of the total, never
+//   gated on room (matches dinnerFit's own "never refuse, only flag" rule).
+export function dinnerTableGrid(trip, restaurant, slot, seating) {
+  if (restaurant.mode === 'flexible') {
+    const bookings = trip.dinnerBookings.filter((b) =>
+      b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0);
+    const used = bookings.reduce((sum, b) => sum + dinnerCountIn(trip, b), 0);
+    return { mode: 'flexible', used, seatsPerSeating: restaurant.seatsPerSeating, rows: bookings.map((b) => ({ booking: b, count: dinnerCountIn(trip, b) })) };
+  }
+  const rows = restaurant.tables.map((table) => {
+    const booking = trip.dinnerBookings.find((b) =>
+      b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && b.tableIds.includes(table.id) && dinnerCountIn(trip, b) > 0);
+    return { table, booking: booking ?? null, count: booking ? dinnerCountIn(trip, booking) : 0 };
+  });
+  return { mode: 'strict', rows };
 }
 
 // The guest's travel party members who are not yet booked for dinner this evening — offered as

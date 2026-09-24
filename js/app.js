@@ -4,7 +4,8 @@
 // to show:
 //     #/                              the Trips screen
 //     #/trip/<id>/use/destination[/<destinationId>[/<slotId>]]   Use, Touring
-//     #/trip/<id>/use/dining[/<destinationId>[/<slotId>]]        Use, Dining
+//     #/trip/<id>/use/dining[/<destinationId>[/<slotId>[/<restaurantId>[/<seating>]]]]   Use, Dining
+//       (restaurantId present: the "By table" grid for that restaurant, step 2b; absent: the overview)
 //     #/trip/<id>/use/guest[/<guestId>]                          Use, By guest (a list, or one guest)
 //     #/trip/<id>/settings                                       Settings
 //     #/trip/<id>/rollcall/<activityId>                          the roll call of one activity
@@ -63,7 +64,7 @@ function syncStatus() {
 // The list of screens. The first one whose pattern matches the address is used.
 const routes = [
   { pattern: /^#\/trip\/([^/]+)\/rollcall\/([^/]+)$/, view: rollCallView },
-  { pattern: /^#\/trip\/([^/]+)\/(use|settings)(?:\/([a-z]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/, view: tripView },
+  { pattern: /^#\/trip\/([^/]+)\/(use|settings)(?:\/([a-z]+))?(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/, view: tripView },
   { pattern: /^#\/?$/, view: tripsView },
 ];
 
@@ -210,6 +211,8 @@ function render({ keepScroll = false } = {}) {
 //     step stored `tableSizes` (plain numbers) instead of `tables` (each with a stable id, needed so
 //     a booking can say exactly which table it occupies) — converted here, fresh ids all round since
 //     nothing could reference a table before this step existed.
+//   Phase 3 step 2b: `joinable` was removed (24 Sep 2026, the owner's call) — a stray leftover on a
+//     restaurant saved before this step is simply dropped; nothing ever reads it again.
 function migrateTrip(trip) {
   trip.restaurants ??= [];
   trip.dinnerBookings ??= [];
@@ -218,6 +221,7 @@ function migrateTrip(trip) {
       r.tables = r.tableSizes.map((size) => ({ id: newId(), size }));
       delete r.tableSizes;
     }
+    delete r.joinable;
   }
   return trip;
 }
