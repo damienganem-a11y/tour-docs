@@ -79,12 +79,13 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second)
 
   // One slim row for both modes: back link, the Use/Settings switch (small — it is tapped rarely,
   // so it should not compete with the actual screen for room), the trip's own code (Use only), and
-  // the sync light (Phase 2, step 2a).
+  // the sync light (Phase 2, step 2a) — compact here (dots only, no word) since this row is already
+  // tight; the full light-plus-word version lives on the roomier Trips screen header.
   const topBar = h('div', { class: 'top-bar' },
     h('a', { class: 'back-link', href: '#/' }, '‹ All trips'),
     modeSwitch,
     mode === 'use' ? h('span', { class: 'muted' }, trip.ref) : null,
-    syncDot(ctx));
+    syncDot(ctx, { compact: true }));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.

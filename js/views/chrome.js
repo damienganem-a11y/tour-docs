@@ -31,13 +31,27 @@ export function pageHead({ back, eyebrow, title, subtitle, action, tightSubtitle
   );
 }
 
-// A small light showing whether trips are backed up to the owner's account right now (Phase 2, step
-// 2a): green = online and everything pushed, orange = online with a push still in flight, red = no
-// internet. It never blocks or asks anything — just a glance, like a phone's signal bars.
-const SYNC_LABEL = { synced: 'Backed up', pending: 'Saving to your account…', offline: 'Offline' };
-export function syncDot(ctx) {
+// A small traffic light showing whether trips are backed up to the owner's account right now
+// (Phase 2, step 2a): green = online and everything pushed, orange = online with a push still in
+// flight, red = no internet. All three lights are always shown, left to right, green/orange/red —
+// only the one matching the current state is lit — plus a word next to them, since a single dot
+// that just changes color was hard to read at a glance (a single green dot looks the same whether
+// it just turned green or has been green the whole time). It never blocks or asks anything.
+// compact drops the word (kept only as the aria-label/tooltip): the top bar inside a trip already
+// has the back link, the Use/Settings switch and the trip code fighting for room on one line, and
+// which light is lit is already unambiguous on its own there.
+const SYNC_STATES = [
+  { key: 'synced', label: 'Online' },
+  { key: 'pending', label: 'Loading' },
+  { key: 'offline', label: 'Offline' },
+];
+export function syncDot(ctx, { compact = false } = {}) {
   const status = ctx.syncStatus;
-  return h('span', { class: `sync-dot sync-dot--${status}`, role: 'status', 'aria-label': SYNC_LABEL[status], title: SYNC_LABEL[status] });
+  const label = SYNC_STATES.find((s) => s.key === status).label;
+  return h('span', { class: 'sync-lights', role: 'status', 'aria-label': label, title: label },
+    h('span', { class: 'sync-lights-dots' },
+      SYNC_STATES.map((s) => h('span', { class: `sync-light sync-light--${s.key}${s.key === status ? ' is-on' : ''}` }))),
+    compact ? null : h('span', { class: `sync-lights-label sync-lights-label--${status}` }, label));
 }
 
 // The small sheet every "Export" button opens to ask PDF or Excel (SPEC.md, "5. Export"): tapping
