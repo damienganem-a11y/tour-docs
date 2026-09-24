@@ -33,22 +33,42 @@ export function tripsView(ctx) {
       trip = buildTrip(JSON.parse(json));
     } catch (error) {
       showError(error instanceof SyntaxError ? 'This file is not valid JSON.' : error.message);
-      return;
+      return null;
     }
     try {
       await ctx.addTrip(trip);
     } catch (error) {
       showError(`Could not save the trip on this phone (${error.message}).`);
-      return;
+      return null;
     }
     ctx.go(`#/trip/${trip.id}/use/destination`);
+    return trip;
+  }
+
+  // The sample trip ships with no restaurants, same as any real trip (Phase 3 step 1: set up in
+  // Settings, one at a time) — but a first look at Dining with nothing in it is a poor demo of the
+  // feature. So loading the SAMPLE trip specifically (never a real uploaded file) also books 5
+  // fictional restaurants onto Lisbon's evening, through the ordinary add-restaurant change — owner's
+  // call, 24 Sep 2026, mirroring a real restaurant-booking spreadsheet they shared — exactly as if
+  // freshly typed in: journaled, undoable, editable like any other restaurant.
+  async function seedSampleDining(trip) {
+    const lisbon = trip.destinations.find((d) => d.name === 'Lisbon');
+    if (!lisbon) return;
+    for (const name of ['Salsa', 'Melaleuca', 'La Cucina', 'Zinc', 'Wrasse & Roe']) {
+      await applyChange(ctx, trip.id, {
+        type: 'add-restaurant', destinationId: lisbon.id, name,
+        seatings: ['18:45', '19:15'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4],
+      });
+    }
+    ctx.refresh();
   }
 
   async function loadSample() {
     try {
       const response = await fetch(SAMPLE_URL);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      await useTrip(await response.text());
+      const trip = await useTrip(await response.text());
+      if (trip) await seedSampleDining(trip);
     } catch (error) {
       showError(`Could not load the sample trip (${error.message}).`);
     }
