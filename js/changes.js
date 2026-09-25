@@ -8,10 +8,15 @@
 //   3. the journal says who, what, from, to and when (the exact moment).
 //
 // A change is one of:
-//   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'dinner', bookingId, label }, force?, approvedBy? }
+//   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'dinner', bookingId, label } | { kind: 'waitlist', activityId }, force?, approvedBy? }
 //       force: true lets a move go into a full tour (the dispatcher has authority; owner only). The journal
 //       then says "forced", with the optional note approvedBy ("Approved by Sam"). A dinner `to` is written
 //       by book-dinner below, never asked for directly (there is no "just move to this dinner" picker yet).
+//       A `waitlist` target (a full tour's ordered FIFO waitlist, added 25 Sep 2026) never forces and
+//       never counts against capacity — joining costs no seat, so it is always allowed, like leisure.
+//       Promoting the first waitlisted guest, once a seat frees up, is an ordinary move to
+//       { kind: 'activity' } (see views/move.js's proposePromotion) — going through the normal
+//       force/confirm flow like any other move, not a change of its own.
 //   { type: 'cancel-tour', activityId }        everybody on it goes to At leisure, it stays as "Cancelled"
 //   { type: 'undo', scope? }                    takes back the last action (like Ctrl+Z); scope narrows
 //       "last" to one screen's own kind of actions (see journal.js's lastUndoable) — omit for trip-wide
@@ -182,8 +187,20 @@ export function validateChanges(trip, user, changes, journal = []) {
       }
       flow(activity).joining++;
       if (change.force) flow(activity).forced = true;
+    } else if (target?.kind === 'waitlist') {
+      // Joining a tour's waitlist never needs a seat and is never forced: it costs no capacity, so it
+      // is always allowed (like leisure), as long as the guest is not already on it or already booked.
+      const activity = trip.activities.find((a) => a.id === target.activityId && a.slotId === slot.id);
+      if (!activity) return fail('That activity is not offered in this half-day.');
+      if (activity.cancelled) return fail(`"${activity.name}" is cancelled.`);
+      if (here.kind === 'waitlist' && here.activity.id === activity.id) {
+        return fail(`${names.get(guest.id)} is already on the waitlist for "${activity.name}".`);
+      }
+      if (here.kind === 'activity' && here.activity.id === activity.id) {
+        return fail(`${names.get(guest.id)} is already in "${activity.name}".`);
+      }
     } else {
-      return fail('Choose an activity or At leisure.');
+      return fail('Choose an activity, At leisure, or the waitlist.');
     }
     if (here.kind === 'activity') flow(here.activity).leaving++;
   }
@@ -230,8 +247,12 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'add-activity') {
       const activity = trip.activities.find((a) => a.id === entry.activityId);
       if (!activity) return fail('This action cannot be undone: the activity no longer exists.');
-      if (trip.guests.some((g) => trip.bookings[g.id]?.[entry.slotId]?.activityId === entry.activityId)) {
-        return fail(`This action cannot be undone: somebody is already booked on "${entry.activityLabel}".`);
+      const onIt = (g) => {
+        const booking = trip.bookings[g.id]?.[entry.slotId];
+        return (booking?.kind === 'activity' || booking?.kind === 'waitlist') && booking.activityId === entry.activityId;
+      };
+      if (trip.guests.some(onIt)) {
+        return fail(`This action cannot be undone: somebody is already booked or waiting on "${entry.activityLabel}".`);
       }
     }
     if (entry.type === 'edit-activity') {
@@ -501,7 +522,10 @@ function validateRollCall(trip, change) {
   const vehicle = rollCall.vehicles.find((v) => v.id === change.vehicleId);
   const names = displayNames(trip.guests);
   const guest = trip.guests.find((g) => g.id === change.guestId);
-  const bookedHere = (g) => trip.bookings[g.id]?.[activity.slotId]?.activityId === activity.id;
+  const bookedHere = (g) => {
+    const booking = trip.bookings[g.id]?.[activity.slotId];
+    return booking?.kind === 'activity' && booking.activityId === activity.id;
+  };
 
   if (change.type === 'checkin') {
     if (!guest) return fail('That guest is not in this trip.');
@@ -550,6 +574,7 @@ function rollCallUndoProblem(trip, entry) {
 // Is a guest's place (from guestPlace) the one a journal entry describes ({ kind, activityId, raw })?
 function isPlace(place, spec) {
   if (spec.kind === 'activity') return place.kind === 'activity' && place.activity.id === spec.activityId;
+  if (spec.kind === 'waitlist') return place.kind === 'waitlist' && place.activity.id === spec.activityId;
   if (spec.kind === 'unknown') return place.kind === 'unknown' && place.raw === spec.raw;
   return place.kind === spec.kind; // 'leisure' or 'blank'
 }
@@ -634,12 +659,14 @@ async function doApply(ctx, tripId, changes) {
 
   // A "move" of one guest in one half-day. to.kind 'dinner' is written only by book-dinner below
   // (there is no direct "move to this dinner" picker yet) — it never forces, so `forced` stays false.
+  // to.kind 'waitlist' also never forces: joining a waitlist costs no seat.
   const move = (guest, slot, to, cause, force = false, approvedBy = null) => {
     const before = guestPlace(trip, guest, slot);
     const forced = force && to.kind === 'activity' && willBeOver(to.activityId);
     next.bookings[guest.id] ??= {};
     next.bookings[guest.id][slot.id] = to.kind === 'leisure' ? { kind: 'leisure' }
       : to.kind === 'dinner' ? { kind: 'dinner', bookingId: to.bookingId }
+      : to.kind === 'waitlist' ? { kind: 'waitlist', activityId: to.activityId }
       : { kind: 'activity', activityId: to.activityId };
 
     // Names are copied in as text, so the journal still reads correctly even if things are renamed later.
@@ -651,6 +678,7 @@ async function doApply(ctx, tripId, changes) {
       from: describe(before),
       to: to.kind === 'leisure' ? { kind: 'leisure', label: 'At leisure' }
         : to.kind === 'dinner' ? { kind: 'dinner', bookingId: to.bookingId, label: to.label }
+        : to.kind === 'waitlist' ? { kind: 'waitlist', activityId: to.activityId, label: `Waitlist: ${trip.activities.find((a) => a.id === to.activityId).name}` }
         : { kind: 'activity', activityId: to.activityId, label: trip.activities.find((a) => a.id === to.activityId).name },
     });
   };
@@ -704,7 +732,10 @@ async function doApply(ctx, tripId, changes) {
     } else if (change.type === 'rollcall-end') {
       // End roll call: the guests who did not show up go to At leisure ("moved by End roll call"), and the
       // roll call is closed. The roll call remembers who it moved, so that Re-open roll call can put them back.
-      const booked = trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[slot.id]?.activityId === activity.id);
+      const booked = trip.guests.filter((g) => {
+        const booking = trip.bookings[g.id]?.[slot.id];
+        return !g.leftAt && booking?.kind === 'activity' && booking.activityId === activity.id;
+      });
       const checkedInCount = booked.filter((g) => rollCall.checkins[g.id]).length;
       rollCall.endedAt = at;
       rollCall.endedBy = { id: ctx.owner.id, name: ctx.owner.name };
@@ -819,12 +850,12 @@ async function doApply(ctx, tripId, changes) {
       let movedCount = 0;
       for (const activity of activeTours) {
         const slot = trip.slots.find((s) => s.id === activity.slotId);
-        const booked = trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[slot.id]?.activityId === activity.id);
+        const swept = everyoneOnActivity(trip, activity, slot.id); // booked AND waitlisted: nobody stays waiting on a cancelled tour
         next.activities.find((a) => a.id === activity.id).cancelled = true;
-        entries.push({ ...base(), type: 'cancel-tour', activityId: activity.id, activityLabel: activity.name, guestCount: booked.length, ...where(trip, slot) });
+        entries.push({ ...base(), type: 'cancel-tour', activityId: activity.id, activityLabel: activity.name, guestCount: swept.length, ...where(trip, slot) });
         cancelledCount += 1;
-        movedCount += booked.length;
-        for (const guest of booked) move(guest, slot, { kind: 'leisure' }, 'replace-destination');
+        movedCount += swept.length;
+        for (const guest of swept) move(guest, slot, { kind: 'leisure' }, 'replace-destination');
       }
       entries.push({ ...base(), type: 'replace-destination', destinationId: destination.id, from, to, cancelledCount, movedCount, ...destWhere });
     } else {
@@ -979,16 +1010,17 @@ async function doApply(ctx, tripId, changes) {
       continue;
     }
 
-    // Cancel tour: everyone on it goes to At leisure, and the tour stays visible as Cancelled.
+    // Cancel tour: everyone on it (booked AND waitlisted) goes to At leisure, and the tour stays
+    // visible as Cancelled. Nobody should stay waiting for a tour that no longer runs.
     const activity = trip.activities.find((a) => a.id === change.activityId);
     const slot = trip.slots.find((s) => s.id === activity.slotId);
-    const booked = trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[slot.id]?.activityId === activity.id);
+    const swept = everyoneOnActivity(trip, activity, slot.id);
     next.activities.find((a) => a.id === activity.id).cancelled = true;
     entries.push({
       ...base(), type: 'cancel-tour', activityId: activity.id, activityLabel: activity.name,
-      guestCount: booked.length, ...where(trip, slot),
+      guestCount: swept.length, ...where(trip, slot),
     });
-    for (const guest of booked) move(guest, slot, { kind: 'leisure' }, 'cancel-tour');
+    for (const guest of swept) move(guest, slot, { kind: 'leisure' }, 'cancel-tour');
   }
 
   return save(ctx, next, entries, {});
@@ -1176,6 +1208,7 @@ function undoEntry(next, entry, base, entries) {
   if (entry.from.kind === 'blank') delete row[entry.slotId];
   else if (entry.from.kind === 'leisure') row[entry.slotId] = { kind: 'leisure' };
   else if (entry.from.kind === 'dinner') row[entry.slotId] = { kind: 'dinner', bookingId: entry.from.bookingId };
+  else if (entry.from.kind === 'waitlist') row[entry.slotId] = { kind: 'waitlist', activityId: entry.from.activityId };
   else if (entry.from.kind === 'unknown') row[entry.slotId] = { kind: 'unknown', raw: entry.from.raw };
   else row[entry.slotId] = { kind: 'activity', activityId: entry.from.activityId };
 
@@ -1197,6 +1230,20 @@ async function save(ctx, next, entries, extra) {
   return { ok: true, entries, ...extra };
 }
 
+// Everyone tied to an activity right now — confirmed AND waitlisted — who must be swept to leisure
+// when the tour itself goes away (cancel-tour, replace-destination): nobody should stay "waiting" for
+// a tour that no longer runs. Shared so the two call sites (which already independently duplicated
+// the plain "who's booked on it" collection) cannot drift apart on whether waitlisted guests move too.
+function everyoneOnActivity(trip, activity, slotId) {
+  const guests = [];
+  for (const guest of trip.guests) {
+    if (guest.leftAt) continue;
+    const booking = trip.bookings[guest.id]?.[slotId];
+    if ((booking?.kind === 'activity' || booking?.kind === 'waitlist') && booking.activityId === activity.id) guests.push(guest);
+  }
+  return guests;
+}
+
 // Where a change happened: the half-day, and the place with its time zone (the journal shows
 // times in the local time of that place, e.g. "14:32 Kyoto time").
 function where(trip, slot) {
@@ -1212,6 +1259,7 @@ function describe(place) {
   if (place.kind === 'activity') return { kind: 'activity', activityId: place.activity.id, label: place.activity.name };
   if (place.kind === 'leisure') return { kind: 'leisure', label: 'At leisure' };
   if (place.kind === 'dinner') return { kind: 'dinner', bookingId: place.booking.id, label: `${place.restaurant.name}, ${place.booking.seating}` };
+  if (place.kind === 'waitlist') return { kind: 'waitlist', activityId: place.activity.id, label: `Waitlist: ${place.activity.name}` };
   if (place.kind === 'unknown') return { kind: 'unknown', raw: place.raw, label: `"${place.raw}" (unknown activity)` };
   return { kind: 'blank', label: 'Nothing chosen yet' };
 }

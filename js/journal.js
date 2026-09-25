@@ -5,7 +5,7 @@
 // together, a cancelled tour with all its guests, an undo) share a `batchId`. Here they are grouped
 // back together, so the screen shows one card per action.
 
-import { joinNames, plural, countIn } from './rules.js';
+import { joinNames, plural, countIn, whoIsWhere } from './rules.js';
 
 // The kinds of journal lines that belong to a roll call (see changes.js).
 const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
@@ -122,6 +122,38 @@ export function forcedPlacements(trip, entries) {
     const activity = trip.activities.find((a) => a.id === entry.to.activityId);
     return Boolean(activity) && countIn(trip, activity) > activity.capacity;
   }));
+}
+
+// Who's waiting for a full tour, oldest join first (FIFO) — the owner's promotion proposal always
+// offers the first name here. Derived fresh from the journal AND checked live against who is
+// CURRENTLY on the waitlist (never trust a join entry alone: the guest may since have been promoted,
+// left the waitlist, or the whole tour cancelled and its waitlist swept away) — the same "don't trust
+// history alone" principle as forcedPlacements above, including its exact "skip an undo action and
+// anything it undid" rule. One side effect of mirroring that rule exactly (rather than a bespoke
+// waitlist-only version of it): if a promotion is undone, the guest's ORIGINAL join entry — untouched,
+// never itself undone — is what resurfaces as their latest qualifying entry, so they land back at their
+// ORIGINAL spot in the queue, not the back of it. This matches how Undo behaves for everything else in
+// the app (an exact reversal, never a fresh action with new consequences), and needs no extra
+// bookkeeping to track "where they used to be" — it falls out of the same rule forcedPlacements
+// already relies on.
+// Returns actual guest objects (not journal entries), oldest join first, ready to hand straight to
+// startMove/proposePromotion like any other guest.
+export function waitlistOrder(trip, entries, activity) {
+  const slot = trip.slots.find((s) => s.id === activity.slotId);
+  const currentlyWaiting = new Set((whoIsWhere(trip, slot).waitlisted.get(activity.id) ?? []).map((g) => g.id));
+  const latest = new Map(); // guestId -> their latest "joined this activity's waitlist" entry (for its seq)
+  for (const batch of groupBatches(entries)) {          // oldest first
+    if (batch.kind === 'undo' || batch.undone) continue; // an undone action no longer counts
+    for (const entry of batch.entries) {
+      if (entry.type === 'move' && entry.to.kind === 'waitlist' && entry.to.activityId === activity.id) {
+        latest.set(entry.guestId, entry);
+      }
+    }
+  }
+  return [...latest.values()]
+    .filter((entry) => currentlyWaiting.has(entry.guestId))
+    .sort((a, b) => a.seq - b.seq)
+    .map((entry) => trip.guests.find((g) => g.id === entry.guestId));
 }
 
 // One line saying what an action did, e.g. "Moved Richard S. and Priya S. from Sintra palaces to At leisure".

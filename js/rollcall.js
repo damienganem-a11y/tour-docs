@@ -28,7 +28,10 @@ export const defaultVehicles = (count) => Array.from({ length: count }, (_, i) =
 // A guest who was moved off the activity after checking in is simply not counted anymore.
 export function rollCallState(trip, rollCall) {
   const activity = trip.activities.find((a) => a.id === rollCall.activityId);
-  const booked = trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[activity.slotId]?.activityId === activity.id);
+  const booked = trip.guests.filter((g) => {
+    const booking = trip.bookings[g.id]?.[activity.slotId];
+    return !g.leftAt && booking?.kind === 'activity' && booking.activityId === activity.id;
+  });
   const checkedIn = booked.filter((g) => rollCall.checkins[g.id]);
   const expected = booked.filter((g) => !rollCall.checkins[g.id]);
   const perVehicle = new Map(rollCall.vehicles.map((v) => [v.id, checkedIn.filter((g) => rollCall.checkins[g.id] === v.id)]));

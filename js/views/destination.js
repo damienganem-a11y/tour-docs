@@ -8,11 +8,11 @@
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
-import { alphabetical, displayNames, whoIsWhere, capacityInfo } from '../rules.js';
+import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn } from '../rules.js';
 import { pageHead } from './chrome.js';
-import { startMove, startAddGuest, startCancelTour, showForcedInfo } from './move.js';
+import { startMove, startAddGuest, startCancelTour, showForcedInfo, proposePromotion } from './move.js';
 import { undoButton } from './undo.js';
-import { forcedPlacements, USE_UNDO_SCOPE } from '../journal.js';
+import { forcedPlacements, waitlistOrder, USE_UNDO_SCOPE } from '../journal.js';
 import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
 import { showToast } from '../ui.js';
@@ -49,13 +49,13 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   const { byActivity, leisure, attention } = whoIsWhere(trip, slot);
   const activities = trip.activities.filter((a) => a.slotId === slot.id);
 
-  const cards = activities.map((activity) => {
+  const cards = activities.flatMap((activity) => {
     const guests = byActivity.get(activity.id);
     const count = capacityInfo(guests.length, activity.capacity);
     // Start time in the local time of the destination, then the meeting point.
     const detail = [activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '', activity.meeting]
       .filter(Boolean).join(' · ');
-    return guestCard(ctx, trip, slot, {
+    const card = guestCard(ctx, trip, slot, {
       key: `${slot.id}|${activity.id}`, title: activity.name, detail, guests, names,
       // A guest put here by force (a move into a full tour) is shown in orange; tapping shows who approved it.
       forcedOf: (g) => { const entry = forced.get(`${g.id}|${slot.id}`); return entry?.to.activityId === activity.id ? entry : undefined; },
@@ -69,6 +69,10 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
         ]),
       ],
     });
+    // A cancelled tour's waitlist was already swept to leisure when it was cancelled (changes.js), so
+    // there is never anything to show here for one.
+    const waiting = activity.cancelled ? [] : waitlistOrder(trip, ctx.journal(trip.id), activity);
+    return waiting.length === 0 ? [card] : [card, waitlistCard(ctx, trip, slot, activity, waiting, names)];
   });
 
   const leisureCard = guestCard(ctx, trip, slot, {
@@ -180,6 +184,30 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
 
   fill();
   return h('div', { class: `card${soft ? ' card--soft' : ''}${cancelled ? ' card--cancelled' : ''}` }, head, body);
+}
+
+// Who is waiting for a full tour, in the order they joined. Numbered so the queue order is plain to
+// see; tapping a name opens the ordinary Move sheet (they can be moved elsewhere, or their travel
+// party seen, like any other guest). Once there is room, the first name in line gets a one-tap
+// proposal to promote them — never automatic (no way yet to tell a real guest on the ground they've
+// been added): the owner always confirms, through the ordinary move/force-confirm flow.
+function waitlistCard(ctx, trip, slot, activity, waiting, names) {
+  const hasRoom = activity.capacity === null || countIn(trip, activity) < activity.capacity;
+  const first = waiting[0];
+  return h('div', { class: 'card card--soft' },
+    h('div', { class: 'act-name' }, `Waitlist (${waiting.length})`),
+    h('div', { class: 'chips' },
+      waiting.map((guest, i) => h('button', {
+        class: 'chip', type: 'button', disabled: Boolean(trip.archivedAt),
+        onclick: () => startMove(ctx, trip, guest, slot),
+      }, `${i + 1}. ${names.get(guest.id)}`))),
+    hasRoom && !trip.archivedAt
+      ? h('div', { class: 'card-actions' },
+          h('button', {
+            class: 'btn btn--small', type: 'button',
+            onclick: () => proposePromotion(ctx, trip, first, slot, activity),
+          }, `Promote ${names.get(first.id)}`))
+      : null);
 }
 
 // Guests with no valid booking in this half-day. Never hidden: every guest is always counted somewhere.

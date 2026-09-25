@@ -8,7 +8,7 @@ import { applyChange, validateChanges } from './changes.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow } from './time.js';
-import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE } from './journal.js';
+import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, waitlistOrder, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE } from './journal.js';
 import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
 import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
@@ -2147,6 +2147,116 @@ function readZip(bytes) {
     looksLikeAuthCallback('#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired', ''));
   check('looksLikeAuthCallback: a plain empty visit is not a callback', !looksLikeAuthCallback('', ''));
   check('looksLikeAuthCallback: an OAuth/PKCE-style ?code= redirect', looksLikeAuthCallback('', '?code=abc123'));
+}
+
+// =====================================================================
+// WAITLIST: an ordered line for a full tour, promoted only when the owner confirms (25 Sep 2026)
+// =====================================================================
+{
+  const alfama = activity('S01-1'); // 20 / 20, exactly full (see the Capacity block above)
+  const s01 = slot('S01');
+  const toWaitlist = (activityRef) => ({ kind: 'waitlist', activityId: activity(activityRef).id });
+  const outsideAlfama = (exclude = []) => trip.guests.find((g) =>
+    !exclude.includes(g.id) && guestPlace(trip, g, s01).kind === 'activity' && guestPlace(trip, g, s01).activity.id !== alfama.id);
+  const inAlfama = (exclude = []) => trip.guests.find((g) =>
+    !exclude.includes(g.id) && guestPlace(trip, g, s01).kind === 'activity' && guestPlace(trip, g, s01).activity.id === alfama.id);
+
+  // --- Joining never needs a seat: countIn is unaffected (the central bug the design stress-test caught) ---
+  const ctx = makeCtx();
+  const joiner = outsideAlfama();
+  const joinR = await applyChange(ctx, trip.id, moveOf(joiner.ref, 'S01', toWaitlist('S01-1')));
+  check("Joining a full tour's waitlist (20 / 20) is allowed, and never needs FORCE",
+    joinR.ok && joinR.entries[0].forced === false, joinR.error);
+  check('countIn does NOT count a waitlisted guest: the tour stays at exactly 20, not 21',
+    countIn(ctx.state, alfama) === 20);
+  check('guestPlace shows the guest waitlisted for the right activity',
+    placeNow(ctx, joiner.ref, 'S01').kind === 'waitlist' && placeNow(ctx, joiner.ref, 'S01').activity.id === alfama.id);
+  check('whoIsWhere puts them in the waitlisted bucket, never in attention or on the tour itself',
+    whoIsWhere(ctx.state, s01).waitlisted.get(alfama.id).some((g) => g.id === joiner.id)
+    && !whoIsWhere(ctx.state, s01).attention.some((x) => x.guest.id === joiner.id)
+    && !whoIsWhere(ctx.state, s01).byActivity.get(alfama.id).some((g) => g.id === joiner.id));
+  check('tripWarnings never flags a waitlisted guest as "nothing chosen"',
+    !tripWarnings(ctx.state).blank.some((x) => x.guest.id === joiner.id) && !tripWarnings(ctx.state).unknown.some((x) => x.guest.id === joiner.id));
+
+  // --- Validation ---
+  const dupJoin = await applyChange(ctx, trip.id, moveOf(joiner.ref, 'S01', toWaitlist('S01-1')));
+  check('Joining the same waitlist twice is refused', !dupJoin.ok && /already on the waitlist/.test(dupJoin.error), dupJoin.error);
+  const confirmedJoin = await applyChange(makeCtx(), trip.id, moveOf(inAlfama().ref, 'S01', toWaitlist('S01-1')));
+  check('A guest already confirmed on the tour cannot join its own waitlist (would silently overwrite their seat)',
+    !confirmedJoin.ok && /already in/.test(confirmedJoin.error), confirmedJoin.error);
+  const cancelledCtx = makeCtx();
+  await applyChange(cancelledCtx, trip.id, { type: 'cancel-tour', activityId: alfama.id });
+  const joinCancelled = await applyChange(cancelledCtx, trip.id, moveOf(outsideAlfama().ref, 'S01', toWaitlist('S01-1')));
+  check('Cannot join the waitlist of a cancelled tour', !joinCancelled.ok && /cancelled/.test(joinCancelled.error), joinCancelled.error);
+
+  // --- FIFO order, derived fresh from the journal every time, never trusted from a single old entry ---
+  const fifo = makeCtx();
+  const [f1, f2, f3] = trip.guests.filter((g) => guestPlace(trip, g, s01).kind === 'activity' && guestPlace(trip, g, s01).activity.id !== alfama.id).slice(0, 3);
+  await applyChange(fifo, trip.id, moveOf(f1.ref, 'S01', toWaitlist('S01-1')));
+  await applyChange(fifo, trip.id, moveOf(f2.ref, 'S01', toWaitlist('S01-1')));
+  await applyChange(fifo, trip.id, moveOf(f3.ref, 'S01', toWaitlist('S01-1')));
+  check('waitlistOrder lists everyone in the order they joined (FIFO)',
+    waitlistOrder(fifo.state, fifo.entries, alfama).map((g) => g.id).join() === [f1, f2, f3].map((g) => g.id).join());
+  await applyChange(fifo, trip.id, moveOf(f2.ref, 'S01', { kind: 'leisure' }));
+  check('Once a waitlisted guest is moved elsewhere, they drop off the waitlist immediately, even though their old join entry is still in the journal',
+    waitlistOrder(fifo.state, fifo.entries, alfama).map((g) => g.id).join() === [f1, f3].map((g) => g.id).join());
+
+  // --- Promotion: an ordinary move, never forced, since there IS room by the time it's offered ---
+  const promo = makeCtx();
+  const [p1, p2] = trip.guests.filter((g) => guestPlace(trip, g, s01).kind === 'activity' && guestPlace(trip, g, s01).activity.id !== alfama.id).slice(0, 2);
+  const leaver = inAlfama();
+  await applyChange(promo, trip.id, moveOf(p1.ref, 'S01', toWaitlist('S01-1'))); // joins first
+  await applyChange(promo, trip.id, moveOf(p2.ref, 'S01', toWaitlist('S01-1'))); // joins second
+  await applyChange(promo, trip.id, moveOf(leaver.ref, 'S01', { kind: 'leisure' })); // frees exactly 1 seat
+  check('A seat freed up: the tour has room for exactly one more (19 / 20)', countIn(promo.state, alfama) === 19);
+  const promoteR = await applyChange(promo, trip.id, moveOf(p1.ref, 'S01', toActivity('S01-1')));
+  check('Promoting the first-in-line guest is an ordinary move — never forced — and fills the tour (20 / 20)',
+    promoteR.ok && promoteR.entries[0].forced === false && countIn(promo.state, alfama) === 20 && placeNow(promo, p1.ref, 'S01').kind === 'activity');
+  check('The promoted guest is off the waitlist; the next guest in line is still on it',
+    waitlistOrder(promo.state, promo.entries, alfama).map((g) => g.id).join() === p2.id);
+  await applyChange(promo, trip.id, { type: 'undo' });
+  check('Undoing the promotion puts the guest back on the waitlist at their ORIGINAL spot — Undo is an exact reversal here, like everywhere else in the app, not a fresh action that sends them to the back',
+    waitlistOrder(promo.state, promo.entries, alfama).map((g) => g.id).join() === [p1, p2].map((g) => g.id).join());
+
+  // --- Promotion falls back to needing FORCE if the freed seat is taken by someone else first ---
+  const race = makeCtx();
+  const r1 = outsideAlfama();
+  await applyChange(race, trip.id, moveOf(r1.ref, 'S01', toWaitlist('S01-1')));
+  const raceLeaver = inAlfama([r1.id]);
+  await applyChange(race, trip.id, moveOf(raceLeaver.ref, 'S01', { kind: 'leisure' })); // frees exactly 1 seat
+  const grabber = outsideAlfama([r1.id, raceLeaver.id]);
+  await applyChange(race, trip.id, moveOf(grabber.ref, 'S01', toActivity('S01-1'))); // an unrelated move takes the seat first
+  const tooLate = await applyChange(race, trip.id, moveOf(r1.ref, 'S01', toActivity('S01-1')));
+  check('If the freed seat is taken before the promotion is confirmed, it is refused exactly like any other full tour',
+    !tooLate.ok && /full/.test(tooLate.error), tooLate.error);
+
+  // --- Cancel tour and replace-destination sweep waitlisted guests to leisure too, not just booked ones ---
+  const cancelWL = makeCtx();
+  const waiter = outsideAlfama();
+  await applyChange(cancelWL, trip.id, moveOf(waiter.ref, 'S01', toWaitlist('S01-1')));
+  const bookedBefore = countIn(cancelWL.state, alfama);
+  const cancelR = await applyChange(cancelWL, trip.id, { type: 'cancel-tour', activityId: alfama.id });
+  check('Cancelling a tour also sweeps anyone on its waitlist to At leisure, not just the booked guests',
+    cancelR.ok && placeNow(cancelWL, waiter.ref, 'S01').kind === 'leisure' && cancelR.entries[0].guestCount === bookedBefore + 1,
+    JSON.stringify({ guestCount: cancelR.entries[0].guestCount, bookedBefore }));
+
+  const marrakechWL = trip.destinations.find((d) => d.name === 'Marrakech');
+  const rdCtx = makeCtx();
+  const marrakechWaiter = trip.guests.find((g) => { const p = guestPlace(trip, g, slot('S05')); return p.kind === 'activity' && p.activity.id !== hammam.id; });
+  await applyChange(rdCtx, trip.id, moveOf(marrakechWaiter.ref, 'S05', { kind: 'waitlist', activityId: hammam.id }));
+  const replacedWL = await applyChange(rdCtx, trip.id, { type: 'replace-destination', destinationId: marrakechWL.id, name: 'Fez', country: 'Morocco', timeZone: 'Africa/Casablanca' });
+  check('Replacing a destination also sweeps anyone waitlisted on its cancelled tours to At leisure',
+    replacedWL.ok && placeNow(rdCtx, marrakechWaiter.ref, 'S05').kind === 'leisure', replacedWL.error);
+
+  // --- A guest booked OR waitlisted on a freshly-added activity blocks undoing that add ---
+  const addCtx = makeCtx();
+  const added = await applyChange(addCtx, trip.id, { type: 'add-activity', slotId: slot('S10').id, name: 'Waitlist guard test', meeting: '', startTime: '', capacity: 1 });
+  const addedActivityId = added.entries[0].activityId;
+  const addWaiter = trip.guests.find((g) => !g.leftAt);
+  await applyChange(addCtx, trip.id, moveOf(addWaiter.ref, 'S10', { kind: 'waitlist', activityId: addedActivityId }));
+  const undoBlocked = await applyChange(addCtx, trip.id, { type: 'undo', scope: DESTINATION_UNDO_SCOPE });
+  check('A freshly-added activity cannot be undone once somebody is waitlisted on it, not just booked',
+    !undoBlocked.ok && /already booked or waiting/.test(undoBlocked.error), undoBlocked.error);
 }
 
 // --- Show the results ---

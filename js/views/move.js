@@ -17,6 +17,7 @@ const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :
   place.kind === 'leisure' ? 'At leisure' :
   place.kind === 'dinner' ? `dining at ${place.restaurant.name} (${place.booking.seating})` :
+  place.kind === 'waitlist' ? `waitlisted for ${place.activity.name}` :
   place.kind === 'unknown' ? `unknown activity "${place.raw}"` : 'nothing chosen yet';
 
 // ---------- Small building blocks ----------
@@ -254,10 +255,32 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
     else if (left <= 3) warnings.unshift(`${plural(left, 'seat')} left after this.`);
   }
 
+  // When forcing is needed, the dispatcher gets a second option: join the tour's waitlist instead of
+  // overriding capacity. Never offered otherwise — there is no waitlist to join when there is room.
+  const secondary = needsForce && target.kind === 'activity'
+    ? {
+        label: `Add ${who} to the waitlist instead`,
+        changes: group.map((g) => ({ type: 'move', guestId: g.id, slotId: slot.id, to: { kind: 'waitlist', activityId: target.activity.id } })),
+        done: `${who} added to the waitlist for "${target.activity.name}"`,
+      }
+    : null;
+
   confirmSheet(ctx, trip, {
     title: `Move ${who}${from} to ${to}?`, detail, warnings,
-    confirmLabel: needsForce ? 'Force move' : 'Confirm', force: needsForce, changes, done,
+    confirmLabel: needsForce ? 'Force move' : 'Confirm', force: needsForce, changes, done, secondary,
   });
+}
+
+// ---------- Promote a waitlisted guest ----------
+
+// A seat has freed up on a full tour: offer the first waitlisted guest that seat. Reached from the
+// waitlist card's one-tap proposal (destination.js), not the Move sheet. Reuses the ordinary "pick a
+// place" flow (the travel-party prompt, then confirm) — promotion is never automatic, and never
+// bypasses capacity: it is simply already known there is room, since the card only shows the proposal
+// once countIn(trip, activity) < activity.capacity.
+export function proposePromotion(ctx, trip, guest, slot, activity) {
+  if (blockedIfArchived(trip)) return;
+  afterPick(ctx, trip, guest, slot, { kind: 'activity', activity });
 }
 
 // ---------- Cancel tour ----------
@@ -292,11 +315,12 @@ async function saveChanges(ctx, trip, changes, done) {
   }
 }
 
-// The confirmation sheet: a summary, warnings, and one Confirm button.
+// The confirmation sheet: a summary, warnings, one Confirm button, and an optional second button
+// (secondary: {label, changes, done} — e.g. "Add to the waitlist instead").
 // A tour cancellation or a forced move has its own red button, so there the Cancel button stays plain.
 // force: the move goes into a full tour. The button says "Force move", and an optional box lets you write
 // who approved it ("Approved by Sam"); it is saved in the journal with the move.
-function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, cancelLabel, changes, done }) {
+function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, cancelLabel, changes, done, secondary = null }) {
   const approval = force
     ? h('input', {
         class: 'text-input approval-input', type: 'text', placeholder: 'Approved by (optional)', 'aria-label': 'Approved by (optional)',
@@ -312,8 +336,13 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
       force ? `${done} (forced)` : done),
   }, confirmLabel);
 
+  const secondaryButton = secondary
+    ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => saveChanges(ctx, trip, secondary.changes, secondary.done) }, secondary.label)
+    : null;
+
   openSheet({
-    eyebrow: force ? 'Over capacity' : 'Confirm change', title, subtitle: detail, body: [warnings.map(notice), approval, confirmButton],
+    eyebrow: force ? 'Over capacity' : 'Confirm change', title, subtitle: detail,
+    body: [warnings.map(notice), approval, confirmButton, secondaryButton],
     cancelLabel, cancelDanger: !(danger || force),
   });
 }

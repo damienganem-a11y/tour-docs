@@ -112,17 +112,22 @@ export function partyLabel(trip, guest, names) {
 
 // ---------- Who is where ----------
 
-// Everybody's place in one half-day. Every guest lands in exactly one of three groups:
+// Everybody's place in one half-day. Every guest lands in exactly one of four groups:
 //   byActivity  Map: activity id -> guests booked on it
 //   leisure     guests At leisure
+//   waitlisted  Map: activity id -> guests waiting for a seat on it, in no particular order (see
+//               journal.js's waitlistOrder for the FIFO order to actually show)
 //   attention   guests with no Touring booking: [{ guest, reason }]  (nothing chosen yet, an activity
 //               name that matched nothing, OR a dinner booking — Touring itself has nothing to show
 //               for them, but they are NOT a problem, unlike the other two: tripWarnings below skips
 //               them, and they stay in this array rather than a bucket of their own so nobody
 //               reading `attention`'s length (Touring's own card, every export's headcount) silently
-//               undercounts guests once dining exists.
+//               undercounts guests once dining exists. A waitlisted guest, unlike a dinner-booked one,
+//               gets its OWN bucket rather than staying in `attention` — Touring needs to show them
+//               per-activity (the waitlist card), which `attention`'s flat list can't do.
 export function whoIsWhere(trip, slot) {
   const byActivity = new Map(trip.activities.filter((a) => a.slotId === slot.id).map((a) => [a.id, []]));
+  const waitlisted = new Map(trip.activities.filter((a) => a.slotId === slot.id).map((a) => [a.id, []]));
   const leisure = [];
   const attention = [];
 
@@ -133,9 +138,10 @@ export function whoIsWhere(trip, slot) {
     const booking = trip.bookings[guest.id]?.[slot.id];
     if (booking?.kind === 'activity' && byActivity.has(booking.activityId)) byActivity.get(booking.activityId).push(guest);
     else if (booking?.kind === 'leisure') leisure.push(guest);
+    else if (booking?.kind === 'waitlist' && waitlisted.has(booking.activityId)) waitlisted.get(booking.activityId).push(guest);
     else attention.push({ guest, reason: attentionReason(trip, booking) });
   }
-  return { byActivity, leisure, attention };
+  return { byActivity, leisure, waitlisted, attention };
 }
 
 function attentionReason(trip, booking) {
@@ -150,7 +156,7 @@ function attentionReason(trip, booking) {
 
 // One guest's place in one half-day, ready to show:
 //   { kind: 'activity', activity } | { kind: 'leisure' } | { kind: 'dinner', booking, restaurant }
-//   | { kind: 'blank' } | { kind: 'unknown', raw }
+//   | { kind: 'waitlist', activity } | { kind: 'blank' } | { kind: 'unknown', raw }
 export function guestPlace(trip, guest, slot) {
   const booking = trip.bookings[guest.id]?.[slot.id];
   if (booking?.kind === 'activity') {
@@ -162,6 +168,10 @@ export function guestPlace(trip, guest, slot) {
     const dinnerBooking = trip.dinnerBookings.find((b) => b.id === booking.bookingId);
     const restaurant = dinnerBooking && trip.restaurants.find((r) => r.id === dinnerBooking.restaurantId);
     if (dinnerBooking && restaurant) return { kind: 'dinner', booking: dinnerBooking, restaurant };
+  }
+  if (booking?.kind === 'waitlist') {
+    const activity = trip.activities.find((a) => a.id === booking.activityId);
+    if (activity) return { kind: 'waitlist', activity };
   }
   if (booking?.kind === 'unknown') return { kind: 'unknown', raw: booking.raw };
   return { kind: 'blank' };
@@ -177,7 +187,8 @@ export function slotLabel(trip, slot) {
 export function samePlace(a, b) {
   return (a.kind === 'activity' && b.kind === 'activity' && a.activity.id === b.activity.id)
     || (a.kind === 'leisure' && b.kind === 'leisure')
-    || (a.kind === 'dinner' && b.kind === 'dinner' && a.booking.id === b.booking.id);
+    || (a.kind === 'dinner' && b.kind === 'dinner' && a.booking.id === b.booking.id)
+    || (a.kind === 'waitlist' && b.kind === 'waitlist' && a.activity.id === b.activity.id);
 }
 
 // The other people of a guest's travel party who are in the SAME place as the guest in this half-day.
@@ -218,11 +229,14 @@ export function partyPlan(trip, guest, slot, target) {
   return { movers, room, guestFits: room >= 1, everyoneFits: room >= 1 + movers.length };
 }
 
-// How many guests are booked on an activity right now.
+// How many guests are booked on an activity right now. A guest waitlisted for it does NOT count —
+// their booking also carries an `activityId` (see the `waitlist` kind below), so the `kind` check
+// here matters, not just a leftover safety habit.
 export function countIn(trip, activity) {
   let count = 0;
   for (const guest of trip.guests) {
-    if (!guest.leftAt && trip.bookings[guest.id]?.[activity.slotId]?.activityId === activity.id) count++;
+    const booking = trip.bookings[guest.id]?.[activity.slotId];
+    if (!guest.leftAt && booking?.kind === 'activity' && booking.activityId === activity.id) count++;
   }
   return count;
 }

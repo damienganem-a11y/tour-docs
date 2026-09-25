@@ -109,6 +109,7 @@ function strip(items, small = false) {
 function placeLabel(place) {
   if (place.kind === 'activity') return place.activity.name;
   if (place.kind === 'leisure') return 'At leisure';
+  if (place.kind === 'waitlist') return `Waitlist: ${place.activity.name}`;
   if (place.kind === 'unknown') return `"${place.raw}"`;
   return 'Nothing chosen yet';
 }
