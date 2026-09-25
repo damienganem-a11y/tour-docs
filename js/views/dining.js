@@ -13,6 +13,12 @@
 //              with people they don't know yet (a solo, a pair) can be registered and progressively
 //              combined by watching each table fill up. A specific empty table can be booked
 //              directly, even deliberately oversized (becomes a Special request on that table).
+//
+// Removing a guest from a table (step 2b's last piece) needed no new change type: the ordinary Move
+// sheet (move.js's startMove) already understood a dinner-booked guest correctly (step 2a) — "At
+// leisure" or another activity both leave the table, correctly free its seat, and correctly offer to
+// bring the rest of their travel party along if they're on the same table. Each guest's chip on a
+// booked table is now that same Move sheet's entry point, here as everywhere else in the app.
 
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
@@ -22,7 +28,7 @@ import {
   capacityInfo, bySlotOrder, joinNames, plural,
 } from '../rules.js';
 import { pageHead } from './chrome.js';
-import { notice, choiceRow } from './move.js';
+import { notice, choiceRow, startMove } from './move.js';
 import { undoButton } from './undo.js';
 import { DINING_USE_UNDO_SCOPE } from '../journal.js';
 
@@ -107,9 +113,12 @@ function placeLabel(place) {
   return 'Nothing chosen yet';
 }
 
-// An existing table on the Overview: tap it to add more guests (step 2b) — chips stay read-only
-// (they are not the tap target; the card's head is).
-function tableCard(ctx, trip, names, slot, booking) {
+// An existing table: tap the head to add more guests (step 2b); tap a guest's own chip to move them
+// off it — the ordinary Move sheet (see the file's top comment). title overrides the head's own
+// label: the Overview shows the restaurant's name (several restaurants may be on screen at once);
+// the "By table" grid already shows the restaurant via its own strip, so it shows the table instead
+// ("Table for 4", "Table (3 guests)").
+function tableCard(ctx, trip, names, slot, booking, title) {
   const restaurant = trip.restaurants.find((r) => r.id === booking.restaurantId);
   const guests = trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[booking.slotId]?.bookingId === booking.id);
   const isSpecial = booking.status === 'special-request';
@@ -119,14 +128,17 @@ function tableCard(ctx, trip, names, slot, booking) {
     onclick: () => pickForExistingBooking(ctx, trip, slot, restaurant, booking.seating, booking),
   },
     h('div', { class: 'card-row' },
-      h('div', { class: 'act-name' }, restaurant?.name ?? 'Restaurant'),
+      h('div', { class: 'act-name' }, title ?? restaurant?.name ?? 'Restaurant'),
       h('div', { class: `count${isSpecial ? ' count--bad' : ''}` }, isSpecial ? 'Special request' : 'Confirmed')),
     h('div', { class: 'muted' }, booking.seating));
 
   return h('div', { class: `card${isSpecial ? ' card--warn' : ''}` },
     head,
     h('div', { class: 'chips' },
-      [...guests].sort(alphabetical(names)).map((g) => h('span', { class: 'chip' }, names.get(g.id)))));
+      [...guests].sort(alphabetical(names)).map((g) => h('button', {
+        class: 'chip', type: 'button', disabled: Boolean(trip.archivedAt),
+        onclick: () => startMove(ctx, trip, g, slot),
+      }, names.get(g.id)))));
 }
 
 function noDinnerYetCard(ctx, trip, slot, guests, names) {
@@ -231,18 +243,19 @@ function byTablePage(ctx, trip, base, destination, slot, restaurants, restaurant
   const names = displayNames(trip.guests);
   const grid = dinnerTableGrid(trip, restaurant, slot, seating);
 
+  // An occupied table (Strict or Flexible) renders as the same tappable card the Overview uses —
+  // its head adds more guests, each chip moves that one guest off it. An empty Strict table has no
+  // guests to show, so it stays a plain row (tap it to book it fresh).
   const rows = grid.mode === 'strict'
-    ? grid.rows.map(({ table, booking, count }) => gridRow(trip, names, slot, {
-        title: `Table for ${table.size}`, count, capacity: table.size, booking,
-        onclick: () => (booking
-          ? pickForExistingBooking(ctx, trip, slot, restaurant, seating, booking)
-          : pickForEmptyTable(ctx, trip, slot, restaurant, seating, table)),
-      }))
+    ? grid.rows.map(({ table, booking, count }) => (booking
+        ? tableCard(ctx, trip, names, slot, booking, `Table for ${table.size}`)
+        : choiceRow({
+            title: `Table for ${table.size}`, detail: 'Empty', side: capacityInfo(count, table.size).text,
+            disabled: Boolean(trip.archivedAt),
+            onclick: () => pickForEmptyTable(ctx, trip, slot, restaurant, seating, table),
+          })))
     : [
-        ...grid.rows.map(({ booking, count }) => gridRow(trip, names, slot, {
-          title: `Table (${plural(count, 'guest')})`, count, capacity: null, booking,
-          onclick: () => pickForExistingBooking(ctx, trip, slot, restaurant, seating, booking),
-        })),
+        ...grid.rows.map(({ booking, count }) => tableCard(ctx, trip, names, slot, booking, `Table (${plural(count, 'guest')})`)),
         h('p', { class: 'muted' }, `${capacityInfo(grid.used, grid.seatsPerSeating).text} seated this seating`),
         h('button', {
           class: 'btn btn--plain', type: 'button', disabled: Boolean(trip.archivedAt),
@@ -251,21 +264,6 @@ function byTablePage(ctx, trip, base, destination, slot, restaurants, restaurant
       ];
 
   return h('div', {}, restaurantStrip, seatingStrip, h('div', {}, rows));
-}
-
-function gridRow(trip, names, slot, { title, count, capacity, booking, onclick }) {
-  const isSpecial = booking?.status === 'special-request';
-  const occupantNames = booking
-    ? [...trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[slot.id]?.bookingId === booking.id)].sort(alphabetical(names)).map((g) => names.get(g.id))
-    : [];
-  return choiceRow({
-    title,
-    detail: booking ? joinNames(occupantNames) : 'Empty',
-    side: capacity !== null ? capacityInfo(count, capacity).text : (count > 0 ? plural(count, 'guest') : null),
-    badge: isSpecial ? { text: 'Special request', bad: true } : booking ? { text: 'Confirmed' } : null,
-    disabled: Boolean(trip.archivedAt),
-    onclick,
-  });
 }
 
 // ---------- Shared multi-select guest picker ----------
