@@ -45,7 +45,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   }
 
   const names = displayNames(trip.guests);
-  const forced = forcedPlacements(ctx.journal(trip.id)); // who is in a tour by force, right now
+  const forced = forcedPlacements(trip, ctx.journal(trip.id)); // who is in a tour by force, right now
   const { byActivity, leisure, attention } = whoIsWhere(trip, slot);
   const activities = trip.activities.filter((a) => a.slotId === slot.id);
 

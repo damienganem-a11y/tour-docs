@@ -5,7 +5,7 @@
 // together, a cancelled tour with all its guests, an undo) share a `batchId`. Here they are grouped
 // back together, so the screen shows one card per action.
 
-import { joinNames, plural } from './rules.js';
+import { joinNames, plural, countIn } from './rules.js';
 
 // The kinds of journal lines that belong to a roll call (see changes.js).
 const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
@@ -101,11 +101,15 @@ export function lastUndoable(entries, scope) {
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }
 
-// Who is in a tour RIGHT NOW because a move was forced (the dispatcher's decision). Returns a Map:
-// "guestId|slotId" -> the journal line of that forced move (who approved it, who made it, when).
-// Only the latest action for a guest in a half-day counts: if they were moved again afterwards, or the
-// forced move was undone, they are no longer in the list.
-export function forcedPlacements(entries) {
+// Who is in a tour RIGHT NOW because a move was forced (the dispatcher's decision), AND the tour is
+// still actually over capacity right now. Returns a Map: "guestId|slotId" -> the journal line of that
+// forced move (who approved it, who made it, when). Only the latest action for a guest in a half-day
+// counts: if they were moved again afterwards, or the forced move was undone, they are no longer in
+// the list. Checked live against the tour's current capacity (never cached on the entry itself, same
+// principle as countIn/capacityInfo elsewhere) — the owner's feedback, 25 Sep 2026: once enough other
+// guests have since left that tour for it to no longer be over capacity, a guest who was forced in is
+// not "in the way" any more and should stop being shown in orange.
+export function forcedPlacements(trip, entries) {
   const latest = new Map();
   for (const batch of groupBatches(entries)) {          // oldest first
     if (batch.kind === 'undo' || batch.undone) continue; // an undone action no longer counts
@@ -113,7 +117,11 @@ export function forcedPlacements(entries) {
       if (entry.type === 'move') latest.set(`${entry.guestId}|${entry.slotId}`, entry);
     }
   }
-  return new Map([...latest].filter(([, entry]) => entry.forced));
+  return new Map([...latest].filter(([, entry]) => {
+    if (!entry.forced) return false;
+    const activity = trip.activities.find((a) => a.id === entry.to.activityId);
+    return Boolean(activity) && countIn(trip, activity) > activity.capacity;
+  }));
 }
 
 // One line saying what an action did, e.g. "Moved Richard S. and Priya S. from Sintra palaces to At leisure".

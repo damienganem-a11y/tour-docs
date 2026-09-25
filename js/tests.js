@@ -566,26 +566,37 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   const ctx = makeCtx();
   const key = `${stranger.id}|${slot('S05').id}`;
   await applyChange(ctx, trip.id, { ...moveOf(stranger.ref, 'S05', toActivity('S05-2')), force: true, approvedBy: 'Sam' });
-  const found = forcedPlacements(ctx.entries).get(key);
+  const found = forcedPlacements(ctx.state, ctx.entries).get(key);
   check('The forced guest is found, with who approved it, who added them and where they came from',
-    forcedPlacements(ctx.entries).size === 1 && found.approvedBy === 'Sam' && found.who.name === 'Tester' && found.to.activityId === hammam.id && found.from.kind === 'activity', JSON.stringify(found?.approvedBy));
+    forcedPlacements(ctx.state, ctx.entries).size === 1 && found.approvedBy === 'Sam' && found.who.name === 'Tester' && found.to.activityId === hammam.id && found.from.kind === 'activity', JSON.stringify(found?.approvedBy));
   await applyChange(ctx, trip.id, moveOf(stranger.ref, 'S05', LEISURE));
-  check('...but not any more once the guest is moved somewhere else', forcedPlacements(ctx.entries).size === 0);
+  check('...but not any more once the guest is moved somewhere else', forcedPlacements(ctx.state, ctx.entries).size === 0);
   await applyChange(ctx, trip.id, { type: 'undo' });
-  check('...and again when that later move is undone', forcedPlacements(ctx.entries).size === 1 && forcedPlacements(ctx.entries).get(key).approvedBy === 'Sam');
+  check('...and again when that later move is undone', forcedPlacements(ctx.state, ctx.entries).size === 1 && forcedPlacements(ctx.state, ctx.entries).get(key).approvedBy === 'Sam');
   await applyChange(ctx, trip.id, { type: 'undo' });
-  check('...and gone when the forced move itself is undone', forcedPlacements(ctx.entries).size === 0);
+  check('...and gone when the forced move itself is undone', forcedPlacements(ctx.state, ctx.entries).size === 0);
 
   const normal = makeCtx();
   await applyChange(normal, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
-  check('A normal move is never listed as forced', forcedPlacements(normal.entries).size === 0);
+  check('A normal move is never listed as forced', forcedPlacements(normal.state, normal.entries).size === 0);
 
   const two = makeCtx();
   const pair = trip.guests.filter((g) => { const p = guestPlace(trip, g, slot('S05')); return p.kind === 'activity' && p.activity.id !== hammam.id; }).slice(0, 2);
   await applyChange(two, trip.id, pair.map((g, i) => ({ ...moveOf(g.ref, 'S05', toActivity('S05-2')), force: true, approvedBy: i === 0 ? 'Sam' : '' })));
-  const both = forcedPlacements(two.entries);
+  const both = forcedPlacements(two.state, two.entries);
   check('A forced group is listed guest by guest; an empty note reads as "not written down"',
     both.size === 2 && both.get(`${pair[0].id}|${slot('S05').id}`).approvedBy === 'Sam' && both.get(`${pair[1].id}|${slot('S05').id}`).approvedBy === null);
+
+  // A forced guest stops showing as forced once the tour is no longer over capacity, even though
+  // their OWN move is still the same forced one (never re-moved, never undone) — checked live against
+  // the tour's current headcount (the owner's feedback, 25 Sep 2026), not cached on the journal line.
+  const ctxRelieved = makeCtx();
+  await applyChange(ctxRelieved, trip.id, { ...moveOf(stranger.ref, 'S05', toActivity('S05-2')), force: true, approvedBy: 'Sam' });
+  check('Hammam is over capacity (11 / 8) right after forcing the 11th guest in',
+    countIn(ctxRelieved.state, hammam) === 11 && forcedPlacements(ctxRelieved.state, ctxRelieved.entries).size === 1);
+  await applyChange(ctxRelieved, trip.id, inHammam.slice(0, 3).map((g) => moveOf(g.ref, 'S05', LEISURE)));
+  check('Once enough OTHER guests have left to bring it back to exactly 8 / 8, the forced guest is no longer shown as forced',
+    countIn(ctxRelieved.state, hammam) === 8 && forcedPlacements(ctxRelieved.state, ctxRelieved.entries).size === 0);
 }
 
 // --- The travel party question is the same whether the tour has room or not ---

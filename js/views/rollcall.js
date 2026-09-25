@@ -158,7 +158,7 @@ export function rollCallView(ctx, tripId, activityId) {
 
   // ---------- The guests still expected ----------
 
-  const forced = forcedPlacements(ctx.journal(trip.id)); // guests who are on this tour by force show in orange
+  const forced = forcedPlacements(trip, ctx.journal(trip.id)); // guests who are on this tour by force show in orange
   const isForced = (guest) => forced.get(`${guest.id}|${slot.id}`)?.to.activityId === activity.id;
 
   // A tap checks the guest into the chosen vehicle. If their travel party is still to come, ask about them too (one question).
