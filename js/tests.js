@@ -12,6 +12,7 @@ import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedP
 import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
 import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
+import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnlock } from './biometrics.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates } from './rules.js';
@@ -1729,6 +1730,40 @@ rememberUnlock(1000);
 check('After the code is entered, the phone stays unlocked for 30 days', isUnlocked(1000 + 30 * day - 1) === true && isUnlocked(1000 + 1 * day) === true);
 check('After 30 days the code is asked again', isUnlocked(1000 + 30 * day + 1) === false);
 if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else localStorage.setItem('tourdocs.unlockedUntil', keptBefore);
+
+// --- Face ID / Touch ID (biometrics.js) ---
+// Only the local-storage bookkeeping is checked here. The real WebAuthn calls (enableBiometric,
+// tryBiometricUnlock once something is registered) need a real phone's own Face ID/Touch ID hardware
+// to ever resolve — a browser with no platform authenticator at all does not reject them quickly,
+// it simply never settles the promise, so calling them for real here would hang this whole test
+// page. Same reasoning as auth.js's magic-link sign-in just below: verified by hand on a real phone.
+{
+  const clear = () => { try { localStorage.removeItem('tourdocs.biometricCredentialId'); localStorage.removeItem('tourdocs.biometricLockOn'); } catch { /* nothing to clear */ } };
+  const keptCredential = (() => { try { return localStorage.getItem('tourdocs.biometricCredentialId'); } catch { return null; } })();
+  const keptLock = (() => { try { return localStorage.getItem('tourdocs.biometricLockOn'); } catch { return null; } })();
+  clear();
+
+  check('Nothing is registered at the start: biometricRegistered and biometricLockOn both read false',
+    biometricRegistered() === false && biometricLockOn() === false);
+  check('With nothing registered, tryBiometricUnlock returns false straight away, without ever asking the phone',
+    (await tryBiometricUnlock()) === false);
+
+  try { localStorage.setItem('tourdocs.biometricCredentialId', 'fake-credential-id-for-tests'); } catch { /* storage blocked: the reads below correctly stay false too */ }
+  check('biometricRegistered reads true once a credential id is on the phone', biometricRegistered() === true);
+  check('...but biometricLockOn stays false until the lock flag is ALSO set (enableBiometric always sets both together, never one without the other)',
+    biometricLockOn() === false);
+  try { localStorage.setItem('tourdocs.biometricLockOn', '1'); } catch { /* ignore */ }
+  check('With both set, biometricLockOn reads true', biometricLockOn() === true);
+
+  disableBiometric();
+  check('disableBiometric clears both flags in one go', biometricRegistered() === false && biometricLockOn() === false);
+  disableBiometric(); // nothing left to clear
+  check('disableBiometric is still safe to call again, with nothing left to clear', biometricRegistered() === false && biometricLockOn() === false);
+
+  clear();
+  if (keptCredential !== null) { try { localStorage.setItem('tourdocs.biometricCredentialId', keptCredential); } catch { /* ignore */ } }
+  if (keptLock !== null) { try { localStorage.setItem('tourdocs.biometricLockOn', keptLock); } catch { /* ignore */ } }
+}
 
 // --- The trip and its journal entries are saved together, on the device ---
 {

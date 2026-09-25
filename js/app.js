@@ -22,6 +22,7 @@ import { signOut as authSignOut } from './auth.js';
 import { pushTrip, pushJournalEntries, pullTripList } from './sync.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
+import * as biometrics from './biometrics.js';
 import { passcodeView } from './views/passcode.js';
 import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
@@ -82,6 +83,18 @@ const ctx = {
   async tryUnlock(code) {
     if (!(await checkPasscode(code, PASSCODE_CONFIG))) return false;
     rememberUnlock();
+    state.locked = false;
+    render();
+    return true;
+  },
+
+  // Face ID / Touch ID (biometrics.js): an optional, faster way past the same gate as tryUnlock above.
+  get biometricAvailable() { return Boolean(window.PublicKeyCredential) && Boolean(PASSCODE_CONFIG) && gateAvailable(); },
+  get biometricOn() { return biometrics.biometricRegistered(); },
+  async enableBiometric() { await biometrics.enableBiometric(); render(); },
+  disableBiometric() { biometrics.disableBiometric(); render(); },
+  async unlockWithBiometric() {
+    if (!(await biometrics.tryBiometricUnlock())) return false;
     state.locked = false;
     render();
     return true;
@@ -250,7 +263,9 @@ async function start() {
     return;
   }
   // The access code is only asked for when one is set AND this page can check it (see gate.js).
-  state.locked = Boolean(PASSCODE_CONFIG) && gateAvailable() && !isUnlocked();
+  // With Face ID/Touch ID turned on (biometrics.js), the app locks itself on every reopen instead of
+  // just remembering the code for 30 days — the biometric prompt makes that no burden.
+  state.locked = Boolean(PASSCODE_CONFIG) && gateAvailable() && (biometrics.biometricLockOn() || !isUnlocked());
   registerOffline(); // starts straight away, offline setup does not touch the screen
 
   window.addEventListener('hashchange', () => render());

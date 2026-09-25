@@ -124,14 +124,39 @@ export function tripsView(ctx) {
       message,
       archivedSection,
       deletedSection,
+      faceIdSection(ctx),
       h('button', {
-        class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 24px;',
+        class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
         onclick: () => ctx.signOut(),
       }, 'Sign out'),
       // So you can see at once which version is on the phone, and whether it can work offline.
       h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION} · ${offlineStatus()}`)
     ),
   };
+}
+
+// Face ID / Touch ID (biometrics.js): a device-level toggle, like Sign out just below it, not tied
+// to a trip. Off entirely when the phone/browser cannot offer it, or there is no access code to
+// begin with (nothing to speed past). On: the app locks itself on every reopen instead of just
+// remembering the code for 30 days; the code is always there too as a fallback.
+function faceIdSection(ctx) {
+  if (!ctx.biometricAvailable) return null;
+  if (ctx.biometricOn) {
+    return h('div', { class: 'muted', style: 'margin-top: 24px;' },
+      'Face ID / Touch ID is on for this phone. ',
+      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => ctx.disableBiometric() }, 'Turn it off'));
+  }
+  return h('button', {
+    class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 24px;',
+    onclick: async () => {
+      try {
+        await ctx.enableBiometric();
+        showToast('Face ID / Touch ID is on: it will be offered every time the app is reopened.');
+      } catch (error) {
+        showToast(`Could not turn on Face ID / Touch ID (${error.message}).`, true);
+      }
+    },
+  }, 'Turn on Face ID / Touch ID');
 }
 
 // Can the app open without internet? (Yes once its files are saved on the phone: after one visit with internet.)
