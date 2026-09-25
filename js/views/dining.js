@@ -270,21 +270,11 @@ function gridRow(trip, names, slot, { title, count, capacity, booking, onclick }
 
 // ---------- Shared multi-select guest picker ----------
 //
-// Every guest with no dinner yet this evening, grouped by travel party for readability, ticked
-// individually — unlike the guest-first flow above, this lets unrelated solos and pairs who don't
-// know each other yet be combined onto one table in a single action (the owner's call, this
-// session). Mirrors rollcall.js's own tick-row checkbox list.
-
-function groupByParty(trip, guests, names) {
-  const groups = new Map();
-  for (const guest of guests) {
-    if (!groups.has(guest.partyId)) groups.set(guest.partyId, []);
-    groups.get(guest.partyId).push(guest);
-  }
-  return [...groups.values()]
-    .map((members) => [...members].sort(alphabetical(names)))
-    .sort((a, b) => names.get(a[0].id).localeCompare(names.get(b[0].id), 'en', { sensitivity: 'base' }));
-}
+// Every guest with no dinner yet this evening, ticked individually — unlike the guest-first flow
+// above, this lets unrelated solos and pairs who don't know each other yet be combined onto one
+// table in a single action (the owner's call, this session). Mirrors rollcall.js's own tick-row
+// checkbox list. Flat and alphabetical, not grouped by travel party (the owner's call, 25 Sep
+// 2026 — offerParty below still offers to add a ticked guest's party, just not as a standing label).
 
 // ceiling: the capacity to check the running total against (null when there is none to show, e.g. a
 // Strict special-request table with no table assigned — any number just becomes a Special request).
@@ -332,28 +322,22 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
   // The search matches by name only, exactly like the ordinary "Add guest" search elsewhere in the
   // app (move.js's startAddGuest) — never "also show their travel party" (the owner's call: searching
   // "Robert" must not surface Suzanne just because they travel together — offerParty above is the
-  // deliberate, opt-in version of that). "Travelling together" only shows when more than one member of
-  // a party is still in the FILTERED list, so it naturally disappears once a search narrows things
-  // down to one name — no special-casing needed. Ticks are kept in `checked` across searches (not just
-  // what's currently on screen), so picking Robert, then searching "Suzanne" and picking her too, adds
-  // both when confirmed.
+  // deliberate, opt-in version of that). Ticks are kept in `checked` across searches (not just what's
+  // currently on screen), so picking Robert, then searching "Suzanne" and picking her too, adds both
+  // when confirmed.
   const fill = () => {
     const words = plain(search.value).split(/\s+/).filter(Boolean);
-    const shown = guests.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
-    const groups = groupByParty(trip, shown, names);
+    const shown = guests.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w))).sort(alphabetical(names));
     list.replaceChildren(...(shown.length === 0
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
-      : groups.flatMap((members) => [
-          members.length > 1 ? h('div', { class: 'muted' }, 'Travelling together') : null,
-          ...members.map((guest) => {
-            const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });
-            box.addEventListener('change', () => {
-              if (box.checked) { checked.add(guest.id); offerParty(guest); } else { checked.delete(guest.id); partyPrompt.replaceChildren(); }
-              say();
-            });
-            return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
-          }),
-        ]).filter(Boolean)));
+      : shown.map((guest) => {
+          const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });
+          box.addEventListener('change', () => {
+            if (box.checked) { checked.add(guest.id); offerParty(guest); } else { checked.delete(guest.id); partyPrompt.replaceChildren(); }
+            say();
+          });
+          return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
+        })));
   };
 
   const search = h('input', {
@@ -363,7 +347,13 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
 
   say();
   fill();
-  openSheet({ eyebrow, title, subtitle, body: [status, partyPrompt, search, list, confirmBtn], cancelLabel: 'Cancel' });
+  // status + Confirm sit in the sheet's footer (stays in view under the scrolling list, see ui.js),
+  // not the scrollable body, so confirming a long guest list never needs a scroll to the bottom first
+  // (the owner's feedback, 25 Sep 2026).
+  openSheet({
+    eyebrow, title, subtitle, body: [partyPrompt, search, list], cancelLabel: 'Cancel',
+    footer: [status, confirmBtn],
+  });
 }
 
 function pickForEmptyTable(ctx, trip, slot, restaurant, seatingTime, table) {
