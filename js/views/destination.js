@@ -55,7 +55,10 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
     // Start time in the local time of the destination, then the meeting point.
     const detail = [activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '', activity.meeting]
       .filter(Boolean).join(' · ');
-    const card = guestCard(ctx, trip, slot, {
+    // A cancelled tour's waitlist was already swept to leisure when it was cancelled (changes.js), so
+    // there is never anything to show here for one.
+    const waiting = activity.cancelled ? [] : waitlistOrder(trip, ctx.journal(trip.id), activity);
+    return [guestCard(ctx, trip, slot, {
       key: `${slot.id}|${activity.id}`, title: activity.name, detail, guests, names,
       // A guest put here by force (a move into a full tour) is shown in orange; tapping shows who approved it.
       forcedOf: (g) => { const entry = forced.get(`${g.id}|${slot.id}`); return entry?.to.activityId === activity.id ? entry : undefined; },
@@ -68,11 +71,10 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
           { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
         ]),
       ],
-    });
-    // A cancelled tour's waitlist was already swept to leisure when it was cancelled (changes.js), so
-    // there is never anything to show here for one.
-    const waiting = activity.cancelled ? [] : waitlistOrder(trip, ctx.journal(trip.id), activity);
-    return waiting.length === 0 ? [card] : [card, waitlistCard(ctx, trip, slot, activity, waiting, names)];
+      // Part of this same tour's card (not a card of its own — it is a queue for THIS tour, not a
+      // second tour), waiting.length > 0 checked by guestCard itself.
+      waitlist: { activity, waiting },
+    })];
   });
 
   const leisureCard = guestCard(ctx, trip, slot, {
@@ -138,7 +140,11 @@ function strip(items, small = false) {
 
 // A card with a title, a count and the guests as name pills.
 // Tapping the top of the card opens it (all names, plus the actions); tapping a name moves that guest.
-function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions }) {
+// waitlist (optional): { activity, waiting } — who is waiting for a seat on THIS tour. Shown inside
+// this same card, set off by a divider, never as a card of its own: it is this tour's own queue, not
+// a second tour, and a separate card next to it reads as exactly that at a glance (the owner's own
+// feedback, 25 Sep 2026).
+function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist }) {
   // Alphabetical. Guests who are here by force (orange) come first as a group, so they are seen even on a closed card.
   const isForced = (g) => Boolean(forcedOf?.(g));
   const inOrder = alphabetical(names);
@@ -172,7 +178,8 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
             !open && sorted.length > PREVIEW ? h('button', { class: 'chip chip--more', type: 'button', onclick: toggle }, `+${sorted.length - PREVIEW}`) : null)]),
       ...(open && actions.length > 0
         ? [h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: `btn btn--small${a.primary ? '' : ' btn--plain'}`, type: 'button', onclick: a.run }, a.label)))]
-        : [])
+        : []),
+      ...(waitlist && waitlist.waiting.length > 0 ? [waitlistSection(ctx, trip, slot, waitlist, names)] : [])
     );
   };
 
@@ -186,16 +193,17 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
   return h('div', { class: `card${soft ? ' card--soft' : ''}${cancelled ? ' card--cancelled' : ''}` }, head, body);
 }
 
-// Who is waiting for a full tour, in the order they joined. Numbered so the queue order is plain to
-// see; tapping a name opens the ordinary Move sheet (they can be moved elsewhere, or their travel
-// party seen, like any other guest). Once there is room, the first name in line gets a one-tap
+// Who is waiting for a full tour, in the order they joined, rendered INSIDE that tour's own card
+// (see guestCard above — this is a section of it, not a card of its own). Numbered so the queue order
+// is plain to see; tapping a name opens the ordinary Move sheet (they can be moved elsewhere, or their
+// travel party seen, like any other guest). Once there is room, the first name in line gets a one-tap
 // proposal to promote them — never automatic (no way yet to tell a real guest on the ground they've
 // been added): the owner always confirms, through the ordinary move/force-confirm flow.
-function waitlistCard(ctx, trip, slot, activity, waiting, names) {
+function waitlistSection(ctx, trip, slot, { activity, waiting }, names) {
   const hasRoom = activity.capacity === null || countIn(trip, activity) < activity.capacity;
   const first = waiting[0];
-  return h('div', { class: 'card card--soft' },
-    h('div', { class: 'act-name' }, `Waitlist (${waiting.length})`),
+  return h('div', { class: 'waitlist-section' },
+    h('div', { class: 'waitlist-heading' }, `Waitlist (${waiting.length})`),
     h('div', { class: 'chips' },
       waiting.map((guest, i) => h('button', {
         class: 'chip', type: 'button', disabled: Boolean(trip.archivedAt),
