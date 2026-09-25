@@ -300,6 +300,7 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
 
   const checked = new Set();
   const status = h('div', { class: 'notice' });
+  const partyPrompt = h('div', {});
   const confirmBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => onConfirm([...checked]) }, confirmLabel);
   const list = h('div', {});
 
@@ -311,13 +312,31 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
     status.textContent = total > ceiling ? `${capacityInfo(total, ceiling).text} — will be saved as a Special request.` : capacityInfo(total, ceiling).text;
   };
 
+  // Ticking someone with unchecked travel-party members offers to tick them too — the same question
+  // the guest-first flow asks up front, brought here since this picker is built for combining several
+  // people at once (the owner's feedback, this session). One guest's prompt at a time; replaced or
+  // cleared by the next tick, so it never piles up.
+  const offerParty = (guest) => {
+    const candidates = dinnerPartyCandidates(trip, guest, slot).filter((c) => !checked.has(c.id));
+    if (candidates.length === 0) { partyPrompt.replaceChildren(); return; }
+    const moverNames = joinNames([...candidates].sort(alphabetical(names)).map((c) => names.get(c.id)));
+    partyPrompt.replaceChildren(notice(`${names.get(guest.id)} travels with ${moverNames}`),
+      h('div', { class: 'card-actions' },
+        h('button', {
+          class: 'btn btn--small', type: 'button',
+          onclick: () => { for (const c of candidates) checked.add(c.id); partyPrompt.replaceChildren(); fill(); say(); },
+        }, `Add ${moverNames} too`),
+        h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => partyPrompt.replaceChildren() }, 'No')));
+  };
+
   // The search matches by name only, exactly like the ordinary "Add guest" search elsewhere in the
   // app (move.js's startAddGuest) — never "also show their travel party" (the owner's call: searching
-  // "Robert" must not surface Suzanne just because they travel together). "Travelling together" only
-  // shows when more than one member of a party is still in the FILTERED list, so it naturally
-  // disappears once a search narrows things down to one name — no special-casing needed. Ticks are
-  // kept in `checked` across searches (not just what's currently on screen), so picking Robert, then
-  // searching "Suzanne" and picking her too, adds both when confirmed.
+  // "Robert" must not surface Suzanne just because they travel together — offerParty above is the
+  // deliberate, opt-in version of that). "Travelling together" only shows when more than one member of
+  // a party is still in the FILTERED list, so it naturally disappears once a search narrows things
+  // down to one name — no special-casing needed. Ticks are kept in `checked` across searches (not just
+  // what's currently on screen), so picking Robert, then searching "Suzanne" and picking her too, adds
+  // both when confirmed.
   const fill = () => {
     const words = plain(search.value).split(/\s+/).filter(Boolean);
     const shown = guests.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
@@ -328,7 +347,10 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
           members.length > 1 ? h('div', { class: 'muted' }, 'Travelling together') : null,
           ...members.map((guest) => {
             const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });
-            box.addEventListener('change', () => { if (box.checked) checked.add(guest.id); else checked.delete(guest.id); say(); });
+            box.addEventListener('change', () => {
+              if (box.checked) { checked.add(guest.id); offerParty(guest); } else { checked.delete(guest.id); partyPrompt.replaceChildren(); }
+              say();
+            });
             return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
           }),
         ]).filter(Boolean)));
@@ -341,7 +363,7 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
 
   say();
   fill();
-  openSheet({ eyebrow, title, subtitle, body: [status, search, list, confirmBtn], cancelLabel: 'Cancel' });
+  openSheet({ eyebrow, title, subtitle, body: [status, partyPrompt, search, list, confirmBtn], cancelLabel: 'Cancel' });
 }
 
 function pickForEmptyTable(ctx, trip, slot, restaurant, seatingTime, table) {
