@@ -113,15 +113,31 @@ function placeLabel(place) {
   return 'Nothing chosen yet';
 }
 
+// A table's own capacity, for the "X / Y" badge: Strict is the size of its assigned table (null if
+// it's a Special request with none assigned — nothing to show a ratio against); Flexible is that
+// restaurant's own max table size. Shared with pickForExistingBooking's own ceiling below, so the
+// two never drift apart.
+function dinnerBookingCapacity(restaurant, booking) {
+  if (restaurant.mode === 'flexible') return restaurant.maxTableSize;
+  return booking.tableIds.length > 0 ? restaurant.tables.find((t) => t.id === booking.tableIds[0]).size : null;
+}
+
 // An existing table: tap the head to add more guests (step 2b); tap a guest's own chip to move them
 // off it — the ordinary Move sheet (see the file's top comment). title overrides the head's own
 // label: the Overview shows the restaurant's name (several restaurants may be on screen at once);
 // the "By table" grid already shows the restaurant via its own strip, so it shows the table instead
-// ("Table for 4", "Table (3 guests)").
+// ("Table for 4", "Table (3 guests)"). The head's own count shows seats filled / seats available
+// ("2 / 4"), not the word "Confirmed" — the owner's feedback, 25 Sep 2026: a big table (e.g. 8) needs
+// the actual headcount at a glance, not a status word that says nothing about how full it is. Only a
+// Special request with no table assigned has no ratio to show, so it falls back to saying so.
 function tableCard(ctx, trip, names, slot, booking, title) {
   const restaurant = trip.restaurants.find((r) => r.id === booking.restaurantId);
   const guests = trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[booking.slotId]?.bookingId === booking.id);
   const isSpecial = booking.status === 'special-request';
+  const capacity = dinnerBookingCapacity(restaurant, booking);
+  const info = capacity !== null ? capacityInfo(guests.length, capacity) : null;
+  const countText = info ? info.text : 'Special request';
+  const countBad = info ? info.tone === 'bad' : isSpecial;
 
   const head = h('button', {
     class: 'card-head', type: 'button', disabled: Boolean(trip.archivedAt),
@@ -129,7 +145,7 @@ function tableCard(ctx, trip, names, slot, booking, title) {
   },
     h('div', { class: 'card-row' },
       h('div', { class: 'act-name' }, title ?? restaurant?.name ?? 'Restaurant'),
-      h('div', { class: `count${isSpecial ? ' count--bad' : ''}` }, isSpecial ? 'Special request' : 'Confirmed')),
+      h('div', { class: `count${countBad ? ' count--bad' : ''}` }, countText)),
     h('div', { class: 'muted' }, booking.seating));
 
   return h('div', { class: `card${isSpecial ? ' card--warn' : ''}` },
@@ -366,9 +382,7 @@ function pickForEmptyTable(ctx, trip, slot, restaurant, seatingTime, table) {
 function pickForExistingBooking(ctx, trip, slot, restaurant, seatingTime, booking) {
   if (blockedIfArchived(trip)) return;
   const used = dinnerCountIn(trip, booking);
-  const ceiling = restaurant.mode === 'strict'
-    ? (booking.tableIds.length > 0 ? restaurant.tables.find((t) => t.id === booking.tableIds[0]).size : null)
-    : restaurant.maxTableSize;
+  const ceiling = dinnerBookingCapacity(restaurant, booking);
   guestPicker(trip, slot, {
     eyebrow: restaurant.name, title: 'Add to this table', subtitle: `${seatingTime} · ${plural(used, 'guest')} already here`,
     ceiling, baseUsed: used,
