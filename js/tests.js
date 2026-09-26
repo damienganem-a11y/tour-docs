@@ -3,8 +3,9 @@
 // time zones, unique IDs, saving on the device, and files with mistakes.
 
 import { buildTrip } from './loader.js';
-import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal } from './db.js';
-import { applyChange, validateChanges } from './changes.js';
+import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
+import { applyChange, validateChanges, enqueue } from './changes.js';
+import { decideSync } from './sync.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow } from './time.js';
@@ -2384,6 +2385,58 @@ function readZip(bytes) {
   const undoBlocked = await applyChange(addCtx, trip.id, { type: 'undo', scope: DESTINATION_UNDO_SCOPE });
   check('A freshly-added activity cannot be undone once somebody is waitlisted on it, not just booked',
     !undoBlocked.ok && /already booked or waiting/.test(undoBlocked.error), undoBlocked.error);
+}
+
+// =====================================================================
+// Phase 2, step 2b: sync pull (sync.js's decideSync, changes.js's enqueue, db.js's watermark)
+// =====================================================================
+// Everything network-free is checked here; pulling for real from Supabase, and the multi-phone
+// scenarios it exists for, are verified by hand on two real phones signed into the same account —
+// same limitation already documented above for auth.js's magic-link sign-in and biometrics.js's
+// WebAuthn calls.
+{
+  // --- decideSync: a pure function, so its whole truth table is checked directly ---
+  check('In sync: server is not ahead, nothing to pull',
+    decideSync({ localChangeCount: 5, pushedChangeCount: 5, serverChangeCount: 5 }) === 'in-sync');
+  check('Server behind this phone (should not normally happen) is never mistaken for something to pull',
+    decideSync({ localChangeCount: 5, pushedChangeCount: 5, serverChangeCount: 3 }) === 'in-sync');
+  check('Server ahead, and this phone has nothing of its own still unconfirmed to lose: safe to pull',
+    decideSync({ localChangeCount: 5, pushedChangeCount: 5, serverChangeCount: 8 }) === 'pull');
+  check('Server ahead, and this phone has local changes beyond its last confirmed push: a real conflict, not an automatic overwrite',
+    decideSync({ localChangeCount: 5, pushedChangeCount: 3, serverChangeCount: 8 }) === 'conflict');
+  check('The exact boundary (localChangeCount === pushedChangeCount) is still safe to pull, not a conflict',
+    decideSync({ localChangeCount: 5, pushedChangeCount: 5, serverChangeCount: 6 }) === 'pull');
+  check('No watermark recorded yet (pushedChangeCount undefined) counts as 0: a trip with no local edits is safe to pull',
+    decideSync({ localChangeCount: 0, pushedChangeCount: undefined, serverChangeCount: 3 }) === 'pull');
+  check('No watermark recorded yet, but this phone DOES have local changes: a conflict, never a silent overwrite',
+    decideSync({ localChangeCount: 2, pushedChangeCount: undefined, serverChangeCount: 3 }) === 'conflict');
+
+  // --- enqueue: the same serialization applyChange itself uses, so a pull write and a tap already
+  //     in flight can never save the same trip's IndexedDB record out of order ---
+  const order = [];
+  const slow = enqueue(async () => { await new Promise((r) => setTimeout(r, 30)); order.push('first'); });
+  const fast = enqueue(async () => { order.push('second'); });
+  await Promise.all([slow, fast]);
+  check('enqueue runs turns in submission order, even when an earlier one is slower',
+    order.join(',') === 'first,second', order.join(','));
+
+  const failing = enqueue(async () => { throw new Error('boom'); });
+  const afterFailure = enqueue(async () => 'still runs');
+  await failing.catch(() => {});
+  check('enqueue keeps the line moving after an earlier turn throws', (await afterFailure) === 'still runs');
+
+  // --- watermark math (db.js): monotonic Math.max, never a plain overwrite ---
+  const wmTripId = newId();
+  check('No watermark recorded yet reads undefined', (await getPushedChangeCount(wmTripId)) === undefined);
+  await bumpPushedChangeCount(wmTripId, 3);
+  check('The first bump records the value', (await getPushedChangeCount(wmTripId)) === 3);
+  await bumpPushedChangeCount(wmTripId, 7);
+  check('A higher confirmation moves the watermark forward', (await getPushedChangeCount(wmTripId)) === 7);
+  await bumpPushedChangeCount(wmTripId, 5);
+  check('A late, lower confirmation (an earlier push resolving out of order) never regresses it',
+    (await getPushedChangeCount(wmTripId)) === 7);
+  await dbDelete('syncState', wmTripId);
+  check('The test watermark is removed again (tests leave nothing behind)', (await getPushedChangeCount(wmTripId)) === undefined);
 }
 
 // --- Show the results ---

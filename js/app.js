@@ -14,12 +14,18 @@
 // Each view is a function that returns { node }: the screen content.
 
 import { h } from './dom.js';
-import { dbAll, dbDelete, dbGet, dbPut, saveTripAndJournal, withStores } from './db.js';
+import {
+  dbAll, dbDelete, dbGet, dbPut, saveTripAndJournal, withStores,
+  getPushedChangeCount, bumpPushedChangeCount,
+} from './db.js';
 import { newId } from './ids.js';
 import { makeOwner } from './users.js';
-import { closeSheet } from './ui.js';
+import { closeSheet, showToast } from './ui.js';
 import { signOut as authSignOut } from './auth.js';
-import { pushTrip, pushJournalEntries, pullTripList } from './sync.js';
+import {
+  pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
+} from './sync.js';
+import { enqueue } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import * as biometrics from './biometrics.js';
@@ -60,6 +66,18 @@ function trackPush(promise) {
 function syncStatus() {
   if (!navigator.onLine) return 'offline';
   return pendingPushes > 0 ? 'pending' : 'synced';
+}
+
+// Pushes a trip (and, once accepted, its journal entries) and records how far this push actually
+// got confirmed (Phase 2, step 2b) — the watermark pullSync uses to tell "server is just ahead, safe
+// to auto-pull" apart from "this phone has its own unconfirmed changes, don't overwrite them". Only
+// bumped on accepted:true: a rejected push means the server already had this changeCount or newer
+// from elsewhere, so THIS push never actually landed and nothing here should be trusted as pushed.
+async function pushAndTrack(trip, entries = []) {
+  const { accepted } = await pushTrip(trip);
+  if (!accepted) return;
+  if (entries.length > 0) await pushJournalEntries(trip.id, entries);
+  await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
 }
 
 // The list of screens. The first one whose pattern matches the address is used.
@@ -132,7 +150,7 @@ const ctx = {
   async addTrip(trip) {
     await dbPut('trips', trip);
     state.trips.set(trip.id, trip);
-    trackPush(pushTrip(trip)).catch(() => {});
+    trackPush(pushAndTrack(trip)).catch(() => {});
   },
 
   // Used by trips.js: "Duplicate trip" (step 9). A brand new trip (its own id, not tied to the
@@ -156,7 +174,7 @@ const ctx = {
     };
     await dbPut('trips', copy);
     state.trips.set(copy.id, copy);
-    trackPush(pushTrip(copy)).catch(() => {});
+    trackPush(pushAndTrack(copy)).catch(() => {});
     return copy;
   },
 
@@ -182,7 +200,7 @@ const ctx = {
     await saveTripAndJournal(trip, entries);
     state.trips.set(trip.id, trip);
     state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
-    trackPush(pushTrip(trip).then(({ accepted }) => { if (accepted) return pushJournalEntries(trip.id, entries); })).catch(() => {});
+    trackPush(pushAndTrack(trip, entries)).catch(() => {});
   },
 
   // Used by export.js: keep a PDF that was just built, so it can be found again in the Exports archive.
@@ -276,31 +294,125 @@ async function start() {
 
   window.addEventListener('hashchange', () => render());
   // The sync light (see syncStatus above) reacts to the phone's own connectivity changes, not just
-  // to navigating: going through a tunnel or landing after a flight updates it right away.
-  window.addEventListener('online', () => { if (state.owner) render({ keepScroll: true }); });
+  // to navigating: going through a tunnel or landing after a flight updates it right away. Coming
+  // back online is also when this phone should catch up with any other phone on the same account
+  // (Phase 2, step 2b) — not just re-render.
+  window.addEventListener('online', () => {
+    if (!state.owner) return;
+    render({ keepScroll: true });
+    trackPush(pullSync()).catch(() => {});
+  });
   window.addEventListener('offline', () => { if (state.owner) render({ keepScroll: true }); });
   render();
 
-  // Phase 2, step 2a: a trip loaded before this step shipped has nothing on the server yet (it
-  // only gets pushed by its NEXT change). Runs after render(), in the background, so it never
-  // delays the offline boot paint; safe to add now because nothing pulls yet (step 2b).
-  if (state.owner) trackPush(backfillPush()).catch(() => {});
+  // Phase 2: push this phone's own pending work first (step 2a's backfill), then pull whatever
+  // changed on another phone signed into the same account (step 2b). Runs after render(), in the
+  // background, so neither ever delays the offline boot paint.
+  if (state.owner) trackPush(backfillPush().then(() => pullSync())).catch(() => {});
 }
 
+// Catches this phone up with the server in both directions: pushes anything of its own the server
+// doesn't have yet (a trip edited while offline, or a dropped pushJournalEntries call from an
+// earlier, non-atomic push), then pulls anything another phone on the same account pushed that this
+// phone doesn't have. Only push_trip/journal_entries reads/writes — no schema assumptions beyond
+// what the owner's own Supabase project confirmed (26 Sep 2026).
 async function backfillPush() {
   let remote;
   try { remote = await pullTripList(); } catch { return; } // offline, or not reachable yet: try again next boot
   const remoteById = new Map(remote.map((r) => [r.id, r.change_count]));
   for (const trip of state.trips.values()) {
     const serverCount = remoteById.get(trip.id);
-    if (serverCount === undefined || serverCount < (trip.changeCount ?? 0)) {
-      try { await pushTrip(trip); } catch { /* try again next boot */ }
-    }
+    try {
+      if (serverCount === undefined || serverCount < (trip.changeCount ?? 0)) {
+        await pushAndTrack(trip, ctx.journal(trip.id));
+      } else {
+        // The trip row is already caught up server-side, but pushTrip and pushJournalEntries are not
+        // atomic — a commit whose journal push was dropped (app closed, connection lost mid-way) is
+        // never retried by anything else, so check for that gap here.
+        const pushed = await getPushedChangeCount(trip.id);
+        if ((pushed ?? -1) < (trip.changeCount ?? 0)) {
+          await pushJournalEntries(trip.id, ctx.journal(trip.id));
+          await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
+        }
+      }
+    } catch { /* try again next boot */ }
   }
 }
 
+let pullInFlight = null; // single-flight guard: a flapping connection must never run two pulls at once
+
+// Phase 2, step 2b: pulls down whatever another phone signed into the same account has pushed that
+// this phone doesn't have yet. Per-trip decision via decideSync (sync.js): only ever replaces a
+// trip's local copy when this phone has nothing of its own still unconfirmed to lose; a genuine
+// two-sided conflict is left alone (documented limitation, SPEC.md).
+function pullSync() {
+  if (!pullInFlight) pullInFlight = doPullSync().finally(() => { pullInFlight = null; });
+  return pullInFlight;
+}
+
+async function doPullSync() {
+  let remote;
+  try { remote = await pullTripList(); } catch { return; } // offline, or not reachable yet: try again later
+  for (const row of remote) {
+    try { await pullOneTrip(row.id, row.change_count); } catch { /* try again next time */ }
+  }
+}
+
+async function pullOneTrip(tripId, serverChangeCount) {
+  const local = state.trips.get(tripId);
+  const decision = local
+    ? decideSync({ localChangeCount: local.changeCount ?? 0, pushedChangeCount: await getPushedChangeCount(tripId), serverChangeCount })
+    : 'pull'; // no local copy at all: a genuinely new trip for this phone, nothing to lose
+
+  if (decision === 'conflict') return; // both sides diverged; no automatic resolution built yet (SPEC.md)
+  if (decision === 'in-sync') {
+    // This phone already matches the server. That equality is proof enough to record the watermark
+    // right here, without waiting for this phone's own next push to confirm it independently.
+    const pushed = await getPushedChangeCount(tripId);
+    if ((local.changeCount ?? 0) === serverChangeCount && (pushed ?? -1) < (local.changeCount ?? 0)) {
+      await bumpPushedChangeCount(tripId, local.changeCount ?? 0);
+    }
+    return;
+  }
+
+  // decision === 'pull': go through the SAME queue local changes use, so a boot-time pull and a tap
+  // already in flight can never write this trip's IndexedDB record out of order.
+  await enqueue(async () => {
+    // Re-read fresh, right before writing: by the time this closure's turn in the queue comes up, a
+    // local edit or an earlier pull tick may already have changed what "local" means.
+    const freshLocal = state.trips.get(tripId);
+    if (freshLocal) {
+      const freshDecision = decideSync({
+        localChangeCount: freshLocal.changeCount ?? 0,
+        pushedChangeCount: await getPushedChangeCount(tripId),
+        serverChangeCount,
+      });
+      if (freshDecision !== 'pull') return;
+    }
+
+    const remoteTrip = await pullTrip(tripId);
+    if (!remoteTrip) return; // deleted on the server since the list was fetched
+    const trip = migrateTrip(remoteTrip.data);
+    const afterSeq = freshLocal ? Math.max(0, ...ctx.journal(tripId).map((e) => e.seq ?? 0)) : 0;
+    const newEntries = await pullJournalEntries(tripId, afterSeq);
+    const priorEntries = freshLocal ? ctx.journal(tripId) : [];
+
+    await saveTripAndJournal(trip, newEntries); // only the NEW entries need writing; earlier ones are already stored
+    state.trips.set(tripId, trip);
+    state.journal.set(tripId, [...priorEntries, ...newEntries]);
+    await bumpPushedChangeCount(tripId, trip.changeCount ?? 0);
+
+    if (freshLocal && newEntries.length > 0 && location.hash.startsWith(`#/trip/${tripId}/`)) {
+      showToast('Updated from your other phone');
+    }
+    render({ keepScroll: true });
+  });
+}
+
 // A deleted trip (Trips screen, step 9) is erased for good, together with its journal and exports,
-// 30 days after it was deleted, automatically, the next time the app opens.
+// 30 days after it was deleted, automatically, the next time the app opens. Also erased on the
+// Supabase backend (owner's decision, 26 Sep 2026) — otherwise another phone on the account would
+// pull a "permanently deleted" trip right back from the dead the next time it syncs.
 const PURGE_AFTER_DAYS = 30;
 
 async function purgeExpiredTrips() {
@@ -310,14 +422,22 @@ async function purgeExpiredTrips() {
   for (const trip of expired) {
     const journalKeys = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAllKeys(trip.id));
     const exportKeys = await withStores(['exports'], 'readonly', (s) => s.exports.index('tripId').getAllKeys(trip.id));
-    await withStores(['trips', 'journal', 'exports'], 'readwrite', (s) => {
+    await withStores(['trips', 'journal', 'exports', 'syncState'], 'readwrite', (s) => {
       s.trips.delete(trip.id);
       for (const key of journalKeys) s.journal.delete(key);
       for (const key of exportKeys) s.exports.delete(key);
+      s.syncState.delete(trip.id);
     });
     state.trips.delete(trip.id);
     state.journal.delete(trip.id);
     state.exports.delete(trip.id);
+    // Best-effort, not awaited: the local erasure above is what matters and already happened. If
+    // this fails (offline, no real account), the trip is already gone from state.trips so nothing
+    // retries it — the same phone would need to see it appear again (e.g. via a pull) to purge it a
+    // second time. Acceptable: the owner's own promise is "gone from this phone for good"; a stray
+    // server-side row with no local trace left is a smaller loose end than the resurrection bug this
+    // fixes.
+    deleteTripRemote(trip.id).catch(() => {});
   }
 }
 

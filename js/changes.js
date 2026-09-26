@@ -619,6 +619,15 @@ function isPlace(place, spec) {
 // Changes are handled one at a time, in order, so two quick taps can never trample each other.
 let queue = Promise.resolve();
 
+// Runs fn once everything already queued has finished. Exported so sync.js's pull (Phase 2, step
+// 2b) can write a trip through this SAME line — a boot-time pull and a tap already in flight must
+// never save the same trip's IndexedDB record out of order.
+export function enqueue(fn) {
+  const run = queue.then(fn);
+  queue = run.catch(() => {}); // keep the line moving even if one turn throws
+  return run;
+}
+
 // ctx must provide:
 //   ctx.trip(id)                 the current trip
 //   ctx.owner                    who is making the change (see users.js)
@@ -627,9 +636,7 @@ let queue = Promise.resolve();
 // Returns { ok: true, entries } or { ok: false, error }.
 export function applyChange(ctx, tripId, changes) {
   const list = Array.isArray(changes) ? changes : [changes];
-  const run = queue.then(() => doApply(ctx, tripId, list));
-  queue = run.catch(() => {}); // keep the line moving even if one change throws
-  return run;
+  return enqueue(() => doApply(ctx, tripId, list));
 }
 
 async function doApply(ctx, tripId, changes) {

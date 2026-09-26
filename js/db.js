@@ -1,17 +1,20 @@
 // Saving and loading data on the phone.
 //
 // Uses IndexedDB, the browser's built-in storage. It works offline and survives closing the app.
-// It has four "drawers" (called stores):
-//   trips     one item per trip: all of its guests, destinations, activities and bookings
-//   journal   one item per change ever made (empty until changes exist; one entry per change)
-//   exports   one item per PDF ever exported (the file itself, so a past version can be found again)
-//   settings  small things about this phone, for example the owner's name
+// It has five "drawers" (called stores):
+//   trips      one item per trip: all of its guests, destinations, activities and bookings
+//   journal    one item per change ever made (empty until changes exist; one entry per change)
+//   exports    one item per PDF ever exported (the file itself, so a past version can be found again)
+//   settings   small things about this phone, for example the owner's name
+//   syncState  per trip, how far this phone's pushes to Supabase are known to have reached (Phase 2,
+//              step 2b) — never part of the trip itself, so pulling another phone's trip down never
+//              overwrites THIS phone's own record of what it has confirmed pushing
 //
 // The change function (step 3) writes a trip AND its journal entry in ONE go with withStores(),
 // so the two can never disagree, even if the phone dies half way.
 
 const DB_NAME = 'tour-docs';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let opening; // we open the database once and reuse it
 
@@ -32,6 +35,7 @@ function openDb() {
           db.createObjectStore('exports', { keyPath: 'id' }).createIndex('tripId', 'tripId');
         }
         if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings');
+        if (!db.objectStoreNames.contains('syncState')) db.createObjectStore('syncState', { keyPath: 'tripId' });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -74,3 +78,22 @@ export const saveTripAndJournal = (trip, entries) =>
 // there you must give a key, for example dbPut('settings', owner, 'owner').
 export const dbPut = (store, value, key) =>
   withStores([store], 'readwrite', (s) => (key === undefined ? s[store].put(value) : s[store].put(value, key)));
+
+// How far this phone's pushes to Supabase for a trip are known to have reached (see syncState
+// above). Read-modify-write with Math.max, never a plain overwrite: two pushes for the same trip
+// can be confirmed out of order, and a late confirmation for an older count must never regress a
+// higher one already recorded.
+export async function getPushedChangeCount(tripId) {
+  const row = await dbGet('syncState', tripId);
+  return row?.pushedChangeCount;
+}
+
+export async function bumpPushedChangeCount(tripId, changeCount) {
+  return withStores(['syncState'], 'readwrite', (s) => {
+    const request = s.syncState.get(tripId);
+    request.onsuccess = () => {
+      const current = request.result?.pushedChangeCount ?? -1;
+      if (changeCount > current) s.syncState.put({ tripId, pushedChangeCount: changeCount });
+    };
+  });
+}
