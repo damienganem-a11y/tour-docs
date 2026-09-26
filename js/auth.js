@@ -72,6 +72,22 @@ export async function completeSignIn() {
   return { id: session.user.id, email: session.user.email };
 }
 
+// A session may already exist in THIS browsing context even with no callback URL to process — most
+// often because Safari and an installed Home Screen icon do not reliably share storage on iPhone (a
+// known platform quirk, not a bug here): the magic link opens in Safari (that is simply where Mail
+// sends it), sign-in completes there, and the icon, opened separately later, never sees that URL at
+// all. Checked once by welcome.js whenever it is about to show the sign-in form again, so a
+// mismatched icon can recover on its own — the app was already signed in, it just did not know it —
+// instead of asking to send another link. Never throws: "no session yet" is the ordinary case for a
+// brand new sign-in, not a failure to report.
+export async function existingSession() {
+  let supabase;
+  try { supabase = await getClient(); } catch { return null; }
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  return { id: session.user.id, email: session.user.email, name: session.user.user_metadata?.name ?? '' };
+}
+
 // Best-effort: the local cache (settings.owner) is the real source of truth for this step, so a
 // failure here (offline, etc.) is not worth surfacing to the owner.
 export async function saveNameToAccount(name) {

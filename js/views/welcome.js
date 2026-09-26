@@ -13,10 +13,16 @@
 //      always follows — pre-filled with the name from step 1 when it made it through the link,
 //      blank on the rare occasion it did not (an email service that rewrites/strips links) — so
 //      there is always a chance to fix a typo, and never a silent "was that even me?" moment.
+//   Fixed 26 Sep 2026 (owner's report): the link opening in Safari, not the installed Home Screen
+//   icon, is normal iPhone behavior for any emailed link — but Safari and the icon can ALSO fail to
+//   share storage, so completing sign-in in Safari left the icon stuck asking again, forever. On
+//   every boot that would otherwise show this screen, trySilentRecovery below checks whether THIS
+//   browsing context already has a session anyway (see auth.js's existingSession) and, if so, skips
+//   straight to "Confirm your name" instead of asking to send another link.
 
 import { h } from '../dom.js';
 import { pageHead } from './chrome.js';
-import { looksLikeAuthCallback, sendMagicLink, completeSignIn, saveNameToAccount } from '../auth.js';
+import { looksLikeAuthCallback, sendMagicLink, completeSignIn, saveNameToAccount, existingSession } from '../auth.js';
 
 const PENDING_NAME_KEY = 'tourdocs.pendingName'; // best-effort fallback only; the link itself is the real carrier
 
@@ -27,17 +33,34 @@ let pendingEmail = '';  // shown on "check your email" and on "confirm your name
 let pendingId = null;   // set once completeSignIn() succeeds, used by the "confirm your name" step
 let pendingName = '';   // best guess at the name, to pre-fill "confirm your name" (may be blank)
 let errorText = '';
+let recoveryTried = false; // trySilentRecovery below only ever needs to run once per boot
 
 export function welcomeView(ctx) {
   if (step === 'form' && looksLikeAuthCallback(location.hash, location.search)) {
     step = 'callback';
     finishCallback(ctx); // async; does not block this render
+  } else if (step === 'form' && !recoveryTried) {
+    recoveryTried = true;
+    trySilentRecovery(ctx); // async; does not block this render — the ordinary form shows meanwhile
   }
 
   if (step === 'callback') return callbackScreen();
   if (step === 'confirm-name') return confirmNameScreen(ctx);
   if (step === 'sent') return sentScreen(ctx);
   return formScreen(ctx); // 'form' and 'error' share the same screen
+}
+
+// Recovers a sign-in this exact icon/tab never saw a callback URL for — see auth.js's
+// existingSession for why (Safari vs. the Home Screen icon not sharing storage). Silent: finding
+// nothing here is the normal state for a fresh sign-in, not shown as an error.
+async function trySilentRecovery(ctx) {
+  const session = await existingSession();
+  if (!session || step !== 'form') return; // nothing to recover, or the form was already acted on meanwhile
+  pendingId = session.id;
+  pendingEmail = session.email;
+  pendingName = session.name;
+  step = 'confirm-name';
+  ctx.refresh();
 }
 
 async function finishCallback(ctx) {
@@ -109,7 +132,7 @@ function sentScreen(ctx) {
       // iPhone (a quirk of "Add to Home Screen" apps, not something the app can avoid). Warning
       // about it here, right before they go tap it, turns a confusing moment into an expected one.
       isStandalone()
-        ? h('p', { class: 'notice' }, 'On iPhone, the link may open in Safari instead of this app icon — that is normal. Once it says you are signed in there, close this app fully (swipe it away) and reopen it from its icon.')
+        ? h('p', { class: 'notice' }, 'On iPhone, the link may open in Safari instead of this app icon — that is normal. Once it says you are signed in there, reopen this app from its icon: it checks for that on its own and finishes signing in.')
         : null,
       h('button', {
         class: 'btn btn--plain', type: 'button',
