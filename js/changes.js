@@ -60,6 +60,16 @@
 //       the table's status is recomputed fresh from its new total occupancy (dinnerAddFit in rules.js),
 //       which may flip it to or from Special request. Applied alone. Same move()-reuse as book-dinner,
 //       plus one 'add-to-dinner-table' entry recording the status change.
+//   { type: 'move-dinner-table', bookingId, restaurantId, seating, tableId? }
+//       Phase 3 step 2c: moves EVERY current guest of one table to a different restaurant and/or
+//       seating, in one action — a table's own "Move table" action. Creates a fresh table at the
+//       destination exactly like book-dinner (same optional tableId for a specific empty table);
+//       the source table is left alone and simply disappears on its own once it has zero guests
+//       (dinnerCountIn, the same "ghost table" rule step 2b already relies on) — nothing deletes it.
+//       Never rejected for "no room": dinnerFit decides Confirmed vs. Special request at the
+//       destination, excluding the table's own current occupants from that destination's count (so
+//       moving within the same restaurant/seating, to a different table, is not counted against
+//       itself). Applied alone. Same move()-reuse as book-dinner.
 //   Guests and travel parties (step 7c/7d), each on its own:
 //   { type: 'edit-guest', guestId, first, last }             the guest's own name (the shown name is worked out from it)
 //   { type: 'guest-left', guestId }                          "Guest left the trip": removed from every day-to-day
@@ -85,7 +95,7 @@
 
 import { newId } from './ids.js';
 import { canUser } from './users.js';
-import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds } from './rules.js';
+import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
@@ -96,7 +106,7 @@ const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reop
 const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant']);
 // Booking a dinner table, or adding to an existing one (Phase 3 step 2a/2b): also made on its own,
 // like cancel-tour.
-const DINING_BOOKING_TYPES = new Set(['book-dinner', 'add-to-dinner-table']);
+const DINING_BOOKING_TYPES = new Set(['book-dinner', 'add-to-dinner-table', 'move-dinner-table']);
 // Guest and travel party changes (step 7c/7d): also each on its own.
 const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']);
 // The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own. Allowed even when
@@ -134,6 +144,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (SETTINGS_TYPES.has(changes[0].type)) return validateSettingsChange(trip, changes[0]);
   if (changes[0].type === 'book-dinner') return validateBookDinner(trip, changes[0]);
   if (changes[0].type === 'add-to-dinner-table') return validateAddToDinnerTable(trip, changes[0]);
+  if (changes[0].type === 'move-dinner-table') return validateMoveDinnerTable(trip, changes[0]);
   if (GUEST_TYPES.has(changes[0].type)) return validateGuestChange(trip, changes[0]);
   if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
   if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
@@ -274,7 +285,7 @@ function validateUndo(trip, journal, scope) {
         return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
       }
     }
-    if (entry.type === 'book-dinner' || entry.type === 'add-to-dinner-table') {
+    if (entry.type === 'book-dinner' || entry.type === 'add-to-dinner-table' || entry.type === 'move-dinner-table') {
       if (!trip.dinnerBookings.some((b) => b.id === entry.bookingId)) return fail('This action cannot be undone: the table no longer exists.');
     }
     if (entry.type === 'edit-guest') {
@@ -446,6 +457,30 @@ function validateAddToDinnerTable(trip, change) {
   if (!booking) return fail('That table does not exist.');
   const slot = trip.slots.find((s) => s.id === booking.slotId);
   return validateDinnerGuestIds(trip, slot, change.guestIds);
+}
+
+// Checks one move-dinner-table change (see the list at the top): moves every current guest of one
+// table to a different restaurant/seating. No guest-id list to check (it is always the table's own
+// current occupants, derived live in doApply) — just the table and the destination.
+function validateMoveDinnerTable(trip, change) {
+  const booking = trip.dinnerBookings.find((b) => b.id === change.bookingId);
+  if (!booking) return fail('That table does not exist.');
+  if (dinnerCountIn(trip, booking) === 0) return fail('That table has nobody on it to move.');
+  const slot = trip.slots.find((s) => s.id === booking.slotId);
+  const restaurant = trip.restaurants.find((r) => r.id === change.restaurantId);
+  if (!restaurant) return fail('That restaurant does not exist.');
+  if (restaurant.destinationId !== slot.destinationId) return fail('That restaurant is not in this destination.');
+  if (!restaurant.seatings.includes(change.seating)) return fail('That is not one of this restaurant\'s seating times.');
+
+  // A specific table, chosen on the "By table" grid — Strict mode only, and must not already be
+  // occupied BY ANOTHER booking (the table being moved is excluded from its own "used" check, so
+  // moving to a different table at its own restaurant/seating is not blocked by itself).
+  if (change.tableId) {
+    if (restaurant.mode !== 'strict') return fail('Only a Strict restaurant has specific tables to pick.');
+    if (!restaurant.tables.some((t) => t.id === change.tableId)) return fail('That table does not exist.');
+    if (dinnerUsedTableIds(trip, restaurant, slot, change.seating, booking.id).has(change.tableId)) return fail('That table already has a booking.');
+  }
+  return { ok: true };
 }
 
 // Checks one guest or travel party change (see the list at the top).
@@ -915,6 +950,38 @@ async function doApply(ctx, tripId, changes) {
     return save(ctx, next, entries, { status: toStatus });
   }
 
+  // Moving a whole table to another restaurant/seating (Phase 3 step 2c) — every current guest of
+  // one table, moved together. Creates a fresh table at the destination, exactly like book-dinner
+  // (change.tableId works the same way); the source table gets no special treatment at all — once
+  // every one of its guests has moved off it, it is already "empty" by the same live dinnerCountIn
+  // check every other screen already uses, so it simply stops showing up, the same ghost-table rule
+  // step 2b relies on. Nothing here deletes it.
+  if (changes[0].type === 'move-dinner-table') {
+    const change = changes[0];
+    const sourceBooking = trip.dinnerBookings.find((b) => b.id === change.bookingId);
+    const slot = trip.slots.find((s) => s.id === sourceBooking.slotId);
+    const restaurant = trip.restaurants.find((r) => r.id === change.restaurantId);
+    const sourceRestaurant = trip.restaurants.find((r) => r.id === sourceBooking.restaurantId);
+    const guestIds = trip.guests
+      .filter((g) => !g.leftAt && trip.bookings[g.id]?.[slot.id]?.bookingId === sourceBooking.id)
+      .map((g) => g.id);
+    const { status, tableIds } = change.tableId
+      ? { status: guestIds.length <= restaurant.tables.find((t) => t.id === change.tableId).size ? 'confirmed' : 'special-request', tableIds: [change.tableId] }
+      : dinnerFit(trip, restaurant, slot, change.seating, guestIds.length, sourceBooking.id);
+    const booking = { id: newId(), slotId: slot.id, restaurantId: restaurant.id, seating: change.seating, tableIds, status };
+    next.dinnerBookings.push(booking);
+    entries.push({
+      ...base(), type: 'move-dinner-table', bookingId: booking.id, restaurantId: restaurant.id,
+      restaurantLabel: restaurant.name, seating: change.seating, status,
+      fromRestaurantLabel: sourceRestaurant.name, fromSeating: sourceBooking.seating, ...where(trip, slot),
+    });
+    const label = `${restaurant.name}, ${change.seating}`;
+    for (const guestId of guestIds) {
+      move(trip.guests.find((g) => g.id === guestId), slot, { kind: 'dinner', bookingId: booking.id, label }, 'move-dinner-table');
+    }
+    return save(ctx, next, entries, { status });
+  }
+
   // Guests and travel parties (step 7c/7d): each made on its own.
   if (GUEST_TYPES.has(changes[0].type)) {
     const change = changes[0];
@@ -1161,6 +1228,15 @@ function undoEntry(next, entry, base, entries) {
       restaurantLabel: entry.restaurantLabel, seating: entry.seating, fromStatus: entry.toStatus, toStatus: entry.fromStatus,
       slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place,
     });
+    return;
+  }
+  // The destination table created by the move; every guest who was on it is put back on the SOURCE
+  // table by their own 'move' entry, undone separately (pushed after this one, so undone BEFORE it,
+  // in reverse order — same ordering guarantee as book-dinner above). This only ever removes an
+  // already-empty table.
+  if (entry.type === 'move-dinner-table') {
+    next.dinnerBookings = next.dinnerBookings.filter((b) => b.id !== entry.bookingId);
+    entries.push({ ...base(), type: 'dinner-remove', cause: 'undo', bookingId: entry.bookingId, restaurantLabel: entry.restaurantLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
     return;
   }
   if (entry.type === 'edit-guest') {

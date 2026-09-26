@@ -266,10 +266,12 @@ export function dinnerCountIn(trip, dinnerBooking) {
 
 // The table ids currently occupied by a live booking at this restaurant/slot/seating. Shared by
 // dinnerFit, dinnerTableGrid, and book-dinner's own-table validation (changes.js), instead of three
-// copies that could drift apart.
-export function dinnerUsedTableIds(trip, restaurant, slot, seating) {
+// copies that could drift apart. excludeBookingId (Phase 3 step 2c, moving a whole table): leaves one
+// specific booking's own table(s) out of the count — used when checking whether a table fits its
+// destination, so a table being moved never counts as "occupied" against itself.
+export function dinnerUsedTableIds(trip, restaurant, slot, seating, excludeBookingId = null) {
   return new Set(trip.dinnerBookings
-    .filter((b) => b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0)
+    .filter((b) => b.id !== excludeBookingId && b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0)
     .flatMap((b) => b.tableIds));
 }
 
@@ -280,16 +282,18 @@ export function dinnerUsedTableIds(trip, restaurant, slot, seating) {
 // exactly one free table, or becomes a Special request — no table-joining (removed 24 Sep 2026: not
 // always clear in practice which restaurants allow it, or up to how many people, so it is simpler to
 // drop it everywhere than to keep a rule nobody can rely on).
-export function dinnerFit(trip, restaurant, slot, seating, guestCount) {
+// excludeBookingId (Phase 3 step 2c): when checking a table being MOVED to this exact restaurant and
+// seating, its own current occupants must not count as "already there" against its own destination.
+export function dinnerFit(trip, restaurant, slot, seating, guestCount, excludeBookingId = null) {
   if (restaurant.mode === 'flexible') {
     const bookingsHere = trip.dinnerBookings.filter((b) =>
-      b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0);
+      b.id !== excludeBookingId && b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0);
     const used = bookingsHere.reduce((sum, b) => sum + dinnerCountIn(trip, b), 0);
     const fits = used + guestCount <= restaurant.seatsPerSeating && guestCount <= restaurant.maxTableSize;
     return { status: fits ? 'confirmed' : 'special-request', tableIds: [] };
   }
 
-  const usedTableIds = dinnerUsedTableIds(trip, restaurant, slot, seating);
+  const usedTableIds = dinnerUsedTableIds(trip, restaurant, slot, seating, excludeBookingId);
   const free = restaurant.tables.filter((t) => !usedTableIds.has(t.id)).sort((a, b) => a.size - b.size);
   const single = free.find((t) => t.size >= guestCount);
   return single ? { status: 'confirmed', tableIds: [single.id] } : { status: 'special-request', tableIds: [] };

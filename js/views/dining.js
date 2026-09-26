@@ -19,6 +19,12 @@
 // leisure" or another activity both leave the table, correctly free its seat, and correctly offer to
 // bring the rest of their travel party along if they're on the same table. Each guest's chip on a
 // booked table is now that same Move sheet's entry point, here as everywhere else in the app.
+//
+// Moving a WHOLE table (step 2c, 26 Sep 2026): every table card's own "Move table" button — pick a
+// new restaurant, then a seating, confirm, same simple flow as booking one fresh. A new change type
+// (move-dinner-table, changes.js) since this needs to move a table's guests as a group even though
+// they are already, individually, "booked for dinner this evening" (the ordinary book-dinner change
+// refuses that on purpose, to avoid silently stealing someone from an unrelated table).
 
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
@@ -155,7 +161,12 @@ function tableCard(ctx, trip, names, slot, booking, title) {
       [...guests].sort(alphabetical(names)).map((g) => h('button', {
         class: 'chip', type: 'button', disabled: Boolean(trip.archivedAt),
         onclick: () => startMove(ctx, trip, g, slot),
-      }, names.get(g.id)))));
+      }, names.get(g.id)))),
+    h('div', { class: 'card-actions' },
+      h('button', {
+        class: 'btn btn--small btn--plain', type: 'button', disabled: Boolean(trip.archivedAt),
+        onclick: () => startMoveTable(ctx, trip, slot, booking),
+      }, 'Move table')));
 }
 
 function noDinnerYetCard(ctx, trip, slot, guests, names) {
@@ -281,6 +292,66 @@ function byTablePage(ctx, trip, base, destination, slot, restaurants, restaurant
       ];
 
   return h('div', {}, restaurantStrip, seatingStrip, h('div', {}, rows));
+}
+
+// ---------- Moving a whole table (step 2c) ----------
+//
+// Every current guest of one table, moved together to a different restaurant and/or seating — the
+// same simple pick-restaurant-then-seating-then-confirm flow the guest-first booking uses above
+// (confirmBooking), not the "By table" grid's specific-table picker: the common case is "wrong
+// restaurant/time entirely", and dinnerFit auto-picks the best fit at the destination either way,
+// excluding the table's own current occupants from its own destination count (rules.js) so moving to
+// a different table at the SAME restaurant/seating works too, not just a genuinely different one.
+
+function startMoveTable(ctx, trip, slot, booking) {
+  if (blockedIfArchived(trip)) return;
+  const fromRestaurant = trip.restaurants.find((r) => r.id === booking.restaurantId);
+  const names = displayNames(trip.guests);
+  const guests = trip.guests.filter((g) => !g.leftAt && trip.bookings[g.id]?.[booking.slotId]?.bookingId === booking.id);
+  const who = joinNames([...guests].sort(alphabetical(names)).map((g) => names.get(g.id)));
+  pickMoveRestaurant(ctx, trip, slot, booking, fromRestaurant, who, guests.length);
+}
+
+function pickMoveRestaurant(ctx, trip, slot, booking, fromRestaurant, who, guestCount) {
+  const restaurants = trip.restaurants.filter((r) => r.destinationId === slot.destinationId);
+  openSheet({
+    eyebrow: 'Move table', title: who,
+    subtitle: `Currently ${fromRestaurant.name}, ${booking.seating} · pick a new restaurant`,
+    body: restaurants.map((r) => choiceRow({
+      title: r.name, detail: r.mode === 'flexible' ? 'Flexible' : 'Strict', current: r.id === fromRestaurant.id,
+      onclick: () => pickMoveSeating(ctx, trip, slot, booking, fromRestaurant, r, who, guestCount),
+    })),
+  });
+}
+
+function pickMoveSeating(ctx, trip, slot, booking, fromRestaurant, toRestaurant, who, guestCount) {
+  openSheet({
+    eyebrow: toRestaurant.name, title: 'Pick a seating time', subtitle: who,
+    body: [...toRestaurant.seatings].sort().map((seatingTime) => choiceRow({
+      title: seatingTime, current: toRestaurant.id === fromRestaurant.id && seatingTime === booking.seating,
+      onclick: () => confirmMoveTable(ctx, trip, slot, booking, fromRestaurant, toRestaurant, seatingTime, who, guestCount),
+    })),
+  });
+}
+
+function confirmMoveTable(ctx, trip, slot, booking, fromRestaurant, toRestaurant, seatingTime, who, guestCount) {
+  const preview = dinnerFit(trip, toRestaurant, slot, seatingTime, guestCount, booking.id);
+  const fits = preview.status === 'confirmed';
+
+  const confirm = h('button', {
+    class: `btn${fits ? '' : ' btn--danger'}`, type: 'button',
+    onclick: () => saveMoveDinnerTable(ctx, trip, booking, toRestaurant, seatingTime, who),
+  }, fits ? 'Confirm' : 'Save as special request');
+
+  openSheet({
+    eyebrow: fits ? 'Confirm move' : 'No table free right now', title: `${toRestaurant.name}, ${seatingTime}`,
+    subtitle: `${who} · moving from ${fromRestaurant.name}, ${booking.seating}`,
+    body: [
+      fits ? null : notice('This does not fit right now — it will be saved as a Special request for the local team to sort out.'),
+      confirm,
+    ],
+    cancelLabel: 'Cancel',
+  });
 }
 
 // ---------- Shared multi-select guest picker ----------
@@ -427,6 +498,21 @@ async function saveAddToDinnerTable(ctx, trip, booking, guestIds) {
     closeSheet();
     ctx.refresh();
     showToast(`Added to the table${result.status === 'special-request' ? ' (now a Special request)' : ''}`);
+  } else {
+    showToast(result.error, true);
+  }
+}
+
+async function saveMoveDinnerTable(ctx, trip, booking, restaurant, seatingTime, who) {
+  if (saving) return;
+  saving = true;
+  const result = await applyChange(ctx, trip.id, { type: 'move-dinner-table', bookingId: booking.id, restaurantId: restaurant.id, seating: seatingTime });
+  saving = false;
+  if (result.ok) {
+    closeSheet();
+    ctx.refresh();
+    const tag = result.status === 'special-request' ? ' (Special request)' : '';
+    showToast(`${who} moved to ${restaurant.name}, ${seatingTime}${tag}`);
   } else {
     showToast(result.error, true);
   }

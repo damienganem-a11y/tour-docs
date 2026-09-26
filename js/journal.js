@@ -18,7 +18,7 @@ const inBatchOrder = (a, b) => (a.n ?? 0) - (b.n ?? 0);
 const inTimeOrder = (a, b) => a.seq - b.seq || a.at.localeCompare(b.at);
 
 // All the actions of a trip, oldest first. An action looks like:
-//   { batchId, seq, at, who, place, slotId, slotLabel, entries, kind: 'move' | 'cancel-tour' | 'book-dinner' | 'add-to-dinner-table' | 'undo', undone: true/false }
+//   { batchId, seq, at, who, place, slotId, slotLabel, entries, kind: 'move' | 'cancel-tour' | 'book-dinner' | 'add-to-dinner-table' | 'move-dinner-table' | 'undo', undone: true/false }
 // `undone` is true when a later Undo took this action back.
 export function groupBatches(entries) {
   const byBatch = new Map();
@@ -48,10 +48,11 @@ export function groupBatches(entries) {
         : types.has('edit-activity') ? 'edit-activity'
         : types.has('add-restaurant') ? 'add-restaurant'
         : types.has('edit-restaurant') ? 'edit-restaurant'
-        // A book-dinner or add-to-dinner-table batch also contains one 'move' entry per guest — must
-        // classify by its own kind, not fall through to the generic 'move' handling below.
+        // A book-dinner, add-to-dinner-table or move-dinner-table batch also contains one 'move'
+        // entry per guest — must classify by its own kind, not fall through to 'move' below.
         : types.has('book-dinner') ? 'book-dinner'
         : types.has('add-to-dinner-table') ? 'add-to-dinner-table'
+        : types.has('move-dinner-table') ? 'move-dinner-table'
         : types.has('edit-guest') ? 'edit-guest'
         : types.has('guest-left') ? 'guest-left'
         : types.has('guest-return') ? 'guest-return'
@@ -80,7 +81,7 @@ export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant']; // Setti
 // Use > Dining's own Undo (Phase 3 step 2a/2b). A guest later moved off a table through the ordinary
 // Move sheet is a plain 'move' batch — undoable from Touring/By guest's own Undo, not this one; a
 // known, minor, accepted edge (see the step's plan).
-export const DINING_USE_UNDO_SCOPE = ['book-dinner', 'add-to-dinner-table'];
+export const DINING_USE_UNDO_SCOPE = ['book-dinner', 'add-to-dinner-table', 'move-dinner-table'];
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
 
@@ -174,6 +175,7 @@ export function summarize(batch) {
   if (batch.kind === 'edit-restaurant') return summarizeEditRestaurant(batch.entries[0]);
   if (batch.kind === 'book-dinner') return summarizeBookDinner(batch);
   if (batch.kind === 'add-to-dinner-table') return summarizeAddToDinnerTable(batch);
+  if (batch.kind === 'move-dinner-table') return summarizeMoveDinnerTable(batch);
   if (batch.kind === 'edit-guest') return summarizeEditGuest(batch.entries[0]);
   if (batch.kind === 'guest-left') return `${batch.entries[0].guestName} left the trip`;
   if (batch.kind === 'guest-return') return `${batch.entries[0].guestName} is back on the trip`;
@@ -294,6 +296,15 @@ function summarizeAddToDinnerTable(batch) {
   const guestNames = alphaNames(batch.entries.filter((e) => e.type === 'move'));
   const tag = entry.toStatus === 'special-request' && entry.fromStatus !== 'special-request' ? ' — now a Special request' : '';
   return `Added ${joinNames(guestNames)} to ${entry.restaurantLabel}, ${entry.seating}${tag}`;
+}
+
+// A whole table moved to another restaurant/seating: who, from where, to where, and whether it is
+// now a Special request.
+function summarizeMoveDinnerTable(batch) {
+  const entry = batch.entries.find((e) => e.type === 'move-dinner-table');
+  const guestNames = alphaNames(batch.entries.filter((e) => e.type === 'move'));
+  const tag = entry.status === 'special-request' ? ' — Special request' : '';
+  return `Moved table for ${joinNames(guestNames)} from ${entry.fromRestaurantLabel}, ${entry.fromSeating} to ${entry.restaurantLabel}, ${entry.seating}${tag}`;
 }
 
 // What changed about a guest's own name, in words.

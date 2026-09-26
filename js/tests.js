@@ -15,7 +15,7 @@ import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUn
 import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnlock } from './biometrics.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates } from './rules.js';
+import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
@@ -1290,6 +1290,98 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   await applyChange(ctxGhost, trip.id, { type: 'move', guestId: g1.id, slotId: evening.id, to: { kind: 'leisure' } });
   check('dinnerTableGrid: once its only guest moves away, the table shows as free again',
     dinnerTableGrid(ctxGhost.state, rGhost(), evening, '19:00').rows[0].booking === null);
+
+  // =====================================================================
+  // Phase 3 step 2c: moving a whole table to another restaurant/seating
+  // =====================================================================
+
+  // --- move-dinner-table (the change itself): every current guest of one table, moved together ---
+  const ctxMT = makeCtx();
+  const moveRestA = (await applyChange(ctxMT, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Move Test A', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const moveRestB = (await applyChange(ctxMT, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Move Test B', seatings: ['19:00', '21:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const moveBookA = (await applyChange(ctxMT, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: moveRestA, seating: '19:00', guestIds: [g1.id, g2.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
+  const moved = await applyChange(ctxMT, trip.id, { type: 'move-dinner-table', bookingId: moveBookA, restaurantId: moveRestB, seating: '19:00' });
+  const newBookingId = moved.ok && moved.entries.find((e) => e.type === 'move-dinner-table').bookingId;
+  check('move-dinner-table: both guests land on a fresh table at the new restaurant, Confirmed',
+    moved.ok && moved.status === 'confirmed'
+    && guestPlace(ctxMT.state, g1, evening).kind === 'dinner' && guestPlace(ctxMT.state, g1, evening).booking.id === newBookingId
+    && guestPlace(ctxMT.state, g2, evening).kind === 'dinner' && guestPlace(ctxMT.state, g2, evening).booking.id === newBookingId, moved.error);
+  check('move-dinner-table: the source table is left with zero guests (the same "ghost table" rule any other vacated table already gets)',
+    dinnerCountIn(ctxMT.state, ctxMT.state.dinnerBookings.find((b) => b.id === moveBookA)) === 0);
+  const mtBatch = groupBatches(ctxMT.entries).find((b) => b.kind === 'move-dinner-table');
+  check('move-dinner-table classifies as its own batch kind (not a generic move batch) and summarizes correctly',
+    Boolean(mtBatch) && /^Moved table for .+ from Move Test A, 19:00 to Move Test B, 19:00$/.test(summarize(mtBatch)), mtBatch && summarize(mtBatch));
+
+  // --- Moving directly onto a specific, chosen table (Strict, the "By table" grid's own pick) ---
+  const ctxMTable = makeCtx();
+  const tableRestX = (await applyChange(ctxMTable, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Table Pick X', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2] })).entries[0].restaurantId;
+  const tableRestY = (await applyChange(ctxMTable, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Table Pick Y', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 6] })).entries[0].restaurantId;
+  const tableRestYBigId = ctxMTable.state.restaurants.find((r) => r.id === tableRestY).tables.find((t) => t.size === 6).id;
+  const tableBookX = (await applyChange(ctxMTable, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: tableRestX, seating: '19:00', guestIds: [g1.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
+  const movedToTable = await applyChange(ctxMTable, trip.id, { type: 'move-dinner-table', bookingId: tableBookX, restaurantId: tableRestY, seating: '19:00', tableId: tableRestYBigId });
+  check('move-dinner-table with a specific tableId books directly onto that table, even oversized (never refused)',
+    movedToTable.ok && movedToTable.status === 'confirmed'
+    && ctxMTable.state.dinnerBookings.find((b) => b.id === movedToTable.entries.find((e) => e.type === 'move-dinner-table').bookingId).tableIds[0] === tableRestYBigId, movedToTable.error);
+
+  // --- dinnerFit/dinnerUsedTableIds excludeBookingId: a table moving to its OWN restaurant/seating
+  // must not count its own current occupants as already there (the central fix this step needed) ---
+  const ctxSelf = makeCtx();
+  const selfRest = (await applyChange(ctxSelf, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Self Exclude', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const rSelf = () => ctxSelf.state.restaurants.find((r) => r.id === selfRest);
+  const selfBooking = (await applyChange(ctxSelf, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: selfRest, seating: '19:00', guestIds: [g1.id, g2.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
+  const selfTableId = ctxSelf.state.dinnerBookings.find((b) => b.id === selfBooking).tableIds[0];
+  check('Without excludeBookingId, dinnerFit sees the only table as already taken (by the booking itself)',
+    dinnerFit(ctxSelf.state, rSelf(), evening, '19:00', 2).status === 'special-request');
+  check('With excludeBookingId set to its own booking, dinnerFit correctly finds its own table free again',
+    dinnerFit(ctxSelf.state, rSelf(), evening, '19:00', 2, selfBooking).status === 'confirmed'
+    && dinnerFit(ctxSelf.state, rSelf(), evening, '19:00', 2, selfBooking).tableIds[0] === selfTableId);
+  check("dinnerUsedTableIds excludes the given booking's own table",
+    !dinnerUsedTableIds(ctxSelf.state, rSelf(), evening, '19:00', selfBooking).has(selfTableId));
+
+  const selfFlexRest = (await applyChange(ctxSelf, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Self Exclude Flex', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 4, maxTableSize: 4, tableSizes: [] })).entries[0].restaurantId;
+  const rSelfFlex = () => ctxSelf.state.restaurants.find((r) => r.id === selfFlexRest);
+  const selfFlexBooking = (await applyChange(ctxSelf, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: selfFlexRest, seating: '19:00', guestIds: [g3.id, g4.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
+  check('Flexible mode: without exclude, the seating pool already looks full (by itself)',
+    dinnerFit(ctxSelf.state, rSelfFlex(), evening, '19:00', 4).status === 'special-request');
+  check('Flexible mode: with exclude, the pool correctly has room again',
+    dinnerFit(ctxSelf.state, rSelfFlex(), evening, '19:00', 4, selfFlexBooking).status === 'confirmed');
+
+  // --- Validation ---
+  const ctxMV = makeCtx();
+  const valRestD = (await applyChange(ctxMV, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Val D', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const valRestE = (await applyChange(ctxMV, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Val E', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const marrakechForDining = trip.destinations.find((d) => d.name === 'Marrakech');
+  const valRestMarrakech = (await applyChange(ctxMV, trip.id, { type: 'add-restaurant', destinationId: marrakechForDining.id, name: 'Val Marrakech', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const valBookD = (await applyChange(ctxMV, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: valRestD, seating: '19:00', guestIds: [g1.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
+  await applyChange(ctxMV, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: valRestE, seating: '19:00', guestIds: [g2.id] }); // occupies valRestE's only table
+
+  check('Refused: an unknown table', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: 'nope', restaurantId: valRestE, seating: '19:00' })).ok);
+  check('Refused: an unknown restaurant', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: 'nope', seating: '19:00' })).ok);
+  check('Refused: a restaurant in a different destination', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: valRestMarrakech, seating: '19:00' })).ok);
+  check('Refused: a seating that restaurant does not offer', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: valRestE, seating: '23:00' })).ok);
+  check('Refused: a tableId at a Flexible restaurant', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: flexible, seating: '19:00', tableId: 'x' })).ok);
+  check('Refused: an unknown tableId', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: valRestE, seating: '19:00', tableId: 'nope' })).ok);
+  const valRestETableId = ctxMV.state.restaurants.find((r) => r.id === valRestE).tables[0].id;
+  check('Refused: a tableId already occupied by ANOTHER booking', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: valRestE, seating: '19:00', tableId: valRestETableId })).ok);
+  check('Only the owner can move a table', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: valRestE, seating: '19:00' })).ok);
+
+  // A table with nobody left on it (moved elsewhere by the ordinary Move sheet) cannot be moved again
+  await applyChange(ctxMV, trip.id, { type: 'move', guestId: g1.id, slotId: evening.id, to: { kind: 'leisure' } });
+  check('Refused: a table with nobody left on it', !(await applyChange(ctxMV, trip.id, { type: 'move-dinner-table', bookingId: valBookD, restaurantId: valRestE, seating: '19:00' })).ok);
+
+  // --- Undo restores every guest to the SOURCE table exactly, and removes the destination table ---
+  const ctxUndo = makeCtx();
+  const undoRestFrom = (await applyChange(ctxUndo, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Undo From', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const undoRestTo = (await applyChange(ctxUndo, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Undo To', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const undoBookFrom = (await applyChange(ctxUndo, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: undoRestFrom, seating: '19:00', guestIds: [g1.id, g2.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
+  const beforeUndo = structuredClone(ctxUndo.state);
+  const undoMoved = await applyChange(ctxUndo, trip.id, { type: 'move-dinner-table', bookingId: undoBookFrom, restaurantId: undoRestTo, seating: '19:00' });
+  const undoNewBookingId = undoMoved.entries.find((e) => e.type === 'move-dinner-table').bookingId;
+  check('Before undo: the guests are on the new table', guestPlace(ctxUndo.state, g1, evening).booking.id === undoNewBookingId);
+  const undone = await applyChange(ctxUndo, trip.id, { type: 'undo' });
+  check('Undo removes the destination table and restores both guests to exactly what they had before (their original table)',
+    undone.ok && restoredExactly(ctxUndo.state, beforeUndo), undone.error);
+  check('The undo line names what it undid', /^Undid: Moved table for/.test(summarize(groupBatches(ctxUndo.entries).at(-1))));
 
   // --- Replace a destination (rare) ---
   const marrakech = trip.destinations.find((d) => d.name === 'Marrakech');
