@@ -37,8 +37,21 @@ function openDb() {
         if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings');
         if (!db.objectStoreNames.contains('syncState')) db.createObjectStore('syncState', { keyPath: 'tripId' });
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        // If ANOTHER tab/window of the app is opened later needing a newer version, this connection
+        // must get out of its way — otherwise that other tab would wait forever with no message,
+        // exactly like this one would below if nothing closed the connection blocking IT.
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
       request.onerror = () => reject(request.error);
+      // Another tab/window already has the database open on an older version and hasn't closed it
+      // (typically: a second tab left open in the background). Without this, the upgrade above just
+      // never runs and the app waits on its boot splash forever, with no error and no way out.
+      request.onblocked = () => reject(new Error(
+        'Another open tab or window of Tour Docs needs to be closed first. Close every other Tour Docs tab/window, then reload this one.'
+      ));
     });
   }
   return opening;

@@ -281,7 +281,9 @@ async function start() {
     // Ask the browser not to clear our saved data when the phone is short on space.
     navigator.storage?.persist?.();
   } catch (error) {
-    document.getElementById('app').append(
+    // replaceChildren, not append: the boot splash above is full-height, so simply adding this
+    // underneath it left the error invisible without scrolling — looking exactly like a hang.
+    document.getElementById('app').replaceChildren(
       h('div', { class: 'screen' }, h('div', { class: 'message' }, `This browser cannot save data on the device (${error.message}).`))
     );
     return;
