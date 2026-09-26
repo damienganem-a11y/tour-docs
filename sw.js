@@ -15,7 +15,7 @@
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.26.1'; // keep equal to js/version.js
+const VERSION = '0.26.2'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
 const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)

@@ -19,9 +19,18 @@
 //   every boot that would otherwise show this screen, trySilentRecovery below checks whether THIS
 //   browsing context already has a session anyway (see auth.js's existingSession) and, if so, skips
 //   straight to "Confirm your name" instead of asking to send another link.
+//   Escape hatch added 26 Sep 2026 (owner's report: that fix still did not get them in, on their
+//   phone — Safari and the icon can fail to share ANY storage at all, not just the Supabase session,
+//   and no code running on one side can read the other's data if the browser itself never exposes
+//   it): "Skip this for now" on the form screen below saves a purely local owner, exactly like every
+//   screen before v0.19.0 did — no email, no Supabase account, so nothing to hand off between
+//   Safari and the icon in the first place. The only real cost is Phase 2's online backup push
+//   (sync.js), which has nothing to authenticate as without a real account and silently does
+//   nothing — the same as it already does whenever the phone is offline.
 
 import { h } from '../dom.js';
 import { pageHead } from './chrome.js';
+import { newId } from '../ids.js';
 import { looksLikeAuthCallback, sendMagicLink, completeSignIn, saveNameToAccount, existingSession } from '../auth.js';
 
 const PENDING_NAME_KEY = 'tourdocs.pendingName'; // best-effort fallback only; the link itself is the real carrier
@@ -179,10 +188,21 @@ function formScreen(ctx) {
     },
   }, nameInput, emailInput, h('button', { class: 'btn', type: 'submit' }, 'Send me a sign-in link'), message);
 
+  // No email, no Supabase account: saves the name straight onto this phone, like every screen
+  // before v0.19.0 did. The one real cost, said plainly rather than hidden: the online backup push
+  // (Phase 2) has no account to push as, so it silently does nothing — same as being offline.
+  async function skipSignIn() {
+    const name = nameInput.value.trim();
+    if (name === '') { nameInput.focus(); return; }
+    await ctx.saveOwner(name, newId()); // navigates to the Trips screen; welcome.js is not shown again
+  }
+
   return {
     node: h('div', { class: 'screen' },
       pageHead({ eyebrow: 'Tour Docs', title: 'Welcome', subtitle: 'Sign in to get started' }),
       h('p', { class: 'muted' }, 'We email you a link: no password to remember. Your name goes in the journal and on the lists you export, so everyone knows who changed what.'),
-      form),
+      form,
+      h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 16px;', onclick: skipSignIn },
+        'Skip this for now — just use my name (no email, no online backup)')),
   };
 }

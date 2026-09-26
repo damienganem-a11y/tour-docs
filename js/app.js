@@ -100,8 +100,14 @@ const ctx = {
     return true;
   },
 
-  // Save the signed-in owner (asked once, on first launch — see welcome.js) and show the app.
-  // id comes from the Supabase account, not a locally generated one (see auth.js).
+  // Save the owner (asked once, on first launch — see welcome.js) and show the app. id is normally
+  // the real Supabase account id, once signed in — but welcome.js also offers a "skip sign-in" local
+  // path (a fresh, locally generated id, no Supabase account at all) for whenever sign-in itself is
+  // the thing standing between the owner and using the app (26 Sep 2026: iPhone's Safari and an
+  // installed Home Screen icon do not always share storage, so a magic link finished in Safari can
+  // leave the icon stuck asking forever). Either way this saves the SAME local record; the only real
+  // difference is that Phase 2's online backup push (sync.js) has nothing to authenticate as without
+  // a real account, and silently does nothing — exactly like being offline already does.
   async saveOwner(name, id) {
     const owner = makeOwner(id, name);
     await dbPut('settings', owner, 'owner');
