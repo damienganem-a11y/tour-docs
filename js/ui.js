@@ -19,16 +19,18 @@ export function closeSheet() {
 }
 
 // eyebrow: small label above the title. title/subtitle: text at the top. body: elements to show inside.
+// titleBadge: an element shown top-right, level with the title (e.g. a live "2 / 4" count) — same
+// row layout as a card's own title+count (see guestCard, tableCard).
 // footer: something that stays in view under the scrolling list (for example the Confirm button of a long list).
 // cancelLabel: the words on the button that closes the sheet. cancelDanger: draw that button in red.
 // Opening a sheet while another is open replaces it, so a flow can go from step to step.
-export function openSheet({ eyebrow, title, subtitle, body, footer, cancelLabel = 'Cancel', cancelDanger = false }) {
+export function openSheet({ eyebrow, title, subtitle, titleBadge, body, footer, cancelLabel = 'Cancel', cancelDanger = false }) {
   closeSheet();
 
   const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h('div', { class: 'sheet-head' },
       eyebrow ? h('div', { class: 'eyebrow eyebrow--grey' }, eyebrow) : null,
-      h('h2', {}, title),
+      titleBadge ? h('div', { class: 'sheet-title-row' }, h('h2', {}, title), titleBadge) : h('h2', {}, title),
       subtitle ? h('div', { class: 'muted' }, subtitle) : null
     ),
     h('div', { class: 'sheet-body' }, body),

@@ -375,17 +375,31 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
   }
 
   const checked = new Set();
-  const status = h('div', { class: 'notice' });
+  const status = h('div', { class: 'notice', hidden: true });
+  // Live "0 / 2" (or "2" with no ceiling to show, e.g. a Special request with no table assigned),
+  // top-right of the sheet, level with the title — the same running-count-as-you-go the owner asked
+  // for (26 Sep 2026), so a table's fill state is visible at a glance while ticking guests, not just
+  // read afterwards from a line of text. Red once over, exactly like an activity card's own count.
+  const titleBadge = h('div', { class: 'count' }, ceiling === null ? '0' : capacityInfo(baseUsed, ceiling).text);
   const partyPrompt = h('div', {});
   const confirmBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => onConfirm([...checked]) }, confirmLabel);
   const list = h('div', {});
 
   const say = () => {
     confirmBtn.disabled = checked.size === 0;
-    if (checked.size === 0) { status.textContent = 'Pick at least one guest.'; return; }
-    if (ceiling === null) { status.textContent = 'Will be saved as a Special request.'; return; }
     const total = baseUsed + checked.size;
-    status.textContent = total > ceiling ? `${capacityInfo(total, ceiling).text} — will be saved as a Special request.` : capacityInfo(total, ceiling).text;
+    if (ceiling === null) {
+      titleBadge.textContent = String(total);
+      titleBadge.className = 'count';
+    } else {
+      const info = capacityInfo(total, ceiling);
+      titleBadge.textContent = info.text;
+      titleBadge.className = `count${info.tone === 'bad' ? ' count--bad' : ''}`;
+    }
+    if (checked.size === 0) { status.hidden = false; status.textContent = 'Pick at least one guest.'; return; }
+    if (ceiling === null) { status.hidden = false; status.textContent = 'Will be saved as a Special request.'; return; }
+    if (total > ceiling) { status.hidden = false; status.textContent = 'Over capacity — will be saved as a Special request.'; return; }
+    status.hidden = true; // fits fine: the title badge already says so, nothing more to add here
   };
 
   // Ticking someone with unchecked travel-party members offers to tick them too — the same question
@@ -437,7 +451,7 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
   // not the scrollable body, so confirming a long guest list never needs a scroll to the bottom first
   // (the owner's feedback, 25 Sep 2026).
   openSheet({
-    eyebrow, title, subtitle, body: [partyPrompt, search, list], cancelLabel: 'Cancel',
+    eyebrow, title, subtitle, titleBadge, body: [partyPrompt, search, list], cancelLabel: 'Cancel',
     footer: [status, confirmBtn],
   });
 }

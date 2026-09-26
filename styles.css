@@ -561,6 +561,10 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 
 .sheet-head h2 { margin: 4px 0 6px; font-size: 26px; line-height: 1.2; }
 .sheet-head { margin-bottom: 14px; }
+/* A sheet title with a live count badge top-right (e.g. guestPicker's "2 / 4") — same row layout as
+   a card's own title+count (see .card-row). */
+.sheet-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.sheet-title-row h2 { margin: 4px 0 6px; }
 .sheet-body { flex: 1; overflow-y: auto; }
 .eyebrow--grey { color: var(--muted); }
 
