@@ -8,7 +8,7 @@ import { pageHead, exportFormatSheet } from './chrome.js';
 import { openSheet, closeSheet } from '../ui.js';
 import { choiceRow } from './move.js';
 import { bySlotOrder, slotLabel, dinnerCountIn } from '../rules.js';
-import { shareSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportReservations, exportConfirmationCards } from '../export.js';
+import { shareSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
@@ -34,8 +34,8 @@ export function exportsSettingsPage(ctx, trip) {
 
   const reservationButton = h('button', {
     class: 'btn btn--plain', type: 'button',
-    onclick: () => pickRestaurant(ctx, trip),
-  }, 'Export a restaurant’s reservations');
+    onclick: () => pickReservationEvening(ctx, trip),
+  }, 'Export an evening’s reservations');
 
   const hasTables = trip.dinnerBookings.some((b) => dinnerCountIn(trip, b) > 0);
   const cardsButton = h('button', { class: 'btn', type: 'button', onclick: () => pickCardsEvening(ctx, trip) }, 'Export confirmation cards');
@@ -53,7 +53,7 @@ export function exportsSettingsPage(ctx, trip) {
     hasTables ? cardsButton : null,
     hasTables ? h('p', { class: 'muted count-line' }, 'One card per travel party and table, filled in from the bookings. The logo and colour come from Settings > Brand.') : null,
     trip.restaurants.length > 0 ? reservationButton : null,
-    trip.restaurants.length > 0 ? h('p', { class: 'muted count-line' }, 'The list a restaurant needs for one evening, with an option to include dietary needs.') : null,
+    trip.restaurants.length > 0 ? h('p', { class: 'muted count-line' }, 'All restaurants of one evening on one compact sheet, with an option to include dietary needs.') : null,
     records.length === 0
       ? h('p', { class: 'empty' }, 'Nothing exported yet.')
       : h('ul', { class: 'list' }, records.map((record) => exportRow(record))));
@@ -111,32 +111,23 @@ function pickCardsEvening(ctx, trip) {
   });
 }
 
-// Reservation sheet: pick the restaurant, then the evening.
-function pickRestaurant(ctx, trip) {
+// Reservation sheet: pick the evening (every restaurant of that evening is exported together).
+function pickReservationEvening(ctx, trip) {
+  const withRestaurants = new Set(trip.restaurants.map((r) => r.destinationId));
+  const evenings = trip.slots.filter((s) => s.half === 'Evening' && withRestaurants.has(s.destinationId)).sort(bySlotOrder);
   openSheet({
-    eyebrow: 'Exports archive', title: 'Which restaurant?',
-    body: trip.restaurants.map((r) => choiceRow({
-      title: r.name, detail: trip.destinations.find((d) => d.id === r.destinationId)?.name,
-      onclick: () => pickEvening(ctx, trip, r),
-    })),
+    eyebrow: 'Exports archive', title: 'Which evening?',
+    body: evenings.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runReservations(ctx, trip, s) })),
     cancelLabel: 'Cancel',
   });
 }
 
-function pickEvening(ctx, trip, restaurant) {
-  const evenings = trip.slots.filter((s) => s.destinationId === restaurant.destinationId && s.half === 'Evening').sort(bySlotOrder);
-  openSheet({
-    eyebrow: restaurant.name, title: 'Which evening?',
-    body: evenings.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runReservations(ctx, trip, restaurant, s) })),
-    cancelLabel: 'Cancel',
-  });
-}
-
-function runReservations(ctx, trip, restaurant, slot) {
+function runReservations(ctx, trip, slot) {
+  const destination = trip.destinations.find((d) => d.id === slot.destinationId);
   exportFormatSheet(async (format, { includeDietary }) => {
     if (busy) return;
     busy = true;
-    await exportReservations(ctx, trip, restaurant, slot, format, { includeDietary });
+    await exportEveningReservations(ctx, trip, destination, slot, format, { includeDietary });
     busy = false;
     ctx.refresh();
   }, { dietary: true });

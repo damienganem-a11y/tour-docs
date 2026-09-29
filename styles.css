@@ -620,21 +620,19 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
   position: fixed;
   left: 16px;
   right: 16px;
-  bottom: calc(96px + env(safe-area-inset-bottom));   /* above the tab bar, so it never covers the Undo button */
+  top: calc(12px + env(safe-area-inset-top));         /* at the top: at the bottom it covered the buttons being used (owner's request, 1 Oct 2026) */
   pointer-events: none;                               /* taps go through to what is underneath */
-  z-index: 40;
+  z-index: 60;
   max-width: 688px;
   margin: 0 auto;
   padding: 14px 18px;
   border-radius: 16px;
-  background: var(--ink);
-  color: #ffffff;
-  font-weight: 600;
+  background: #ff8f00;                                /* bright orange: impossible to miss */
+  color: #1b1b1b;
+  font-weight: 700;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
-.toast--error { background: var(--bad-ink); }
-/* While a sheet is open its buttons are at the bottom, so the message moves to the top instead. */
-body.sheet-open .toast { top: calc(12px + env(safe-area-inset-top)); bottom: auto; }
+.toast--error { background: var(--bad-ink); color: #ffffff; }
 
 /* Settings > Brand */
 .logo-preview { display: flex; align-items: center; justify-content: center; min-height: 90px; margin: 12px 0; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: #fff; }

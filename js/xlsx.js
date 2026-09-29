@@ -297,3 +297,30 @@ export function buildGroupsXlsx(doc, rows) {
   for (const group of doc.groups) sheets.push({ name: sheetName(group.heading, usedNames), xml: sheetXml(doc, group) });
   return assembleWorkbook(sheets);
 }
+
+// The evening sheet (every restaurant of one evening) as one flat table: Restaurant, Time, ID, Name, Table, and (only when
+// the owner ticked "Include dietary needs") a Dietary needs column. One row per guest, so it sorts and filters in Excel.
+export function buildEveningXlsx(doc) {
+  const withNeeds = doc.blocks.some((b) => b.needs?.length > 0);
+  const headers = ['Restaurant', 'Time', 'People', 'ID', 'Name', 'Table', ...(withNeeds ? ['Dietary needs'] : [])];
+  const widths = [26, 8, 8, 10, 26, 16, ...(withNeeds ? [40] : [])];
+  const rows = [];
+  for (const block of doc.blocks) {
+    block.tables.forEach((table, t) => table.rows.forEach((r) => {
+      const need = block.needs?.find((n) => n.id === r.id)?.text ?? '';
+      rows.push([block.restaurant, block.seating, String(block.count), r.id, r.name, `${table.special ? 'Special request' : 'Confirmed'} (table ${t + 1})`, ...(withNeeds ? [need] : [])]);
+    }));
+  }
+  const sheetRows = [
+    rowXml(1, [{ col: 0, text: doc.title, bold: true }]),
+    rowXml(2, [{ col: 0, text: doc.updatedLine }]),
+    rowXml(4, headers.map((text, col) => ({ col, text, bold: true }))),
+    ...rows.map((values, i) => rowXml(5 + i, values.map((text, col) => ({ col, text })))),
+  ];
+  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
+    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+    + `<cols>${cols}</cols><sheetData>${sheetRows.join('')}</sheetData></worksheet>`;
+  return assembleWorkbook([{ name: sheetName('Evening', new Set()), xml }]);
+}

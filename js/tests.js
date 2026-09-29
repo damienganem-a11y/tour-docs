@@ -17,9 +17,9 @@ import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnl
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
-import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf } from './pdf.js';
-import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx } from './xlsx.js';
-import { destinationExportDoc, reservationExportDoc, confirmationCards, groupsExportData, groupCards, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
+import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
+import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
@@ -2478,28 +2478,35 @@ function readZip(bytes) {
   await applyChange(ctxR, trip.id, { type: 'book-dinner', slotId: eveR.id, restaurantId: rid, seating: '19:00', guestIds: [allergic.id, mates[0].id, mates[1].id] }); // takes the 4-table
   await applyChange(ctxR, trip.id, { type: 'book-dinner', slotId: eveR.id, restaurantId: rid, seating: '19:00', guestIds: [mates[2].id, mates[3].id, mates[4].id] }); // only the 2-table is left: Special request
 
-  const off = reservationExportDoc(ctxR.state, restR(), eveR, 'Tester');
-  const on = reservationExportDoc(ctxR.state, restR(), eveR, 'Tester', { includeDietary: true });
+  const lis = () => lisbonR;
+  const off = eveningReservationDoc(ctxR.state, lis(), eveR, 'Tester');
+  const on = eveningReservationDoc(ctxR.state, lis(), eveR, 'Tester', { includeDietary: true });
   const offText = JSON.stringify(off), onText = JSON.stringify(on);
-  check('Reservation sheet, dietary switch OFF: no dietary text, no marker, nothing that hints at a need',
+  const mine = (d) => d.blocks.find((b) => b.restaurant === 'Sheet Test');
+  check('Evening sheet, dietary switch OFF: no dietary text, no marker, nothing that hints at a need',
     !/shellfish|allerg|dietary|\*/i.test(offText), offText.slice(0, 300));
-  check('Reservation sheet, dietary switch ON: the guest is marked with * and the need is written out',
-    /Shellfish allergy/.test(onText) && on.groups[0].tables.some((t) => t.rows.some((r) => / \*$/.test(r.name))) && on.groups[0].tables.at(-1).heading.startsWith('Dietary needs'));
-  check('...and the header says the file is for the restaurant only', /for the restaurant only/.test(on.updatedLine) && !/for the restaurant only/.test(off.updatedLine));
-  check('A guest with a need who is NOT booked at this restaurant never appears, switch on or off',
+  check('Evening sheet, dietary switch ON: the guest is marked with * and the need is written out',
+    /Shellfish allergy/.test(onText) && mine(on).tables.some((t) => t.rows.some((r) => / \*$/.test(r.name))) && mine(on).needs.length === 1);
+  check('...and the header says the file is for the restaurants only', /for the restaurants only/.test(on.updatedLine) && !/for the restaurants only/.test(off.updatedLine));
+  check('A guest with a need who is NOT booked that evening never appears, switch on or off',
     !onText.includes(bystander.dietary) && !offText.includes(bystander.dietary));
-  check('Special requests come first in a seating, then the confirmed tables',
-    on.groups[0].tables[0].detail === 'Special request' && on.groups[0].tables[1].detail === 'Confirmed');
-  check('A table shows its seats as "3 / 4"; a seating with no tables booked (21:00) is left out',
-    on.groups[0].tables[1].count === '3 / 4' && on.groups.length === 1 && on.groups[0].heading === '19:00 seating');
-  const wrapped = await buildListsPdf({ title: 'T', updatedLine: 'U', groups: [{ heading: null, tables: [{
-    heading: 'Dietary needs (*)', detail: null, count: '1', wrap: true,
-    rows: [{ id: '1', name: 'Example, Ada: Severe shellfish allergy, carries an EpiPen, no cross-contamination allowed' }] }] }] }).text();
+  check('Special requests come first in a block, then the confirmed tables',
+    mine(on).tables[0].special === true && mine(on).tables[1].special === false);
+  check('A block says the restaurant, the time and the number of people; a time nobody booked (21:00) has no block',
+    mine(on).count === 6 && mine(on).seating === '19:00' && on.blocks.filter((b) => b.restaurant === 'Sheet Test').length === 1);
+  check('The evening holds every restaurant with bookings at once (one export, never restaurant by restaurant)',
+    on.blocks.length >= 1 && on.blocks.every((b) => b.count > 0) && /restaurant reservations/.test(on.title));
+  const wrapped = await buildEveningPdf({ title: 'T', updatedLine: 'U', blocks: [{ restaurant: 'R', seating: '19:00', count: 1, tables: [{ special: false, rows: [{ id: '1', name: 'Example, Ada *' }] }],
+    needs: [{ id: '1', name: 'Example, Ada', text: 'Severe shellfish allergy, carries an EpiPen, no cross-contamination allowed' }] }] }).text();
   check('A long dietary need is written out in full in the PDF, wrapped over lines, never cut short with "…"',
     /cross-contamination/.test(wrapped) && /allowed/.test(wrapped)); // "allowed" is the last word: it is gone if the text was cut
-  const emptyR = (await applyChange(ctxR, trip.id, { type: 'add-restaurant', destinationId: lisbonR.id, name: 'Nobody Yet', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 10, maxTableSize: 4, tableSizes: [] })).entries[0].restaurantId;
-  check('A restaurant with nothing booked gives an empty sheet (the app then says so instead of exporting)',
-    reservationExportDoc(ctxR.state, ctxR.state.restaurants.find((r) => r.id === emptyR), eveR, 'Tester').groups.length === 0);
+  const many = { title: 'T', updatedLine: 'U', blocks: Array.from({ length: 12 }, (_, i) => ({ restaurant: `Restaurant ${i}`, seating: '19:00', count: 20,
+    tables: [{ special: false, rows: Array.from({ length: 20 }, (_, k) => ({ id: String(k), name: `Guest, Number ${k}` })) }] })) };
+  const manyPdf = await buildEveningPdf(many).text();
+  check('Many restaurants flow over several pages and nothing is lost', (manyPdf.match(/\/Type \/Page /g) ?? []).length >= 2 && /Restaurant 11/.test(manyPdf) && /Number 19/.test(manyPdf));
+  check('The Excel version is one flat sheet and opens as a file', (await buildEveningXlsx(on).arrayBuffer()).byteLength > 500);
+  const emptyDoc = eveningReservationDoc(ctxR.state, trip.destinations.find((d) => d.name !== 'Lisbon'), eveR, 'Tester');
+  check('An evening with nothing booked gives an empty sheet (the app then says so instead of exporting)', emptyDoc.blocks.length === 0);
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

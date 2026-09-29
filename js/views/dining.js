@@ -258,12 +258,15 @@ function confirmBooking(ctx, trip, slot, group, restaurant, seatingTime) {
 // ---------- "By table" grid (step 2b) ----------
 
 function byTablePage(ctx, trip, base, destination, slot, restaurants, restaurant, seatingParam) {
-  const restaurantStrip = strip(restaurants.map((r) => ({
-    label: r.name, href: `${base}/${destination.id}/${slot.id}/${r.id}`, active: r.id === restaurant.id,
-  })), true);
-
   const seatings = [...restaurant.seatings].sort();
   const seating = seatings.includes(seatingParam) ? seatingParam : seatings[0];
+
+  // Changing restaurant keeps the seating time being looked at (owner's request, 1 Oct 2026), so
+  // someone who wants the second service can just tap through the restaurants. A restaurant that does
+  // not offer that time opens on its own first seating instead.
+  const restaurantStrip = strip(restaurants.map((r) => ({
+    label: r.name, href: `${base}/${destination.id}/${slot.id}/${r.id}${r.seatings.includes(seating) ? `/${seating}` : ''}`, active: r.id === restaurant.id,
+  })), true);
   const seatingStrip = strip(seatings.map((s) => ({
     label: s, href: `${base}/${destination.id}/${slot.id}/${restaurant.id}/${s}`, active: s === seating,
   })), true);

@@ -189,12 +189,15 @@ function afterPick(ctx, trip, guest, slot, target, options = {}) {
   const yes = () => (everyoneFits ? saveChanges(ctx, trip, withParty.changes, withParty.done) : confirmMove(ctx, trip, guest, slot, target, movers));
   const no = () => (guestFits ? saveChanges(ctx, trip, alone.changes, alone.done) : confirmMove(ctx, trip, guest, slot, target, []));
 
+  // Taking someone off a dinner table says so in words ("remove"), since the party question is easy to
+  // mistake for something else when the destination is just "At leisure".
+  const leavingTable = guestPlace(trip, guest, slot).kind === 'dinner' && target.kind !== 'dinner';
   openSheet({
-    eyebrow: 'Travel party', title: 'Also move their travel party?',
+    eyebrow: 'Travel party', title: leavingTable ? 'Also remove their travel party from the table?' : 'Also move their travel party?',
     subtitle: `Move ${alone.who}${alone.from} to ${alone.to} · ${alone.detail}`,
     body: [
       roomNote ? notice(roomNote) : null,
-      h('button', { class: 'btn', type: 'button', onclick: yes }, `Yes, move ${moverNames} too`),
+      h('button', { class: 'btn', type: 'button', onclick: yes }, leavingTable ? `Yes, remove ${moverNames} too` : `Yes, move ${moverNames} too`),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: no }, `No, only ${alone.who}`),
     ],
     cancelDanger: true,

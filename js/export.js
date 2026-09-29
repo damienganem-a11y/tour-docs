@@ -12,8 +12,8 @@
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
 // (shareOrDownloadFile itself now lives in ui.js, shared with Settings > Backup.)
 
-import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf } from './pdf.js';
-import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx } from './xlsx.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
+import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment, formatWeekdayDate } from './time.js';
 import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural } from './rules.js';
 import { newId } from './ids.js';
@@ -22,8 +22,8 @@ import { showToast, shareOrDownloadFile } from './ui.js';
 // The two export formats: how to build each one's file, its extension and its MIME type (the
 // "kind of file" tag the share sheet and downloads use to recognise it).
 const FORMATS = {
-  pdf: { build: buildListsPdf, extension: 'pdf', mimeType: 'application/pdf', label: 'PDF' },
-  xlsx: { build: buildListsXlsx, extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', label: 'Excel' },
+  pdf: { build: buildListsPdf, buildEvening: buildEveningPdf, extension: 'pdf', mimeType: 'application/pdf', label: 'PDF' },
+  xlsx: { build: buildListsXlsx, buildEvening: buildEveningXlsx, extension: 'xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', label: 'Excel' },
 };
 
 // The row for one guest in an exported table: their ID (the code from the file they were loaded
@@ -84,50 +84,45 @@ export function destinationExportDoc(trip, destination, slot, updatedBy) {
   };
 }
 
-// The reservation sheet the local team of ONE restaurant gets for ONE evening: per seating, one table per
-// booking, Special requests first (they are the ones the team has to act on).
+// The reservation sheet for one WHOLE evening of a destination: every restaurant with a table that evening, one block per
+// restaurant and seating (name, time, number of people, then each guest's ID and name). Restaurants are never
+// exported one by one. Special requests are marked; blocks are sorted by restaurant, then time.
 // includeDietary (Phase 3, 30 Sep 2026, owner's decision): the ONE place dietary needs may leave the app.
 // Off by default and chosen again at every export. Off = no dietary text and not even a marker, so the
-// sheet gives no hint that anybody has a need. On = an asterisk after each affected guest plus a small
-// "Dietary needs" table naming them, and the header says the file is for the restaurant only.
-// (The file is never saved in the Exports archive when it carries dietary needs: see exportReservations.)
-export function reservationExportDoc(trip, restaurant, slot, updatedBy, { includeDietary = false } = {}) {
-  const destination = trip.destinations.find((d) => d.id === restaurant.destinationId);
-  const groups = [...restaurant.seatings].sort().map((seating) => {
-    const bookings = trip.dinnerBookings
-      .filter((b) => b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0)
-      .sort((a, b) => (a.status === 'special-request' ? 0 : 1) - (b.status === 'special-request' ? 0 : 1));
-    const withNeeds = [];
-    const tables = bookings.map((booking) => {
-      const guests = dinnerGuests(trip, booking).sort(byName);
-      const size = restaurant.mode === 'strict' && booking.tableIds.length > 0
-        ? restaurant.tables.find((t) => t.id === booking.tableIds[0])?.size ?? null : null;
-      const rows = guests.map((guest) => {
-        const hasNeed = includeDietary && Boolean(guest.dietary);
-        if (hasNeed) withNeeds.push(guest);
-        return { id: guest.ref, name: `${guest.last}, ${guest.first}${hasNeed ? ' *' : ''}` };
+// sheet gives no hint that anybody has a need. On = an asterisk after each affected guest plus their need written out
+// under the block, and the header says the file is for the restaurants only.
+// (The file is never saved in the Exports archive when it carries dietary needs: see exportEveningReservations.)
+export function eveningReservationDoc(trip, destination, slot, updatedBy, { includeDietary = false } = {}) {
+  const blocks = [];
+  const restaurants = trip.restaurants.filter((r) => r.destinationId === destination.id).sort((a, b) => a.name.localeCompare(b.name));
+  for (const restaurant of restaurants) {
+    for (const seating of [...restaurant.seatings].sort()) {
+      const bookings = trip.dinnerBookings
+        .filter((b) => b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0)
+        .sort((a, b) => (a.status === 'special-request' ? 0 : 1) - (b.status === 'special-request' ? 0 : 1));
+      if (bookings.length === 0) continue;
+      const needs = [];
+      let count = 0;
+      const tables = bookings.map((booking) => {
+        const guests = dinnerGuests(trip, booking).sort(byName);
+        count += guests.length;
+        return {
+          special: booking.status === 'special-request',
+          rows: guests.map((guest) => {
+            const hasNeed = includeDietary && Boolean(guest.dietary);
+            if (hasNeed) needs.push({ id: guest.ref, name: `${guest.last}, ${guest.first}`, text: guest.dietary });
+            return { id: guest.ref, name: `${guest.last}, ${guest.first}${hasNeed ? ' *' : ''}` };
+          }),
+        };
       });
-      return {
-        heading: size ? `Table for ${size}` : 'Table',
-        detail: booking.status === 'special-request' ? 'Special request' : 'Confirmed',
-        count: size ? capacityInfo(guests.length, size).text : String(guests.length),
-        rows,
-      };
-    });
-    if (withNeeds.length > 0) {
-      tables.push({
-        heading: 'Dietary needs (*)', detail: 'For the restaurant only', count: String(withNeeds.length), wrap: true,
-        rows: withNeeds.map((g) => ({ id: g.ref, name: `${g.last}, ${g.first}: ${g.dietary}` })),
-      });
+      blocks.push({ restaurant: restaurant.name, seating, count, tables, ...(needs.length > 0 ? { needs } : {}) });
     }
-    return { heading: `${seating} seating`, tables };
-  }).filter((group) => group.tables.length > 0);
-
+  }
   const stamp = `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${updatedBy}`;
   return {
-    title: `${restaurant.name} — Day ${slot.day} · ${slot.half}`,
-    updatedLine: includeDietary ? `${stamp} · Contains dietary information: for the restaurant only` : stamp,
-    groups,
+    title: `${destination.name} — Day ${slot.day} · ${slot.half}, restaurant reservations`,
+    updatedLine: includeDietary ? `${stamp} · Contains dietary information: for the restaurants only` : stamp,
+    blocks,
   };
 }
 
@@ -226,7 +221,7 @@ export function groupCards(trip, split) {
   for (const group of split.groups) {
     const members = activeGuestsOf(trip).filter((g) => split.assignments[g.id] === group.id).sort(byName);
     for (const party of partiesOf(members)) {
-      cards.push({ eyebrow: split.name, names: joinNames(party), title: group.name, titleSize: 34, subtitle: split.details, mates: [], matesLabel: '' }); // the group is what guests look for: big
+      cards.push({ eyebrow: split.name, names: joinNames(party), title: group.name, titleSize: 30, subtitle: split.details, mates: [], matesLabel: '' }); // the group is what guests look for: big
     }
   }
   return cards;
@@ -351,7 +346,7 @@ export async function exportAndShare(ctx, trip, doc, format, { archive = true } 
   const spec = FORMATS[format];
   let blob;
   try {
-    blob = spec.build(doc);
+    blob = doc.blocks ? spec.buildEvening(doc) : spec.build(doc); // an evening sheet has its own layout
   } catch {
     showToast(`Could not build the ${spec.label} file.`, true);
     return;
@@ -371,10 +366,10 @@ export async function exportAndShare(ctx, trip, doc, format, { archive = true } 
   if (!archive) showToast('Shared, not kept in the Exports archive: it contains dietary needs.');
 }
 
-// The reservation sheet of one restaurant for one evening (see reservationExportDoc).
-export async function exportReservations(ctx, trip, restaurant, slot, format, { includeDietary = false } = {}) {
-  const doc = reservationExportDoc(trip, restaurant, slot, ctx.owner?.name ?? 'the owner', { includeDietary });
-  if (doc.groups.length === 0) { showToast('No tables are booked at this restaurant that evening yet.', true); return; }
+// The reservation sheet of one whole evening, every restaurant at once (see eveningReservationDoc).
+export async function exportEveningReservations(ctx, trip, destination, slot, format, { includeDietary = false } = {}) {
+  const doc = eveningReservationDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner', { includeDietary });
+  if (doc.blocks.length === 0) { showToast('No tables are booked that evening yet.', true); return; }
   await exportAndShare(ctx, trip, doc, format, { archive: !includeDietary });
 }
 

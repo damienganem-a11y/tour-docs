@@ -369,6 +369,9 @@ async function start() {
     trackPush(pullSync()).catch(() => {});
   });
   window.addEventListener('offline', () => { if (state.owner) render({ keepScroll: true }); });
+  setInterval(refreshFromServer, REFRESH_EVERY_MS);
+  document.addEventListener('visibilitychange', refreshFromServer);
+  window.addEventListener('focus', refreshFromServer);
   render();
 
   // Phase 2: push this phone's own pending work first (step 2a's backfill), then pull whatever
@@ -476,8 +479,23 @@ async function pullOneTrip(tripId, serverChangeCount) {
     if (freshLocal && newEntries.length > 0 && location.hash.startsWith(`#/trip/${tripId}/`)) {
       showToast('Updated from your other phone');
     }
-    render({ keepScroll: true });
+    // A refresh that happens on its own must never wipe a sheet the owner is filling in: if one is open,
+    // the new data is already in place and simply shows at the next redraw.
+    if (!document.body.classList.contains('sheet-open')) render({ keepScroll: true });
   });
+}
+
+// Keeps this phone up to date with the owner's other devices without anyone asking (owner's request,
+// 1 Oct 2026): every 30 seconds while the app is on screen, and the moment it comes back to the front
+// (switching tab or app, unlocking the phone). Quiet on purpose: no sync-light flicker, and nothing is
+// redrawn unless a trip actually changed. One refresh at a time.
+const REFRESH_EVERY_MS = 30000;
+let refreshing = false;
+async function refreshFromServer() {
+  if (refreshing || !state.owner || hasSession === false || !navigator.onLine || document.visibilityState !== 'visible') return;
+  refreshing = true;
+  try { await backfillPush(); await pullSync(); } catch { /* the next refresh tries again */ }
+  refreshing = false;
 }
 
 // A deleted trip (Trips screen, step 9) is erased for good, together with its journal and exports,

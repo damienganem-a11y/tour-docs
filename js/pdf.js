@@ -143,21 +143,24 @@ function tilesFor(table, kind) {
 // A table marked `wrap: true` never cuts a row's text short with "…": what does not fit on one line
 // continues on further, unnumbered lines (`cont: true`). Used for dietary needs, where a cut-off word
 // ("Shellfis…") would be a safety problem, not just untidy. Every other table keeps one line per row.
+// A single word wider than the column is split into pieces that fit, never dropped or cut with "…".
+function breakToWidth(line, font, size, width) {
+  const parts = [];
+  let rest = line;
+  while (textWidth(rest, font, size) > width && rest.length > 1) {
+    let cut = rest.length - 1;
+    while (cut > 1 && textWidth(rest.slice(0, cut), font, size) > width) cut--;
+    parts.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  parts.push(rest);
+  return parts;
+}
+
 function wrappedRows(table, kind) {
   if (!table.wrap) return table.rows;
   const nameW = kind.tileWidth - kind.numColW - 8 - kind.idColW - 4;
-  const breakLong = (line) => { // a single word wider than the column is split, never dropped
-    const parts = [];
-    let rest = line;
-    while (textWidth(rest, FONT_REGULAR, CELL_SIZE) > nameW && rest.length > 1) {
-      let cut = rest.length - 1;
-      while (cut > 1 && textWidth(rest.slice(0, cut), FONT_REGULAR, CELL_SIZE) > nameW) cut--;
-      parts.push(rest.slice(0, cut));
-      rest = rest.slice(cut);
-    }
-    parts.push(rest);
-    return parts;
-  };
+  const breakLong = (line) => breakToWidth(line, FONT_REGULAR, CELL_SIZE, nameW);
   return table.rows.flatMap((row) => {
     const lines = wrapText(row.name, FONT_REGULAR, CELL_SIZE, nameW).flatMap(breakLong);
     return lines.map((line, i) => (i === 0 ? { ...row, name: line } : { id: '', name: line, cont: true }));
@@ -411,6 +414,102 @@ export function buildFinalTripPdf(toursDoc, guestsDoc) {
   return new Blob([serializePdf(pages)], { type: 'application/pdf' });
 }
 
+// ---------- The evening sheet: every restaurant of one evening, compact ----------
+//
+// The list the owner sends to the local team for a whole evening (SPEC.md, Phase 3 exports). Restaurants are
+// never exported one by one. Blocks are packed into columns down the page (5 across on A4 landscape), so
+// all the reservations of the evening fit on as few pages as possible. Column headings are left out ("ID" and
+// "Name" are obvious), which saves room. The doc looks like:
+//   { title, updatedLine, blocks: [ { restaurant, seating, count,
+//       tables: [ { special: true|false, rows: [ { id, name } ] } ],
+//       needs: [ { id, name, text } ] } ] }        needs only exist when the owner ticked "Include dietary needs"
+const EVENING_COLS = 5;
+const EVENING_GAP = 12;
+const EVENING_ROW_H = 10.5;
+const EVENING_SIZE = 8;
+const EVENING_HEAD_SIZE = 9.5;
+const EVENING_ID_W = 30;
+
+function layoutEvening(doc) {
+  const colW = (USABLE_WIDTH - EVENING_GAP * (EVENING_COLS - 1)) / EVENING_COLS;
+  const pages = [];
+  let page = [];
+  let col = 0;
+  let y = 0;
+  let top = 0; // where columns start on this page (below the title)
+
+  const text = (str, x, py, { font = FONT_REGULAR, size = EVENING_SIZE, gray = 0 } = {}) => page.push({ type: 'text', x, y: py, font, size, gray, text: str });
+  function startPage() {
+    if (page.length > 0) pages.push(page);
+    page = [];
+    y = PAGE_HEIGHT - MARGIN;
+    for (const line of wrapText(doc.title, FONT_BOLD, 12, USABLE_WIDTH)) { text(line, MARGIN, y - 10, { font: FONT_BOLD, size: 12 }); y -= 14; }
+    text(doc.updatedLine, MARGIN, y - 8, { size: 7.5, gray: 0.4 });
+    y -= 20;
+    top = y;
+    col = 0;
+  }
+  // Moves to the next column, or to a new page after the last one.
+  function nextColumn() {
+    col += 1;
+    if (col >= EVENING_COLS) startPage(); else y = top;
+  }
+  // Makes sure `lines` rows still fit in this column, otherwise starts the next one.
+  function needRoom(lines) {
+    if (y - lines * EVENING_ROW_H < MARGIN && y !== top) nextColumn();
+  }
+  const x = () => MARGIN + col * (colW + EVENING_GAP);
+
+  startPage();
+  for (const block of doc.blocks) {
+    const heading = (cont) => {
+      const title = `${block.restaurant}${cont ? ' (cont.)' : ''}`;
+      const lines = wrapText(title, FONT_BOLD, EVENING_HEAD_SIZE, colW);
+      for (const line of lines) { y -= EVENING_HEAD_SIZE + 2; text(line, x(), y, { font: FONT_BOLD, size: EVENING_HEAD_SIZE }); }
+      y -= EVENING_ROW_H;
+      text(`${block.seating}  ·  ${block.count} ${block.count === 1 ? 'person' : 'people'}`, x(), y, { font: FONT_BOLD, size: EVENING_SIZE, gray: 0.35 });
+      page.push({ type: 'rect', x: x(), y: y - 3, w: colW, h: 0.75, gray: 0.6 });
+      y -= 3;
+    };
+    // A block never starts with its heading alone at the bottom of a column.
+    needRoom(5);
+    heading(false);
+    const nameW = colW - EVENING_ID_W - 2;
+    for (const table of block.tables) {
+      y -= 3; // a little air between two tables of the same restaurant and time
+      if (table.special) { needRoom(2); y -= EVENING_ROW_H; text('Special request', x(), y, { font: FONT_BOLD, size: 7, gray: 0.35 }); }
+      for (const row of table.rows) {
+        const lines = wrapText(row.name, FONT_REGULAR, EVENING_SIZE, nameW).flatMap((l) => breakToWidth(l, FONT_REGULAR, EVENING_SIZE, nameW));
+        if (y - lines.length * EVENING_ROW_H < MARGIN) { nextColumn(); heading(true); }
+        lines.forEach((line, i) => {
+          y -= EVENING_ROW_H;
+          if (i === 0) text(row.id || '', x(), y);
+          text(line, x() + EVENING_ID_W, y);
+        });
+      }
+    }
+    if (block.needs?.length > 0) {
+      y -= 4;
+      needRoom(3);
+      y -= EVENING_ROW_H; text('* Dietary needs', x(), y, { font: FONT_BOLD, size: 7, gray: 0.35 });
+      for (const need of block.needs) {
+        const lines = wrapText(`${need.id} ${need.name}: ${need.text}`, FONT_REGULAR, 7, colW).flatMap((l) => breakToWidth(l, FONT_REGULAR, 7, colW));
+        for (const line of lines) {
+          if (y - 9 < MARGIN) { nextColumn(); heading(true); }
+          y -= 9; text(line, x(), y, { size: 7 });
+        }
+      }
+    }
+    y -= 10; // gap before the next restaurant
+  }
+  startPage(); // flush the last page
+  return pages;
+}
+
+export function buildEveningPdf(doc) {
+  return new Blob([serializePdf(layoutEvening(doc))], { type: 'application/pdf' });
+}
+
 // ---------- Confirmation cards (Phase 3 exports, 30 Sep 2026) ----------
 //
 // One card per travel party per table, six to an A4 portrait page (2 across, 3 down), each ready to cut
@@ -430,66 +529,73 @@ const CARD_ROWS = 3;
 const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
 const paler = (rgb, amount) => rgb.map((v) => 1 - (1 - v) * amount); // amount 0.12 = a very light wash of the colour
 
-function drawCard(items, card, brand, accent, logoImage, left, top, width, height) {
+// Lays one card out at `scale` (1 = the first, small version; the cards are then made as big as fit).
+// With `items` null nothing is drawn: it only measures. Returns how tall the content is.
+function layoutCard(items, card, brand, accent, logoImage, left, top, width, height, scale) {
+  const s = scale;
   const cx = left + width / 2;
-  const inner = width - 40;
-  let y = top - 24;
-  const bottom = top - height + 14;
+  const inner = width - 32;
+  let y = top;
+  const put = (item) => { if (items) items.push(item); };
 
   // Centres up to maxLines of text, moving y down as it goes.
   function centered(str, size, { font = FONT_REGULAR, gray = 0, rgb, maxLines = 2, gap = 1.25 } = {}) {
     for (const line of wrapText(str, font, size, inner).slice(0, maxLines)) {
-      items.push({ type: 'text', x: cx - textWidth(line, font, size) / 2, y, font, size, gray, rgb, text: line });
-      y -= size * gap;
+      y -= size * 0.8; // down to the baseline of this line
+      put({ type: 'text', x: cx - textWidth(line, font, size) / 2, y, font, size, gray, rgb, text: line });
+      y -= size * (gap - 0.8);
     }
   }
-
-  // The four thin lines around the card: cutting guides.
-  const guide = 0.85;
-  items.push({ type: 'rect', x: left, y: top - height, w: width, h: 0.5, gray: guide });
-  items.push({ type: 'rect', x: left, y: top - 0.5, w: width, h: 0.5, gray: guide });
-  items.push({ type: 'rect', x: left, y: top - height, w: 0.5, h: height, gray: guide });
-  items.push({ type: 'rect', x: left + width - 0.5, y: top - height, w: 0.5, h: height, gray: guide });
 
   if (logoImage) {
-    const scale = Math.min(130 / logoImage.width, 34 / logoImage.height);
-    const w = logoImage.width * scale, h = logoImage.height * scale;
-    items.push({ type: 'image', name: logoImage.name, x: cx - w / 2, y: y - h, w, h });
-    y -= h + 10;
+    const fit = Math.min((150 * s) / logoImage.width, (44 * s) / logoImage.height);
+    const w = logoImage.width * fit, h = logoImage.height * fit;
+    put({ type: 'image', name: logoImage.name, x: cx - w / 2, y: y - h, w, h });
+    y -= h + 10 * s;
   } else if (brand.companyName) {
-    centered(brand.companyName, 11, { font: FONT_BOLD, rgb: accent, maxLines: 1, gap: 1.6 });
+    centered(brand.companyName, 12 * s, { font: FONT_BOLD, rgb: accent, maxLines: 1, gap: 1.5 });
+    y -= 4 * s;
   }
 
-  centered(card.eyebrow.toUpperCase(), 6.5, { gray: 0.45, maxLines: 1, gap: 2 });
-  centered(card.names, 11, { font: FONT_BOLD });
-  y -= 2;
-  items.push({ type: 'rect', x: cx - 15, y, w: 30, h: 1.5, rgb: accent });
-  y -= 30; // room for the big restaurant name's tall letters below the line
-  centered(card.title, card.titleSize ?? 17, { font: FONT_BOLD, gap: 1.2 });
-  y -= 2;
-  if (card.subtitle) centered(card.subtitle, 12, { font: FONT_BOLD, maxLines: 2, gap: 1.4 });
+  centered(card.eyebrow.toUpperCase(), 7 * s, { gray: 0.45, maxLines: 1, gap: 1.6 });
+  y -= 2 * s;
+  centered(card.names, 13 * s, { font: FONT_BOLD });
+  y -= 8 * s;
+  put({ type: 'rect', x: cx - 18 * s, y, w: 36 * s, h: 2, rgb: accent });
+  y -= 14 * s;
+  centered(card.title, (card.titleSize ?? 20) * s, { font: FONT_BOLD, gap: 1.15 });
+  y -= 4 * s;
+  if (card.subtitle) centered(card.subtitle, 14 * s, { font: FONT_BOLD, maxLines: 2, gap: 1.3 });
 
   if (brand.cardNote) {
-    y -= 4;
-    const lines = wrapText(brand.cardNote, FONT_REGULAR, 7, inner - 16).slice(0, 3);
-    const boxHeight = lines.length * 9 + 10;
-    items.push({ type: 'rect', x: left + 20, y: y - boxHeight, w: inner, h: boxHeight, rgb: paler(accent, 0.12) });
-    items.push({ type: 'rect', x: left + 20, y: y - 1.5, w: inner, h: 1.5, rgb: accent });
-    let lineY = y - 12;
+    y -= 8 * s;
+    const size = 8.5 * s;
+    const lines = wrapText(brand.cardNote, FONT_REGULAR, size, inner - 16).slice(0, 4);
+    const boxHeight = lines.length * size * 1.25 + 14 * s;
+    put({ type: 'rect', x: left + 16, y: y - boxHeight, w: inner, h: boxHeight, rgb: paler(accent, 0.12) });
+    put({ type: 'rect', x: left + 16, y: y - 2, w: inner, h: 2, rgb: accent });
+    let lineY = y - 8 * s - size * 0.8;
     for (const line of lines) {
-      items.push({ type: 'text', x: cx - textWidth(line, FONT_REGULAR, 7) / 2, y: lineY, font: FONT_REGULAR, size: 7, gray: 0.15, text: line });
-      lineY -= 9;
+      put({ type: 'text', x: cx - textWidth(line, FONT_REGULAR, size) / 2, y: lineY, font: FONT_REGULAR, size, gray: 0.15, text: line });
+      lineY -= size * 1.25;
     }
-    y -= boxHeight + 10;
+    y -= boxHeight;
   }
 
-  if (card.mates.length > 0 && y - 20 > bottom) {
-    centered(card.matesLabel.toUpperCase(), 6, { gray: 0.5, maxLines: 1, gap: 1.8 });
-    for (const mate of card.mates) {
-      if (y < bottom) break; // never past the bottom edge of the card
-      centered(mate, 8, { maxLines: 1, gap: 1.3 });
-    }
+  if (card.mates.length > 0) {
+    y -= 12 * s;
+    centered(card.matesLabel.toUpperCase(), 7 * s, { gray: 0.5, maxLines: 1, gap: 1.6 });
+    for (const mate of card.mates) centered(mate, 10.5 * s, { maxLines: 1, gap: 1.3 });
   }
+  return top - y;
+}
+
+// The biggest size (1.0 to 2.0 times the small version) at which this card's content still fits.
+function biggestScaleFor(card, brand, accent, logoImage, width, height) {
+  for (let s = 2.0; s > 0.8; s -= 0.05) {
+    if (layoutCard(null, card, brand, accent, logoImage, 0, 0, width, height, s) <= height - 24) return s;
+  }
+  return 0.8;
 }
 
 // The accent colour as three 0-1 numbers, and the logo (if any) ready to embed, from a trip's branding.
@@ -507,13 +613,23 @@ export function buildCardsPdf(cards, brand = {}) {
   const cardWidth = (CARD_PAGE.width - CARD_MARGIN * 2) / CARD_COLS;
   const cardHeight = (CARD_PAGE.height - CARD_MARGIN * 2) / CARD_ROWS;
   const perPage = CARD_COLS * CARD_ROWS;
+  // ONE size for every card, so the page looks even: the biggest at which the fullest card still fits.
+  // Each card is then centred top to bottom in its own frame, so no card is left with a blank half.
+  const scale = cards.length === 0 ? 1 : Math.min(...cards.map((c) => biggestScaleFor(c, brand, accent, logoImage, cardWidth, cardHeight)));
   const pages = [];
   for (let start = 0; start < cards.length; start += perPage) {
     const items = [];
     cards.slice(start, start + perPage).forEach((card, i) => {
       const left = CARD_MARGIN + (i % CARD_COLS) * cardWidth;
       const top = CARD_PAGE.height - CARD_MARGIN - Math.floor(i / CARD_COLS) * cardHeight;
-      drawCard(items, card, brand, accent, logoImage, left, top, cardWidth, cardHeight);
+      // The four thin lines around the card: cutting guides.
+      const guide = 0.85;
+      items.push({ type: 'rect', x: left, y: top - cardHeight, w: cardWidth, h: 0.5, gray: guide });
+      items.push({ type: 'rect', x: left, y: top - 0.5, w: cardWidth, h: 0.5, gray: guide });
+      items.push({ type: 'rect', x: left, y: top - cardHeight, w: 0.5, h: cardHeight, gray: guide });
+      items.push({ type: 'rect', x: left + cardWidth - 0.5, y: top - cardHeight, w: 0.5, h: cardHeight, gray: guide });
+      const used = layoutCard(null, card, brand, accent, logoImage, left, top, cardWidth, cardHeight, scale);
+      layoutCard(items, card, brand, accent, logoImage, left, top - Math.max(0, (cardHeight - used) / 2), cardWidth, cardHeight, scale);
     });
     pages.push(items);
   }
