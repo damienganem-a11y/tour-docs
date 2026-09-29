@@ -69,7 +69,7 @@ function syncDetailsSheet(ctx) {
     box.replaceChildren(
       h('p', { class: `sync-details-headline${result.ok ? '' : ' is-problem'}` }, result.headline),
       ...result.lines.map((line) => h('p', { class: 'muted' }, line)),
-      result.needsSignIn ? h('button', { class: 'btn', type: 'button', onclick: () => openOnlineSignIn(ctx) }, 'Sign in online') : null);
+      ...(result.needsSignIn ? [h('button', { class: 'btn', type: 'button', onclick: () => openOnlineSignIn(ctx) }, 'Sign in online')] : []));
   });
 }
 
