@@ -44,6 +44,8 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // Does this browser hold a live online login? true / false, or null while unknown (not checked yet, or
 // offline so it cannot be checked). Only `false` changes what the sync light says (see syncStatus).
 let hasSession = null;
+let biometricAsking = null;      // the Face ID request in progress, if any (see unlockWithBiometric)
+let autoBiometricAsked = false;  // has the lock screen already popped Face ID up by itself this time?
 // The company look every new trip starts with (Trips > My company), or null: kept on this device only.
 let companyLook = null;
 let companyLookAsked = false; // the load-time prompt is shown once per device, whether it was saved or skipped
@@ -170,11 +172,23 @@ const ctx = {
   get biometricOn() { return biometrics.biometricRegistered(); },
   async enableBiometric() { await biometrics.enableBiometric(); render(); },
   disableBiometric() { biometrics.disableBiometric(); render(); },
-  async unlockWithBiometric() {
-    if (!(await biometrics.tryBiometricUnlock())) return false;
-    state.locked = false;
-    render();
-    return true;
+  // Only ONE Face ID window at a time, and the automatic one only once per opening of the app: the lock screen is
+  // redrawn whenever anything in the background updates (syncing, refreshing), and each redraw used to ask again
+  // (owner saw four windows in a row, 1 Oct 2026). The button on the screen can always ask again by hand.
+  unlockWithBiometric() {
+    biometricAsking ??= biometrics.tryBiometricUnlock().then((ok) => {
+      biometricAsking = null;
+      if (!ok) return false;
+      state.locked = false;
+      render();
+      return true;
+    });
+    return biometricAsking;
+  },
+  takeAutoBiometricTurn() { // true the first time only
+    const first = !autoBiometricAsked;
+    autoBiometricAsked = true;
+    return first;
   },
 
   // Save the owner (asked once, on first launch — see welcome.js) and show the app. id is normally

@@ -45,7 +45,9 @@ export function passcodeView(ctx) {
     checking = false;
     if (!ok) fail('Face ID / Touch ID did not work. Enter the access code below instead.');
   }
-  requestAnimationFrame(tryFaceId); // most people expect the prompt to pop up on its own, not to tap first
+  // Most people expect the prompt to pop up on its own, not to tap first. Only the first time the lock screen appears:
+  // this screen is rebuilt on every redraw, and each rebuild used to open another Face ID window.
+  if (ctx.takeAutoBiometricTurn()) requestAnimationFrame(tryFaceId);
 
   return {
     node: h('div', { class: 'screen' },

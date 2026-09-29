@@ -15,6 +15,7 @@ import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnlock } from './biometrics.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
+import { passcodeView } from './views/passcode.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
@@ -1840,6 +1841,15 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
     biometricRegistered() === false && biometricLockOn() === false);
   check('With nothing registered, tryBiometricUnlock returns false straight away, without ever asking the phone',
     (await tryBiometricUnlock()) === false);
+
+  // The lock screen is redrawn whenever something updates in the background: it must ask for Face ID only once.
+  {
+    let asked = 0, turn = true;
+    const lockCtx = { biometricOn: true, unlockWithBiometric: async () => { asked += 1; return false; }, takeAutoBiometricTurn: () => { const t = turn; turn = false; return t; } };
+    passcodeView(lockCtx); passcodeView(lockCtx); passcodeView(lockCtx); // three redraws
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    check('Redrawing the lock screen three times opens Face ID only once (it used to open one window per redraw)', asked === 1, `asked ${asked} times`);
+  }
 
   try { localStorage.setItem('tourdocs.biometricCredentialId', 'fake-credential-id-for-tests'); } catch { /* storage blocked: the reads below correctly stay false too */ }
   check('biometricRegistered reads true once a credential id is on the phone', biometricRegistered() === true);
