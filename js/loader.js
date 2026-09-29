@@ -39,6 +39,14 @@ function need(condition, message) {
 
 const isText = (value) => typeof value === 'string' && value.trim() !== '';
 
+// The look of the printed confirmation cards (Phase 3 exports, 30 Sep 2026): the company's own name,
+// logo (a small JPEG kept right here as a data URL, so it syncs and duplicates with the trip), accent
+// colour, and an optional note printed on every card. Nothing about it is fixed in the code: a new trip
+// starts neutral and the owner fills it in under Settings > Brand.
+export function defaultBranding() {
+  return { companyName: '', accent: '#1d5c57', cardNote: '', logo: null };
+}
+
 export function buildTrip(raw) {
   need(raw && typeof raw === 'object' && raw.trip && Array.isArray(raw.destinations) && Array.isArray(raw.guests)
     && Array.isArray(raw.slots) && raw.signups && typeof raw.signups === 'object',
@@ -172,6 +180,7 @@ export function buildTrip(raw) {
     vehicleLabel: raw.trip.vehicle_label ?? 'V',   // what vehicles are called: V1, V2...
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
+    branding: defaultBranding(),                    // Settings > Brand: the look of the confirmation cards
     restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
     dinnerBookings: [],                             // Phase 3 step 2a: tables, booked one at a time in Use > Dining
     rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)

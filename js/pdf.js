@@ -309,12 +309,19 @@ function winAnsiBytes(text) {
 
 function buildContentStream(items) {
   const out = new ByteWriter();
+  // An item is grey (`gray`, 0 to 1, what every list export uses) or coloured (`rgb`, three numbers 0 to 1,
+  // used by the confirmation cards' accent colour).
+  const fill = (item) => (item.rgb ? `${item.rgb.map((v) => v.toFixed(3)).join(' ')} rg\n` : `${item.gray} g\n`);
   for (const item of items) {
-    if (item.type === 'rect') {
-      out.ascii(`${item.gray} g\n${item.x.toFixed(2)} ${item.y.toFixed(2)} ${item.w.toFixed(2)} ${item.h.toFixed(2)} re\nf\n`);
+    if (item.type === 'image') {
+      out.ascii(`q\n${item.w.toFixed(2)} 0 0 ${item.h.toFixed(2)} ${item.x.toFixed(2)} ${item.y.toFixed(2)} cm\n/${item.name} Do\nQ\n`);
       continue;
     }
-    out.ascii(`${item.gray} g\n`);
+    if (item.type === 'rect') {
+      out.ascii(`${fill(item)}${item.x.toFixed(2)} ${item.y.toFixed(2)} ${item.w.toFixed(2)} ${item.h.toFixed(2)} re\nf\n`);
+      continue;
+    }
+    out.ascii(fill(item));
     out.ascii('BT\n');
     out.ascii(`/${item.font.resourceName} ${item.size} Tf\n`);
     out.ascii(`1 0 0 1 ${item.x.toFixed(2)} ${item.y.toFixed(2)} Tm\n(`);
@@ -327,13 +334,16 @@ function buildContentStream(items) {
 // Turns pages of drawing instructions (from layoutPages) into the bytes of an actual .pdf file: a
 // short list of numbered "objects" (the catalog, the page list, one page and one content stream per
 // page, and the two fonts), followed by an index ("xref") telling a reader exactly where each starts.
-function serializePdf(pages) {
+// options.width/height: the page size (A4 landscape for the lists, A4 portrait for the cards).
+// options.images: JPEG pictures to embed, each { name: 'Im1', bytes, width, height }, drawn by name.
+function serializePdf(pages, { width = PAGE_WIDTH, height = PAGE_HEIGHT, images = [] } = {}) {
   const nPages = pages.length;
   const pagesObj = 2;
   const firstPageObj = 3;                     // page i -> firstPageObj + i*2, its content -> +1
   const fontRegularObj = firstPageObj + nPages * 2;
   const fontBoldObj = fontRegularObj + 1;
-  const lastObj = fontBoldObj;
+  const firstImageObj = fontBoldObj + 1;
+  const lastObj = fontBoldObj + images.length;
 
   const out = new ByteWriter();
   const offsetOf = new Array(lastObj + 1);
@@ -352,20 +362,30 @@ function serializePdf(pages) {
   const kids = pages.map((_, i) => `${firstPageObj + i * 2} 0 R`).join(' ');
   object(pagesObj, () => out.ascii(`<< /Type /Pages /Kids [${kids}] /Count ${nPages} >>`));
 
+  const imageResources = images.length > 0
+    ? ` /XObject << ${images.map((img, i) => `/${img.name} ${firstImageObj + i} 0 R`).join(' ')} >>` : '';
+
   pages.forEach((items, i) => {
     const pageObj = firstPageObj + i * 2;
     const contentObj = pageObj + 1;
     const content = buildContentStream(items);
 
     object(pageObj, () => out.ascii(
-      `<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] `
-      + `/Resources << /Font << /F1 ${fontRegularObj} 0 R /F2 ${fontBoldObj} 0 R >> >> /Contents ${contentObj} 0 R >>`
+      `<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${width} ${height}] `
+      + `/Resources << /Font << /F1 ${fontRegularObj} 0 R /F2 ${fontBoldObj} 0 R >>${imageResources} >> /Contents ${contentObj} 0 R >>`
     ));
     object(contentObj, () => { out.ascii(`<< /Length ${content.length} >>\nstream\n`); out.append(content); out.ascii('\nendstream'); });
   });
 
   object(fontRegularObj, () => out.ascii(`<< /Type /Font /Subtype /Type1 /BaseFont /${FONT_REGULAR.baseFont} /Encoding /WinAnsiEncoding >>`));
   object(fontBoldObj, () => out.ascii(`<< /Type /Font /Subtype /Type1 /BaseFont /${FONT_BOLD.baseFont} /Encoding /WinAnsiEncoding >>`));
+
+  // A JPEG is embedded as it is (the PDF format reads JPEG natively: "DCTDecode"), so no picture code is needed.
+  images.forEach((img, i) => object(firstImageObj + i, () => {
+    out.ascii(`<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.bytes.length} >>\nstream\n`);
+    out.raw(img.bytes);
+    out.ascii('\nendstream');
+  }));
 
   const xrefOffset = out.length;
   out.ascii(`xref\n0 ${lastObj + 1}\n0000000000 65535 f \n`);
@@ -389,4 +409,108 @@ export function buildListsPdf(doc) {
 export function buildFinalTripPdf(toursDoc, guestsDoc) {
   const pages = [...layoutPages(toursDoc, ACTIVITY_TILE), ...layoutPages(guestsDoc, GUEST_TILE)];
   return new Blob([serializePdf(pages)], { type: 'application/pdf' });
+}
+
+// ---------- Confirmation cards (Phase 3 exports, 30 Sep 2026) ----------
+//
+// One card per travel party per table, six to an A4 portrait page (2 across, 3 down), each ready to cut
+// out and hand to the guests. Every card is the same fixed template; only what is written on it changes:
+//   card  { eyebrow, names, restaurant, time, tablemates: [text, ...] }   (built by export.js)
+//   brand { companyName, accent, cardNote, logo: { data, width, height } | null }   (Settings > Brand)
+// Cards never carry dietary information (CLAUDE.md), and nothing here is specific to one company: the
+// name, logo, colour and note all come from `brand`.
+
+const CARD_PAGE = { width: 595, height: 842 };
+const CARD_MARGIN = 28;
+const CARD_COLS = 2;
+const CARD_ROWS = 3;
+
+const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+const paler = (rgb, amount) => rgb.map((v) => 1 - (1 - v) * amount); // amount 0.12 = a very light wash of the colour
+
+function drawCard(items, card, brand, accent, logoImage, left, top, width, height) {
+  const cx = left + width / 2;
+  const inner = width - 40;
+  let y = top - 24;
+  const bottom = top - height + 14;
+
+  // Centres up to maxLines of text, moving y down as it goes.
+  function centered(str, size, { font = FONT_REGULAR, gray = 0, rgb, maxLines = 2, gap = 1.25 } = {}) {
+    for (const line of wrapText(str, font, size, inner).slice(0, maxLines)) {
+      items.push({ type: 'text', x: cx - textWidth(line, font, size) / 2, y, font, size, gray, rgb, text: line });
+      y -= size * gap;
+    }
+  }
+
+  // The four thin lines around the card: cutting guides.
+  const guide = 0.85;
+  items.push({ type: 'rect', x: left, y: top - height, w: width, h: 0.5, gray: guide });
+  items.push({ type: 'rect', x: left, y: top - 0.5, w: width, h: 0.5, gray: guide });
+  items.push({ type: 'rect', x: left, y: top - height, w: 0.5, h: height, gray: guide });
+  items.push({ type: 'rect', x: left + width - 0.5, y: top - height, w: 0.5, h: height, gray: guide });
+
+  if (logoImage) {
+    const scale = Math.min(130 / logoImage.width, 34 / logoImage.height);
+    const w = logoImage.width * scale, h = logoImage.height * scale;
+    items.push({ type: 'image', name: logoImage.name, x: cx - w / 2, y: y - h, w, h });
+    y -= h + 10;
+  } else if (brand.companyName) {
+    centered(brand.companyName, 11, { font: FONT_BOLD, rgb: accent, maxLines: 1, gap: 1.6 });
+  }
+
+  centered(card.eyebrow.toUpperCase(), 6.5, { gray: 0.45, maxLines: 1, gap: 2 });
+  centered(card.names, 11, { font: FONT_BOLD });
+  y -= 2;
+  items.push({ type: 'rect', x: cx - 15, y, w: 30, h: 1.5, rgb: accent });
+  y -= 30; // room for the big restaurant name's tall letters below the line
+  centered(card.restaurant, 17, { font: FONT_BOLD, gap: 1.2 });
+  y -= 2;
+  centered(card.time, 12, { font: FONT_BOLD, maxLines: 1, gap: 1.6 });
+
+  if (brand.cardNote) {
+    y -= 4;
+    const lines = wrapText(brand.cardNote, FONT_REGULAR, 7, inner - 16).slice(0, 3);
+    const boxHeight = lines.length * 9 + 10;
+    items.push({ type: 'rect', x: left + 20, y: y - boxHeight, w: inner, h: boxHeight, rgb: paler(accent, 0.12) });
+    items.push({ type: 'rect', x: left + 20, y: y - 1.5, w: inner, h: 1.5, rgb: accent });
+    let lineY = y - 12;
+    for (const line of lines) {
+      items.push({ type: 'text', x: cx - textWidth(line, FONT_REGULAR, 7) / 2, y: lineY, font: FONT_REGULAR, size: 7, gray: 0.15, text: line });
+      lineY -= 9;
+    }
+    y -= boxHeight + 10;
+  }
+
+  if (card.tablemates.length > 0 && y - 20 > bottom) {
+    centered('AT YOUR TABLE', 6, { gray: 0.5, maxLines: 1, gap: 1.8 });
+    for (const mate of card.tablemates) {
+      if (y < bottom) break; // never past the bottom edge of the card
+      centered(mate, 8, { maxLines: 1, gap: 1.3 });
+    }
+  }
+}
+
+export function buildCardsPdf(cards, brand = {}) {
+  const accent = hexToRgb(/^#[0-9a-f]{6}$/i.test(brand.accent ?? '') ? brand.accent : '#1d5c57');
+  let logoImage = null;
+  if (brand.logo) {
+    const binary = atob(brand.logo.data.split(',')[1]);
+    logoImage = { name: 'Im1', bytes: Uint8Array.from(binary, (c) => c.charCodeAt(0)), width: brand.logo.width, height: brand.logo.height };
+  }
+
+  const cardWidth = (CARD_PAGE.width - CARD_MARGIN * 2) / CARD_COLS;
+  const cardHeight = (CARD_PAGE.height - CARD_MARGIN * 2) / CARD_ROWS;
+  const perPage = CARD_COLS * CARD_ROWS;
+  const pages = [];
+  for (let start = 0; start < cards.length; start += perPage) {
+    const items = [];
+    cards.slice(start, start + perPage).forEach((card, i) => {
+      const left = CARD_MARGIN + (i % CARD_COLS) * cardWidth;
+      const top = CARD_PAGE.height - CARD_MARGIN - Math.floor(i / CARD_COLS) * cardHeight;
+      drawCard(items, card, brand, accent, logoImage, left, top, cardWidth, cardHeight);
+    });
+    pages.push(items);
+  }
+  const bytes = serializePdf(pages, { width: CARD_PAGE.width, height: CARD_PAGE.height, images: logoImage ? [logoImage] : [] });
+  return new Blob([bytes], { type: 'application/pdf' });
 }

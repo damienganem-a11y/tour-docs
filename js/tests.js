@@ -9,7 +9,7 @@ import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow } from './time.js';
-import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, waitlistOrder, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE } from './journal.js';
+import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, waitlistOrder, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE, BRANDING_UNDO_SCOPE } from './journal.js';
 import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
 import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
@@ -17,9 +17,9 @@ import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnl
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
-import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
-import { destinationExportDoc, reservationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
+import { destinationExportDoc, reservationExportDoc, confirmationCards, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
@@ -2500,6 +2500,66 @@ function readZip(bytes) {
   const emptyR = (await applyChange(ctxR, trip.id, { type: 'add-restaurant', destinationId: lisbonR.id, name: 'Nobody Yet', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 10, maxTableSize: 4, tableSizes: [] })).entries[0].restaurantId;
   check('A restaurant with nothing booked gives an empty sheet (the app then says so instead of exporting)',
     reservationExportDoc(ctxR.state, ctxR.state.restaurants.find((r) => r.id === emptyR), eveR, 'Tester').groups.length === 0);
+}
+
+// --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---
+{
+  const ctxBr = makeCtx();
+  const jpeg = (() => { const c = document.createElement('canvas'); c.width = 40; c.height = 20; c.getContext('2d').fillRect(0, 0, 40, 20); return { data: c.toDataURL('image/jpeg', 0.8), width: 40, height: 20 }; })();
+  const brand = { type: 'set-branding', companyName: ' Sample Travel Co ', accent: '#B4530F', cardNote: 'Meet in the lobby.', logo: jpeg };
+  const before = structuredClone(ctxBr.state.branding);
+  const saved = await applyChange(ctxBr, trip.id, brand);
+  check('A new trip starts with neutral branding (no company, no logo)', before.companyName === '' && before.logo === null && /^#[0-9a-f]{6}$/.test(before.accent));
+  check('Saving the branding trims the name, lowercases the colour and keeps the logo',
+    saved.ok && ctxBr.state.branding.companyName === 'Sample Travel Co' && ctxBr.state.branding.accent === '#b4530f' && ctxBr.state.branding.logo.data === jpeg.data);
+  check('The journal line names what changed, and never anything about guests',
+    summarize(groupBatches(saved.entries)[0]) === 'Changed the card branding: company name, logo, colour, card note');
+  check('Refused: a colour that is not #rrggbb, a name over 60 letters, a note over 200, a logo that is not a small JPEG',
+    !(await applyChange(ctxBr, trip.id, { ...brand, accent: 'red' })).ok
+    && !(await applyChange(ctxBr, trip.id, { ...brand, companyName: 'x'.repeat(61) })).ok
+    && !(await applyChange(ctxBr, trip.id, { ...brand, cardNote: 'x'.repeat(201) })).ok
+    && !(await applyChange(ctxBr, trip.id, { ...brand, logo: { data: 'data:image/png;base64,AAAA', width: 10, height: 10 } })).ok
+    && !(await applyChange(ctxBr, trip.id, { ...brand, logo: { data: jpeg.data, width: 0, height: 10 } })).ok);
+  check('Only the owner can change the branding', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, brand)).ok);
+  const undone = await applyChange(ctxBr, trip.id, { type: 'undo', scope: BRANDING_UNDO_SCOPE });
+  check('Undo puts the previous branding back exactly', undone.ok && JSON.stringify(ctxBr.state.branding) === JSON.stringify(before));
+  await applyChange(ctxBr, trip.id, brand);
+  await applyChange(ctxBr, trip.id, { ...brand, companyName: 'Other' });
+  await applyChange(ctxBr, trip.id, { type: 'undo', scope: BRANDING_UNDO_SCOPE }); // undoes 'Other'
+  await applyChange(ctxBr, trip.id, { ...brand, accent: '#000000' });
+  const stale = await applyChange(ctxBr, trip.id, { type: 'undo', scope: BRANDING_UNDO_SCOPE });
+  check('Undo works repeatedly, one branding change at a time', stale.ok);
+
+  // --- The cards: filled in from the bookings ---
+  const ctxC = makeCtx();
+  const lisbonC = trip.destinations.find((d) => d.name === 'Lisbon');
+  const eveC = slot('S04');
+  const rC = (await applyChange(ctxC, trip.id, { type: 'add-restaurant', destinationId: lisbonC.id, name: 'Card Test', seatings: ['19:00', '20:30'], mode: 'flexible', seatsPerSeating: 40, maxTableSize: 8, tableSizes: [] })).entries[0].restaurantId;
+  const parties = new Map();
+  for (const g of trip.guests) if (!g.dietary && g.partyId) parties.set(g.partyId, [...(parties.get(g.partyId) ?? []), g]);
+  const pairs = [...parties.values()].filter((m) => m.length === 2);
+  const solo = guest('G034'); // has a shellfish allergy: it must never reach a card
+  await applyChange(ctxC, trip.id, { type: 'book-dinner', slotId: eveC.id, restaurantId: rC, seating: '19:00', guestIds: [...pairs[0], solo].map((g) => g.id) });
+  await applyChange(ctxC, trip.id, { type: 'book-dinner', slotId: eveC.id, restaurantId: rC, seating: '20:30', guestIds: pairs[1].map((g) => g.id) });
+  const cards = confirmationCards(ctxC.state, lisbonC, eveC);
+  const nameOf2 = (g) => `${g.first} ${g.last}`;
+  const soloCard = cards.find((c) => c.names === nameOf2(solo));
+  const pairCard = cards.find((c) => c.names.includes(nameOf2(pairs[0][0])));
+  check('One card per travel party per table: a pair and a solo at one table, another pair at a second table = 3 cards', cards.length === 3);
+  check('A pair\'s card names both of them joined with " & ", the restaurant and the seating time',
+    pairCard.names === `${nameOf2(pairs[0][0])} & ${nameOf2(pairs[0][1])}` || pairCard.names === `${nameOf2(pairs[0][1])} & ${nameOf2(pairs[0][0])}`);
+  check('"At your table" lists the OTHER parties only, never the guest themselves',
+    pairCard.tablemates.length === 1 && pairCard.tablemates[0] === nameOf2(solo) && soloCard.tablemates.length === 1 && !soloCard.tablemates[0].includes(nameOf2(solo)));
+  check('Cards carry the restaurant, the seating time and "Destination · Day date"',
+    pairCard.restaurant === 'Card Test' && pairCard.time === '19:00' && cards.some((c) => c.time === '20:30') && /^Lisbon · \w{3} \d+ \w{3}$/.test(pairCard.eyebrow), pairCard.eyebrow);
+  check('A card never contains dietary information (the guest has a shellfish allergy)', !/shellfish|allerg|dietary/i.test(JSON.stringify(cards)));
+  check('An evening with no tables booked gives no cards', confirmationCards(ctxBr.state, lisbonC, eveC).length === 0);
+
+  // --- The PDF ---
+  const withLogo = await buildCardsPdf(cards.concat(cards, cards.slice(0, 1)), { ...ctxBr.state.branding, logo: jpeg }).text(); // 7 cards
+  const noLogo = await buildCardsPdf(cards, { companyName: 'Sample Travel Co', accent: '#b4530f', cardNote: '', logo: null }).text();
+  check('Cards are six to an A4 page: 7 cards make 2 pages', (withLogo.match(/\/Type \/Page \/Parent/g) ?? []).length === 2 && (noLogo.match(/\/Type \/Page \/Parent/g) ?? []).length === 1);
+  check('The logo is embedded as a picture only when there is one', /DCTDecode/.test(withLogo) && !/DCTDecode/.test(noLogo));
 }
 
 // --- Show the results ---

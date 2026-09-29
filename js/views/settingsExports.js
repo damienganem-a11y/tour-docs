@@ -5,10 +5,10 @@
 
 import { h } from '../dom.js';
 import { pageHead, exportFormatSheet } from './chrome.js';
-import { openSheet } from '../ui.js';
+import { openSheet, closeSheet } from '../ui.js';
 import { choiceRow } from './move.js';
-import { bySlotOrder, slotLabel } from '../rules.js';
-import { shareSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportReservations } from '../export.js';
+import { bySlotOrder, slotLabel, dinnerCountIn } from '../rules.js';
+import { shareSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportReservations, exportConfirmationCards } from '../export.js';
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
@@ -37,6 +37,9 @@ export function exportsSettingsPage(ctx, trip) {
     onclick: () => pickRestaurant(ctx, trip),
   }, 'Export a restaurant’s reservations');
 
+  const hasTables = trip.dinnerBookings.some((b) => dinnerCountIn(trip, b) > 0);
+  const cardsButton = h('button', { class: 'btn', type: 'button', onclick: () => pickCardsEvening(ctx, trip) }, 'Export confirmation cards');
+
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
@@ -47,6 +50,8 @@ export function exportsSettingsPage(ctx, trip) {
     finalExportButton,
     h('p', { class: 'muted count-line' }, 'Every tour’s guest list, and every guest’s own whole trip, in one file.'),
     destinationExportButton,
+    hasTables ? cardsButton : null,
+    hasTables ? h('p', { class: 'muted count-line' }, 'One card per travel party and table, filled in from the bookings. The logo and colour come from Settings > Brand.') : null,
     trip.restaurants.length > 0 ? reservationButton : null,
     trip.restaurants.length > 0 ? h('p', { class: 'muted count-line' }, 'The list a restaurant needs for one evening, with an option to include dietary needs.') : null,
     records.length === 0
@@ -81,6 +86,28 @@ function runExport(ctx, trip, destination, slot) {
     await exportAndShare(ctx, trip, doc, format);
     busy = false;
     ctx.refresh();
+  });
+}
+
+// Confirmation cards: pick the evening, and the PDF is built and shared straight away (one tap).
+function pickCardsEvening(ctx, trip) {
+  const evenings = trip.slots
+    .filter((s) => trip.dinnerBookings.some((b) => b.slotId === s.id && dinnerCountIn(trip, b) > 0))
+    .sort(bySlotOrder);
+  openSheet({
+    eyebrow: 'Exports archive', title: 'Cards for which evening?',
+    body: evenings.map((s) => choiceRow({
+      title: slotLabel(trip, s),
+      onclick: async () => {
+        closeSheet();
+        if (busy) return;
+        busy = true;
+        await exportConfirmationCards(ctx, trip, trip.destinations.find((d) => d.id === s.destinationId), s);
+        busy = false;
+        ctx.refresh();
+      },
+    })),
+    cancelLabel: 'Cancel',
   });
 }
 

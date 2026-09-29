@@ -12,9 +12,9 @@
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
 // (shareOrDownloadFile itself now lives in ui.js, shared with Settings > Backup.)
 
-import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
-import { formatTime, formatFullMoment } from './time.js';
+import { formatTime, formatFullMoment, formatWeekdayDate } from './time.js';
 import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests } from './rules.js';
 import { newId } from './ids.js';
 import { showToast, shareOrDownloadFile } from './ui.js';
@@ -129,6 +129,62 @@ export function reservationExportDoc(trip, restaurant, slot, updatedBy, { includ
     updatedLine: includeDietary ? `${stamp} · Contains dietary information: for the restaurant only` : stamp,
     groups,
   };
+}
+
+// ---------- Confirmation cards ----------
+// One card per travel party per table, for one evening. The data is filled in from the bookings, so
+// the owner never types a restaurant, a name or a time: they are already in the app. A party that is
+// split across two tables gets one card per table, naming only the members seated there.
+// Never reads guest.dietary: cards are handed to guests, and dietary needs never go on them (CLAUDE.md).
+
+const fullName = (guest) => `${guest.first} ${guest.last}`;
+// "Ada Example & Ben Sample", or "Ada Example, Ben Sample & Cleo Demo" for three or more.
+const joinNames = (guests) => (guests.length <= 2
+  ? guests.map(fullName).join(' & ')
+  : `${guests.slice(0, -1).map(fullName).join(', ')} & ${fullName(guests.at(-1))}`);
+
+export function confirmationCards(trip, destination, slot) {
+  const bookings = trip.dinnerBookings
+    .filter((b) => b.slotId === slot.id && dinnerCountIn(trip, b) > 0)
+    .map((booking) => ({ booking, restaurant: trip.restaurants.find((r) => r.id === booking.restaurantId), guests: dinnerGuests(trip, booking).sort(byName) }))
+    .filter((entry) => entry.restaurant)
+    .sort((a, b) => a.restaurant.name.localeCompare(b.restaurant.name) || a.booking.seating.localeCompare(b.booking.seating) || byName(a.guests[0], b.guests[0]));
+
+  const eyebrow = `${destination.name} · ${formatWeekdayDate(slot.date)}`;
+  const cards = [];
+  for (const { booking, restaurant, guests } of bookings) {
+    const parties = new Map(); // a guest with no travel party is a party of one
+    for (const guest of guests) parties.set(guest.partyId ?? guest.id, [...(parties.get(guest.partyId ?? guest.id) ?? []), guest]);
+    const groups = [...parties.values()];
+    groups.forEach((group, i) => cards.push({
+      eyebrow, names: joinNames(group), restaurant: restaurant.name, time: booking.seating,
+      tablemates: groups.filter((_, j) => j !== i).map(joinNames),
+    }));
+  }
+  return cards;
+}
+
+// One tap after choosing the evening: builds the cards PDF, saves it in the Exports archive (it holds no
+// dietary information, so it is safe to keep), and shares it.
+export async function exportConfirmationCards(ctx, trip, destination, slot) {
+  const cards = confirmationCards(trip, destination, slot);
+  if (cards.length === 0) { showToast('No tables are booked that evening yet.', true); return; }
+  let blob;
+  try {
+    blob = buildCardsPdf(cards, trip.branding ?? {});
+  } catch {
+    showToast('Could not build the cards file.', true);
+    return;
+  }
+  const title = `Confirmation cards — ${destination.name} · Day ${slot.day}`;
+  const updatedLine = `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${ctx.owner?.name ?? 'the owner'}`;
+  const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title), updatedLine, createdAt: new Date().toISOString(), format: 'pdf', blob };
+  try {
+    await ctx.saveExport(trip.id, record);
+  } catch {
+    showToast('Could not save this export to the archive, but sharing it anyway.', true);
+  }
+  await shareOrDownloadFile(blob, fileNameFor(title, 'pdf'), 'application/pdf');
 }
 
 // The local time of the phone doing the exporting: used only for the final trip export's header,

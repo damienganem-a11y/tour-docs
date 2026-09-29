@@ -24,6 +24,7 @@ import { guestsSettingsPage } from './settingsGuests.js';
 import { exportsSettingsPage } from './settingsExports.js';
 import { warningsSettingsPage } from './settingsWarnings.js';
 import { backupSettingsPage } from './settingsBackup.js';
+import { brandSettingsPage } from './settingsBrand.js';
 import { notice } from './move.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
@@ -32,6 +33,7 @@ const SETTINGS_MENU = [
   { label: 'Dining', page: 'dining' },
   { label: 'Travel parties', page: 'parties' },
   { label: 'Guests', page: 'guests' },
+  { label: 'Brand', page: 'brand' },
   { label: 'Journal', page: 'journal', ownerOnly: true },
   { label: 'Exports archive', page: 'exports' },
   { label: 'Warnings', page: 'warnings' },
@@ -82,6 +84,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   }
   if (mode === 'settings' && page === 'warnings') {
     return { node: h('div', { class: 'screen' }, warningsSettingsPage(ctx, trip)) };
+  }
+  if (mode === 'settings' && page === 'brand') {
+    return { node: h('div', { class: 'screen' }, brandSettingsPage(ctx, trip)) };
   }
   if (mode === 'settings' && page === 'backup') {
     return { node: h('div', { class: 'screen' }, backupSettingsPage(ctx, trip)) };

@@ -19,6 +19,7 @@ import {
   getPushedChangeCount, bumpPushedChangeCount,
 } from './db.js';
 import { newId } from './ids.js';
+import { defaultBranding } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
@@ -295,6 +296,7 @@ function render({ keepScroll = false } = {}) {
 //   Phase 3 step 2b: `joinable` was removed (24 Sep 2026, the owner's call) — a stray leftover on a
 //     restaurant saved before this step is simply dropped; nothing ever reads it again.
 function migrateTrip(trip) {
+  trip.branding ??= defaultBranding(); // confirmation cards (30 Sep 2026): a trip saved before then has none
   trip.restaurants ??= [];
   trip.dinnerBookings ??= [];
   for (const r of trip.restaurants) {

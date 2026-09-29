@@ -63,6 +63,7 @@ export function groupBatches(entries) {
         : types.has('unarchive-trip') ? 'unarchive-trip'
         : types.has('delete-trip') ? 'delete-trip'
         : types.has('reinstate-trip') ? 'reinstate-trip'
+        : types.has('set-branding') ? 'set-branding'
         : types.has('rename-trip') ? 'rename-trip'
         : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
@@ -82,6 +83,7 @@ export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant']; // Setti
 // Move sheet is a plain 'move' batch — undoable from Touring/By guest's own Undo, not this one; a
 // known, minor, accepted edge (see the step's plan).
 export const DINING_USE_UNDO_SCOPE = ['book-dinner', 'add-to-dinner-table', 'move-dinner-table'];
+export const BRANDING_UNDO_SCOPE = ['set-branding'];                 // Settings > Brand
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
 
@@ -187,6 +189,15 @@ export function summarize(batch) {
   if (batch.kind === 'unarchive-trip') return 'Un-archived the trip';
   if (batch.kind === 'delete-trip') return 'Deleted the trip';
   if (batch.kind === 'reinstate-trip') return 'Reinstated the trip';
+  if (batch.kind === 'set-branding') {
+    const { from, to } = batch.entries[0];
+    const changed = [];
+    if ((from?.companyName ?? '') !== to.companyName) changed.push('company name');
+    if ((from?.logo?.data ?? null) !== (to.logo?.data ?? null)) changed.push('logo');
+    if ((from?.accent ?? '') !== to.accent) changed.push('colour');
+    if ((from?.cardNote ?? '') !== to.cardNote) changed.push('card note');
+    return `Changed the card branding${changed.length ? `: ${changed.join(', ')}` : ''}`;
+  }
   if (batch.kind === 'rename-trip') { const e = batch.entries[0]; return `Renamed "${e.from}" to "${e.to}"`; }
 
   // Guests who went from the same place to the same place are told together.

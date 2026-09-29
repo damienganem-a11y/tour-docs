@@ -86,6 +86,8 @@
 //   { type: 'delete-trip' }                                   only an archived trip can be deleted; it moves to
 //       "Recently deleted" and is purged for good after 30 days
 //   { type: 'reinstate-trip' }                                brings a deleted trip back (still archived)
+//   { type: 'set-branding', companyName, accent, cardNote, logo }  the look of the confirmation cards (Settings > Brand);
+//       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
@@ -115,6 +117,7 @@ const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 're
 // The trip's own name. Its own kind: unlike TRIP_TYPES, renaming is blocked while archived, like any
 // other change — nothing about the trip changes while it is read-only.
 const TRIP_INFO_TYPES = new Set(['rename-trip']);
+const BRANDING_TYPES = new Set(['set-branding']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -137,7 +140,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
@@ -148,6 +151,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (GUEST_TYPES.has(changes[0].type)) return validateGuestChange(trip, changes[0]);
   if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
   if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
+  if (BRANDING_TYPES.has(changes[0].type)) return validateBranding(changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
     if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
@@ -316,6 +320,7 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'unarchive-trip' && trip.archivedAt) return fail('This action cannot be undone: the trip has been archived again since.');
     if (entry.type === 'delete-trip' && !trip.deletedAt) return fail('This action cannot be undone: the trip is not deleted anymore.');
     if (entry.type === 'reinstate-trip' && trip.deletedAt) return fail('This action cannot be undone: the trip has been deleted again since.');
+    if (entry.type === 'set-branding' && JSON.stringify(trip.branding ?? null) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the card branding has been changed again since.');
     if (entry.type === 'rename-trip' && trip.name !== entry.to) return fail('This action cannot be undone: the trip has been renamed again since.');
     if (entry.rollCallId && entry.type !== 'move') {
       const problem = rollCallUndoProblem(trip, entry);
@@ -533,6 +538,19 @@ function validateTripChange(trip, change) {
 // Checks a trip rename (see the list at the top).
 function validateRenameTrip(change) {
   return isBlank(change.name) ? fail('Give the trip a name.') : { ok: true };
+}
+
+// The card branding: a short name, a #rrggbb colour, a short note, and a small JPEG logo (or none). The
+// size limits keep the trip (and every journal line that carries it) small enough to sync comfortably.
+function validateBranding(change) {
+  if (typeof change.companyName !== 'string' || change.companyName.trim().length > 60) return fail('The company name must be 60 letters or fewer.');
+  if (!/^#[0-9a-f]{6}$/i.test(change.accent ?? '')) return fail('The colour must look like #1d5c57.');
+  if (typeof change.cardNote !== 'string' || change.cardNote.trim().length > 200) return fail('The note on the cards must be 200 letters or fewer.');
+  const logo = change.logo;
+  const goodLogo = logo && typeof logo.data === 'string' && logo.data.startsWith('data:image/jpeg;base64,') && logo.data.length <= 250000
+    && Number.isInteger(logo.width) && Number.isInteger(logo.height) && logo.width > 0 && logo.height > 0 && logo.width <= 2000 && logo.height <= 2000;
+  if (logo !== null && !goodLogo) return fail('The logo must be a small JPEG picture.');
+  return { ok: true };
 }
 
 // Checks one roll call change (see the list at the top).
@@ -1067,6 +1085,19 @@ async function doApply(ctx, tripId, changes) {
     return save(ctx, next, entries, {});
   }
 
+  // The look of the confirmation cards. Trip-level like the rename below, so the same "local, right now" place.
+  if (BRANDING_TYPES.has(changes[0].type)) {
+    const c = changes[0];
+    const from = trip.branding ?? null;
+    const to = {
+      companyName: c.companyName.trim(), accent: c.accent.toLowerCase(), cardNote: c.cardNote.trim(),
+      logo: c.logo ? { data: c.logo.data, width: c.logo.width, height: c.logo.height } : null,
+    };
+    next.branding = to;
+    entries.push({ ...base(), type: 'set-branding', ...guestWhere, from, to });
+    return save(ctx, next, entries, {});
+  }
+
   // The trip's own name. Not tied to one half-day, so it uses the same "local, right now" place as
   // guest, travel party and other trip-level changes.
   if (TRIP_INFO_TYPES.has(changes[0].type)) {
@@ -1130,6 +1161,11 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'reinstate-trip') {
     next.deletedAt = entry.previousDeletedAt;
     entries.push({ ...base(), type: 'delete-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'set-branding') {
+    next.branding = entry.from;
+    entries.push({ ...base(), type: 'set-branding', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from });
     return;
   }
   if (entry.type === 'rename-trip') {
