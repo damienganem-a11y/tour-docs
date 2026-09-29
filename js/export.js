@@ -15,7 +15,7 @@
 import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment } from './time.js';
-import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace } from './rules.js';
+import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests } from './rules.js';
 import { newId } from './ids.js';
 import { showToast, shareOrDownloadFile } from './ui.js';
 
@@ -80,6 +80,53 @@ export function destinationExportDoc(trip, destination, slot, updatedBy) {
   return {
     title: slot ? `${destination.name} — Day ${slot.day} · ${slot.half}` : destination.name,
     updatedLine: `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${updatedBy}`,
+    groups,
+  };
+}
+
+// The reservation sheet the local team of ONE restaurant gets for ONE evening: per seating, one table per
+// booking, Special requests first (they are the ones the team has to act on).
+// includeDietary (Phase 3, 30 Sep 2026, owner's decision): the ONE place dietary needs may leave the app.
+// Off by default and chosen again at every export. Off = no dietary text and not even a marker, so the
+// sheet gives no hint that anybody has a need. On = an asterisk after each affected guest plus a small
+// "Dietary needs" table naming them, and the header says the file is for the restaurant only.
+// (The file is never saved in the Exports archive when it carries dietary needs: see exportReservations.)
+export function reservationExportDoc(trip, restaurant, slot, updatedBy, { includeDietary = false } = {}) {
+  const destination = trip.destinations.find((d) => d.id === restaurant.destinationId);
+  const groups = [...restaurant.seatings].sort().map((seating) => {
+    const bookings = trip.dinnerBookings
+      .filter((b) => b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0)
+      .sort((a, b) => (a.status === 'special-request' ? 0 : 1) - (b.status === 'special-request' ? 0 : 1));
+    const withNeeds = [];
+    const tables = bookings.map((booking) => {
+      const guests = dinnerGuests(trip, booking).sort(byName);
+      const size = restaurant.mode === 'strict' && booking.tableIds.length > 0
+        ? restaurant.tables.find((t) => t.id === booking.tableIds[0])?.size ?? null : null;
+      const rows = guests.map((guest) => {
+        const hasNeed = includeDietary && Boolean(guest.dietary);
+        if (hasNeed) withNeeds.push(guest);
+        return { id: guest.ref, name: `${guest.last}, ${guest.first}${hasNeed ? ' *' : ''}` };
+      });
+      return {
+        heading: size ? `Table for ${size}` : 'Table',
+        detail: booking.status === 'special-request' ? 'Special request' : 'Confirmed',
+        count: size ? capacityInfo(guests.length, size).text : String(guests.length),
+        rows,
+      };
+    });
+    if (withNeeds.length > 0) {
+      tables.push({
+        heading: 'Dietary needs (*)', detail: 'For the restaurant only', count: String(withNeeds.length), wrap: true,
+        rows: withNeeds.map((g) => ({ id: g.ref, name: `${g.last}, ${g.first}: ${g.dietary}` })),
+      });
+    }
+    return { heading: `${seating} seating`, tables };
+  }).filter((group) => group.tables.length > 0);
+
+  const stamp = `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${updatedBy}`;
+  return {
+    title: `${restaurant.name} — Day ${slot.day} · ${slot.half}`,
+    updatedLine: includeDietary ? `${stamp} · Contains dietary information: for the restaurant only` : stamp,
     groups,
   };
 }
@@ -164,7 +211,9 @@ export function nextVersion(records, title) {
 // Builds the file (format: 'pdf' or 'xlsx'), saves it as a new version in the Exports archive, and
 // opens the share sheet (or, if the browser has no share sheet, downloads the file instead — still
 // usable, just one extra tap to attach it in WhatsApp by hand).
-export async function exportAndShare(ctx, trip, doc, format) {
+// archive: false shares the file without keeping a copy in the Exports archive (used for a file that
+// carries dietary needs: the app cannot erase a file it already handed out, but it need not keep one).
+export async function exportAndShare(ctx, trip, doc, format, { archive = true } = {}) {
   const spec = FORMATS[format];
   let blob;
   try {
@@ -173,16 +222,26 @@ export async function exportAndShare(ctx, trip, doc, format) {
     showToast(`Could not build the ${spec.label} file.`, true);
     return;
   }
-  const record = {
-    id: newId(), tripId: trip.id, title: doc.title, version: nextVersion(ctx.exportsFor(trip.id), doc.title),
-    updatedLine: doc.updatedLine, createdAt: new Date().toISOString(), format, blob,
-  };
-  try {
-    await ctx.saveExport(trip.id, record);
-  } catch {
-    showToast('Could not save this export to the archive, but sharing it anyway.', true);
+  if (archive) {
+    const record = {
+      id: newId(), tripId: trip.id, title: doc.title, version: nextVersion(ctx.exportsFor(trip.id), doc.title),
+      updatedLine: doc.updatedLine, createdAt: new Date().toISOString(), format, blob,
+    };
+    try {
+      await ctx.saveExport(trip.id, record);
+    } catch {
+      showToast('Could not save this export to the archive, but sharing it anyway.', true);
+    }
   }
   await shareOrDownloadFile(blob, fileNameFor(doc.title, spec.extension), spec.mimeType);
+  if (!archive) showToast('Shared, not kept in the Exports archive: it contains dietary needs.');
+}
+
+// The reservation sheet of one restaurant for one evening (see reservationExportDoc).
+export async function exportReservations(ctx, trip, restaurant, slot, format, { includeDietary = false } = {}) {
+  const doc = reservationExportDoc(trip, restaurant, slot, ctx.owner?.name ?? 'the owner', { includeDietary });
+  if (doc.groups.length === 0) { showToast('No tables are booked at this restaurant that evening yet.', true); return; }
+  await exportAndShare(ctx, trip, doc, format, { archive: !includeDietary });
 }
 
 // The final export of the whole trip (SPEC.md, "5. Export"): every tour's guest list, and every

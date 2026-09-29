@@ -19,7 +19,7 @@ import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
-import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
+import { destinationExportDoc, reservationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
@@ -2463,6 +2463,43 @@ function readZip(bytes) {
   check('When the service cannot be reached at all, that is the headline', !d7.ok && /Cannot reach/.test(d7.headline));
   check('Login rejections and network failures become plain sentences',
     /sign in again/i.test(plainSyncError('JWT expired')) && /could not be reached/.test(plainSyncError('Failed to fetch')) && plainSyncError('odd') === 'odd');
+}
+
+// --- Reservation sheet for a restaurant (Phase 3 exports): dietary needs only when asked for ---
+{
+  const ctxR = makeCtx();
+  const lisbonR = trip.destinations.find((d) => d.name === 'Lisbon');
+  const eveR = slot('S04');
+  const rid = (await applyChange(ctxR, trip.id, { type: 'add-restaurant', destinationId: lisbonR.id, name: 'Sheet Test', seatings: ['19:00', '21:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4] })).entries[0].restaurantId;
+  const restR = () => ctxR.state.restaurants.find((r) => r.id === rid);
+  const allergic = guest('G034');
+  const bystander = trip.guests.find((g) => g.dietary && g.ref !== 'G034'); // has a need, but is not booked here
+  const mates = trip.guests.filter((g) => !g.dietary && g.ref !== 'G034').slice(0, 5);
+  await applyChange(ctxR, trip.id, { type: 'book-dinner', slotId: eveR.id, restaurantId: rid, seating: '19:00', guestIds: [allergic.id, mates[0].id, mates[1].id] }); // takes the 4-table
+  await applyChange(ctxR, trip.id, { type: 'book-dinner', slotId: eveR.id, restaurantId: rid, seating: '19:00', guestIds: [mates[2].id, mates[3].id, mates[4].id] }); // only the 2-table is left: Special request
+
+  const off = reservationExportDoc(ctxR.state, restR(), eveR, 'Tester');
+  const on = reservationExportDoc(ctxR.state, restR(), eveR, 'Tester', { includeDietary: true });
+  const offText = JSON.stringify(off), onText = JSON.stringify(on);
+  check('Reservation sheet, dietary switch OFF: no dietary text, no marker, nothing that hints at a need',
+    !/shellfish|allerg|dietary|\*/i.test(offText), offText.slice(0, 300));
+  check('Reservation sheet, dietary switch ON: the guest is marked with * and the need is written out',
+    /Shellfish allergy/.test(onText) && on.groups[0].tables.some((t) => t.rows.some((r) => / \*$/.test(r.name))) && on.groups[0].tables.at(-1).heading.startsWith('Dietary needs'));
+  check('...and the header says the file is for the restaurant only', /for the restaurant only/.test(on.updatedLine) && !/for the restaurant only/.test(off.updatedLine));
+  check('A guest with a need who is NOT booked at this restaurant never appears, switch on or off',
+    !onText.includes(bystander.dietary) && !offText.includes(bystander.dietary));
+  check('Special requests come first in a seating, then the confirmed tables',
+    on.groups[0].tables[0].detail === 'Special request' && on.groups[0].tables[1].detail === 'Confirmed');
+  check('A table shows its seats as "3 / 4"; a seating with no tables booked (21:00) is left out',
+    on.groups[0].tables[1].count === '3 / 4' && on.groups.length === 1 && on.groups[0].heading === '19:00 seating');
+  const wrapped = await buildListsPdf({ title: 'T', updatedLine: 'U', groups: [{ heading: null, tables: [{
+    heading: 'Dietary needs (*)', detail: null, count: '1', wrap: true,
+    rows: [{ id: '1', name: 'Example, Ada: Severe shellfish allergy, carries an EpiPen, no cross-contamination allowed' }] }] }] }).text();
+  check('A long dietary need is written out in full in the PDF, wrapped over lines, never cut short with "…"',
+    /cross-contamination/.test(wrapped) && /allowed/.test(wrapped)); // "allowed" is the last word: it is gone if the text was cut
+  const emptyR = (await applyChange(ctxR, trip.id, { type: 'add-restaurant', destinationId: lisbonR.id, name: 'Nobody Yet', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 10, maxTableSize: 4, tableSizes: [] })).entries[0].restaurantId;
+  check('A restaurant with nothing booked gives an empty sheet (the app then says so instead of exporting)',
+    reservationExportDoc(ctxR.state, ctxR.state.restaurants.find((r) => r.id === emptyR), eveR, 'Tester').groups.length === 0);
 }
 
 // --- Show the results ---

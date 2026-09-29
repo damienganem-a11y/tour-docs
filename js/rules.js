@@ -264,6 +264,11 @@ export function dinnerCountIn(trip, dinnerBooking) {
   return count;
 }
 
+// The guests currently on a dinner table (same live derivation as dinnerCountIn above).
+export function dinnerGuests(trip, dinnerBooking) {
+  return trip.guests.filter((guest) => !guest.leftAt && trip.bookings[guest.id]?.[dinnerBooking.slotId]?.bookingId === dinnerBooking.id);
+}
+
 // The table ids currently occupied by a live booking at this restaurant/slot/seating. Shared by
 // dinnerFit, dinnerTableGrid, and book-dinner's own-table validation (changes.js), instead of three
 // copies that could drift apart. excludeBookingId (Phase 3 step 2c, moving a whole table): leaves one

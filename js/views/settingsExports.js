@@ -8,7 +8,7 @@ import { pageHead, exportFormatSheet } from './chrome.js';
 import { openSheet } from '../ui.js';
 import { choiceRow } from './move.js';
 import { bySlotOrder, slotLabel } from '../rules.js';
-import { shareSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare } from '../export.js';
+import { shareSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportReservations } from '../export.js';
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
@@ -32,6 +32,11 @@ export function exportsSettingsPage(ctx, trip) {
     onclick: () => pickDestination(ctx, trip),
   }, 'Export a destination or half-day');
 
+  const reservationButton = h('button', {
+    class: 'btn btn--plain', type: 'button',
+    onclick: () => pickRestaurant(ctx, trip),
+  }, 'Export a restaurant’s reservations');
+
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
@@ -42,6 +47,8 @@ export function exportsSettingsPage(ctx, trip) {
     finalExportButton,
     h('p', { class: 'muted count-line' }, 'Every tour’s guest list, and every guest’s own whole trip, in one file.'),
     destinationExportButton,
+    trip.restaurants.length > 0 ? reservationButton : null,
+    trip.restaurants.length > 0 ? h('p', { class: 'muted count-line' }, 'The list a restaurant needs for one evening, with an option to include dietary needs.') : null,
     records.length === 0
       ? h('p', { class: 'empty' }, 'Nothing exported yet.')
       : h('ul', { class: 'list' }, records.map((record) => exportRow(record))));
@@ -75,6 +82,37 @@ function runExport(ctx, trip, destination, slot) {
     busy = false;
     ctx.refresh();
   });
+}
+
+// Reservation sheet: pick the restaurant, then the evening.
+function pickRestaurant(ctx, trip) {
+  openSheet({
+    eyebrow: 'Exports archive', title: 'Which restaurant?',
+    body: trip.restaurants.map((r) => choiceRow({
+      title: r.name, detail: trip.destinations.find((d) => d.id === r.destinationId)?.name,
+      onclick: () => pickEvening(ctx, trip, r),
+    })),
+    cancelLabel: 'Cancel',
+  });
+}
+
+function pickEvening(ctx, trip, restaurant) {
+  const evenings = trip.slots.filter((s) => s.destinationId === restaurant.destinationId && s.half === 'Evening').sort(bySlotOrder);
+  openSheet({
+    eyebrow: restaurant.name, title: 'Which evening?',
+    body: evenings.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runReservations(ctx, trip, restaurant, s) })),
+    cancelLabel: 'Cancel',
+  });
+}
+
+function runReservations(ctx, trip, restaurant, slot) {
+  exportFormatSheet(async (format, { includeDietary }) => {
+    if (busy) return;
+    busy = true;
+    await exportReservations(ctx, trip, restaurant, slot, format, { includeDietary });
+    busy = false;
+    ctx.refresh();
+  }, { dietary: true });
 }
 
 function exportRow(record) {

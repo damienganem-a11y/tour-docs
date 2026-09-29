@@ -75,11 +75,18 @@ function syncDetailsSheet(ctx) {
 
 // The small sheet every "Export" button opens to ask PDF or Excel (SPEC.md, "5. Export"): tapping
 // either one closes the sheet and runs `format => ...` with 'pdf' or 'xlsx'.
-export function exportFormatSheet(run) {
-  const go = (format) => { closeSheet(); run(format); };
+// dietary: true adds the "Include dietary needs" switch (reservation sheets only), off every time the
+// sheet opens; run then receives ({ includeDietary }) as its second argument.
+export function exportFormatSheet(run, { dietary = false } = {}) {
+  const box = dietary ? h('input', { type: 'checkbox', 'aria-label': 'Include dietary needs' }) : null;
+  const go = (format) => { closeSheet(); run(format, { includeDietary: Boolean(box?.checked) }); };
   openSheet({
     title: 'Export as...',
     body: [
+      ...(dietary ? [
+        h('label', { class: 'tick-row' }, box, h('span', {}, 'Include dietary needs (allergies)')),
+        h('p', { class: 'muted' }, 'Only for the restaurant. A file that includes them is shared but not kept in the Exports archive.'),
+      ] : []),
       h('button', { class: 'btn', type: 'button', onclick: () => go('pdf') }, 'PDF — for WhatsApp and printing'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => go('xlsx') }, 'Excel (.xlsx) — to edit the list further'),
     ],

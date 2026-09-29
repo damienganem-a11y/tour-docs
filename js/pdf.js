@@ -125,18 +125,43 @@ const tileHeight = (kind) => TILE_HEADER_H + kind.rowsPerTile * ROW_H + 4;
 // the first chunk carries the table's own title and detail line; later chunks just carry the column
 // headings and keep counting from where the last one left off.
 function tilesFor(table, kind) {
+  const allRows = wrappedRows(table, kind);
   const tiles = [];
-  for (let start = 0; start < table.rows.length || start === 0; start += kind.rowsPerTile) {
+  for (let start = 0; start < allRows.length || start === 0; start += kind.rowsPerTile) {
     tiles.push({
       heading: start === 0 ? table.heading : null,
       detail: start === 0 ? table.detail : null,
       count: start === 0 ? table.count : null,
-      firstNumber: start + 1,
-      rows: table.rows.slice(start, start + kind.rowsPerTile),
+      firstNumber: allRows.slice(0, start).filter((r) => !r.cont).length + 1, // continuation lines are not numbered
+      rows: allRows.slice(start, start + kind.rowsPerTile),
     });
-    if (table.rows.length === 0) break; // an empty table still gets its one (empty) tile
+    if (allRows.length === 0) break; // an empty table still gets its one (empty) tile
   }
   return tiles;
+}
+
+// A table marked `wrap: true` never cuts a row's text short with "…": what does not fit on one line
+// continues on further, unnumbered lines (`cont: true`). Used for dietary needs, where a cut-off word
+// ("Shellfis…") would be a safety problem, not just untidy. Every other table keeps one line per row.
+function wrappedRows(table, kind) {
+  if (!table.wrap) return table.rows;
+  const nameW = kind.tileWidth - kind.numColW - 8 - kind.idColW - 4;
+  const breakLong = (line) => { // a single word wider than the column is split, never dropped
+    const parts = [];
+    let rest = line;
+    while (textWidth(rest, FONT_REGULAR, CELL_SIZE) > nameW && rest.length > 1) {
+      let cut = rest.length - 1;
+      while (cut > 1 && textWidth(rest.slice(0, cut), FONT_REGULAR, CELL_SIZE) > nameW) cut--;
+      parts.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    parts.push(rest);
+    return parts;
+  };
+  return table.rows.flatMap((row) => {
+    const lines = wrapText(row.name, FONT_REGULAR, CELL_SIZE, nameW).flatMap(breakLong);
+    return lines.map((line, i) => (i === 0 ? { ...row, name: line } : { id: '', name: line, cont: true }));
+  });
 }
 
 // ---------- Laying tiles out onto pages ----------
@@ -237,9 +262,10 @@ function drawTile(tile, left, top, { text, rule }, kind) {
   const firstRowY = top - TILE_HEADER_H - ROW_H;
   const nameX = left + numColW + 8 + idColW;
   const nameW = tileWidth - numColW - 8 - idColW - 4;
+  let number = tile.firstNumber;
   tile.rows.forEach((row, i) => {
     const rowY = firstRowY - i * ROW_H;
-    text(String(tile.firstNumber + i), left + numColW, rowY, { size: CELL_SIZE, align: 'right' });
+    if (!row.cont) text(String(number++), left + numColW, rowY, { size: CELL_SIZE, align: 'right' });
     text(row.id || '', left + numColW + 8, rowY, { size: CELL_SIZE, maxWidth: idColW });
     text(row.name, nameX, rowY, { size: CELL_SIZE, maxWidth: nameW });
   });
