@@ -2493,20 +2493,21 @@ function readZip(bytes) {
   const off = eveningReservationDoc(ctxR.state, lis(), eveR, 'Tester');
   const on = eveningReservationDoc(ctxR.state, lis(), eveR, 'Tester', { includeDietary: true });
   const offText = JSON.stringify(off), onText = JSON.stringify(on);
-  const mine = (d) => d.blocks.find((b) => b.restaurant === 'Sheet Test');
+  const mine = (d) => d.blocks.filter((b) => b.restaurant === 'Sheet Test');
   check('Evening sheet, dietary switch OFF: no dietary text, no marker, nothing that hints at a need',
     !/shellfish|allerg|dietary|\*/i.test(offText), offText.slice(0, 300));
   check('Evening sheet, dietary switch ON: the guest is marked with * and the need is written out',
-    /Shellfish allergy/.test(onText) && mine(on).tables.some((t) => t.rows.some((r) => / \*$/.test(r.name))) && mine(on).needs.length === 1);
+    /Shellfish allergy/.test(onText) && mine(on).some((b) => b.tables[0].rows.some((r) => / \*$/.test(r.name)) && b.needs.length === 1));
   check('...and the header says the file is for the restaurants only', /for the restaurants only/.test(on.updatedLine) && !/for the restaurants only/.test(off.updatedLine));
   check('A guest with a need who is NOT booked that evening never appears, switch on or off',
     !onText.includes(bystander.dietary) && !offText.includes(bystander.dietary));
-  check('Special requests come first in a block, then the confirmed tables',
-    mine(on).tables[0].special === true && mine(on).tables[1].special === false);
-  check('A block says the restaurant, the time and the number of people; a time nobody booked (21:00) has no block',
-    mine(on).count === 6 && mine(on).seating === '19:00' && on.blocks.filter((b) => b.restaurant === 'Sheet Test').length === 1);
+  check('Every table is its own block with its own count (two tables at 19:00 are NOT read as one group of 6)',
+    mine(on).length === 2 && mine(on).every((b) => b.seating === '19:00' && b.count === 3 && b.tables.length === 1 && b.tables[0].rows.length === 3));
+  check('Special requests come first, then the confirmed table',
+    mine(on)[0].tables[0].special === true && mine(on)[1].tables[0].special === false);
+  check('A time nobody booked (21:00) has no block', mine(on).every((b) => b.seating !== '21:00'));
   check('The evening holds every restaurant with bookings at once (one export, never restaurant by restaurant)',
-    on.blocks.length >= 1 && on.blocks.every((b) => b.count > 0) && /restaurant reservations/.test(on.title));
+    on.blocks.length >= 2 && on.blocks.every((b) => b.count > 0) && /restaurant reservations/.test(on.title));
   const wrapped = await buildEveningPdf({ title: 'T', updatedLine: 'U', blocks: [{ restaurant: 'R', seating: '19:00', count: 1, tables: [{ special: false, rows: [{ id: '1', name: 'Example, Ada *' }] }],
     needs: [{ id: '1', name: 'Example, Ada', text: 'Severe shellfish allergy, carries an EpiPen, no cross-contamination allowed' }] }] }).text();
   check('A long dietary need is written out in full in the PDF, wrapped over lines, never cut short with "…"',

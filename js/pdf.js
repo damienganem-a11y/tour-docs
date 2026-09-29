@@ -465,6 +465,9 @@ function layoutEvening(doc) {
     const heading = (cont) => {
       const title = `${block.restaurant}${cont ? ' (cont.)' : ''}`;
       const lines = wrapText(title, FONT_BOLD, EVENING_HEAD_SIZE, colW);
+      // A light grey band behind the heading: each table is a clearly separate block.
+      const bandH = lines.length * (EVENING_HEAD_SIZE + 2) + EVENING_ROW_H + 4;
+      page.push({ type: 'rect', x: x(), y: y - bandH, w: colW, h: bandH + 2, gray: 0.9 });
       for (const line of lines) { y -= EVENING_HEAD_SIZE + 2; text(line, x(), y, { font: FONT_BOLD, size: EVENING_HEAD_SIZE }); }
       y -= EVENING_ROW_H;
       text(`${block.seating}  ·  ${block.count} ${block.count === 1 ? 'person' : 'people'}`, x(), y, { font: FONT_BOLD, size: EVENING_SIZE, gray: 0.35 });

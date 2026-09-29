@@ -85,7 +85,7 @@ export function destinationExportDoc(trip, destination, slot, updatedBy) {
 }
 
 // The reservation sheet for one WHOLE evening of a destination: every restaurant with a table that evening, one block per
-// restaurant and seating (name, time, number of people, then each guest's ID and name). Restaurants are never
+// TABLE (restaurant name, time, that table's number of people, then each guest's ID and name). Restaurants are never
 // exported one by one. Special requests are marked; blocks are sorted by restaurant, then time.
 // includeDietary (Phase 3, 30 Sep 2026, owner's decision): the ONE place dietary needs may leave the app.
 // Off by default and chosen again at every export. Off = no dietary text and not even a marker, so the
@@ -100,22 +100,22 @@ export function eveningReservationDoc(trip, destination, slot, updatedBy, { incl
       const bookings = trip.dinnerBookings
         .filter((b) => b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && dinnerCountIn(trip, b) > 0)
         .sort((a, b) => (a.status === 'special-request' ? 0 : 1) - (b.status === 'special-request' ? 0 : 1));
-      if (bookings.length === 0) continue;
-      const needs = [];
-      let count = 0;
-      const tables = bookings.map((booking) => {
+      // ONE BLOCK PER TABLE (owner, 1 Oct 2026): a table of 2 and a table of 4 at 18:45 must never be read as "6 people at
+      // 18:45", so each booking gets its own heading (restaurant, time, its own number of people) and its own names.
+      for (const booking of bookings) {
         const guests = dinnerGuests(trip, booking).sort(byName);
-        count += guests.length;
-        return {
-          special: booking.status === 'special-request',
-          rows: guests.map((guest) => {
-            const hasNeed = includeDietary && Boolean(guest.dietary);
-            if (hasNeed) needs.push({ id: guest.ref, name: `${guest.last}, ${guest.first}`, text: guest.dietary });
-            return { id: guest.ref, name: `${guest.last}, ${guest.first}${hasNeed ? ' *' : ''}` };
-          }),
-        };
-      });
-      blocks.push({ restaurant: restaurant.name, seating, count, tables, ...(needs.length > 0 ? { needs } : {}) });
+        const needs = [];
+        const rows = guests.map((guest) => {
+          const hasNeed = includeDietary && Boolean(guest.dietary);
+          if (hasNeed) needs.push({ id: guest.ref, name: `${guest.last}, ${guest.first}`, text: guest.dietary });
+          return { id: guest.ref, name: `${guest.last}, ${guest.first}${hasNeed ? ' *' : ''}` };
+        });
+        blocks.push({
+          restaurant: restaurant.name, seating, count: guests.length,
+          tables: [{ special: booking.status === 'special-request', rows }],
+          ...(needs.length > 0 ? { needs } : {}),
+        });
+      }
     }
   }
   const stamp = `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${updatedBy}`;

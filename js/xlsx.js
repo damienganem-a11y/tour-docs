@@ -302,13 +302,13 @@ export function buildGroupsXlsx(doc, rows) {
 // the owner ticked "Include dietary needs") a Dietary needs column. One row per guest, so it sorts and filters in Excel.
 export function buildEveningXlsx(doc) {
   const withNeeds = doc.blocks.some((b) => b.needs?.length > 0);
-  const headers = ['Restaurant', 'Time', 'People', 'ID', 'Name', 'Table', ...(withNeeds ? ['Dietary needs'] : [])];
-  const widths = [26, 8, 8, 10, 26, 16, ...(withNeeds ? [40] : [])];
+  const headers = ['Restaurant', 'Time', 'People at table', 'ID', 'Name', 'Status', ...(withNeeds ? ['Dietary needs'] : [])];
+  const widths = [26, 8, 14, 10, 26, 16, ...(withNeeds ? [40] : [])];
   const rows = [];
   for (const block of doc.blocks) {
-    block.tables.forEach((table, t) => table.rows.forEach((r) => {
+    block.tables.forEach((table) => table.rows.forEach((r) => {
       const need = block.needs?.find((n) => n.id === r.id)?.text ?? '';
-      rows.push([block.restaurant, block.seating, String(block.count), r.id, r.name, `${table.special ? 'Special request' : 'Confirmed'} (table ${t + 1})`, ...(withNeeds ? [need] : [])]);
+      rows.push([block.restaurant, block.seating, String(block.count), r.id, r.name, table.special ? 'Special request' : 'Confirmed', ...(withNeeds ? [need] : [])]);
     }));
   }
   const sheetRows = [
