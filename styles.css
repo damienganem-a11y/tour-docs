@@ -216,6 +216,7 @@ a { color: inherit; text-decoration: none; }
 .sync-lights-label--synced { color: var(--brand); }
 .sync-lights-label--pending { color: var(--warn-line); }
 .sync-lights-label--offline { color: var(--bad-line); }
+.sync-lights-label--nologin { color: var(--bad-line); }
 
 /* The Undo button (like Ctrl+Z): next to the title of each Use screen, in orange so it is easy to see.
    It takes ALL the room left of the title, and says in full what it would undo. */

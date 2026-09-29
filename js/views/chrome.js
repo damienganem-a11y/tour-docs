@@ -2,6 +2,7 @@
 
 import { h } from '../dom.js';
 import { openSheet, closeSheet } from '../ui.js';
+import { openOnlineSignIn } from './onlineSignIn.js';
 
 // The top of a screen: an optional "‹ back" link, a small label, the big title, a line of detail.
 // action: an optional button shown on the right of the title, taking all the room that is left
@@ -45,13 +46,17 @@ const SYNC_STATES = [
   { key: 'pending', label: 'Loading' },
   { key: 'offline', label: 'Offline' },
 ];
+// Online but with no live online login: nothing is syncing, so it must not look like "Online". It lights
+// the red dot, with its own word (see app.js's syncStatus).
+const NO_LOGIN = { key: 'nologin', label: 'Not signed in' };
 export function syncDot(ctx, { compact = false } = {}) {
   const status = ctx.syncStatus;
-  const label = SYNC_STATES.find((s) => s.key === status).label;
+  const label = [...SYNC_STATES, NO_LOGIN].find((s) => s.key === status).label;
+  const lit = status === 'nologin' ? 'offline' : status;
   // A button: tapping the light opens "Sync details" (what is really going on, in plain words).
   return h('button', { class: 'sync-lights', type: 'button', 'aria-label': `${label}. Tap for sync details`, title: label, onclick: () => syncDetailsSheet(ctx) },
     h('span', { class: 'sync-lights-dots' },
-      SYNC_STATES.map((s) => h('span', { class: `sync-light sync-light--${s.key}${s.key === status ? ' is-on' : ''}` }))),
+      SYNC_STATES.map((s) => h('span', { class: `sync-light sync-light--${s.key}${s.key === lit ? ' is-on' : ''}` }))),
     compact ? null : h('span', { class: `sync-lights-label sync-lights-label--${status}` }, label));
 }
 
@@ -63,7 +68,8 @@ function syncDetailsSheet(ctx) {
   ctx.syncDetails().then((result) => {
     box.replaceChildren(
       h('p', { class: `sync-details-headline${result.ok ? '' : ' is-problem'}` }, result.headline),
-      ...result.lines.map((line) => h('p', { class: 'muted' }, line)));
+      ...result.lines.map((line) => h('p', { class: 'muted' }, line)),
+      result.needsSignIn ? h('button', { class: 'btn', type: 'button', onclick: () => openOnlineSignIn(ctx) }, 'Sign in online') : null);
   });
 }
 

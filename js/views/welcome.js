@@ -31,7 +31,7 @@
 import { h } from '../dom.js';
 import { pageHead } from './chrome.js';
 import { newId } from '../ids.js';
-import { looksLikeAuthCallback, sendMagicLink, completeSignIn, saveNameToAccount, existingSession } from '../auth.js';
+import { looksLikeAuthCallback, sendMagicLink, completeSignIn, saveNameToAccount, existingSession, verifyEmailCode, cleanEmailCode } from '../auth.js';
 
 const PENDING_NAME_KEY = 'tourdocs.pendingName'; // best-effort fallback only; the link itself is the real carrier
 
@@ -133,10 +133,37 @@ function confirmNameScreen(ctx) {
 const isStandalone = () => navigator.standalone === true || (window.matchMedia?.('(display-mode: standalone)').matches ?? false);
 
 function sentScreen(ctx) {
+  // The same email can carry a short code as well as the link (the Supabase email template needs
+  // {{ .Token }} in it). Typing it here signs in inside THIS app, with no browser hop, which is the fix
+  // for iPhone's Safari-versus-icon storage split (see the top of this file).
+  const codeMessage = h('div', { class: 'message', role: 'alert', hidden: true });
+  const codeInput = h('input', {
+    class: 'text-input', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code',
+    placeholder: 'Code from the email', 'aria-label': 'Code from the email', maxlength: '12',
+  });
+  const codeForm = h('form', {
+    onsubmit: async (event) => {
+      event.preventDefault();
+      if (cleanEmailCode(codeInput.value).length < 6) { codeInput.focus(); return; }
+      try {
+        const { id, email } = await verifyEmailCode(pendingEmail, codeInput.value);
+        pendingId = id;
+        pendingEmail = email;
+        step = 'confirm-name';
+        ctx.refresh();
+      } catch (error) {
+        codeMessage.textContent = error.message;
+        codeMessage.hidden = false;
+      }
+    },
+  }, codeInput, h('button', { class: 'btn', type: 'submit' }, 'Sign in with the code'), codeMessage);
+
   return {
     node: h('div', { class: 'screen' },
       pageHead({ eyebrow: 'Tour Docs', title: 'Check your email', subtitle: `We sent a sign-in link to ${pendingEmail}.` }),
       h('p', { class: 'muted' }, 'Open it on this phone to continue. It can take a minute to arrive.'),
+      h('p', { class: 'muted' }, 'If the email also shows a code, type it here instead: it signs you in inside this app, with no browser hop (the reliable way on iPhone).'),
+      codeForm,
       // Tapping the link from Mail often opens Safari instead of the installed app icon on the
       // iPhone (a quirk of "Add to Home Screen" apps, not something the app can avoid). Warning
       // about it here, right before they go tap it, turns a confusing moment into an expected one.

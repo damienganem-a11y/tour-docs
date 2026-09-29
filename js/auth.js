@@ -100,3 +100,35 @@ export async function saveNameToAccount(name) {
 export async function signOut() {
   try { await (await getClient()).auth.signOut(); } catch { /* local sign-out is what matters offline */ }
 }
+
+// ---------- Signing in with the CODE from the email (added 30 Sep 2026) ----------
+// The same email that carries the magic link can also carry a short code (the Supabase email template
+// must include {{ .Token }}). Typing the code inside the app needs no browser hop, which is the whole
+// point on iPhone: the emailed link always opens Safari, and Safari and the Home Screen icon may not
+// share the login (see existingSession above). Verifying the code stores the login in THIS browsing
+// context, wherever the app is running.
+
+// Keeps only the digits, so a code pasted with spaces or dashes ("123 456") still works.
+export function cleanEmailCode(text) {
+  return String(text ?? '').replace(/\D/g, '');
+}
+
+// Returns {id, email}; throws a plain-language error otherwise.
+export async function verifyEmailCode(email, code) {
+  let supabase;
+  try { supabase = await getClient(); }
+  catch { throw new Error('Could not reach the sign-in service. Check your connection and try again.'); }
+  const { data, error } = await supabase.auth.verifyOtp({ email, token: cleanEmailCode(code), type: 'email' });
+  if (error) throw new Error(/expired|invalid/i.test(error.message) ? 'That code did not work (wrong, or expired). Check it, or send a new one.' : error.message);
+  const user = data?.session?.user ?? data?.user;
+  if (!user) throw new Error('That code did not work. Send a new one.');
+  return { id: user.id, email: user.email };
+}
+
+// true / false = this browser does / does not hold a live online login. null = cannot tell right now
+// (no internet to load the sign-in service), so callers must not claim either.
+export async function hasLiveSession() {
+  let supabase;
+  try { supabase = await getClient(); } catch { return null; }
+  try { const { data: { session } } = await supabase.auth.getSession(); return Boolean(session); } catch { return null; }
+}

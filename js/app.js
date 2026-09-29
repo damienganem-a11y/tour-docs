@@ -21,7 +21,7 @@ import {
 import { newId } from './ids.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast } from './ui.js';
-import { signOut as authSignOut } from './auth.js';
+import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError,
@@ -40,6 +40,9 @@ import { rollCallView } from './views/rollcall.js';
 // journal entries and saved export versions of each trip (by trip id; also stored on the phone,
 // this is a copy in memory). `locked` is true while the access code has not been entered (see gate.js).
 const state = { owner: undefined, trips: new Map(), journal: new Map(), exports: new Map(), locked: false };
+// Does this browser hold a live online login? true / false, or null while unknown (not checked yet, or
+// offline so it cannot be checked). Only `false` changes what the sync light says (see syncStatus).
+let hasSession = null;
 
 // The small sync light shown on the Trips screen and inside a trip (see chrome.js's syncDot):
 //   'offline'  no internet right now (navigator.onLine)
@@ -66,7 +69,16 @@ function trackPush(promise) {
 }
 function syncStatus() {
   if (!navigator.onLine) return 'offline';
+  if (hasSession === false) return 'nologin'; // online, but nothing can sync: must not read as "Online"
   return pendingPushes > 0 ? 'pending' : 'synced';
+}
+
+// Checks once whether this browser holds a live online login, then redraws the light. Never blocks.
+async function checkSession() {
+  const result = await hasLiveSession();
+  if (result === null || result === hasSession) return;
+  hasSession = result;
+  if (state.owner) render({ keepScroll: true });
 }
 
 // Pushes a trip (and, once accepted, its journal entries) and records how far this push actually
@@ -105,6 +117,16 @@ const routes = [
 const ctx = {
   get owner() { return state.owner; },
   get syncStatus() { return syncStatus(); },
+  // Links this phone's existing owner (name and trips untouched) to a real online account, once a code
+  // has been verified (views/onlineSignIn.js), then pushes what this phone has and pulls what it lacks.
+  async linkOnlineAccount(id) {
+    const owner = makeOwner(id, state.owner.name);
+    await dbPut('settings', owner, 'owner');
+    state.owner = owner;
+    hasSession = true;
+    render({ keepScroll: true });
+    trackPush(backfillPush().then(() => pullSync())).catch(() => {});
+  },
   // For the sheet behind the sync light: asks the server live and explains what is going on.
   async syncDetails() {
     let probe = null, probeError = null;
@@ -332,7 +354,10 @@ async function start() {
   // Phase 2: push this phone's own pending work first (step 2a's backfill), then pull whatever
   // changed on another phone signed into the same account (step 2b). Runs after render(), in the
   // background, so neither ever delays the offline boot paint.
-  if (state.owner) trackPush(backfillPush().then(() => pullSync())).catch(() => {});
+  if (state.owner) {
+    checkSession();
+    trackPush(backfillPush().then(() => pullSync())).catch(() => {});
+  }
 }
 
 // Catches this phone up with the server in both directions: pushes anything of its own the server

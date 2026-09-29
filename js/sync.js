@@ -124,10 +124,11 @@ export function diagnoseSync({ online, probe, probeError, localCount, lastError,
   if (!probe || probe.email === null) {
     return {
       ok: false,
+      needsSignIn: true,
       headline: 'Not signed in online: nothing is syncing',
       lines: [
         'This phone has your name saved, but no live online login. That happens after "Skip this for now", or when the email link was finished in a different browser.',
-        'Fix: on the Trips screen tap Sign out, then sign in again with the email link, in the same browser you use for the app.',
+        'Fix: tap "Sign in online" below and type the code from the email.',
       ],
     };
   }

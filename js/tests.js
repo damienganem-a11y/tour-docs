@@ -21,7 +21,7 @@ import { buildListsPdf, buildFinalTripPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
 import { destinationExportDoc, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
-import { looksLikeAuthCallback } from './auth.js';
+import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -2449,7 +2449,10 @@ function readZip(bytes) {
   check('Offline is explained as such, without blaming the login', !d2.ok && d2.headline === 'Offline');
   const d3 = diagnoseSync({ ...ok, probe: { email: null, serverCount: null } });
   check('No live online login is called out plainly, with the fix (the silent case that looks fine but syncs nothing)',
-    !d3.ok && /Not signed in online/.test(d3.headline) && d3.lines.some((l) => /Sign out/.test(l)));
+    !d3.ok && d3.needsSignIn === true && /Not signed in online/.test(d3.headline) && d3.lines.some((l) => /Sign in online/.test(l)));
+  check('Being level with the server never offers a sign-in button', d1.needsSignIn !== true && diagnoseSync({ ...ok, probe: { email: 'a@b.c', serverCount: 1 } }).needsSignIn !== true);
+  check('A code typed with spaces or dashes is cleaned to digits; nothing typed stays empty',
+    cleanEmailCode('123 456') === '123456' && cleanEmailCode('12-34-56') === '123456' && cleanEmailCode(undefined) === '');
   const d4 = diagnoseSync({ ...ok, probe: { email: 'a@b.c', serverCount: 1 } });
   check('A trip missing from the server is reported', d4.lines.some((l) => /not reached the server/.test(l)));
   const d5 = diagnoseSync({ ...ok, probe: { email: 'a@b.c', serverCount: 3 } });
