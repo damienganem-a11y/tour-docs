@@ -203,7 +203,9 @@ a { color: inherit; text-decoration: none; }
 /* The sync light (see chrome.js's syncDot): a small traffic light, green/orange/red, always shown
    left to right with only the current state lit, plus a word — a single dot that just changed
    color was too hard to read at a glance. */
-.sync-lights { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.sync-lights { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; background: none; border: 0; padding: 6px 2px; margin: 0; font: inherit; cursor: pointer; }
+.sync-details-headline { font-weight: 700; margin: 0 0 8px; }
+.sync-details-headline.is-problem { color: var(--bad-line); }
 .sync-lights-dots { display: inline-flex; gap: 4px; }
 .sync-light { display: inline-block; width: 8px; height: 8px; border-radius: 50%; opacity: 0.25; }
 .sync-light--synced { background: var(--brand); }

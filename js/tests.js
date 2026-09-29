@@ -5,7 +5,7 @@
 import { buildTrip } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
 import { applyChange, validateChanges, enqueue } from './changes.js';
-import { decideSync } from './sync.js';
+import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow } from './time.js';
@@ -2437,6 +2437,29 @@ function readZip(bytes) {
     (await getPushedChangeCount(wmTripId)) === 7);
   await dbDelete('syncState', wmTripId);
   check('The test watermark is removed again (tests leave nothing behind)', (await getPushedChangeCount(wmTripId)) === undefined);
+}
+
+// --- Sync details (the sheet behind the sync light): what the owner is told ---
+{
+  const ok = { online: true, probe: { email: 'a@b.c', serverCount: 2 }, probeError: null, localCount: 2, lastError: null, lastOkAt: '2026-09-29T10:00:00.000Z' };
+  const d1 = diagnoseSync(ok);
+  check('Signed in online and level with the server: fine, names the email, says when it last worked',
+    d1.ok && /a@b\.c/.test(d1.headline) && d1.lines.some((l) => /Last successful sync/.test(l)));
+  const d2 = diagnoseSync({ ...ok, online: false });
+  check('Offline is explained as such, without blaming the login', !d2.ok && d2.headline === 'Offline');
+  const d3 = diagnoseSync({ ...ok, probe: { email: null, serverCount: null } });
+  check('No live online login is called out plainly, with the fix (the silent case that looks fine but syncs nothing)',
+    !d3.ok && /Not signed in online/.test(d3.headline) && d3.lines.some((l) => /Sign out/.test(l)));
+  const d4 = diagnoseSync({ ...ok, probe: { email: 'a@b.c', serverCount: 1 } });
+  check('A trip missing from the server is reported', d4.lines.some((l) => /not reached the server/.test(l)));
+  const d5 = diagnoseSync({ ...ok, probe: { email: 'a@b.c', serverCount: 3 } });
+  check('A trip on the server that this phone lacks tells the owner to reopen the app', d5.lines.some((l) => /reopen/.test(l)));
+  const d6 = diagnoseSync({ ...ok, lastError: 'Boom' });
+  check('The last problem is shown and the sheet is not reported as fine', !d6.ok && d6.lines.some((l) => /Last problem: Boom/.test(l)));
+  const d7 = diagnoseSync({ ...ok, probe: null, probeError: 'Failed to fetch' });
+  check('When the service cannot be reached at all, that is the headline', !d7.ok && /Cannot reach/.test(d7.headline));
+  check('Login rejections and network failures become plain sentences',
+    /sign in again/i.test(plainSyncError('JWT expired')) && /could not be reached/.test(plainSyncError('Failed to fetch')) && plainSyncError('odd') === 'odd');
 }
 
 // --- Show the results ---

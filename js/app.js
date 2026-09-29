@@ -24,6 +24,7 @@ import { closeSheet, showToast } from './ui.js';
 import { signOut as authSignOut } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
+  syncProbe, diagnoseSync, plainSyncError,
 } from './sync.js';
 import { enqueue } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
@@ -74,11 +75,24 @@ function syncStatus() {
 // bumped on accepted:true: a rejected push means the server already had this changeCount or newer
 // from elsewhere, so THIS push never actually landed and nothing here should be trusted as pushed.
 async function pushAndTrack(trip, entries = []) {
-  const { accepted } = await pushTrip(trip);
-  if (!accepted) return;
-  if (entries.length > 0) await pushJournalEntries(trip.id, entries);
-  await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
+  try {
+    const { accepted } = await pushTrip(trip);
+    if (accepted) {
+      if (entries.length > 0) await pushJournalEntries(trip.id, entries);
+      await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
+    }
+    noteSyncOk();
+  } catch (error) {
+    noteSyncProblem(error);
+    throw error;
+  }
 }
+
+// What the "Sync details" sheet (behind the sync light) reports as the last success and last problem.
+// Kept in memory only: it describes this session, and the sheet also asks the server live.
+const syncInfo = { lastOkAt: null, lastError: null };
+function noteSyncOk() { syncInfo.lastOkAt = new Date().toISOString(); syncInfo.lastError = null; }
+function noteSyncProblem(error) { syncInfo.lastError = plainSyncError(error?.message); }
 
 // The list of screens. The first one whose pattern matches the address is used.
 const routes = [
@@ -91,6 +105,14 @@ const routes = [
 const ctx = {
   get owner() { return state.owner; },
   get syncStatus() { return syncStatus(); },
+  // For the sheet behind the sync light: asks the server live and explains what is going on.
+  async syncDetails() {
+    let probe = null, probeError = null;
+    if (navigator.onLine) {
+      try { probe = await syncProbe(); } catch (error) { probeError = error?.message ?? 'unreachable'; }
+    }
+    return diagnoseSync({ online: navigator.onLine, probe, probeError, localCount: state.trips.size, ...syncInfo });
+  },
   get trips() { return [...state.trips.values()]; },
   trip: (id) => state.trips.get(id),
   journal: (tripId) => state.journal.get(tripId) ?? [],
@@ -320,7 +342,7 @@ async function start() {
 // what the owner's own Supabase project confirmed (26 Sep 2026).
 async function backfillPush() {
   let remote;
-  try { remote = await pullTripList(); } catch { return; } // offline, or not reachable yet: try again next boot
+  try { remote = await pullTripList(); } catch (error) { noteSyncProblem(error); return; } // offline, or not reachable yet: try again next boot
   const remoteById = new Map(remote.map((r) => [r.id, r.change_count]));
   for (const trip of state.trips.values()) {
     const serverCount = remoteById.get(trip.id);
@@ -337,7 +359,7 @@ async function backfillPush() {
           await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
         }
       }
-    } catch { /* try again next boot */ }
+    } catch (error) { noteSyncProblem(error); /* try again next boot */ }
   }
 }
 
@@ -354,10 +376,12 @@ function pullSync() {
 
 async function doPullSync() {
   let remote;
-  try { remote = await pullTripList(); } catch { return; } // offline, or not reachable yet: try again later
+  try { remote = await pullTripList(); } catch (error) { noteSyncProblem(error); return; } // offline, or not reachable yet: try again later
+  let failed = false;
   for (const row of remote) {
-    try { await pullOneTrip(row.id, row.change_count); } catch { /* try again next time */ }
+    try { await pullOneTrip(row.id, row.change_count); } catch (error) { failed = true; noteSyncProblem(error); /* try again next time */ }
   }
+  if (!failed) noteSyncOk();
 }
 
 async function pullOneTrip(tripId, serverChangeCount) {

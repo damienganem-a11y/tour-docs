@@ -48,10 +48,23 @@ const SYNC_STATES = [
 export function syncDot(ctx, { compact = false } = {}) {
   const status = ctx.syncStatus;
   const label = SYNC_STATES.find((s) => s.key === status).label;
-  return h('span', { class: 'sync-lights', role: 'status', 'aria-label': label, title: label },
+  // A button: tapping the light opens "Sync details" (what is really going on, in plain words).
+  return h('button', { class: 'sync-lights', type: 'button', 'aria-label': `${label}. Tap for sync details`, title: label, onclick: () => syncDetailsSheet(ctx) },
     h('span', { class: 'sync-lights-dots' },
       SYNC_STATES.map((s) => h('span', { class: `sync-light sync-light--${s.key}${s.key === status ? ' is-on' : ''}` }))),
     compact ? null : h('span', { class: `sync-lights-label sync-lights-label--${status}` }, label));
+}
+
+// Sync only works with a live online login in THIS browser (see sync.js's diagnoseSync), and when it
+// does not, nothing else in the app says so. This sheet asks the server and explains, in plain words.
+function syncDetailsSheet(ctx) {
+  const box = h('div', { class: 'sync-details' }, h('p', { class: 'muted' }, 'Checking...'));
+  openSheet({ eyebrow: 'Sync', title: 'Sync details', body: box, cancelLabel: 'Close' });
+  ctx.syncDetails().then((result) => {
+    box.replaceChildren(
+      h('p', { class: `sync-details-headline${result.ok ? '' : ' is-problem'}` }, result.headline),
+      ...result.lines.map((line) => h('p', { class: 'muted' }, line)));
+  });
 }
 
 // The small sheet every "Export" button opens to ask PDF or Excel (SPEC.md, "5. Export"): tapping

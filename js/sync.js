@@ -78,3 +78,63 @@ export function decideSync({ localChangeCount, pushedChangeCount, serverChangeCo
   if (serverChangeCount <= localChangeCount) return 'in-sync';
   return localChangeCount <= (pushedChangeCount ?? 0) ? 'pull' : 'conflict';
 }
+
+// ---------- "Sync details" (the screen behind the sync light) ----------
+// Sync only works when THIS browser holds a live Supabase login. Being signed in inside the app (a name and
+// an email saved on the phone) is not the same thing, and neither is "Skip this for now". Without a live
+// login the server does not raise an error: it just answers "no trips", so a phone could look fine while
+// nothing moved. These functions exist so the owner can SEE which case they are in.
+
+// Asks the online service (needs internet). Throws if it cannot be reached at all.
+// Returns { email, serverCount }: email is null when this browser has no live login.
+export async function syncProbe() {
+  const supabase = await getClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { email: null, serverCount: null };
+  const trips = await pullTripList();
+  return { email: session.user.email, serverCount: trips.length };
+}
+
+// Turns a technical error into a sentence the owner can act on.
+export function plainSyncError(message) {
+  const text = String(message ?? '');
+  if (/jwt|not authenticated|not authorized|permission|row-level|violates not-null|auth/i.test(text)) {
+    return 'The online account did not accept this phone\'s login. Sign out and sign in again with the email link.';
+  }
+  if (/failed to fetch|network|load failed|timeout/i.test(text)) return 'The online service could not be reached.';
+  return text || 'Something went wrong while syncing.';
+}
+
+// Pure and network-free (so it is unit-tested): what to tell the owner.
+//   online       navigator.onLine
+//   probe        the result of syncProbe(), or null if it could not run
+//   probeError   the message if syncProbe() threw
+//   localCount   trips on this phone
+//   lastError    the last problem a push or pull hit (already in plain words), or null
+//   lastOkAt     ISO moment of the last push or pull that worked, or null
+// Returns { ok, headline, lines[] }.
+export function diagnoseSync({ online, probe, probeError, localCount, lastError, lastOkAt }) {
+  const lines = [];
+  if (!online) {
+    return { ok: false, headline: 'Offline', lines: ['No internet right now. Changes are saved on this phone and will sync when it is back online.'] };
+  }
+  if (probeError) {
+    return { ok: false, headline: 'Cannot reach the online service', lines: [plainSyncError(probeError)] };
+  }
+  if (!probe || probe.email === null) {
+    return {
+      ok: false,
+      headline: 'Not signed in online: nothing is syncing',
+      lines: [
+        'This phone has your name saved, but no live online login. That happens after "Skip this for now", or when the email link was finished in a different browser.',
+        'Fix: on the Trips screen tap Sign out, then sign in again with the email link, in the same browser you use for the app.',
+      ],
+    };
+  }
+  lines.push(`Trips on this phone: ${localCount}. Trips on the server: ${probe.serverCount}.`);
+  if (probe.serverCount < localCount) lines.push('Some trips on this phone have not reached the server yet. They push on their next change or when the app is reopened.');
+  if (probe.serverCount > localCount) lines.push('The server has trips this phone does not have yet. Close the app completely and reopen it to pull them.');
+  if (lastOkAt) lines.push(`Last successful sync: ${new Date(lastOkAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`);
+  if (lastError) lines.push(`Last problem: ${lastError}`);
+  return { ok: !lastError, headline: `Signed in online as ${probe.email}`, lines };
+}
