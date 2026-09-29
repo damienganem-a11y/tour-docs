@@ -47,6 +47,13 @@ export function defaultBranding() {
   return { companyName: '', accent: '#1d5c57', cardNote: '', logo: null };
 }
 
+// The company look is set ONCE per device (Trips screen > My company) and copied into every new trip, so
+// a trip stays self-contained: it syncs, duplicates and backs up with its own branding. cardNote belongs
+// to the trip (a meeting time is not the same every trip), so it is kept, never taken from the look.
+export function brandingFromLook(look, cardNote = '') {
+  return { companyName: look.companyName ?? '', accent: look.accent ?? defaultBranding().accent, cardNote, logo: look.logo ?? null };
+}
+
 export function buildTrip(raw) {
   need(raw && typeof raw === 'object' && raw.trip && Array.isArray(raw.destinations) && Array.isArray(raw.guests)
     && Array.isArray(raw.slots) && raw.signups && typeof raw.signups === 'object',

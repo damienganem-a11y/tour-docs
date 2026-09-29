@@ -2,7 +2,7 @@
 // They cover the sample trip's planted test cases (see SPEC.md) that step 1 can check, plus
 // time zones, unique IDs, saving on the device, and files with mistakes.
 
-import { buildTrip } from './loader.js';
+import { buildTrip, brandingFromLook, defaultBranding } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
 import { applyChange, validateChanges, enqueue } from './changes.js';
 import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
@@ -2560,6 +2560,16 @@ function readZip(bytes) {
   const noLogo = await buildCardsPdf(cards, { companyName: 'Sample Travel Co', accent: '#b4530f', cardNote: '', logo: null }).text();
   check('Cards are six to an A4 page: 7 cards make 2 pages', (withLogo.match(/\/Type \/Page \/Parent/g) ?? []).length === 2 && (noLogo.match(/\/Type \/Page \/Parent/g) ?? []).length === 1);
   check('The logo is embedded as a picture only when there is one', /DCTDecode/.test(withLogo) && !/DCTDecode/.test(noLogo));
+}
+
+// --- Company look: copied into a new trip, the trip's own note kept ---
+{
+  const look = { companyName: 'Sample Travel Co', accent: '#e8b100', logo: { data: 'data:image/jpeg;base64,AAAA', width: 10, height: 5 }, ignored: 'x' };
+  const applied = brandingFromLook(look, 'Meet in the lobby');
+  check('A new trip gets the company name, colour and logo from the look, and keeps its own card note',
+    applied.companyName === 'Sample Travel Co' && applied.accent === '#e8b100' && applied.logo.width === 10 && applied.cardNote === 'Meet in the lobby' && !('ignored' in applied));
+  check('With no logo or name in the look, the trip gets neutral values, never undefined',
+    JSON.stringify(brandingFromLook({})) === JSON.stringify({ ...defaultBranding(), cardNote: '' }));
 }
 
 // --- Show the results ---

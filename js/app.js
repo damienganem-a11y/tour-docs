@@ -19,7 +19,7 @@ import {
   getPushedChangeCount, bumpPushedChangeCount,
 } from './db.js';
 import { newId } from './ids.js';
-import { defaultBranding } from './loader.js';
+import { defaultBranding, brandingFromLook } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
@@ -44,6 +44,9 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // Does this browser hold a live online login? true / false, or null while unknown (not checked yet, or
 // offline so it cannot be checked). Only `false` changes what the sync light says (see syncStatus).
 let hasSession = null;
+// The company look every new trip starts with (Trips > My company), or null: kept on this device only.
+let companyLook = null;
+let companyLookAsked = false; // the load-time prompt is shown once per device, whether it was saved or skipped
 
 // The small sync light shown on the Trips screen and inside a trip (see chrome.js's syncDot):
 //   'offline'  no internet right now (navigator.onLine)
@@ -137,6 +140,17 @@ const ctx = {
     return diagnoseSync({ online: navigator.onLine, probe, probeError, localCount: state.trips.size, ...syncInfo });
   },
   get trips() { return [...state.trips.values()]; },
+  get companyLook() { return companyLook; },
+  get companyLookAsked() { return companyLookAsked; },
+  async markCompanyLookAsked() {
+    companyLookAsked = true;
+    await dbPut('settings', true, 'companyLookAsked');
+  },
+  async saveCompanyLook(look) {
+    await dbPut('settings', look, 'companyLook');
+    companyLook = look;
+    render({ keepScroll: true });
+  },
   trip: (id) => state.trips.get(id),
   journal: (tripId) => state.journal.get(tripId) ?? [],
   exportsFor: (tripId) => state.exports.get(tripId) ?? [],
@@ -193,6 +207,7 @@ const ctx = {
   // backup; pulling it onto another device is step 2b) — best-effort, not awaited: the local save
   // above is what matters, and already happened by the time this runs.
   async addTrip(trip) {
+    if (companyLook) trip.branding = brandingFromLook(companyLook, trip.branding?.cardNote ?? ''); // a new trip starts with the company look
     await dbPut('trips', trip);
     state.trips.set(trip.id, trip);
     trackPush(pushAndTrack(trip)).catch(() => {});
@@ -316,6 +331,8 @@ function migrateTrip(trip) {
 async function start() {
   try {
     state.owner = await dbGet('settings', 'owner');
+    companyLook = (await dbGet('settings', 'companyLook')) ?? null;
+    companyLookAsked = Boolean(await dbGet('settings', 'companyLookAsked'));
     for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); }
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
