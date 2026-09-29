@@ -645,3 +645,11 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 .group-edit-row .text-input { margin: 0; flex: 1 1 auto; min-width: 0; }
 .group-edit-row .group-size-input { flex: 0 0 76px; }
 .section-title { margin: 22px 0 8px; font-size: 15px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Pull down to refresh (js/pullRefresh.js): a small label at the top while dragging */
+.pull-indicator {
+  position: fixed; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; z-index: 55;
+  background: var(--track); color: var(--ink-soft, inherit); pointer-events: none;
+}
+.pull-indicator--ready { background: #ff8f00; color: #1b1b1b; }

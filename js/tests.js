@@ -16,6 +16,7 @@ import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUn
 import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnlock } from './biometrics.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { passcodeView } from './views/passcode.js';
+import { enablePullToRefresh } from './pullRefresh.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
@@ -2517,6 +2518,23 @@ function readZip(bytes) {
   check('The Excel version is one flat sheet and opens as a file', (await buildEveningXlsx(on).arrayBuffer()).byteLength > 500);
   const emptyDoc = eveningReservationDoc(ctxR.state, trip.destinations.find((d) => d.name !== 'Lisbon'), eveR, 'Tester');
   check('An evening with nothing booked gives an empty sheet (the app then says so instead of exporting)', emptyDoc.blocks.length === 0);
+}
+
+// --- Pull down to refresh: a long pull at the top refreshes, a short one does not ---
+{
+  let refreshed = 0;
+  enablePullToRefresh(() => { refreshed += 1; });
+  const touch = (type, y) => { const e = new Event(type); e.touches = type === 'touchend' ? [] : [{ clientY: y }]; window.dispatchEvent(e); };
+  window.scrollTo(0, 0);
+  touch('touchstart', 100); touch('touchmove', 140); touch('touchend');
+  check('A short pull (40 px) does not refresh', refreshed === 0);
+  touch('touchstart', 100); touch('touchmove', 200); touch('touchend');
+  check('A long pull (100 px) at the top refreshes once', refreshed === 1);
+  document.body.classList.add('sheet-open');
+  touch('touchstart', 100); touch('touchmove', 200); touch('touchend');
+  document.body.classList.remove('sheet-open');
+  check('Nothing happens while a sheet is open', refreshed === 1);
+  document.querySelectorAll('.pull-indicator').forEach((n) => n.remove());
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

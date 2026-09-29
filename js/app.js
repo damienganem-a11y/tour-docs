@@ -31,6 +31,7 @@ import { enqueue } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import * as biometrics from './biometrics.js';
+import { enablePullToRefresh } from './pullRefresh.js';
 import { passcodeView } from './views/passcode.js';
 import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
@@ -384,6 +385,7 @@ async function start() {
   });
   window.addEventListener('offline', () => { if (state.owner) render({ keepScroll: true }); });
   setInterval(() => refreshFromServer(), REFRESH_EVERY_MS);
+  enablePullToRefresh(refreshByHand);
   document.addEventListener('visibilitychange', () => refreshFromServer({ force: true }));
   window.addEventListener('focus', () => refreshFromServer({ force: true }));
   render();
@@ -522,6 +524,15 @@ async function refreshFromServer({ force = false } = {}) {
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }
 
+// Pulling the screen down (pullRefresh.js): refresh right now, and always say what happened.
+async function refreshByHand() {
+  if (!state.owner) return;
+  if (!navigator.onLine) { showToast('Offline: nothing to refresh.', true); return; }
+  if (hasSession === false) { showToast('Not signed in online: open the sync light for details.', true); return; }
+  await refreshFromServer({ force: true });
+  showToast('Up to date');
+}
+
 let liveTimer = null;
 async function startLive() {
   if (liveStarting || liveChannel || !state.owner || hasSession !== true) return;
@@ -529,10 +540,11 @@ async function startLive() {
   try {
     liveChannel = await watchServerChanges(
       () => { // many changes can arrive at once (a trip and its journal): wait a moment, then pull once
+        liveUp = true; // proof that the live signal really works: the safety checks can now slow down
         clearTimeout(liveTimer);
         liveTimer = setTimeout(() => refreshFromServer({ force: true }), 400);
       },
-      (up) => { liveUp = up; },
+      (up) => { if (!up) liveUp = false; }, // it counts as working only once a change has really arrived (below)
     );
   } catch { liveChannel = null; /* tried again at the next check */ }
   liveStarting = false;
