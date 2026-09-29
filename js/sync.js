@@ -139,3 +139,15 @@ export function diagnoseSync({ online, probe, probeError, localCount, lastError,
   if (lastError) lines.push(`Last problem: ${lastError}`);
   return { ok: !lastError, headline: `Signed in online as ${probe.email}`, lines };
 }
+
+// Live "something changed" signal from the server (Supabase Realtime), so a phone hears about another device's change
+// within a second or two instead of waiting for the next check. It carries no data: the app just runs its normal pull.
+// onChange() is called for every change to one of the owner's trips; onStatus(true|false) says whether the live
+// connection is up (the app checks the server often while it is not). Needs the trips table added to the
+// "supabase_realtime" publication (see SPEC.md); without that it stays silent and the regular checks carry on.
+export async function watchServerChanges(onChange, onStatus) {
+  const supabase = await getClient();
+  return supabase.channel('tour-docs-trips')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => onChange())
+    .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
+}

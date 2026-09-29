@@ -25,7 +25,7 @@ import { closeSheet, showToast } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
-  syncProbe, diagnoseSync, plainSyncError,
+  syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
 } from './sync.js';
 import { enqueue } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
@@ -369,9 +369,9 @@ async function start() {
     trackPush(pullSync()).catch(() => {});
   });
   window.addEventListener('offline', () => { if (state.owner) render({ keepScroll: true }); });
-  setInterval(refreshFromServer, REFRESH_EVERY_MS);
-  document.addEventListener('visibilitychange', refreshFromServer);
-  window.addEventListener('focus', refreshFromServer);
+  setInterval(() => refreshFromServer(), REFRESH_EVERY_MS);
+  document.addEventListener('visibilitychange', () => refreshFromServer({ force: true }));
+  window.addEventListener('focus', () => refreshFromServer({ force: true }));
   render();
 
   // Phase 2: push this phone's own pending work first (step 2a's backfill), then pull whatever
@@ -486,17 +486,44 @@ async function pullOneTrip(tripId, serverChangeCount) {
 }
 
 // Keeps this phone up to date with the owner's other devices without anyone asking (owner's request,
-// 1 Oct 2026): every 30 seconds while the app is on screen, and the moment it comes back to the front
-// (switching tab or app, unlocking the phone). Quiet on purpose: no sync-light flicker, and nothing is
-// redrawn unless a trip actually changed. One refresh at a time.
+// 1 Oct 2026). Two ways, both quiet (no sync-light flicker, nothing redrawn unless a trip actually changed):
+//   - Live: the server tells this phone the moment another device changes a trip (watchServerChanges).
+//   - Checking: every 5 seconds while the app is on screen, and the moment it comes back to the front. Once the live
+//     connection is up this only happens once a minute, as a safety net; if the live connection is not up (not set up
+//     on the server yet, or a bad connection), the 5-second checks carry on, so nothing depends on it.
+// One refresh at a time.
 const REFRESH_EVERY_MS = 5000;
+const SAFETY_REFRESH_MS = 60000;
 let refreshing = false;
-async function refreshFromServer() {
+let liveUp = false;        // is the live connection to the server working right now?
+let liveStarting = false;
+let lastRefreshAt = 0;
+async function refreshFromServer({ force = false } = {}) {
   if (refreshing || !state.owner || hasSession === false || !navigator.onLine || document.visibilityState !== 'visible') return;
+  if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
+  lastRefreshAt = Date.now();
   try { await backfillPush(); await pullSync(); } catch { /* the next refresh tries again */ }
   refreshing = false;
+  startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }
+
+let liveTimer = null;
+async function startLive() {
+  if (liveStarting || liveChannel || !state.owner || hasSession !== true) return;
+  liveStarting = true;
+  try {
+    liveChannel = await watchServerChanges(
+      () => { // many changes can arrive at once (a trip and its journal): wait a moment, then pull once
+        clearTimeout(liveTimer);
+        liveTimer = setTimeout(() => refreshFromServer({ force: true }), 400);
+      },
+      (up) => { liveUp = up; },
+    );
+  } catch { liveChannel = null; /* tried again at the next check */ }
+  liveStarting = false;
+}
+let liveChannel = null;
 
 // A deleted trip (Trips screen, step 9) is erased for good, together with its journal and exports,
 // 30 days after it was deleted, automatically, the next time the app opens. Also erased on the
