@@ -489,7 +489,7 @@ async function pullOneTrip(tripId, serverChangeCount) {
 // 1 Oct 2026): every 30 seconds while the app is on screen, and the moment it comes back to the front
 // (switching tab or app, unlocking the phone). Quiet on purpose: no sync-light flicker, and nothing is
 // redrawn unless a trip actually changed. One refresh at a time.
-const REFRESH_EVERY_MS = 30000;
+const REFRESH_EVERY_MS = 5000;
 let refreshing = false;
 async function refreshFromServer() {
   if (refreshing || !state.owner || hasSession === false || !navigator.onLine || document.visibilityState !== 'visible') return;
