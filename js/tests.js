@@ -9,17 +9,17 @@ import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
 import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow } from './time.js';
-import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, waitlistOrder, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE, BRANDING_UNDO_SCOPE } from './journal.js';
+import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, waitlistOrder, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE, BRANDING_UNDO_SCOPE, GROUPS_UNDO_SCOPE } from './journal.js';
 import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
 import { pressable } from './dom.js';
 import { hashPasscode, makePasscodeConfig, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnlock } from './biometrics.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { APP_VERSION } from './version.js';
-import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
-import { buildListsPdf, buildFinalTripPdf, buildCardsPdf } from './pdf.js';
-import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
-import { destinationExportDoc, reservationExportDoc, confirmationCards, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
+import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf } from './pdf.js';
+import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx } from './xlsx.js';
+import { destinationExportDoc, reservationExportDoc, confirmationCards, groupsExportData, groupCards, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
@@ -2549,9 +2549,9 @@ function readZip(bytes) {
   check('A pair\'s card names both of them joined with " & ", the restaurant and the seating time',
     pairCard.names === `${nameOf2(pairs[0][0])} & ${nameOf2(pairs[0][1])}` || pairCard.names === `${nameOf2(pairs[0][1])} & ${nameOf2(pairs[0][0])}`);
   check('"At your table" lists the OTHER parties only, never the guest themselves',
-    pairCard.tablemates.length === 1 && pairCard.tablemates[0] === nameOf2(solo) && soloCard.tablemates.length === 1 && !soloCard.tablemates[0].includes(nameOf2(solo)));
+    pairCard.mates.length === 1 && pairCard.mates[0] === nameOf2(solo) && soloCard.mates.length === 1 && !soloCard.mates[0].includes(nameOf2(solo)));
   check('Cards carry the restaurant, the seating time and "Destination · Day date"',
-    pairCard.restaurant === 'Card Test' && pairCard.time === '19:00' && cards.some((c) => c.time === '20:30') && /^Lisbon · \w{3} \d+ \w{3}$/.test(pairCard.eyebrow), pairCard.eyebrow);
+    pairCard.title === 'Card Test' && pairCard.subtitle === '19:00' && pairCard.matesLabel === 'At your table' && cards.some((c) => c.subtitle === '20:30') && /^Lisbon · \w{3} \d+ \w{3}$/.test(pairCard.eyebrow), pairCard.eyebrow);
   check('A card never contains dietary information (the guest has a shellfish allergy)', !/shellfish|allerg|dietary/i.test(JSON.stringify(cards)));
   check('An evening with no tables booked gives no cards', confirmationCards(ctxBr.state, lisbonC, eveC).length === 0);
 
@@ -2570,6 +2570,118 @@ function readZip(bytes) {
     applied.companyName === 'Sample Travel Co' && applied.accent === '#e8b100' && applied.logo.width === 10 && applied.cardNote === 'Meet in the lobby' && !('ignored' in applied));
   check('With no logo or name in the look, the trip gets neutral values, never undefined',
     JSON.stringify(brandingFromLook({})) === JSON.stringify({ ...defaultBranding(), cardNote: '' }));
+}
+
+// --- Groups (Settings > Groups): named splits of the guests ---
+{
+  const ctxG = makeCtx();
+  const add = await applyChange(ctxG, trip.id, { type: 'add-split', name: '  Nile transfer ', details: ' Depart 07:30 ', groups: [{ name: 'Bus 1', capacity: 2 }, { name: 'Bus 2', capacity: null }] });
+  const split = () => ctxG.state.splits.find((x) => x.id === add.splitId);
+  check('A split is created with its groups (each with its own id), a trimmed name and details, and nobody placed yet',
+    add.ok && split().name === 'Nile transfer' && split().details === 'Depart 07:30' && split().groups.length === 2 && split().groups[0].id !== split().groups[1].id
+    && Object.keys(split().assignments).length === 0 && split().groups[0].capacity === 2 && split().groups[1].capacity === null);
+  check('The journal says what was created', summarize(groupBatches(add.entries)[0]) === 'Created the split "Nile transfer" (2 groups)');
+  const bad = (change) => applyChange(ctxG, trip.id, { type: 'add-split', name: 'X', details: '', groups: [{ name: 'A', capacity: null }], ...change });
+  check('Refused: no name, a name over 60 letters, no groups, over 40 groups, two groups with the same name (any capitals), a bad size',
+    !(await bad({ name: ' ' })).ok && !(await bad({ name: 'x'.repeat(61) })).ok && !(await bad({ groups: [] })).ok
+    && !(await bad({ groups: Array.from({ length: 41 }, (_, i) => ({ name: `G${i}`, capacity: null })) })).ok
+    && !(await bad({ groups: [{ name: 'Bus', capacity: null }, { name: 'bus', capacity: null }] })).ok
+    && !(await bad({ groups: [{ name: 'A', capacity: 0 }] })).ok && !(await bad({ groups: [{ name: 'A', capacity: 2.5 }] })).ok);
+  check('Only the owner can make a split', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'add-split', name: 'X', details: '', groups: [{ name: 'A', capacity: null }] })).ok);
+
+  const [a, b, c] = trip.guests.filter((g) => !g.leftAt);
+  const [bus1, bus2] = split().groups;
+  const put = (assignments) => applyChange(ctxG, trip.id, { type: 'assign-guests', splitId: add.splitId, assignments });
+  const first = await put([a, b, c].map((g) => ({ guestId: g.id, groupId: bus1.id })));
+  check('Guests are put in a group, even beyond its size (flagged on screen, never refused)', first.ok && [a, b, c].every((g) => split().assignments[g.id] === bus1.id));
+  check('The journal names one, two or three guests, and just counts more', /^Put .+ in Bus 1 \(Nile transfer\)$/.test(summarize(groupBatches(first.entries)[0])));
+  const moved = await put([{ guestId: a.id, groupId: bus2.id }, { guestId: b.id, groupId: null }]);
+  check('A guest can move to another group of the split, or be taken out of it',
+    moved.ok && split().assignments[a.id] === bus2.id && split().assignments[b.id] === undefined && split().assignments[c.id] === bus1.id);
+  const badAssign = (assignments, splitId = add.splitId) => applyChange(ctxG, trip.id, { type: 'assign-guests', splitId, assignments });
+  check('Refused: nobody picked, an unknown guest, an unknown group, the same guest twice, an unknown split, and "already how it is"',
+    !(await badAssign([])).ok && !(await badAssign([{ guestId: 'nope', groupId: bus1.id }])).ok && !(await badAssign([{ guestId: a.id, groupId: 'nope' }])).ok
+    && !(await badAssign([{ guestId: a.id, groupId: bus1.id }, { guestId: a.id, groupId: bus2.id }])).ok && !(await badAssign([{ guestId: a.id, groupId: bus1.id }], 'nope')).ok
+    && !(await badAssign([{ guestId: a.id, groupId: bus2.id }])).ok);
+  const undoMove = await applyChange(ctxG, trip.id, { type: 'undo', scope: GROUPS_UNDO_SCOPE });
+  check('Undo puts everybody back exactly where they were before that move', undoMove.ok && split().assignments[a.id] === bus1.id && split().assignments[b.id] === bus1.id && split().assignments[c.id] === bus1.id);
+
+  const edited = await applyChange(ctxG, trip.id, { type: 'edit-split', splitId: add.splitId, name: 'Nile day', details: '', groups: [{ id: bus1.id, name: 'Bus One', capacity: 40 }, { id: null, name: 'Bus 3', capacity: null }] });
+  check('Editing renames a group but keeps its id and members; a group left out is removed and its members become un-placed',
+    edited.ok && split().name === 'Nile day' && split().groups[0].id === bus1.id && split().groups[0].name === 'Bus One'
+    && split().assignments[a.id] === bus1.id && !split().groups.some((g) => g.id === bus2.id) && split().groups.length === 2);
+  const editedTwo = await applyChange(ctxG, trip.id, { type: 'edit-split', splitId: add.splitId, name: 'Nile day', details: '', groups: [{ id: null, name: 'Only', capacity: null }] });
+  check('Removing the group somebody is in takes them out of the split', editedTwo.ok && Object.keys(split().assignments).length === 0);
+  await applyChange(ctxG, trip.id, { type: 'undo', scope: GROUPS_UNDO_SCOPE });
+  check('Undo of an edit brings back the old groups AND who was in them', split().groups[0].name === 'Bus One' && split().assignments[a.id] === bus1.id);
+  check('Refused: editing with a group id that is not in the split', !(await applyChange(ctxG, trip.id, { type: 'edit-split', splitId: add.splitId, name: 'X', details: '', groups: [{ id: 'nope', name: 'A', capacity: null }] })).ok);
+
+  const snapshot = JSON.stringify(split());
+  const deleted = await applyChange(ctxG, trip.id, { type: 'delete-split', splitId: add.splitId });
+  check('A split can be deleted', deleted.ok && ctxG.state.splits.length === 0);
+  await applyChange(ctxG, trip.id, { type: 'undo', scope: GROUPS_UNDO_SCOPE });
+  check('Undo of a delete brings the whole split back, members included', JSON.stringify(split()) === snapshot);
+  check('A split with nothing else in the journal leaves no guest details in it', !/allerg|shellfish|dietary/i.test(JSON.stringify(ctxG.entries)));
+
+  // --- Auto-split: travel parties stay together ---
+  const guests24 = trip.guests.filter((g) => !g.leftAt).slice(0, 24);
+  const fresh = { groups: [1, 2, 3, 4].map((i) => ({ id: `g${i}`, name: `G${i}`, capacity: null })), assignments: {} };
+  const plan = autoSplitPlan(trip, fresh, guests24.map((g) => g.id));
+  const groupOf = new Map(plan.map((p) => [p.guestId, p.groupId]));
+  const counts = [1, 2, 3, 4].map((i) => plan.filter((p) => p.groupId === `g${i}`).length);
+  const partiesSplit = guests24.filter((g) => g.partyId).some((g) => guests24.some((o) => o.partyId === g.partyId && groupOf.get(o.id) !== groupOf.get(g.id)));
+  check('Auto-split places every guest exactly once', plan.length === 24 && new Set(plan.map((p) => p.guestId)).size === 24);
+  check('Auto-split never separates a travel party', !partiesSplit);
+  check('Auto-split keeps the groups close in size (within the biggest party)', Math.max(...counts) - Math.min(...counts) <= 4, counts.join(','));
+  check('Auto-split is deterministic: the same input gives the same plan', JSON.stringify(plan) === JSON.stringify(autoSplitPlan(trip, fresh, guests24.map((g) => g.id))));
+  const capped = { groups: [1, 2, 3, 4].map((i) => ({ id: `g${i}`, name: `G${i}`, capacity: 6 })), assignments: {} };
+  const cappedPlan = autoSplitPlan(trip, capped, guests24.map((g) => g.id));
+  check('Auto-split respects group sizes when everybody can fit', [1, 2, 3, 4].every((i) => cappedPlan.filter((p) => p.groupId === `g${i}`).length <= 6));
+  const partial = { groups: fresh.groups, assignments: Object.fromEntries(guests24.slice(0, 12).map((g) => [g.id, 'g1'])) };
+  const rest = autoSplitPlan(trip, partial, guests24.slice(12).map((g) => g.id));
+  check('Auto-split of only the people not placed yet counts who is already in each group', rest.length === 12 && rest.every((p) => p.groupId !== 'g1'));
+}
+
+// --- Groups: the printable list, the Excel file and the cards ---
+{
+  const ctxX = makeCtx();
+  const made = await applyChange(ctxX, trip.id, { type: 'add-split', name: 'Nile transfer', details: 'Depart 07:30, hotel lobby', groups: [{ name: 'Bus 1', capacity: 30 }, { name: 'Queen Victoria', capacity: null }, { name: 'Henry VI', capacity: null }] });
+  const spl = () => ctxX.state.splits.find((x) => x.id === made.splitId);
+  const everyone = ctxX.state.guests.filter((g) => !g.leftAt);
+  const plan = autoSplitPlan(ctxX.state, spl(), everyone.slice(0, 60).map((g) => g.id)); // 60 of 80 placed: 20 are not in a group yet
+  await applyChange(ctxX, trip.id, { type: 'assign-guests', splitId: made.splitId, assignments: plan });
+  const allergic = guest('G034');
+  const data = groupsExportData(ctxX.state, spl(), 'Tester');
+
+  check('The list has one entry per group, in order, with names as "Last, First" sorted, and a count',
+    data.groups.length === 3 && data.groups.map((g) => g.name).join() === 'Bus 1,Queen Victoria,Henry VI'
+    && data.groups.every((g) => g.rows.every((r, i, all) => i === 0 || all[i - 1].name.localeCompare(r.name) <= 0)) && /^\d+ \/ 30/.test(data.groups[0].countText));
+  check('Everybody not in a group is listed separately, so nobody drops out of the paperwork',
+    data.unplaced.length === 20 && data.groups.reduce((n, g) => n + g.rows.length, 0) + data.unplaced.length === 80);
+  const cardsG = groupCards(ctxX.state, spl());
+  check('Group cards: one per travel party per group, with the group name big and the split\'s details underneath, no "mates" list',
+    cardsG.length > 0 && cardsG.every((c) => ['Bus 1', 'Queen Victoria', 'Henry VI'].includes(c.title) && c.subtitle === 'Depart 07:30, hotel lobby' && c.eyebrow === 'Nile transfer' && c.mates.length === 0));
+  check('A group card lists a whole travel party together (they were never split by auto-split)',
+    cardsG.some((c) => c.names.includes(' & ')) && cardsG.reduce((n, c) => n + c.names.split(/ & |, /).length, 0) === 60);
+
+  const pdf = await buildGroupsPdf(data, { companyName: 'Sample Travel Co', accent: '#e8b100', logo: null }).text();
+  const pagesIn = (t) => (t.match(/\/Type \/Page \/Parent/g) ?? []).length;
+  check('The printable list is one page per group, plus one for the people not in a group', pagesIn(pdf) === 4 && /Page 4 of 4/.test(pdf) && /Not in a group yet/.test(pdf) && /Queen Victoria/.test(pdf));
+  const big = { ...data, groups: [{ name: 'Everyone', countText: '80 guests', rows: Array.from({ length: 80 }, (_, i) => ({ id: String(i), name: `Guest, ${i}` })) }], unplaced: [] };
+  const bigPdf = await buildGroupsPdf(big, {}).text();
+  check('A group longer than a page continues on the next one under the same heading', pagesIn(bigPdf) === 3 && /continued/.test(bigPdf)); // (a PDF writes its parentheses escaped, so match the word)
+  const jpegG = (() => { const c = document.createElement('canvas'); c.width = 20; c.height = 10; c.getContext('2d').fillRect(0, 0, 20, 10); return { data: c.toDataURL('image/jpeg', 0.8), width: 20, height: 10 }; })();
+  check('The logo goes on the list only when there is one', /DCTDecode/.test(await buildGroupsPdf(data, { logo: jpegG }).text()) && !/DCTDecode/.test(pdf));
+
+  const rows = everyone.map((g) => ({ group: '', id: g.ref, last: g.last, first: g.first, with: '' }));
+  const xlsx = await buildGroupsXlsx({ title: 'Nile transfer', updatedLine: 'U', groups: data.groups.map((g) => ({ heading: g.name, tables: [{ heading: g.name, detail: '', count: g.countText, rows: g.rows }] })) }, rows).text();
+  check('The Excel file has a flat "All guests" sheet with a Group column, plus a sheet for each group',
+    /All guests/.test(xlsx) && /Travelling with/.test(xlsx) && /Queen Victoria/.test(xlsx) && /Henry VI/.test(xlsx) && /Group/.test(xlsx));
+
+  // Put the guest with the shellfish allergy in a group: nothing printed may mention it.
+  await applyChange(ctxX, trip.id, { type: 'assign-guests', splitId: made.splitId, assignments: [{ guestId: allergic.id, groupId: spl().groups[0].id }] });
+  const everything = pdf + JSON.stringify(groupsExportData(ctxX.state, spl(), 'T')) + JSON.stringify(groupCards(ctxX.state, spl()));
+  check('Nothing printed for groups ever mentions dietary needs', !/shellfish|allerg|dietary/i.test(everything));
 }
 
 // --- Show the results ---

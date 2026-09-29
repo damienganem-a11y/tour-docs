@@ -187,6 +187,7 @@ export function buildTrip(raw) {
     vehicleLabel: raw.trip.vehicle_label ?? 'V',   // what vehicles are called: V1, V2...
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
+    splits: [],                                     // Settings > Groups: named splits of the guests (bus groups, boat groups...)
     branding: defaultBranding(),                    // Settings > Brand: the look of the confirmation cards
     restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
     dinnerBookings: [],                             // Phase 3 step 2a: tables, booked one at a time in Use > Dining

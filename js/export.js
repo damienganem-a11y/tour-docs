@@ -12,10 +12,10 @@
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
 // (shareOrDownloadFile itself now lives in ui.js, shared with Settings > Backup.)
 
-import { buildListsPdf, buildFinalTripPdf, buildCardsPdf } from './pdf.js';
-import { buildListsXlsx, buildFinalTripXlsx } from './xlsx.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf } from './pdf.js';
+import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment, formatWeekdayDate } from './time.js';
-import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests } from './rules.js';
+import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural } from './rules.js';
 import { newId } from './ids.js';
 import { showToast, shareOrDownloadFile } from './ui.js';
 
@@ -143,6 +143,13 @@ const joinNames = (guests) => (guests.length <= 2
   ? guests.map(fullName).join(' & ')
   : `${guests.slice(0, -1).map(fullName).join(', ')} & ${fullName(guests.at(-1))}`);
 
+// Guests split into their travel parties (a guest with no party is a party of one), in the order given.
+const partiesOf = (guests) => {
+  const parties = new Map();
+  for (const guest of guests) parties.set(guest.partyId ?? guest.id, [...(parties.get(guest.partyId ?? guest.id) ?? []), guest]);
+  return [...parties.values()];
+};
+
 export function confirmationCards(trip, destination, slot) {
   const bookings = trip.dinnerBookings
     .filter((b) => b.slotId === slot.id && dinnerCountIn(trip, b) > 0)
@@ -153,12 +160,10 @@ export function confirmationCards(trip, destination, slot) {
   const eyebrow = `${destination.name} · ${formatWeekdayDate(slot.date)}`;
   const cards = [];
   for (const { booking, restaurant, guests } of bookings) {
-    const parties = new Map(); // a guest with no travel party is a party of one
-    for (const guest of guests) parties.set(guest.partyId ?? guest.id, [...(parties.get(guest.partyId ?? guest.id) ?? []), guest]);
-    const groups = [...parties.values()];
+    const groups = partiesOf(guests);
     groups.forEach((group, i) => cards.push({
-      eyebrow, names: joinNames(group), restaurant: restaurant.name, time: booking.seating,
-      tablemates: groups.filter((_, j) => j !== i).map(joinNames),
+      eyebrow, names: joinNames(group), title: restaurant.name, subtitle: booking.seating,
+      mates: groups.filter((_, j) => j !== i).map(joinNames), matesLabel: 'At your table',
     }));
   }
   return cards;
@@ -178,13 +183,86 @@ export async function exportConfirmationCards(ctx, trip, destination, slot) {
   }
   const title = `Confirmation cards — ${destination.name} · Day ${slot.day}`;
   const updatedLine = `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${ctx.owner?.name ?? 'the owner'}`;
-  const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title), updatedLine, createdAt: new Date().toISOString(), format: 'pdf', blob };
+  await saveAndShare(ctx, trip, { title, updatedLine, format: 'pdf', blob });
+}
+
+// Keeps a finished file as a new version in the Exports archive, then hands it to the share sheet. Only for
+// files that hold no dietary information (see exportAndShare's `archive` option for the one that may).
+async function saveAndShare(ctx, trip, { title, updatedLine, format, blob }) {
+  const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title), updatedLine, createdAt: new Date().toISOString(), format, blob };
   try {
     await ctx.saveExport(trip.id, record);
   } catch {
     showToast('Could not save this export to the archive, but sharing it anyway.', true);
   }
-  await shareOrDownloadFile(blob, fileNameFor(title, 'pdf'), 'application/pdf');
+  await shareOrDownloadFile(blob, fileNameFor(title, FORMATS[format].extension), FORMATS[format].mimeType);
+}
+
+// ---------- Groups (Settings > Groups) ----------
+// A split's groups as printable lists, an editable Excel file, and cards telling each travel party which
+// group they are in. None of them ever carries dietary information.
+
+const activeGuestsOf = (trip) => trip.guests.filter((g) => !g.leftAt);
+
+// Everything the printable list and the Excel file need, from one split.
+export function groupsExportData(trip, split, updatedBy) {
+  const rowOf = (guest) => ({ id: guest.ref, name: `${guest.last}, ${guest.first}` });
+  const membersOf = (groupId) => activeGuestsOf(trip).filter((g) => split.assignments[g.id] === groupId).sort(byName);
+  return {
+    title: split.name, details: split.details,
+    updatedLine: `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`,
+    groups: split.groups.map((group) => {
+      const members = membersOf(group.id);
+      return { name: group.name, countText: group.capacity === null ? plural(members.length, 'guest') : capacityInfo(members.length, group.capacity).text, rows: members.map(rowOf) };
+    }),
+    unplaced: activeGuestsOf(trip).filter((g) => split.assignments[g.id] === undefined).sort(byName).map(rowOf),
+  };
+}
+
+// One card per travel party per group (a party split across two groups gets one card in each, naming only
+// who is in that group). Ordered by group, then by the party's first name.
+export function groupCards(trip, split) {
+  const cards = [];
+  for (const group of split.groups) {
+    const members = activeGuestsOf(trip).filter((g) => split.assignments[g.id] === group.id).sort(byName);
+    for (const party of partiesOf(members)) {
+      cards.push({ eyebrow: split.name, names: joinNames(party), title: group.name, titleSize: 34, subtitle: split.details, mates: [], matesLabel: '' }); // the group is what guests look for: big
+    }
+  }
+  return cards;
+}
+
+const nobodyPlaced = (trip, split) => !activeGuestsOf(trip).some((g) => split.assignments[g.id] !== undefined);
+const stampLine = (ctx) => `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${ctx.owner?.name ?? 'the owner'}`;
+
+export async function exportGroupsPdf(ctx, trip, split) {
+  if (nobodyPlaced(trip, split)) { showToast('Nobody is in a group yet.', true); return; }
+  const data = groupsExportData(trip, split, ctx.owner?.name ?? 'the owner');
+  await saveAndShare(ctx, trip, { title: `${split.name} — Groups`, updatedLine: data.updatedLine, format: 'pdf', blob: buildGroupsPdf(data, trip.branding ?? {}) });
+}
+
+export async function exportGroupsXlsx(ctx, trip, split) {
+  if (nobodyPlaced(trip, split)) { showToast('Nobody is in a group yet.', true); return; }
+  const data = groupsExportData(trip, split, ctx.owner?.name ?? 'the owner');
+  const groupName = (guest) => split.groups.find((g) => g.id === split.assignments[guest.id])?.name ?? '';
+  const order = new Map(split.groups.map((g, i) => [g.name, i]));
+  const rows = activeGuestsOf(trip).sort(byName)
+    .sort((a, b) => (order.get(groupName(a)) ?? 999) - (order.get(groupName(b)) ?? 999)) // by group, names within it
+    .map((guest) => ({
+      group: groupName(guest), id: guest.ref, last: guest.last, first: guest.first,
+      with: activeGuestsOf(trip).filter((o) => o.partyId && o.partyId === guest.partyId && o.id !== guest.id).map(fullName).join(', '),
+    }));
+  const doc = {
+    title: split.name, updatedLine: data.updatedLine,
+    groups: data.groups.map((g) => ({ heading: g.name, tables: [{ heading: g.name, detail: '', count: g.countText, rows: g.rows }] })),
+  };
+  await saveAndShare(ctx, trip, { title: `${split.name} — Groups`, updatedLine: data.updatedLine, format: 'xlsx', blob: buildGroupsXlsx(doc, rows) });
+}
+
+export async function exportGroupCards(ctx, trip, split) {
+  const cards = groupCards(trip, split);
+  if (cards.length === 0) { showToast('Nobody is in a group yet.', true); return; }
+  await saveAndShare(ctx, trip, { title: `${split.name} — Group cards`, updatedLine: stampLine(ctx), format: 'pdf', blob: buildCardsPdf(cards, trip.branding ?? {}) });
 }
 
 // The local time of the phone doing the exporting: used only for the final trip export's header,

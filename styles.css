@@ -641,3 +641,9 @@ body.sheet-open .toast { top: calc(12px + env(safe-area-inset-top)); bottom: aut
 .logo-preview-img { max-width: 220px; max-height: 80px; }
 .field-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; font-weight: 600; }
 .color-input { width: 64px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; }
+
+/* Settings > Groups */
+.group-edit-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.group-edit-row .text-input { margin: 0; flex: 1 1 auto; min-width: 0; }
+.group-edit-row .group-size-input { flex: 0 0 76px; }
+.section-title { margin: 22px 0 8px; font-size: 15px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }

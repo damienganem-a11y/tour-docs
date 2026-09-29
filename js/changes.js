@@ -86,6 +86,14 @@
 //   { type: 'delete-trip' }                                   only an archived trip can be deleted; it moves to
 //       "Recently deleted" and is purged for good after 30 days
 //   { type: 'reinstate-trip' }                                brings a deleted trip back (still archived)
+//   { type: 'add-split', name, details, groups: [{ name, capacity }] }   a named split of the guests into groups
+//       (bus groups, a boat, a guided tour...). A guest is in ONE group of a given split, and can be in a group of
+//       each of several splits. capacity is optional (a bus's seats): over it is flagged, never refused.
+//   { type: 'edit-split', splitId, name, details, groups: [{ id | null, name, capacity }] }   renames, adds and
+//       removes groups (a group left out is removed, and its members are un-placed)
+//   { type: 'delete-split', splitId }
+//   { type: 'assign-guests', splitId, assignments: [{ guestId, groupId | null }] }   puts guests in a group of a
+//       split, or (groupId null) takes them out of it — one action for one Undo
 //   { type: 'set-branding', companyName, accent, cardNote, logo }  the look of the confirmation cards (Settings > Brand);
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
@@ -118,6 +126,7 @@ const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 're
 // other change — nothing about the trip changes while it is read-only.
 const TRIP_INFO_TYPES = new Set(['rename-trip']);
 const BRANDING_TYPES = new Set(['set-branding']);
+const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-guests']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -140,7 +149,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
@@ -152,6 +161,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
   if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
   if (BRANDING_TYPES.has(changes[0].type)) return validateBranding(changes[0]);
+  if (SPLIT_TYPES.has(changes[0].type)) return validateSplitChange(trip, changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
     if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
@@ -320,6 +330,17 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'unarchive-trip' && trip.archivedAt) return fail('This action cannot be undone: the trip has been archived again since.');
     if (entry.type === 'delete-trip' && !trip.deletedAt) return fail('This action cannot be undone: the trip is not deleted anymore.');
     if (entry.type === 'reinstate-trip' && trip.deletedAt) return fail('This action cannot be undone: the trip has been deleted again since.');
+    if (entry.type === 'add-split' || entry.type === 'edit-split') {
+      const split = (trip.splits ?? []).find((s) => s.id === entry.splitId);
+      if (!split || JSON.stringify(split) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: that split has changed since.');
+    }
+    if (entry.type === 'delete-split' && (trip.splits ?? []).some((s) => s.id === entry.splitId)) return fail('This action cannot be undone: that split is back already.');
+    if (entry.type === 'assign-guests') {
+      const split = (trip.splits ?? []).find((s) => s.id === entry.splitId);
+      if (!split) return fail('This action cannot be undone: that split no longer exists.');
+      const moved = entry.moves.find((m) => (split.assignments[m.guestId] ?? null) !== m.toGroupId);
+      if (moved) return fail(`This action cannot be undone: ${moved.guestName} has been moved again since.`);
+    }
     if (entry.type === 'set-branding' && JSON.stringify(trip.branding ?? null) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the card branding has been changed again since.');
     if (entry.type === 'rename-trip' && trip.name !== entry.to) return fail('This action cannot be undone: the trip has been renamed again since.');
     if (entry.rollCallId && entry.type !== 'move') {
@@ -551,6 +572,51 @@ function validateBranding(change) {
     && Number.isInteger(logo.width) && Number.isInteger(logo.height) && logo.width > 0 && logo.height > 0 && logo.width <= 2000 && logo.height <= 2000;
   if (logo !== null && !goodLogo) return fail('The logo must be a small JPEG picture.');
   return { ok: true };
+}
+
+// Checks one groups change (see the list at the top). A group over its size is never refused, only
+// flagged on screen, like every other count in the app.
+function validateSplitChange(trip, change) {
+  const splits = trip.splits ?? [];
+  if (change.type === 'add-split' || change.type === 'edit-split') {
+    if (typeof change.name !== 'string' || isBlank(change.name) || change.name.trim().length > 60) return fail('Give the split a name of 60 letters or fewer.');
+    if (String(change.details ?? '').trim().length > 200) return fail('The details line must be 200 letters or fewer.');
+    if (!Array.isArray(change.groups) || change.groups.length < 1 || change.groups.length > 40) return fail('A split needs between 1 and 40 groups.');
+    const seen = new Set();
+    for (const group of change.groups) {
+      const name = String(group.name ?? '').trim();
+      if (name === '' || name.length > 40) return fail('Every group needs a name of 40 letters or fewer.');
+      if (seen.has(name.toLowerCase())) return fail(`Two groups are both called "${name}".`);
+      seen.add(name.toLowerCase());
+      const size = group.capacity;
+      if (size !== null && size !== undefined && !(Number.isInteger(size) && size >= 1 && size <= 500)) return fail(`The size of "${name}" must be a whole number from 1 to 500, or left empty.`);
+    }
+  }
+  if (change.type === 'add-split') return { ok: true };
+
+  const split = splits.find((s) => s.id === change.splitId);
+  if (!split) return fail('That split does not exist.');
+  if (change.type === 'delete-split') return { ok: true };
+  if (change.type === 'edit-split') {
+    const ids = change.groups.map((g) => g.id).filter(Boolean);
+    if (new Set(ids).size !== ids.length || ids.some((id) => !split.groups.some((g) => g.id === id))) return fail('One of those groups is not in this split.');
+    return { ok: true };
+  }
+
+  // assign-guests
+  if (!Array.isArray(change.assignments) || change.assignments.length === 0) return fail('Pick at least one guest.');
+  const seenGuests = new Set();
+  let differences = 0;
+  for (const a of change.assignments) {
+    const guest = trip.guests.find((g) => g.id === a.guestId);
+    if (!guest) return fail('One of those guests is not in this trip.');
+    if (seenGuests.has(a.guestId)) return fail('The same guest appears twice.');
+    seenGuests.add(a.guestId);
+    if (a.groupId !== null && !split.groups.some((g) => g.id === a.groupId)) return fail('That group is not in this split.');
+    if (a.groupId !== null && guest.leftAt) return fail(`${guest.first} ${guest.last} has left the trip.`);
+    if ((split.assignments[a.guestId] ?? null) !== a.groupId) differences++;
+  }
+  return differences === 0 ? fail('That is already how it is.') : { ok: true };
 }
 
 // Checks one roll call change (see the list at the top).
@@ -1085,6 +1151,45 @@ async function doApply(ctx, tripId, changes) {
     return save(ctx, next, entries, {});
   }
 
+  // Groups (Settings > Groups). Like the guest changes they belong to no half-day, so they use the
+  // "local, right now" place too. Snapshots (from/to) make Undo exact, whatever changed inside a split.
+  if (SPLIT_TYPES.has(changes[0].type)) {
+    const c = changes[0];
+    next.splits ??= [];
+    const cleanGroups = (list) => list.map((g) => ({ id: g.id ?? newId(), name: g.name.trim(), capacity: g.capacity ?? null }));
+    if (c.type === 'add-split') {
+      const split = { id: newId(), name: c.name.trim(), details: String(c.details ?? '').trim(), groups: cleanGroups(c.groups), assignments: {} };
+      next.splits.push(split);
+      entries.push({ ...base(), type: 'add-split', ...guestWhere, splitId: split.id, splitName: split.name, to: structuredClone(split) });
+      return save(ctx, next, entries, { splitId: split.id });
+    }
+    const split = next.splits.find((s) => s.id === c.splitId);
+    const before = structuredClone(split);
+    if (c.type === 'delete-split') {
+      next.splits = next.splits.filter((s) => s.id !== c.splitId);
+      entries.push({ ...base(), type: 'delete-split', ...guestWhere, splitId: split.id, splitName: split.name, from: before });
+    } else if (c.type === 'edit-split') {
+      split.name = c.name.trim();
+      split.details = String(c.details ?? '').trim();
+      split.groups = cleanGroups(c.groups);
+      for (const [guestId, groupId] of Object.entries(split.assignments)) {
+        if (!split.groups.some((g) => g.id === groupId)) delete split.assignments[guestId]; // its group was removed
+      }
+      entries.push({ ...base(), type: 'edit-split', ...guestWhere, splitId: split.id, splitName: split.name, from: before, to: structuredClone(split) });
+    } else {
+      const groupName = (id) => (id ? split.groups.find((g) => g.id === id).name : null);
+      const moves = [];
+      for (const a of c.assignments) {
+        const fromGroupId = split.assignments[a.guestId] ?? null;
+        if (fromGroupId === a.groupId) continue;
+        if (a.groupId === null) delete split.assignments[a.guestId]; else split.assignments[a.guestId] = a.groupId;
+        moves.push({ guestId: a.guestId, guestName: names.get(a.guestId), fromGroupId, fromGroupName: groupName(fromGroupId), toGroupId: a.groupId, toGroupName: groupName(a.groupId) });
+      }
+      entries.push({ ...base(), type: 'assign-guests', ...guestWhere, splitId: split.id, splitName: split.name, moves });
+    }
+    return save(ctx, next, entries, {});
+  }
+
   // The look of the confirmation cards. Trip-level like the rename below, so the same "local, right now" place.
   if (BRANDING_TYPES.has(changes[0].type)) {
     const c = changes[0];
@@ -1161,6 +1266,30 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'reinstate-trip') {
     next.deletedAt = entry.previousDeletedAt;
     entries.push({ ...base(), type: 'delete-trip', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'add-split') {
+    next.splits = next.splits.filter((s) => s.id !== entry.splitId);
+    entries.push({ ...base(), type: 'add-split', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, splitId: entry.splitId, splitName: entry.splitName });
+    return;
+  }
+  if (entry.type === 'edit-split') {
+    next.splits = next.splits.map((s) => (s.id === entry.splitId ? structuredClone(entry.from) : s));
+    entries.push({ ...base(), type: 'edit-split', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, splitId: entry.splitId, splitName: entry.from.name, from: entry.to, to: entry.from });
+    return;
+  }
+  if (entry.type === 'delete-split') {
+    next.splits.push(structuredClone(entry.from));
+    entries.push({ ...base(), type: 'delete-split', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, splitId: entry.splitId, splitName: entry.splitName });
+    return;
+  }
+  if (entry.type === 'assign-guests') {
+    const split = next.splits.find((s) => s.id === entry.splitId);
+    for (const m of entry.moves) {
+      if (m.fromGroupId === null) delete split.assignments[m.guestId]; else split.assignments[m.guestId] = m.fromGroupId;
+    }
+    entries.push({ ...base(), type: 'assign-guests', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, splitId: entry.splitId, splitName: entry.splitName,
+      moves: entry.moves.map((m) => ({ ...m, fromGroupId: m.toGroupId, fromGroupName: m.toGroupName, toGroupId: m.fromGroupId, toGroupName: m.fromGroupName })) });
     return;
   }
   if (entry.type === 'set-branding') {

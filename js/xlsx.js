@@ -272,3 +272,28 @@ export function buildFinalTripXlsx(toursDoc, guestRows) {
   const guestSheet = { name: sheetName('All guests', usedNames), xml: guestsFlatSheetXml(toursDoc, guestRows) };
   return assembleWorkbook([...tourSheets, guestSheet]);
 }
+
+// The groups list (Settings > Groups): first one flat sheet with a Group column (one row per guest, so a
+// person is changed by editing their Group cell, and the sheet sorts and filters), then one sheet per
+// group with its own numbered list, like the other lists. `rows` are { group, id, last, first, with }.
+export function buildGroupsXlsx(doc, rows) {
+  const usedNames = new Set();
+  const headers = ['Group', 'ID', 'Last name', 'First name', 'Travelling with'];
+  const widths = [22, 10, 20, 20, 36];
+  const flatRows = [
+    rowXml(1, [{ col: 0, text: doc.title, bold: true }]),
+    rowXml(2, [{ col: 0, text: doc.updatedLine }]),
+    rowXml(4, headers.map((text, col) => ({ col, text, bold: true }))),
+    ...rows.map((r, i) => rowXml(5 + i, [
+      { col: 0, text: r.group }, { col: 1, text: r.id }, { col: 2, text: r.last }, { col: 3, text: r.first }, { col: 4, text: r.with },
+    ])),
+  ];
+  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+  const flatXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
+    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` // header row stays in view
+    + `<cols>${cols}</cols><sheetData>${flatRows.join('')}</sheetData></worksheet>`;
+  const sheets = [{ name: sheetName('All guests', usedNames), xml: flatXml }];
+  for (const group of doc.groups) sheets.push({ name: sheetName(group.heading, usedNames), xml: sheetXml(doc, group) });
+  return assembleWorkbook(sheets);
+}

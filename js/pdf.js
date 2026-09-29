@@ -415,7 +415,9 @@ export function buildFinalTripPdf(toursDoc, guestsDoc) {
 //
 // One card per travel party per table, six to an A4 portrait page (2 across, 3 down), each ready to cut
 // out and hand to the guests. Every card is the same fixed template; only what is written on it changes:
-//   card  { eyebrow, names, restaurant, time, tablemates: [text, ...] }   (built by export.js)
+//   card  { eyebrow, names, title, subtitle, mates: [text, ...], matesLabel }   (built by export.js)
+//         title is the big line (a restaurant, or a group name); subtitle the line under it (a seating time,
+//         or a group's details); titleSize (optional) makes the title bigger; mates the small list at the bottom, headed by matesLabel (may be empty)
 //   brand { companyName, accent, cardNote, logo: { data, width, height } | null }   (Settings > Brand)
 // Cards never carry dietary information (CLAUDE.md), and nothing here is specific to one company: the
 // name, logo, colour and note all come from `brand`.
@@ -463,9 +465,9 @@ function drawCard(items, card, brand, accent, logoImage, left, top, width, heigh
   y -= 2;
   items.push({ type: 'rect', x: cx - 15, y, w: 30, h: 1.5, rgb: accent });
   y -= 30; // room for the big restaurant name's tall letters below the line
-  centered(card.restaurant, 17, { font: FONT_BOLD, gap: 1.2 });
+  centered(card.title, card.titleSize ?? 17, { font: FONT_BOLD, gap: 1.2 });
   y -= 2;
-  centered(card.time, 12, { font: FONT_BOLD, maxLines: 1, gap: 1.6 });
+  if (card.subtitle) centered(card.subtitle, 12, { font: FONT_BOLD, maxLines: 2, gap: 1.4 });
 
   if (brand.cardNote) {
     y -= 4;
@@ -481,22 +483,26 @@ function drawCard(items, card, brand, accent, logoImage, left, top, width, heigh
     y -= boxHeight + 10;
   }
 
-  if (card.tablemates.length > 0 && y - 20 > bottom) {
-    centered('AT YOUR TABLE', 6, { gray: 0.5, maxLines: 1, gap: 1.8 });
-    for (const mate of card.tablemates) {
+  if (card.mates.length > 0 && y - 20 > bottom) {
+    centered(card.matesLabel.toUpperCase(), 6, { gray: 0.5, maxLines: 1, gap: 1.8 });
+    for (const mate of card.mates) {
       if (y < bottom) break; // never past the bottom edge of the card
       centered(mate, 8, { maxLines: 1, gap: 1.3 });
     }
   }
 }
 
+// The accent colour as three 0-1 numbers, and the logo (if any) ready to embed, from a trip's branding.
+const accentOf = (brand) => hexToRgb(/^#[0-9a-f]{6}$/i.test(brand.accent ?? '') ? brand.accent : '#1d5c57');
+function logoImageOf(brand) {
+  if (!brand.logo) return null;
+  const binary = atob(brand.logo.data.split(',')[1]);
+  return { name: 'Im1', bytes: Uint8Array.from(binary, (c) => c.charCodeAt(0)), width: brand.logo.width, height: brand.logo.height };
+}
+
 export function buildCardsPdf(cards, brand = {}) {
-  const accent = hexToRgb(/^#[0-9a-f]{6}$/i.test(brand.accent ?? '') ? brand.accent : '#1d5c57');
-  let logoImage = null;
-  if (brand.logo) {
-    const binary = atob(brand.logo.data.split(',')[1]);
-    logoImage = { name: 'Im1', bytes: Uint8Array.from(binary, (c) => c.charCodeAt(0)), width: brand.logo.width, height: brand.logo.height };
-  }
+  const accent = accentOf(brand);
+  const logoImage = logoImageOf(brand);
 
   const cardWidth = (CARD_PAGE.width - CARD_MARGIN * 2) / CARD_COLS;
   const cardHeight = (CARD_PAGE.height - CARD_MARGIN * 2) / CARD_ROWS;
@@ -511,6 +517,94 @@ export function buildCardsPdf(cards, brand = {}) {
     });
     pages.push(items);
   }
+  const bytes = serializePdf(pages, { width: CARD_PAGE.width, height: CARD_PAGE.height, images: logoImage ? [logoImage] : [] });
+  return new Blob([bytes], { type: 'application/pdf' });
+}
+
+// ---------- Printable group lists (Settings > Groups) ----------
+//
+// One group per A4 portrait page, ready to print and hand to whoever runs that bus or boat: the company's
+// logo and the split's name across the top, the group's name big, then a clean numbered table with an empty
+// tick box on each line. A group with more names than fit continues on the next page under the same
+// heading. Anyone not placed in a group yet gets a final page of their own, so nobody silently drops out.
+//   data  { title, details, updatedLine, groups: [{ name, countText, rows: [{id, name}] }], unplaced: [{id, name}] }
+//   brand { companyName, accent, logo }   (Settings > Brand)
+// Never carries dietary information (CLAUDE.md).
+
+const LIST_MARGIN = 40;
+const LIST_ROW_H = 17;
+const LIST_ROWS_PER_PAGE = 37;
+
+function drawListPage(plan, number, total, data, brand, accent, logoImage) {
+  const items = [];
+  const left = LIST_MARGIN;
+  const right = CARD_PAGE.width - LIST_MARGIN;
+  const top = CARD_PAGE.height - LIST_MARGIN;
+  const put = (str, x, y, { font = FONT_REGULAR, size = 10, gray = 0, rgb, align = 'left', maxWidth } = {}) => {
+    const shown = maxWidth ? fitOneLine(str, font, size, maxWidth) : str;
+    const width = textWidth(shown, font, size);
+    items.push({ type: 'text', x: align === 'right' ? x - width : x, y, font, size, gray, rgb, text: shown });
+  };
+  const box = (x, y, size) => { // an empty square to tick, drawn as four thin lines
+    items.push({ type: 'rect', x, y, w: size, h: 0.7, gray: 0.45 }, { type: 'rect', x, y: y + size, w: size, h: 0.7, gray: 0.45 });
+    items.push({ type: 'rect', x, y, w: 0.7, h: size, gray: 0.45 }, { type: 'rect', x: x + size, y, w: 0.7, h: size + 0.7, gray: 0.45 });
+  };
+
+  // The header: logo (or company name) on the left, the split's name and details on the right.
+  if (logoImage) {
+    const scale = Math.min(120 / logoImage.width, 34 / logoImage.height);
+    items.push({ type: 'image', name: logoImage.name, x: left, y: top - logoImage.height * scale, w: logoImage.width * scale, h: logoImage.height * scale });
+  } else if (brand.companyName) {
+    put(brand.companyName, left, top - 14, { font: FONT_BOLD, size: 13, rgb: accent, maxWidth: 200 });
+  }
+  put(data.title, right, top - 12, { font: FONT_BOLD, size: 13, align: 'right', maxWidth: 330 });
+  if (data.details) put(data.details, right, top - 26, { size: 8, gray: 0.4, align: 'right', maxWidth: 330 });
+  items.push({ type: 'rect', x: left, y: top - 46, w: right - left, h: 2, rgb: accent });
+
+  // The group's name, big, with its count on the right.
+  const headY = top - 80;
+  put(plan.section.heading + (plan.continued ? ' (continued)' : ''), left, headY, { font: FONT_BOLD, size: 24, maxWidth: 370 });
+  put(plan.section.countText, right, headY, { size: 11, gray: 0.4, align: 'right' });
+
+  // The table: a tinted header band, then zebra rows.
+  const bandTop = headY - 20;
+  items.push({ type: 'rect', x: left, y: bandTop - 16, w: right - left, h: 16, rgb: paler(accent, 0.14) });
+  put('#', left + 24, bandTop - 11, { font: FONT_BOLD, size: 8, gray: 0.35, align: 'right' });
+  put('NAME', left + 36, bandTop - 11, { font: FONT_BOLD, size: 8, gray: 0.35 });
+  put('ID', left + 330, bandTop - 11, { font: FONT_BOLD, size: 8, gray: 0.35 });
+  const firstRowTop = bandTop - 16;
+  plan.rows.forEach((row, i) => {
+    const rowTop = firstRowTop - i * LIST_ROW_H;
+    if (i % 2 === 1) items.push({ type: 'rect', x: left, y: rowTop - LIST_ROW_H, w: right - left, h: LIST_ROW_H, gray: 0.96 });
+    put(String(plan.first + i + 1), left + 24, rowTop - 12, { size: 9, gray: 0.4, align: 'right' });
+    put(row.name, left + 36, rowTop - 12, { size: 10.5, maxWidth: 280 });
+    put(row.id ?? '', left + 330, rowTop - 12, { size: 9, gray: 0.4, maxWidth: 90 });
+    box(right - 20, rowTop - 13, 9);
+  });
+  if (plan.rows.length === 0 && plan.section.empty) put(plan.section.empty, left + 36, firstRowTop - 24, { gray: 0.45 });
+
+  // The footer: when it was made, and the page number.
+  items.push({ type: 'rect', x: left, y: 38, w: right - left, h: 0.5, gray: 0.8 });
+  put(data.updatedLine, left, 26, { size: 7, gray: 0.45, maxWidth: 400 });
+  put(`Page ${number} of ${total}`, right, 26, { size: 7, gray: 0.45, align: 'right' });
+  return items;
+}
+
+export function buildGroupsPdf(data, brand = {}) {
+  const accent = accentOf(brand);
+  const logoImage = logoImageOf(brand);
+  const sections = data.groups.map((g) => ({ heading: g.name, countText: g.countText, rows: g.rows, empty: 'Nobody in this group yet.' }));
+  if (data.unplaced.length > 0) {
+    sections.push({ heading: 'Not in a group yet', countText: `${data.unplaced.length} ${data.unplaced.length === 1 ? 'guest' : 'guests'}`, rows: data.unplaced, empty: '' });
+  }
+  const plans = [];
+  for (const section of sections) {
+    const pageCount = Math.max(1, Math.ceil(section.rows.length / LIST_ROWS_PER_PAGE));
+    for (let i = 0; i < pageCount; i++) {
+      plans.push({ section, rows: section.rows.slice(i * LIST_ROWS_PER_PAGE, (i + 1) * LIST_ROWS_PER_PAGE), first: i * LIST_ROWS_PER_PAGE, continued: i > 0 });
+    }
+  }
+  const pages = plans.map((plan, i) => drawListPage(plan, i + 1, plans.length, data, brand, accent, logoImage));
   const bytes = serializePdf(pages, { width: CARD_PAGE.width, height: CARD_PAGE.height, images: logoImage ? [logoImage] : [] });
   return new Blob([bytes], { type: 'application/pdf' });
 }

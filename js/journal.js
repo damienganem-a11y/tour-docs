@@ -63,6 +63,10 @@ export function groupBatches(entries) {
         : types.has('unarchive-trip') ? 'unarchive-trip'
         : types.has('delete-trip') ? 'delete-trip'
         : types.has('reinstate-trip') ? 'reinstate-trip'
+        : types.has('add-split') ? 'add-split'
+        : types.has('edit-split') ? 'edit-split'
+        : types.has('delete-split') ? 'delete-split'
+        : types.has('assign-guests') ? 'assign-guests'
         : types.has('set-branding') ? 'set-branding'
         : types.has('rename-trip') ? 'rename-trip'
         : 'move',
@@ -83,6 +87,7 @@ export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant']; // Setti
 // Move sheet is a plain 'move' batch — undoable from Touring/By guest's own Undo, not this one; a
 // known, minor, accepted edge (see the step's plan).
 export const DINING_USE_UNDO_SCOPE = ['book-dinner', 'add-to-dinner-table', 'move-dinner-table'];
+export const GROUPS_UNDO_SCOPE = ['add-split', 'edit-split', 'delete-split', 'assign-guests']; // Settings > Groups
 export const BRANDING_UNDO_SCOPE = ['set-branding'];                 // Settings > Brand
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
@@ -189,6 +194,20 @@ export function summarize(batch) {
   if (batch.kind === 'unarchive-trip') return 'Un-archived the trip';
   if (batch.kind === 'delete-trip') return 'Deleted the trip';
   if (batch.kind === 'reinstate-trip') return 'Reinstated the trip';
+  if (batch.kind === 'add-split') { const e = batch.entries[0]; return `Created the split "${e.splitName}" (${plural(e.to.groups.length, 'group')})`; }
+  if (batch.kind === 'edit-split') { const e = batch.entries[0]; return `Edited the split "${e.splitName}"`; }
+  if (batch.kind === 'delete-split') { const e = batch.entries[0]; return `Deleted the split "${e.splitName}"`; }
+  if (batch.kind === 'assign-guests') {
+    const e = batch.entries[0];
+    const placed = e.moves.filter((m) => m.toGroupId !== null);
+    const cleared = e.moves.length - placed.length;
+    const toGroups = [...new Set(placed.map((m) => m.toGroupName))];
+    const parts = [];
+    const who = placed.length <= 3 ? joinNames(placed.map((m) => m.guestName)) : plural(placed.length, 'guest'); // 80 names would not read as one line
+    if (placed.length > 0) parts.push(`Put ${who} in ${joinNames(toGroups)}`);
+    if (cleared > 0) parts.push(`took ${plural(cleared, 'guest')} out of their group`);
+    return `${parts.join(', ')} (${e.splitName})`;
+  }
   if (batch.kind === 'set-branding') {
     const { from, to } = batch.entries[0];
     const changed = [];

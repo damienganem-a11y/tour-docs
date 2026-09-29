@@ -352,6 +352,33 @@ export function dinnerPartyCandidates(trip, guest, slot) {
     && guestPlace(trip, other, slot).kind !== 'dinner');
 }
 
+// ---------- Groups (Settings > Groups) ----------
+
+// Spreads guests over a split's groups, keeping every travel party together (a couple never lands on two
+// different buses). Biggest parties first, each into the group with the fewest people so far, skipping a
+// group a party would overfill when another has room. Fixed rules, no randomness: the same input always
+// gives the same result, and ties go to the earlier group in the list. Returns [{ guestId, groupId }];
+// the caller saves it as one assign-guests change (so one Undo takes the whole auto-split back).
+export function autoSplitPlan(trip, split, guestIds) {
+  const counts = new Map(split.groups.map((g) => [g.id, Object.values(split.assignments).filter((id) => id === g.id).length]));
+  const wanted = new Set(guestIds);
+  const parties = new Map();
+  for (const guest of trip.guests) {
+    if (!wanted.has(guest.id)) continue;
+    const key = guest.partyId ?? guest.id; // a guest with no travel party is a party of one
+    parties.set(key, [...(parties.get(key) ?? []), guest]);
+  }
+  const plan = [];
+  for (const members of [...parties.values()].sort((a, b) => b.length - a.length)) {
+    const roomy = split.groups.filter((g) => g.capacity === null || counts.get(g.id) + members.length <= g.capacity);
+    const pool = roomy.length > 0 ? roomy : split.groups;
+    const target = pool.reduce((best, group) => (counts.get(group.id) < counts.get(best.id) ? group : best), pool[0]);
+    counts.set(target.id, counts.get(target.id) + members.length);
+    for (const member of members) plan.push({ guestId: member.id, groupId: target.id });
+  }
+  return plan;
+}
+
 // ---------- Warnings (SPEC.md, "7. Warnings screen") ----------
 
 // Everything across the whole trip that needs a human to look at it:
