@@ -12,6 +12,7 @@ import { previewSavedExport, exportName, sameDocument, exportFinalTrip, destinat
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
+let archivedOpen = false; // the Archived list stays folded until the owner opens it (and stays as they left it while they work)
 
 export function exportsSettingsPage(ctx, trip) {
   const records = [...ctx.exportsFor(trip.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -59,9 +60,7 @@ export function exportsSettingsPage(ctx, trip) {
     current.length === 0
       ? h('p', { class: 'empty' }, archived.length === 0 ? 'Nothing created yet.' : 'Nothing current: everything is archived below.')
       : h('ul', { class: 'list' }, current.map((record) => exportRow(ctx, trip, record))),
-    archived.length > 0 ? h('h2', { class: 'section-title' }, `Archived (${archived.length})`) : null,
-    archived.length > 0 ? h('p', { class: 'muted count-line' }, 'Documents that are no longer current. Restore one, or delete it for good.') : null,
-    archived.length > 0 ? h('ul', { class: 'list' }, archived.map((record) => exportRow(ctx, trip, record))) : null);
+    archived.length > 0 ? archivedFolder(ctx, trip, archived) : null);
 }
 
 function pickDestination(ctx, trip) {
@@ -135,6 +134,17 @@ function runReservations(ctx, trip, slot) {
     busy = false;
     ctx.refresh();
   }, { dietary: true });
+}
+
+// The Archived list: folded by default, so only "Archived (n)" shows until it is opened (owner's request, 1 Oct 2026).
+function archivedFolder(ctx, trip, archived) {
+  const folder = h('details', { class: 'archived-folder' },
+    h('summary', { class: 'section-title' }, `Archived (${archived.length})`),
+    h('p', { class: 'muted count-line' }, 'Documents that are no longer current. Restore one, or delete it for good.'),
+    h('ul', { class: 'list' }, archived.map((record) => exportRow(ctx, trip, record))));
+  folder.open = archivedOpen;
+  folder.addEventListener('toggle', () => { archivedOpen = folder.open; });
+  return folder;
 }
 
 function exportRow(ctx, trip, record) {

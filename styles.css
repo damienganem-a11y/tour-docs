@@ -658,3 +658,9 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 .export-row { display: flex; align-items: stretch; gap: 8px; }
 .export-row .row { flex: 1; min-width: 0; }
 .export-share { width: auto; flex: 0 0 auto; padding: 0 16px; }
+
+/* Settings > Documents: the Archived list is folded until opened */
+.archived-folder > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.archived-folder > summary::-webkit-details-marker { display: none; }
+.archived-folder > summary::before { content: '›'; display: inline-block; transition: transform 0.15s; font-size: 20px; }
+.archived-folder[open] > summary::before { transform: rotate(90deg); }
