@@ -68,6 +68,7 @@ export function groupBatches(entries) {
         : types.has('delete-split') ? 'delete-split'
         : types.has('assign-guests') ? 'assign-guests'
         : types.has('set-branding') ? 'set-branding'
+        : types.has('erase-dietary') ? 'erase-dietary'
         : types.has('rename-trip') ? 'rename-trip'
         : 'move',
       rollCallId: sorted.find((e) => e.rollCallId)?.rollCallId ?? null, // set when the action belongs to a roll call
@@ -105,7 +106,7 @@ export function lastUndoable(entries, scope) {
     if (Array.isArray(scope)) return scope.includes(batch.kind);
     return batch.rollCallId === scope.rollCallId;
   };
-  const candidates = groupBatches(entries).filter((b) => b.kind !== 'undo' && b.kind !== 'old-return-count' && !b.undone && matches(b));
+  const candidates = groupBatches(entries).filter((b) => b.kind !== 'undo' && b.kind !== 'old-return-count' && b.kind !== 'erase-dietary' && !b.undone && matches(b)); // erased information never comes back
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }
 
@@ -207,6 +208,10 @@ export function summarize(batch) {
     if (placed.length > 0) parts.push(`Put ${who} in ${joinNames(toGroups)}`);
     if (cleared > 0) parts.push(`took ${plural(cleared, 'guest')} out of their group`);
     return `${parts.join(', ')} (${e.splitName})`;
+  }
+  if (batch.kind === 'erase-dietary') {
+    const { count } = batch.entries[0];
+    return `Erased the allergy and dietary information of ${plural(count, 'guest')} (after the trip's last dinner)`;
   }
   if (batch.kind === 'set-branding') {
     const { from, to } = batch.entries[0];

@@ -94,6 +94,7 @@
 //   { type: 'delete-split', splitId }
 //   { type: 'assign-guests', splitId, assignments: [{ guestId, groupId | null }] }   puts guests in a group of a
 //       split, or (groupId null) takes them out of it — one action for one Undo
+//   { type: 'erase-dietary' }  erase all allergy/dietary text (automatic, after the last dinner); never undoable
 //   { type: 'set-branding', companyName, accent, cardNote, logo }  the look of the confirmation cards (Settings > Brand);
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
@@ -126,6 +127,9 @@ const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 're
 // other change — nothing about the trip changes while it is read-only.
 const TRIP_INFO_TYPES = new Set(['rename-trip']);
 const BRANDING_TYPES = new Set(['set-branding']);
+// Erasing every guest's allergy and dietary information (automatic, after the trip's last dinner; see rules.js's dietaryExpiry).
+// Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
+const DIETARY_TYPES = new Set(['erase-dietary']);
 const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-guests']);
 
 const fail = (error) => ({ ok: false, error });
@@ -140,7 +144,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (!trip) return fail('This trip is not on this phone.');
   // Archived trips are read-only, except for undoing and the archive/delete actions themselves (so
   // a trip can be un-archived, or a deleted trip reinstated, without needing to be un-archived first).
-  if (trip.archivedAt && changes[0]?.type !== 'undo' && !TRIP_TYPES.has(changes[0]?.type)) {
+  if (trip.archivedAt && changes[0]?.type !== 'undo' && !TRIP_TYPES.has(changes[0]?.type) && !DIETARY_TYPES.has(changes[0]?.type)) {
     return fail('This trip is archived. Un-archive it to change it.');
   }
   if (!Array.isArray(changes) || changes.length === 0) return fail('There is nothing to change.');
@@ -149,7 +153,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
@@ -161,6 +165,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
   if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
   if (BRANDING_TYPES.has(changes[0].type)) return validateBranding(changes[0]);
+  if (DIETARY_TYPES.has(changes[0].type)) return { ok: true };
   if (SPLIT_TYPES.has(changes[0].type)) return validateSplitChange(trip, changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
@@ -1187,6 +1192,14 @@ async function doApply(ctx, tripId, changes) {
       }
       entries.push({ ...base(), type: 'assign-guests', ...guestWhere, splitId: split.id, splitName: split.name, moves });
     }
+    return save(ctx, next, entries, {});
+  }
+
+  // Erases every guest's dietary information. The journal keeps only the number of guests, never what was written.
+  if (DIETARY_TYPES.has(changes[0].type)) {
+    const affected = next.guests.filter((g) => g.dietary);
+    for (const guest of affected) guest.dietary = '';
+    entries.push({ ...base(), type: 'erase-dietary', ...guestWhere, count: affected.length });
     return save(ctx, next, entries, {});
   }
 

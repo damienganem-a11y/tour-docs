@@ -28,12 +28,13 @@ import {
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
-import { enqueue } from './changes.js';
+import { enqueue, applyChange } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import * as biometrics from './biometrics.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { sameDocument } from './export.js';
+import { dietaryErasureDue, dietaryExpiry } from './rules.js';
 import { passcodeView } from './views/passcode.js';
 import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
@@ -382,6 +383,7 @@ async function start() {
       state.exports.set(record.tripId, [...(state.exports.get(record.tripId) ?? []), record]);
     }
     await purgeExpiredTrips();
+    // (the erasing of allergy information runs below, once the screen is up)
     // Ask the browser not to clear our saved data when the phone is short on space.
     navigator.storage?.persist?.();
   } catch (error) {
@@ -411,9 +413,11 @@ async function start() {
   window.addEventListener('offline', () => { if (state.owner) render({ keepScroll: true }); });
   setInterval(() => refreshFromServer(), REFRESH_EVERY_MS);
   enablePullToRefresh(refreshByHand);
+  setInterval(enforceDietaryExpiry, 60000); // erasing allergy information after the last dinner works offline too
   document.addEventListener('visibilitychange', () => refreshFromServer({ force: true }));
   window.addEventListener('focus', () => refreshFromServer({ force: true }));
   render();
+  enforceDietaryExpiry();
 
   // Phase 2: push this phone's own pending work first (step 2a's backfill), then pull whatever
   // changed on another phone signed into the same account (step 2b). Runs after render(), in the
@@ -450,6 +454,28 @@ async function backfillPush() {
       }
     } catch (error) { noteSyncProblem(error); /* try again next boot */ }
   }
+}
+
+// ---------- Allergies and dietary needs are erased after the trip's last dinner (owner's rule) ----------
+// Checked when the app opens, whenever it comes to the front, and after each pull from the server. Erases the text on every guest of
+// the trip (through the one change function, so it syncs to the other devices), and deletes the "with dietary" documents of that trip
+// (on every device, through the shared documents). Files already shared with, or backed up by, someone else are outside the app.
+let erasing = false;
+async function enforceDietaryExpiry() {
+  if (erasing || !state.owner) return;
+  erasing = true;
+  try {
+    const now = new Date();
+    for (const trip of [...state.trips.values()]) {
+      const expiry = dietaryExpiry(trip);
+      if (expiry === null || now.toISOString() < expiry) continue;
+      if (dietaryErasureDue(trip, now)) await applyChange(ctx, trip.id, { type: 'erase-dietary' });
+      for (const record of ctx.exportsFor(trip.id)) {
+        if (/, with dietary$/.test(record.title)) await ctx.deleteExport(trip.id, record.id);
+      }
+    }
+  } catch { /* the next check tries again */ }
+  erasing = false;
 }
 
 // ---------- Documents shared between devices (Settings > Documents) ----------

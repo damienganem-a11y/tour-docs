@@ -8,7 +8,7 @@ import { applyChange, validateChanges, enqueue } from './changes.js';
 import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
-import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow } from './time.js';
+import { localToInstant, formatTime, formatMoment, formatWeekdayDate, tripDates, isValidTimeZone, formatTypedTime, localDateNow, addDays } from './time.js';
 import { groupBatches, journalItems, lastUndoable, summarize, wasForced, forcedPlacements, waitlistOrder, USE_UNDO_SCOPE, DESTINATION_UNDO_SCOPE, GUEST_UNDO_SCOPE, BRANDING_UNDO_SCOPE, GROUPS_UNDO_SCOPE } from './journal.js';
 import { findRollCall, vehicleLabel, rollCallState } from './rollcall.js';
 import { pressable } from './dom.js';
@@ -18,6 +18,7 @@ import { PASSCODE_CONFIG } from './passcode-config.js';
 import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
+import { dietaryExpiry, dietaryErasureDue } from './rules.js';
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
@@ -2611,6 +2612,29 @@ function readZip(bytes) {
   check('Excel: the styles part has the two fixed first fills, a full border and the Normal cell style',
     /<fills count="4"><fill><patternFill patternType="none"\/><\/fill><fill><patternFill patternType="gray125"\/>/.test(styles)
     && /<border><left\/><right\/><top\/><bottom\/><diagonal\/><\/border>/.test(styles) && /cellStyle name="Normal"/.test(styles));
+}
+
+// --- Allergies and dietary needs are erased after the trip's last dinner ---
+{
+  const ctxD = makeCtx();
+  const expiry = dietaryExpiry(ctxD.state);
+  const lastEvening = ctxD.state.slots.filter((s) => s.half === 'Evening').map((s) => s.date).sort().at(-1);
+  check('The erasing moment is the start of the day after the last evening, an exact instant',
+    typeof expiry === 'string' && /Z$/.test(expiry) && expiry.slice(0, 10) >= lastEvening && expiry.slice(0, 10) <= addDays(lastEvening, 2), `${expiry} vs ${lastEvening}`);
+  check('Before that moment nothing is due; after it, it is due while there is anything left to erase',
+    !dietaryErasureDue(ctxD.state, new Date('2000-01-01')) && dietaryErasureDue(ctxD.state, new Date('2100-01-01')));
+  const before = ctxD.state.guests.filter((g) => g.dietary).length;
+  const erased = await applyChange(ctxD, trip.id, { type: 'erase-dietary' });
+  check('Erasing clears every guest\'s dietary text', before > 0 && erased.ok && ctxD.state.guests.every((g) => !g.dietary));
+  const journalText = JSON.stringify(ctxD.entries);
+  check('The journal says only how many guests were erased, never what was written',
+    ctxD.entries[0].type === 'erase-dietary' && ctxD.entries[0].count === before && !/shellfish|allerg|gluten|vegan|nut/i.test(journalText.replace(/Erased the allergy and dietary information/g, '')) && /Erased the allergy/.test(summarize(groupBatches(ctxD.entries)[0])));
+  check('Once erased, nothing is due any more', !dietaryErasureDue(ctxD.state, new Date('2100-01-01')));
+  const undoErase = await applyChange(ctxD, trip.id, { type: 'undo' });
+  check('Erasing can never be undone (what was erased must not come back)', !undoErase.ok && ctxD.state.guests.every((g) => !g.dietary));
+  const arcD = makeCtx();
+  await applyChange(arcD, trip.id, { type: 'archive-trip' });
+  check('An archived trip is erased too', (await applyChange(arcD, trip.id, { type: 'erase-dietary' })).ok && arcD.state.guests.every((g) => !g.dietary));
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

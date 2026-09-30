@@ -1,3 +1,4 @@
+import { localToInstant, addDays } from './time.js';
 // The rules of the trip: who is where, what counts as full, how names are shown.
 //
 // These are plain functions: give them the trip data (see loader.js for its shape), they give
@@ -414,4 +415,24 @@ export function tripWarnings(trip) {
   }
 
   return { overbooked, blank, unknown };
+}
+
+// ---------- Allergies and dietary needs: when they are erased (Phase 3, owner's rule) ----------
+// They are deleted automatically once the trip's last dinner is over: the moment the day after the last evening that has a
+// dinner booked begins, in that destination's time zone. (No dinner booked at all: the trip's last evening; no evening: the
+// trip's last half-day.) Returns that exact moment, or null if the trip has no half-days.
+export function dietaryExpiry(trip) {
+  const withDinner = new Set(trip.dinnerBookings.map((b) => b.slotId));
+  const latest = (slots) => slots.reduce((best, s) => (!best || s.date > best.date ? s : best), null);
+  const evenings = trip.slots.filter((s) => s.half === 'Evening');
+  const last = latest(evenings.filter((s) => withDinner.has(s.id))) ?? latest(evenings) ?? latest(trip.slots);
+  if (!last) return null;
+  const destination = trip.destinations.find((d) => d.id === last.destinationId);
+  return localToInstant(addDays(last.date, 1), '00:00', destination?.timeZone ?? 'UTC');
+}
+
+// True when it is time to erase this trip's dietary information (and there is some left to erase).
+export function dietaryErasureDue(trip, now = new Date()) {
+  const expiry = dietaryExpiry(trip);
+  return expiry !== null && now.toISOString() >= expiry && trip.guests.some((g) => g.dietary);
 }
