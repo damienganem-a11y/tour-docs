@@ -763,10 +763,11 @@ function bandBadge(items, put, brand, logoImage, pageW, pageTop, bandH, margin) 
   }
 }
 
-const CHECK_W = 595, CHECK_H = 842, CHECK_MARGIN = 36, CHECK_BAND = 128, CHECK_MIN_ROW = 24, CHECK_MAX_ROW = 58;
+const CHECK_W = 595, CHECK_H = 842, CHECK_MARGIN = 36, CHECK_BAND = 128, CHECK_MIN_ROW = 28, CHECK_MAX_ROW = 58;
 const CHECK_TABLE_TOP = CHECK_H - CHECK_BAND - 44;           // where the rows start
 const CHECK_TABLE_ROOM = CHECK_TABLE_TOP - 64;               // room for rows above the footer
-const CHECK_ROWS_PER_PAGE = Math.floor(CHECK_TABLE_ROOM / CHECK_MIN_ROW);
+const CHECK_ROWS_PER_COLUMN = Math.floor(CHECK_TABLE_ROOM / CHECK_MIN_ROW);
+const CHECK_GAP = 24; // between two columns of names
 
 function drawChecklistPage(plan, number, total, data, brand, accent, logoImage) {
   const items = [];
@@ -785,22 +786,31 @@ function drawChecklistPage(plan, number, total, data, brand, accent, logoImage) 
   put(sub, left, bandTop - 106, { size: 11, rgb: paler(accent, 0.2), maxWidth: nameRoom });
   bandBadge(items, put, brand, logoImage, CHECK_W, bandTop, CHECK_BAND, CHECK_MARGIN);
 
-  // The rows, as tall as the page allows for this group.
-  const rowH = plan.rowH;
-  const nameSize = Math.min(20, rowH * 0.48), noteSize = Math.min(9, nameSize * 0.6), boxSize = Math.min(24, rowH * 0.5);
+  // The rows fill the page as one, two or three columns (filled top to bottom, then the next column), as tall as the page allows.
+  const { cols, rowH } = plan;
+  const colW = (right - left - CHECK_GAP * (cols - 1)) / cols;
+  const perColumn = Math.ceil(plan.rows.length / cols);
+  const boxSize = Math.min(24, rowH * 0.5);
+  const idW = 40, numW = 24;
+  const guestRoom = colW - numW - idW - boxSize - 20;
+  const longest = plan.rows.reduce((w, r) => Math.max(w, textWidth(r.name, FONT_BOLD, 10)), 1);
+  const nameSize = Math.min(20, rowH * 0.46, Math.max(8, (guestRoom / longest) * 10)); // as big as the tallest row and the longest name allow
+  const noteSize = Math.min(9, nameSize * 0.6);
   plan.rows.forEach((row, i) => {
-    const rowTop = CHECK_TABLE_TOP - i * rowH;
-    if (i % 2 === 0) items.push({ type: 'rect', x: left, y: rowTop - rowH, w: right - left, h: rowH, rgb: paler(accent, 0.08) });
+    const c = Math.floor(i / perColumn), r = i % perColumn;
+    const x = left + c * (colW + CHECK_GAP);
+    const rowTop = CHECK_TABLE_TOP - r * rowH;
+    if (r % 2 === 0) items.push({ type: 'rect', x, y: rowTop - rowH, w: colW, h: rowH, rgb: paler(accent, 0.08) });
     const mid = rowTop - rowH / 2;
-    put(String(plan.first + i + 1), left + 22, mid - nameSize * 0.35, { size: nameSize * 0.7, gray: 0.5, align: 'right' });
+    put(String(plan.first + i + 1), x + numW - 4, mid - nameSize * 0.3, { size: nameSize * 0.7, gray: 0.5, align: 'right' });
     if (row.note) {
-      put(row.name, left + 36, mid + 1, { font: FONT_BOLD, size: nameSize, maxWidth: right - left - 170 });
-      put(row.note, left + 36, mid - noteSize - 1, { size: noteSize, gray: 0.5, maxWidth: right - left - 170 });
+      put(row.name, x + numW + 2, mid + 1, { font: FONT_BOLD, size: nameSize, maxWidth: guestRoom });
+      put(row.note, x + numW + 2, mid - noteSize - 1, { size: noteSize, gray: 0.5, maxWidth: guestRoom });
     } else {
-      put(row.name, left + 36, mid - nameSize * 0.35, { font: FONT_BOLD, size: nameSize, maxWidth: right - left - 170 });
+      put(row.name, x + numW + 2, mid - nameSize * 0.35, { font: FONT_BOLD, size: nameSize, maxWidth: guestRoom });
     }
-    put(row.id ?? '', right - 46, mid - nameSize * 0.3, { size: nameSize * 0.7, gray: 0.5, align: 'right', maxWidth: 80 });
-    box(right - boxSize - 8, mid - boxSize / 2, boxSize, 0.35);
+    put(row.id ?? '', x + colW - boxSize - 12, mid - nameSize * 0.3, { size: nameSize * 0.7, gray: 0.5, align: 'right', maxWidth: idW });
+    box(x + colW - boxSize - 5, mid - boxSize / 2, boxSize, 0.35);
   });
   if (plan.rows.length === 0 && plan.section.empty) put(plan.section.empty, left + 12, CHECK_TABLE_TOP - 30, { gray: 0.45, size: 12 });
 
@@ -820,12 +830,16 @@ export function buildGroupsPdf(data, brand = {}) {
   }
   const plans = [];
   for (const section of sections) {
-    const pageCount = Math.max(1, Math.ceil(section.rows.length / CHECK_ROWS_PER_PAGE));
+    // The fewest columns (1 to 3) that hold the whole group on ONE page; a group too long even for three columns runs over more pages.
+    // (Over 10 guests is already two columns: names, ID and box stay close together, and the writing can be bigger.)
+    const cols = [1, 2, 3].find((c) => section.rows.length <= (c === 1 ? 10 : c * CHECK_ROWS_PER_COLUMN)) ?? 3;
+    const perPage = cols * CHECK_ROWS_PER_COLUMN;
+    const pageCount = Math.max(1, Math.ceil(section.rows.length / perPage));
     for (let i = 0; i < pageCount; i++) {
-      const rows = section.rows.slice(i * CHECK_ROWS_PER_PAGE, (i + 1) * CHECK_ROWS_PER_PAGE);
-      // A group that fits on one page gets rows as tall as the page allows (big and easy to read); a longer one uses the smallest row.
-      const rowH = pageCount === 1 ? Math.min(CHECK_MAX_ROW, Math.max(CHECK_MIN_ROW, CHECK_TABLE_ROOM / Math.max(rows.length, 1))) : CHECK_MIN_ROW;
-      plans.push({ section, rows, rowH, first: i * CHECK_ROWS_PER_PAGE, continued: i > 0 });
+      const rows = section.rows.slice(i * perPage, (i + 1) * perPage);
+      // Rows as tall as the page allows (big and easy to read), whatever the number of guests.
+      const rowH = pageCount === 1 ? Math.min(CHECK_MAX_ROW, Math.max(CHECK_MIN_ROW, CHECK_TABLE_ROOM / Math.max(Math.ceil(rows.length / cols), 1))) : CHECK_MIN_ROW;
+      plans.push({ section, rows, rowH, cols, first: i * perPage, continued: i > 0 });
     }
   }
   const pages = plans.map((plan, i) => drawChecklistPage(plan, i + 1, plans.length, data, brand, accent, logoImage));

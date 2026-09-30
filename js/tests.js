@@ -2780,13 +2780,16 @@ function readZip(bytes) {
   check('The checklists are one page per group, plus one for the people not in a group', pagesIn(pdf) === 4 && /Page 4 of 4/.test(pdf) && /Not in a group yet/.test(pdf) && /Queen Victoria/.test(pdf));
   const big = { ...data, groups: [{ name: 'Everyone', countText: '80 guests', rows: Array.from({ length: 80 }, (_, i) => ({ id: String(i), name: `Guest, ${i}` })) }], unplaced: [] };
   const bigPdf = await buildGroupsPdf(big, {}).text();
-  check('A group longer than a page continues on the next one under the same heading', pagesIn(bigPdf) >= 3 && /continued/.test(bigPdf)); // (a PDF writes its parentheses escaped, so match the word)
+  check('A group longer than a page continues on the next one under the same heading', pagesIn(bigPdf) === 2 && /continued/.test(bigPdf)); // 80 guests: three columns hold 63 a page, so 2 pages (a PDF writes its parentheses escaped, so match the word)
   const overview3 = await buildGroupsOverviewPdf(data, { companyName: 'Sample Travel Co', accent: '#e8b100', logo: null }).text();
   check('The overview puts every group (and the people not placed) side by side on ONE page', pagesIn(overview3) === 1 && /Queen Victoria/.test(overview3) && /Henry VI/.test(overview3) && /Not in a group/.test(overview3));
   const wide = { ...data, groups: Array.from({ length: 7 }, (_, i) => ({ name: `Bus ${i + 1}`, countText: '9 guests', rows: Array.from({ length: 9 }, (_, k) => ({ id: String(k), name: `Guest, ${k}` })) })), unplaced: [] };
   check('Seven groups still fit on one page (it turns to landscape and makes the writing as big as fits)', pagesIn(await buildGroupsOverviewPdf(wide, {}).text()) === 1 && /MediaBox \[0 0 842 595\]/.test(await buildGroupsOverviewPdf(wide, {}).text()));
   const tall = { ...data, groups: [{ name: 'Everyone', countText: '300 guests', rows: Array.from({ length: 300 }, (_, i) => ({ id: String(i), name: `Guest, ${i}` })) }], unplaced: [] };
   check('An overview too long for one page carries on over more pages, nothing lost', pagesIn(await buildGroupsOverviewPdf(tall, {}).text()) >= 2 && /Guest, 299/.test(await buildGroupsOverviewPdf(tall, {}).text()));
+  const twenty = { ...data, groups: [{ name: 'Bus', countText: '20 guests', rows: Array.from({ length: 20 }, (_, i) => ({ id: String(i), name: `Guest, ${i}` })) }], unplaced: [] };
+  check('A group of 20 fits ONE page (two columns, big writing); 35 still one page; nobody is lost',
+    pagesIn(await buildGroupsPdf(twenty, {}).text()) === 1 && pagesIn(await buildGroupsPdf({ ...twenty, groups: [{ ...twenty.groups[0], rows: Array.from({ length: 35 }, (_, i) => ({ id: String(i), name: `Guest, ${i}` })) }] }, {}).text()) === 1);
   const jpegG = (() => { const c = document.createElement('canvas'); c.width = 20; c.height = 10; c.getContext('2d').fillRect(0, 0, 20, 10); return { data: c.toDataURL('image/jpeg', 0.8), width: 20, height: 10 }; })();
   check('The logo goes on the list only when there is one', /DCTDecode/.test(await buildGroupsPdf(data, { logo: jpegG }).text()) && !/DCTDecode/.test(pdf));
 
