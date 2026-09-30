@@ -102,13 +102,20 @@ function columnLetters(index) {
   return letters;
 }
 
-// One row of cells: values is an array of { col, text, bold }. Skips columns with nothing to show,
-// the same way a real spreadsheet leaves a cell empty rather than writing a blank string into it.
+// Cell styles (the numbers are positions in the styles part below): 0 plain, 1 bold, 2 column heading (white on the colour),
+// 3 sheet title (big, in the colour), 4 light tint (every other row), 5 muted grey (the "Updated" line).
+const STYLE = { BOLD: 1, HEADING: 2, TITLE: 3, TINT: 4, MUTED: 5 };
+
+// One row of cells: values is an array of { col, text, bold?, style? }. A cell with nothing to show is left out, the same way a
+// real spreadsheet leaves a cell empty, unless it carries a style (a tinted row keeps its tint across empty cells too).
 function rowXml(rowNumber, values) {
-  const cells = values
-    .filter((v) => v.text !== undefined && v.text !== '')
-    .map((v) => `<c r="${columnLetters(v.col)}${rowNumber}"${v.bold ? ' s="1"' : ''} t="inlineStr"><is><t xml:space="preserve">${xmlEscape(v.text)}</t></is></c>`)
-    .join('');
+  const cells = values.map((v) => {
+    const style = v.style ?? (v.bold ? STYLE.BOLD : undefined);
+    const attr = style ? ` s="${style}"` : '';
+    const at = `${columnLetters(v.col)}${rowNumber}`;
+    if (v.text === undefined || v.text === '') return style ? `<c r="${at}"${attr}/>` : '';
+    return `<c r="${at}"${attr} t="inlineStr"><is><t xml:space="preserve">${xmlEscape(v.text)}</t></is></c>`;
+  }).join('');
   return `<row r="${rowNumber}">${cells}</row>`;
 }
 
@@ -121,14 +128,14 @@ const GAP_COLS = 1;    // one blank column between one table and the next
 function tableRows(table, startCol, startRow) {
   const pieces = [];
   const heading = table.count ? `${table.heading}  (${table.count})` : table.heading;
-  pieces.push({ row: startRow, values: [{ col: startCol, text: heading, bold: true }] });
+  pieces.push({ row: startRow, values: [{ col: startCol, text: heading, style: STYLE.TITLE }] });
   if (table.detail) pieces.push({ row: startRow + 1, values: [{ col: startCol, text: table.detail }] });
   pieces.push({ row: startRow + 2, values: [
-    { col: startCol, text: '#', bold: true }, { col: startCol + 1, text: 'ID', bold: true }, { col: startCol + 2, text: 'Name', bold: true },
+    { col: startCol, text: '#', style: STYLE.HEADING }, { col: startCol + 1, text: 'ID', style: STYLE.HEADING }, { col: startCol + 2, text: 'Name', style: STYLE.HEADING },
   ] });
   table.rows.forEach((row, i) => {
     pieces.push({ row: startRow + 3 + i, values: [
-      { col: startCol, text: String(i + 1) }, { col: startCol + 1, text: row.id }, { col: startCol + 2, text: row.name },
+      { col: startCol, text: String(i + 1), style: i % 2 === 0 ? STYLE.TINT : undefined }, { col: startCol + 1, text: row.id, style: i % 2 === 0 ? STYLE.TINT : undefined }, { col: startCol + 2, text: row.name, style: i % 2 === 0 ? STYLE.TINT : undefined },
     ] });
   });
   return pieces;
@@ -137,7 +144,7 @@ function tableRows(table, startCol, startRow) {
 // One sheet: the doc's title and "Updated ..." line, then every table of this half-day side by side.
 function sheetXml(doc, group) {
   const headRow = 4; // title, updated line, a blank row, then the tables start
-  const byRow = new Map([[1, [{ col: 0, text: doc.title, bold: true }]], [2, [{ col: 0, text: doc.updatedLine }]]]);
+  const byRow = new Map([[1, [{ col: 0, text: doc.title, style: STYLE.TITLE }]], [2, [{ col: 0, text: doc.updatedLine, style: STYLE.MUTED }]]]);
 
   const tableCount = group.tables.length;
   const totalCols = Math.max(1, tableCount) * (TABLE_COLS + GAP_COLS);
@@ -155,8 +162,10 @@ function sheetXml(doc, group) {
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
     + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`
     + `<cols>${cols}</cols>`
     + `<sheetData>${rows.join('')}</sheetData>`
+    + printSetup(tableCount > 2)
     + `</worksheet>`;
 }
 
@@ -192,21 +201,67 @@ const APP_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
 
 // The styles part follows the layout Excel itself writes (the two fixed first fills "none" and "gray125", a border made of its
 // five sides, a named "Normal" cell style). Excel refuses (or offers to "repair") a file whose styles cut these corners, and
-// the earlier, shorter version of this part was the likely reason a groups file would not open in Excel (1 Oct 2026).
-const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
-  + `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-  + `<fonts count="2"><font><sz val="10"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="10"/><name val="Calibri"/><family val="2"/></font></fonts>`
-  + `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>`
-  + `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`
-  + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`
-  + `<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>`
-  + `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>`
-  + `</styleSheet>`;
+// the earlier, shorter version of this part was the likely reason a file would not open in Excel (1 Oct 2026).
+// The colour (the company's accent) dresses the headings, the titles and a light tint on every other row.
+const DEFAULT_ACCENT = '#1d5c57';
+function mixWithWhite(hex, amount) { // amount 0.9 = 90% white
+  const channel = (i) => Math.round(parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) * (1 - amount) + 255 * amount).toString(16).padStart(2, '0');
+  return `${channel(0)}${channel(1)}${channel(2)}`.toUpperCase();
+}
+function stylesXml(accent) {
+  const color = /^#[0-9a-f]{6}$/i.test(accent ?? '') ? accent : DEFAULT_ACCENT;
+  const solid = color.slice(1).toUpperCase();
+  const font = (extra, size, rgb) => `<font>${extra}<sz val="${size}"/>${rgb ? `<color rgb="FF${rgb}"/>` : ''}<name val="Calibri"/><family val="2"/></font>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
+    + `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<fonts count="5">${font('', 10)}${font('<b/>', 10)}${font('<b/>', 10, 'FFFFFF')}${font('<b/>', 14, solid)}${font('', 9, '7F7F7F')}</fonts>`
+    + `<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>`
+    + `<fill><patternFill patternType="solid"><fgColor rgb="FF${solid}"/><bgColor indexed="64"/></patternFill></fill>`
+    + `<fill><patternFill patternType="solid"><fgColor rgb="FF${mixWithWhite(color, 0.9)}"/><bgColor indexed="64"/></patternFill></fill></fills>`
+    + `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`
+    + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`
+    + `<cellXfs count="6">`
+    + `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`
+    + `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>`
+    + `<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>`
+    + `<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>`
+    + `<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>`
+    + `<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>`
+    + `</cellXfs>`
+    + `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>`
+    + `</styleSheet>`;
+}
+
+// Printing: A4, all columns on the width of one page (as many pages tall as needed), landscape when the sheet is wide.
+const printSetup = (landscape) => `<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>`
+  + `<pageSetup paperSize="9" orientation="${landscape ? 'landscape' : 'portrait'}" fitToWidth="1" fitToHeight="0"/>`;
+
+// A flat, sortable table: a title, the "Updated" line, then a coloured heading row and the rows (every other one tinted). The
+// heading row stays in view when scrolling, has filter buttons, and prints on A4. `rows` are arrays of text, one per column.
+function flatSheetXml({ title, updatedLine, headers, widths, rows, landscape = false }) {
+  const tint = (i) => (i % 2 === 0 ? STYLE.TINT : undefined);
+  const sheetRows = [
+    rowXml(1, [{ col: 0, text: title, style: STYLE.TITLE }]),
+    rowXml(2, [{ col: 0, text: updatedLine, style: STYLE.MUTED }]),
+    rowXml(4, headers.map((text, col) => ({ col, text, style: STYLE.HEADING }))),
+    ...rows.map((values, i) => rowXml(5 + i, values.map((text, col) => ({ col, text, style: tint(i) })))),
+  ];
+  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+  const lastColumn = columnLetters(headers.length - 1);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
+    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews>`
+    + `<cols>${cols}</cols><sheetData>${sheetRows.join('')}</sheetData>`
+    + `<autoFilter ref="A4:${lastColumn}${4 + rows.length}"/>`
+    + printSetup(landscape)
+    + `</worksheet>`;
+}
 
 // Assembles a whole workbook (all the fixed parts, plus one worksheet per given { name, xml }) into
 // a ready-to-share .xlsx Blob. Shared by buildListsXlsx and buildFinalTripXlsx below, which differ
 // only in which sheets they hand it.
-function assembleWorkbook(sheets) {
+function assembleWorkbook(sheets, accent) {
   const sheetOverrides = sheets.map((_, i) =>
     `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
   ).join('');
@@ -230,7 +285,7 @@ function assembleWorkbook(sheets) {
     { name: 'docProps/app.xml', text: APP_XML },
     { name: 'xl/workbook.xml', text: workbook },
     { name: 'xl/_rels/workbook.xml.rels', text: workbookRels },
-    { name: 'xl/styles.xml', text: STYLES },
+    { name: 'xl/styles.xml', text: stylesXml(accent) },
     ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, text: s.xml })),
   ];
 
@@ -242,73 +297,48 @@ function assembleWorkbook(sheets) {
 // tiles the PDF uses (which only exist to make things fit on a printed page; a spreadsheet has no
 // such limit, and a flat table is the more useful shape to sort or filter in Excel itself).
 function guestsFlatSheetXml(doc, guestRows) {
-  const headers = ['ID', 'Name', 'When', 'Destination', 'Doing what'];
-  const rows = [
-    rowXml(1, [{ col: 0, text: doc.title, bold: true }]),
-    rowXml(2, [{ col: 0, text: doc.updatedLine }]),
-    rowXml(4, headers.map((text, col) => ({ col, text, bold: true }))),
-    ...guestRows.map((r, i) => rowXml(5 + i, [
-      { col: 0, text: r.id }, { col: 1, text: r.name }, { col: 2, text: r.when }, { col: 3, text: r.destination }, { col: 4, text: r.what },
-    ])),
-  ];
-  const widths = [10, 22, 16, 14, 30];
-  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
-    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-    + `<cols>${cols}</cols>`
-    + `<sheetData>${rows.join('')}</sheetData>`
-    + `</worksheet>`;
+  return flatSheetXml({
+    title: doc.title, updatedLine: doc.updatedLine, headers: ['ID', 'Name', 'When', 'Destination', 'Doing what'], widths: [10, 26, 18, 16, 36],
+    rows: guestRows.map((r) => [r.id, r.name, r.when, r.destination, r.what]), landscape: true,
+  });
 }
 
 // The one thing most of the app calls: doc (see pdf.js's layoutPages for its shape) -> a
 // ready-to-share .xlsx Blob.
-export function buildListsXlsx(doc) {
+export function buildListsXlsx(doc, brand = {}) {
   const usedNames = new Set();
   const sheets = doc.groups.map((group) => ({ name: sheetName(group.heading ?? doc.title, usedNames), xml: sheetXml(doc, group) }));
-  return assembleWorkbook(sheets);
+  return assembleWorkbook(sheets, brand.accent);
 }
 
 // The final export of the whole trip (SPEC.md, "5. Export"): every half-day's tours as their own
 // sheet (toursDoc, the same shape buildListsXlsx takes — just spanning every destination), plus one
 // more sheet with every guest's own day-by-day itinerary as a flat table.
-export function buildFinalTripXlsx(toursDoc, guestRows) {
+export function buildFinalTripXlsx(toursDoc, guestRows, brand = {}) {
   const usedNames = new Set();
   const tourSheets = toursDoc.groups.map((group) => ({ name: sheetName(group.heading ?? toursDoc.title, usedNames), xml: sheetXml(toursDoc, group) }));
   const guestSheet = { name: sheetName('All guests', usedNames), xml: guestsFlatSheetXml(toursDoc, guestRows) };
-  return assembleWorkbook([...tourSheets, guestSheet]);
+  return assembleWorkbook([...tourSheets, guestSheet], brand.accent);
 }
 
 // The groups list (Settings > Groups): first one flat sheet with a Group column (one row per guest, so a
 // person is changed by editing their Group cell, and the sheet sorts and filters), then one sheet per
-// group with its own numbered list, like the other lists. `rows` are { group, id, last, first, with }.
-export function buildGroupsXlsx(doc, rows) {
+// group with its own numbered list, like the other lists. `rows` are { group, id, name ("Last, First"), with }.
+export function buildGroupsXlsx(doc, rows, brand = {}) {
   const usedNames = new Set();
-  const headers = ['Group', 'ID', 'Last name', 'First name', 'Travelling with'];
-  const widths = [22, 10, 20, 20, 36];
-  const flatRows = [
-    rowXml(1, [{ col: 0, text: doc.title, bold: true }]),
-    rowXml(2, [{ col: 0, text: doc.updatedLine }]),
-    rowXml(4, headers.map((text, col) => ({ col, text, bold: true }))),
-    ...rows.map((r, i) => rowXml(5 + i, [
-      { col: 0, text: r.group }, { col: 1, text: r.id }, { col: 2, text: r.last }, { col: 3, text: r.first }, { col: 4, text: r.with },
-    ])),
-  ];
-  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
-  const flatXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
-    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews>` // header row stays in view
-    + `<cols>${cols}</cols><sheetData>${flatRows.join('')}</sheetData></worksheet>`;
+  const flatXml = flatSheetXml({
+    title: doc.title, updatedLine: doc.updatedLine, headers: ['Group', 'ID', 'Name', 'Travelling with'], widths: [18, 9, 28, 40],
+    rows: rows.map((r) => [r.group, r.id, r.name, r.with]),
+  });
   const sheets = [{ name: sheetName('All guests', usedNames), xml: flatXml }];
   for (const group of doc.groups) sheets.push({ name: sheetName(group.heading, usedNames), xml: sheetXml(doc, group) });
-  return assembleWorkbook(sheets);
+  return assembleWorkbook(sheets, brand.accent);
 }
 
-// The evening sheet (every restaurant of one evening) as one flat table: Restaurant, Time, ID, Name, Table, and (only when
+// The evening sheet (every restaurant of one evening) as one flat table: Restaurant, Time, ID, Name, Status, and (only when
 // the owner ticked "Include dietary needs") a Dietary needs column. One row per guest, so it sorts and filters in Excel.
-export function buildEveningXlsx(doc) {
+export function buildEveningXlsx(doc, brand = {}) {
   const withNeeds = doc.blocks.some((b) => b.needs?.length > 0);
-  const headers = ['Restaurant', 'Time', 'People at table', 'ID', 'Name', 'Status', ...(withNeeds ? ['Dietary needs'] : [])];
-  const widths = [26, 8, 14, 10, 26, 16, ...(withNeeds ? [40] : [])];
   const rows = [];
   for (const block of doc.blocks) {
     block.tables.forEach((table) => table.rows.forEach((r) => {
@@ -316,16 +346,10 @@ export function buildEveningXlsx(doc) {
       rows.push([block.restaurant, block.seating, String(block.count), r.id, r.name, table.special ? 'Special request' : 'Confirmed', ...(withNeeds ? [need] : [])]);
     }));
   }
-  const sheetRows = [
-    rowXml(1, [{ col: 0, text: doc.title, bold: true }]),
-    rowXml(2, [{ col: 0, text: doc.updatedLine }]),
-    rowXml(4, headers.map((text, col) => ({ col, text, bold: true }))),
-    ...rows.map((values, i) => rowXml(5 + i, values.map((text, col) => ({ col, text })))),
-  ];
-  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
-  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
-    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews>`
-    + `<cols>${cols}</cols><sheetData>${sheetRows.join('')}</sheetData></worksheet>`;
-  return assembleWorkbook([{ name: sheetName('Evening', new Set()), xml }]);
+  const xml = flatSheetXml({
+    title: doc.title, updatedLine: doc.updatedLine,
+    headers: ['Restaurant', 'Time', 'People at table', 'ID', 'Name', 'Status', ...(withNeeds ? ['Dietary needs'] : [])],
+    widths: [26, 9, 16, 10, 28, 16, ...(withNeeds ? [44] : [])], rows, landscape: withNeeds,
+  });
+  return assembleWorkbook([{ name: sheetName('Evening', new Set()), xml }], brand.accent);
 }

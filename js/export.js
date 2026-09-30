@@ -257,14 +257,14 @@ export async function exportGroupsXlsx(ctx, trip, split) {
   const rows = activeGuestsOf(trip).sort(byName)
     .sort((a, b) => (order.get(groupName(a)) ?? 999) - (order.get(groupName(b)) ?? 999)) // by group, names within it
     .map((guest) => ({
-      group: groupName(guest), id: guest.ref, last: guest.last, first: guest.first,
+      group: groupName(guest), id: guest.ref, name: `${guest.last}, ${guest.first}`,
       with: activeGuestsOf(trip).filter((o) => o.partyId && o.partyId === guest.partyId && o.id !== guest.id).map(fullName).join(', '),
     }));
   const doc = {
     title: split.name, updatedLine: data.updatedLine,
     groups: data.groups.map((g) => ({ heading: g.name, tables: [{ heading: g.name, detail: '', count: g.countText, rows: g.rows }] })),
   };
-  await saveAndShare(ctx, trip, { title: `${split.name} — Groups`, updatedLine: data.updatedLine, format: 'xlsx', blob: buildGroupsXlsx(doc, rows) });
+  await saveAndShare(ctx, trip, { title: `${split.name} — Groups`, updatedLine: data.updatedLine, format: 'xlsx', blob: buildGroupsXlsx(doc, rows, trip.branding ?? {}) });
 }
 
 export async function exportGroupCards(ctx, trip, split) {
@@ -365,7 +365,7 @@ export async function exportAndShare(ctx, trip, doc, format, { archive = true } 
   reservePreviewWindow(format); // straight from the tap, before anything is awaited (see showPreview)
   let blob;
   try {
-    blob = doc.blocks ? spec.buildEvening(doc) : spec.build(doc); // an evening sheet has its own layout
+    blob = doc.blocks ? spec.buildEvening(doc, trip.branding ?? {}) : spec.build(doc, trip.branding ?? {}); // an evening sheet has its own layout
   } catch {
     releasePreviewWindow();
     showToast(`Could not build the ${spec.label} file.`, true);
@@ -403,7 +403,7 @@ export async function exportFinalTrip(ctx, trip, format) {
   try {
     blob = format === 'pdf'
       ? buildFinalTripPdf(finalTripToursDoc(trip, updatedBy), finalTripGuestsDocForPdf(trip, updatedBy))
-      : buildFinalTripXlsx(finalTripToursDoc(trip, updatedBy), finalTripGuestsRowsForXlsx(trip));
+      : buildFinalTripXlsx(finalTripToursDoc(trip, updatedBy), finalTripGuestsRowsForXlsx(trip), trip.branding ?? {});
   } catch {
     releasePreviewWindow();
     showToast(`Could not build the ${FORMATS[format].label} file.`, true);

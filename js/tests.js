@@ -2609,7 +2609,7 @@ function readZip(bytes) {
   check('Excel: cells in a row are in column order', cellColumns.every((cols) => cols.every((c, i) => i === 0 || colIndex(c) > colIndex(cols[i - 1]))));
   const styles = await xml(buildListsXlsx(doc), 'xl/styles.xml');
   check('Excel: the styles part has the two fixed first fills, a full border and the Normal cell style',
-    /<fills count="2"><fill><patternFill patternType="none"\/><\/fill><fill><patternFill patternType="gray125"\/>/.test(styles)
+    /<fills count="4"><fill><patternFill patternType="none"\/><\/fill><fill><patternFill patternType="gray125"\/>/.test(styles)
     && /<border><left\/><right\/><top\/><bottom\/><diagonal\/><\/border>/.test(styles) && /cellStyle name="Normal"/.test(styles));
 }
 
@@ -2793,7 +2793,7 @@ function readZip(bytes) {
   const jpegG = (() => { const c = document.createElement('canvas'); c.width = 20; c.height = 10; c.getContext('2d').fillRect(0, 0, 20, 10); return { data: c.toDataURL('image/jpeg', 0.8), width: 20, height: 10 }; })();
   check('The logo goes on the list only when there is one', /DCTDecode/.test(await buildGroupsPdf(data, { logo: jpegG }).text()) && !/DCTDecode/.test(pdf));
 
-  const rows = everyone.map((g) => ({ group: '', id: g.ref, last: g.last, first: g.first, with: '' }));
+  const rows = everyone.map((g) => ({ group: '', id: g.ref, name: `${g.last}, ${g.first}`, with: '' }));
   const xlsx = await buildGroupsXlsx({ title: 'Nile transfer', updatedLine: 'U', groups: data.groups.map((g) => ({ heading: g.name, tables: [{ heading: g.name, detail: '', count: g.countText, rows: g.rows }] })) }, rows).text();
   check('The Excel file has a flat "All guests" sheet with a Group column, plus a sheet for each group',
     /All guests/.test(xlsx) && /Travelling with/.test(xlsx) && /Queen Victoria/.test(xlsx) && /Henry VI/.test(xlsx) && /Group/.test(xlsx));
