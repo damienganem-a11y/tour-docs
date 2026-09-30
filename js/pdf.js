@@ -416,101 +416,157 @@ export function buildFinalTripPdf(toursDoc, guestsDoc) {
 
 // ---------- The evening sheet: every restaurant of one evening, compact ----------
 //
-// The list the owner sends to the local team for a whole evening (SPEC.md, Phase 3 exports). Restaurants are
-// never exported one by one. Blocks are packed into columns down the page (5 across on A4 landscape), so
-// all the reservations of the evening fit on as few pages as possible. Column headings are left out ("ID" and
-// "Name" are obvious), which saves room. The doc looks like:
+// The list the owner sends to the local team for a whole evening (SPEC.md, Phase 3 exports). Restaurants are never
+// exported one by one. Layout rules (owner, 1 Oct 2026):
+//   - Each restaurant has its own COLUMN, its name written once at the top; below it, its tables one under the other, each
+//     with its own grey band ("18:45 · 3 people") and its guests' ID and name. No "ID / Name" headings.
+//   - A table is never cut: if it does not fit at the bottom of the column, the whole table goes to the next column (or
+//     page), under the restaurant's name again with "(cont.)". Only a table taller than a whole column is split.
+//   - Landscape or portrait is chosen for whichever needs fewer pages (landscape when equal).
+// The doc looks like:
 //   { title, updatedLine, blocks: [ { restaurant, seating, count,
 //       tables: [ { special: true|false, rows: [ { id, name } ] } ],
-//       needs: [ { id, name, text } ] } ] }        needs only exist when the owner ticked "Include dietary needs"
-const EVENING_COLS = 5;
+//       needs: [ { id, name, text } ] } ] }        one block per table; needs only exist when the owner ticked "Include dietary needs"
 const EVENING_GAP = 12;
 const EVENING_ROW_H = 10.5;
 const EVENING_SIZE = 8;
 const EVENING_HEAD_SIZE = 9.5;
+const EVENING_NAME_SIZE = 11;
 const EVENING_ID_W = 30;
+const EVENING_LAYOUTS = [
+  { width: 842, height: 595, cols: 5 }, // A4 landscape
+  { width: 595, height: 842, cols: 4 }, // A4 portrait
+];
 
-function layoutEvening(doc) {
-  const colW = (USABLE_WIDTH - EVENING_GAP * (EVENING_COLS - 1)) / EVENING_COLS;
+// Draws pieces into their own little coordinate system (x from 0, y from 0 downwards, so y is negative) and reports the
+// height used, so a piece can be measured first and only then placed in a column. Placing = moving every item by the same offset.
+function evening_piece(colW, draw) {
+  const items = [];
+  const text = (str, x, y, { font = FONT_REGULAR, size = EVENING_SIZE, gray = 0 } = {}) => items.push({ type: 'text', x, y, font, size, gray, text: str });
+  const rect = (x, y, w, h, gray) => items.push({ type: 'rect', x, y, w, h, gray });
+  const height = draw({ text, rect, colW });
+  return { items, height };
+}
+
+const eveningLines = (str, size, width, font = FONT_REGULAR) => wrapText(str, font, size, width).flatMap((l) => breakToWidth(l, font, size, width));
+
+// The restaurant's name, once, at the top of its column (with "(cont.)" where a column carries on from the one before).
+function eveningNameBox(name, cont, colW) {
+  return evening_piece(colW, ({ text, rect }) => {
+    const lines = eveningLines(`${name}${cont ? ' (cont.)' : ''}`, EVENING_NAME_SIZE, colW, FONT_BOLD);
+    let y = 0;
+    for (const line of lines) { y -= EVENING_NAME_SIZE + 2; text(line, 0, y, { font: FONT_BOLD, size: EVENING_NAME_SIZE }); }
+    y -= 4;
+    rect(0, y, colW, 1.2, 0.25);
+    return -y + 6;
+  });
+}
+
+// One table: grey band with the time and its own number of people, then the guests. `rows` may be part of a long table.
+function eveningTableBox(block, rows, { first, last }, colW) {
+  return evening_piece(colW, ({ text, rect }) => {
+    const table = block.tables[0];
+    const bandH = EVENING_HEAD_SIZE + 8;
+    rect(0, -bandH, colW, bandH, 0.9);
+    const label = `${block.seating}  ·  ${block.count} ${block.count === 1 ? 'person' : 'people'}${first ? '' : ' (cont.)'}`;
+    text(label, 3, -EVENING_HEAD_SIZE - 3, { font: FONT_BOLD, size: EVENING_HEAD_SIZE });
+    let y = -bandH - 1;
+    if (table.special && first) { y -= EVENING_ROW_H; text('Special request', 3, y, { font: FONT_BOLD, size: 7, gray: 0.35 }); }
+    const nameW = colW - EVENING_ID_W - 2;
+    for (const row of rows) {
+      eveningLines(row.name, EVENING_SIZE, nameW).forEach((line, i) => {
+        y -= EVENING_ROW_H;
+        if (i === 0) text(row.id || '', 3, y);
+        text(line, 3 + EVENING_ID_W, y);
+      });
+    }
+    if (last && block.needs?.length > 0) {
+      y -= 4;
+      y -= EVENING_ROW_H; text('* Dietary needs', 3, y, { font: FONT_BOLD, size: 7, gray: 0.35 });
+      for (const need of block.needs) {
+        for (const line of eveningLines(`${need.id} ${need.name}: ${need.text}`, 7, colW - 3)) { y -= 9; text(line, 3, y, { size: 7 }); }
+      }
+    }
+    return -y + 10; // a little air before the next table
+  });
+}
+
+// Lays the whole doc out for one page shape. Returns the pages and how many tables had to be carried over to another column.
+function layoutEvening(doc, { width, height, cols }) {
+  const colW = (width - MARGIN * 2 - EVENING_GAP * (cols - 1)) / cols;
+  const bottom = MARGIN;
   const pages = [];
   let page = [];
   let col = 0;
   let y = 0;
-  let top = 0; // where columns start on this page (below the title)
+  let top = 0;
+  let carried = 0;
 
-  const text = (str, x, py, { font = FONT_REGULAR, size = EVENING_SIZE, gray = 0 } = {}) => page.push({ type: 'text', x, y: py, font, size, gray, text: str });
-  function startPage() {
+  const startPage = () => {
     if (page.length > 0) pages.push(page);
     page = [];
-    y = PAGE_HEIGHT - MARGIN;
-    for (const line of wrapText(doc.title, FONT_BOLD, 12, USABLE_WIDTH)) { text(line, MARGIN, y - 10, { font: FONT_BOLD, size: 12 }); y -= 14; }
-    text(doc.updatedLine, MARGIN, y - 8, { size: 7.5, gray: 0.4 });
+    y = height - MARGIN;
+    for (const line of wrapText(doc.title, FONT_BOLD, 12, width - MARGIN * 2)) { page.push({ type: 'text', x: MARGIN, y: y - 10, font: FONT_BOLD, size: 12, gray: 0, text: line }); y -= 14; }
+    page.push({ type: 'text', x: MARGIN, y: y - 8, font: FONT_REGULAR, size: 7.5, gray: 0.4, text: doc.updatedLine });
     y -= 20;
     top = y;
     col = 0;
-  }
-  // Moves to the next column, or to a new page after the last one.
-  function nextColumn() {
-    col += 1;
-    if (col >= EVENING_COLS) startPage(); else y = top;
-  }
-  // Makes sure `lines` rows still fit in this column, otherwise starts the next one.
-  function needRoom(lines) {
-    if (y - lines * EVENING_ROW_H < MARGIN && y !== top) nextColumn();
-  }
-  const x = () => MARGIN + col * (colW + EVENING_GAP);
+  };
+  const nextColumn = () => { col += 1; if (col >= cols) startPage(); else y = top; };
+  const place = (box) => {
+    const dx = MARGIN + col * (colW + EVENING_GAP);
+    for (const item of box.items) page.push({ ...item, x: item.x + dx, y: item.y + y });
+    y -= box.height;
+  };
 
   startPage();
+  // One group per restaurant, in the order the doc gives them (the blocks of one restaurant follow each other).
+  const restaurants = [];
   for (const block of doc.blocks) {
-    const heading = (cont) => {
-      const title = `${block.restaurant}${cont ? ' (cont.)' : ''}`;
-      const lines = wrapText(title, FONT_BOLD, EVENING_HEAD_SIZE, colW);
-      // A light grey band behind the heading: each table is a clearly separate block.
-      const bandH = lines.length * (EVENING_HEAD_SIZE + 2) + EVENING_ROW_H + 4;
-      page.push({ type: 'rect', x: x(), y: y - bandH, w: colW, h: bandH + 2, gray: 0.9 });
-      for (const line of lines) { y -= EVENING_HEAD_SIZE + 2; text(line, x(), y, { font: FONT_BOLD, size: EVENING_HEAD_SIZE }); }
-      y -= EVENING_ROW_H;
-      text(`${block.seating}  ·  ${block.count} ${block.count === 1 ? 'person' : 'people'}`, x(), y, { font: FONT_BOLD, size: EVENING_SIZE, gray: 0.35 });
-      page.push({ type: 'rect', x: x(), y: y - 3, w: colW, h: 0.75, gray: 0.6 });
-      y -= 3;
-    };
-    // A block never starts with its heading alone at the bottom of a column.
-    needRoom(5);
-    heading(false);
-    const nameW = colW - EVENING_ID_W - 2;
-    for (const table of block.tables) {
-      y -= 3; // a little air between two tables of the same restaurant and time
-      if (table.special) { needRoom(2); y -= EVENING_ROW_H; text('Special request', x(), y, { font: FONT_BOLD, size: 7, gray: 0.35 }); }
-      for (const row of table.rows) {
-        const lines = wrapText(row.name, FONT_REGULAR, EVENING_SIZE, nameW).flatMap((l) => breakToWidth(l, FONT_REGULAR, EVENING_SIZE, nameW));
-        if (y - lines.length * EVENING_ROW_H < MARGIN) { nextColumn(); heading(true); }
-        lines.forEach((line, i) => {
-          y -= EVENING_ROW_H;
-          if (i === 0) text(row.id || '', x(), y);
-          text(line, x() + EVENING_ID_W, y);
-        });
-      }
-    }
-    if (block.needs?.length > 0) {
-      y -= 4;
-      needRoom(3);
-      y -= EVENING_ROW_H; text('* Dietary needs', x(), y, { font: FONT_BOLD, size: 7, gray: 0.35 });
-      for (const need of block.needs) {
-        const lines = wrapText(`${need.id} ${need.name}: ${need.text}`, FONT_REGULAR, 7, colW).flatMap((l) => breakToWidth(l, FONT_REGULAR, 7, colW));
-        for (const line of lines) {
-          if (y - 9 < MARGIN) { nextColumn(); heading(true); }
-          y -= 9; text(line, x(), y, { size: 7 });
-        }
-      }
-    }
-    y -= 10; // gap before the next restaurant
+    if (restaurants.at(-1)?.name !== block.restaurant) restaurants.push({ name: block.restaurant, blocks: [] });
+    restaurants.at(-1).blocks.push(block);
   }
-  startPage(); // flush the last page
-  return pages;
+  restaurants.forEach((restaurant, index) => {
+    if (index > 0) nextColumn(); // every restaurant starts its own column
+    place(eveningNameBox(restaurant.name, false, colW));
+    for (const block of restaurant.blocks) {
+      let boxes = [eveningTableBox(block, block.tables[0].rows, { first: true, last: true }, colW)];
+      const room = () => y - bottom;
+      const columnRoom = top - bottom - eveningNameBox(restaurant.name, true, colW).height; // what a fresh column offers a table
+      if (boxes[0].height > columnRoom) {
+        // Taller than a whole column (very rare): the only case where a table is split, into pieces that each fit a column.
+        const capacity = columnRoom - EVENING_HEAD_SIZE * 2 - 30;
+        const chunks = [];
+        let chunk = [];
+        let used = 0;
+        for (const row of block.tables[0].rows) {
+          const h = eveningLines(row.name, EVENING_SIZE, colW - EVENING_ID_W - 2).length * EVENING_ROW_H;
+          if (used + h > capacity && chunk.length > 0) { chunks.push(chunk); chunk = []; used = 0; }
+          chunk.push(row); used += h;
+        }
+        chunks.push(chunk);
+        boxes = chunks.map((rows, i) => eveningTableBox(block, rows, { first: i === 0, last: i === chunks.length - 1 }, colW));
+      }
+      boxes.forEach((box) => {
+        if (box.height > room()) {
+          nextColumn();
+          place(eveningNameBox(restaurant.name, true, colW));
+          carried += 1;
+        }
+        place(box);
+      });
+    }
+  });
+  if (page.length > 0) pages.push(page);
+  return { pages, carried };
 }
 
+// Picks landscape or portrait, whichever needs fewer pages (then fewer tables carried over; landscape when equal).
 export function buildEveningPdf(doc) {
-  return new Blob([serializePdf(layoutEvening(doc))], { type: 'application/pdf' });
+  const tries = EVENING_LAYOUTS.map((shape) => ({ shape, ...layoutEvening(doc, shape) }));
+  tries.sort((a, b) => a.pages.length - b.pages.length || a.carried - b.carried); // stable: landscape first when equal
+  const best = tries[0];
+  return new Blob([serializePdf(best.pages, { width: best.shape.width, height: best.shape.height })], { type: 'application/pdf' });
 }
 
 // ---------- Confirmation cards (Phase 3 exports, 30 Sep 2026) ----------
