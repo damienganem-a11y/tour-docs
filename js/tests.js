@@ -18,6 +18,7 @@ import { PASSCODE_CONFIG } from './passcode-config.js';
 import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
+import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
@@ -2560,6 +2561,26 @@ function readZip(bytes) {
   check('A document is listed by its automatic name, or by the owner\'s own name once renamed',
     exportName({ title: 'Lisbon', version: 2 }) === 'Lisbon' && exportName({ title: 'Lisbon', version: 2, archivedAt: 'x' }) === 'Lisbon, version 2' && exportName({ title: 'Lisbon', version: 2, customName: 'Lisbon final' }) === 'Lisbon final');
   check('Previewing an archived export opens its file in a new window (the phone\'s own viewer)', opened.length === 1 && /^blob:/.test(opened[0]));
+}
+
+// --- Documents shared between devices: what each device does about one document ---
+{
+  const doc = { id: 'd1', title: 'L', updatedAt: '2026-10-01T10:00:00Z' };
+  const at = (t) => ({ updatedAt: t });
+  check('A document only the server has is downloaded (so it opens without internet later)', decideDocument(undefined, at('x')) === 'download');
+  check('A document only this device has, never sent, is uploaded', decideDocument(doc, undefined) === 'upload');
+  check('A document that was on the server and is gone from it was deleted elsewhere: removed here too', decideDocument({ ...doc, syncedAt: 'y' }, undefined) === 'delete-local');
+  check('A document deleted here is deleted on the server, then forgotten', decideDocument({ ...doc, deletedAt: 'z' }, at('x')) === 'delete-remote' && decideDocument({ ...doc, deletedAt: 'z' }, undefined) === 'delete-local');
+  check('A change made here and not yet sent is sent (when it is the newest)', decideDocument({ ...doc, dirty: true }, at('2026-10-01T09:00:00Z')) === 'push');
+  check('A newer change from another device is taken over', decideDocument({ ...doc, syncedAt: 'y' }, at('2026-10-01T11:00:00Z')) === 'adopt');
+  check('When both sides changed, the newest change wins', decideDocument({ ...doc, dirty: true }, at('2026-10-01T11:00:00Z')) === 'adopt');
+  check('Nothing to do when both are level', decideDocument({ ...doc, syncedAt: 'y' }, at('2026-10-01T10:00:00Z')) === 'none');
+  const meta = documentMeta({ id: 'd1', title: 'L', blob: new Blob(['x']), dirty: true, syncedAt: 'y' });
+  check('What goes to the server is the details only: no file, no bookkeeping of this device', !('blob' in meta) && !('dirty' in meta) && !('syncedAt' in meta) && meta.title === 'L');
+  const original = new Blob([new Uint8Array([37, 80, 68, 70, 0, 255, 128])], { type: 'application/pdf' });
+  const back = base64ToBlob(await blobToBase64(original), 'application/pdf');
+  check('A file survives the trip to the server and back, byte for byte',
+    new Uint8Array(await back.arrayBuffer()).join() === new Uint8Array(await original.arrayBuffer()).join());
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

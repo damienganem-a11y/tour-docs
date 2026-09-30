@@ -26,6 +26,7 @@ import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
+  pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
@@ -157,7 +158,8 @@ const ctx = {
   },
   trip: (id) => state.trips.get(id),
   journal: (tripId) => state.journal.get(tripId) ?? [],
-  exportsFor: (tripId) => state.exports.get(tripId) ?? [],
+  documentsInfo: () => documentsInfo,
+  exportsFor: (tripId) => (state.exports.get(tripId) ?? []).filter((r) => !r.deletedAt), // a document deleted here waits, hidden, until the server has been told
   go(hash) { location.hash = hash; },
 
   // Check the access code. If it is right, the phone remembers it for 30 days and the app opens.
@@ -282,25 +284,29 @@ const ctx = {
   // Used by export.js: keep a PDF that was just built, so it can be found again in the Exports archive.
   // Making the same document again (same title, same kind of file) replaces the current one: the new copy becomes the
   // current document and the previous one moves to Archived, keeping its version number (owner's request, 1 Oct 2026).
+  // Every change is stamped (updatedAt) and marked `dirty` until it has been sent to the server (see syncDocuments).
   async saveExport(tripId, record) {
     const now = new Date().toISOString();
     const replaced = sameDocument(ctx.exportsFor(tripId), record);
-    for (const old of replaced) await dbPut('exports', { ...old, archivedAt: now });
-    await dbPut('exports', record);
-    state.exports.set(tripId, [...ctx.exportsFor(tripId).map((r) => (replaced.includes(r) ? { ...r, archivedAt: now } : r)), record]);
+    const stamped = { ...record, updatedAt: now, dirty: true };
+    for (const old of replaced) await putExport({ ...old, archivedAt: now, updatedAt: now, dirty: true });
+    await putExport(stamped);
+    syncDocumentsSoon();
   },
 
-  // Archive housekeeping (Settings > Exports archive): rename a version, move it to Archived and back, delete it for good.
+  // Archive housekeeping (Settings > Documents): rename a version, move it to Archived and back, delete it for good.
   async updateExport(tripId, recordId, changes) {
     const old = ctx.exportsFor(tripId).find((r) => r.id === recordId);
     if (!old) return;
-    const record = { ...old, ...changes };
-    await dbPut('exports', record);
-    state.exports.set(tripId, ctx.exportsFor(tripId).map((r) => (r.id === recordId ? record : r)));
+    await putExport({ ...old, ...changes, updatedAt: new Date().toISOString(), dirty: true });
+    syncDocumentsSoon();
   },
   async deleteExport(tripId, recordId) {
-    await dbDelete('exports', recordId);
-    state.exports.set(tripId, ctx.exportsFor(tripId).filter((r) => r.id !== recordId));
+    const old = ctx.exportsFor(tripId).find((r) => r.id === recordId);
+    if (!old) return;
+    // Kept as a small hidden note (no file) until the server has been told, so another device never brings it back.
+    await putExport({ id: old.id, tripId, title: old.title, format: old.format, deletedAt: new Date().toISOString(), dirty: true });
+    syncDocumentsSoon();
   },
 
   // Redraw the current screen without jumping back to the top.
@@ -446,6 +452,76 @@ async function backfillPush() {
   }
 }
 
+// ---------- Documents shared between devices (Settings > Documents) ----------
+// Saves one document on this device (database and screen state).
+async function putExport(record) {
+  await dbPut('exports', record);
+  const list = state.exports.get(record.tripId) ?? [];
+  state.exports.set(record.tripId, list.some((r) => r.id === record.id) ? list.map((r) => (r.id === record.id ? record : r)) : [...list, record]);
+}
+
+// Brings this device and the server level for documents, both ways, files included, so every document can be opened without
+// internet. One at a time. A problem on one document never stops the others; the next round tries again.
+let documentsInFlight = null;
+let documentsAgain = false;
+let documentsTimer = null;
+const documentsInfo = { lastOkAt: null, waiting: 0 }; // for the line on the Documents page
+function syncDocumentsSoon() { // after a local change: a moment later, once, whatever the number of changes
+  clearTimeout(documentsTimer);
+  documentsTimer = setTimeout(() => { syncDocuments().catch(() => {}); }, 300);
+}
+async function syncDocuments() {
+  if (!state.owner || hasSession === false || !navigator.onLine) return;
+  if (documentsInFlight) { documentsAgain = true; return documentsInFlight; }
+  documentsInFlight = doSyncDocuments().finally(() => {
+    documentsInFlight = null;
+    if (documentsAgain) { documentsAgain = false; syncDocumentsSoon(); }
+  });
+  return documentsInFlight;
+}
+async function doSyncDocuments() {
+  let rows;
+  try { rows = await pullDocumentList(); } catch { return; } // offline or not reachable: the next round tries again
+  const serverById = new Map(rows.map((row) => [row.id, row]));
+  const everyLocal = [...state.exports.values()].flat(); // includes documents deleted here and waiting to be deleted on the server
+  const localById = new Map(everyLocal.map((r) => [r.id, r]));
+  let problems = 0;
+  let changedScreen = false;
+
+  for (const local of everyLocal) {
+    const server = serverById.get(local.id);
+    try {
+      const decision = decideDocument(local, server?.data);
+      if (decision === 'upload') { await pushDocument(local, { withFile: true }); await markDocumentSent(local); }
+      else if (decision === 'push') { await pushDocument(local, { withFile: false }); await markDocumentSent(local); }
+      else if (decision === 'adopt') { await putExport({ ...server.data, blob: local.blob, dirty: false, syncedAt: new Date().toISOString() }); changedScreen = true; }
+      else if (decision === 'delete-remote') { await deleteDocumentRemote(local.id); await removeExport(local); }
+      else if (decision === 'delete-local') { await removeExport(local); changedScreen = true; }
+    } catch { problems += 1; }
+  }
+  for (const server of rows) {
+    if (localById.has(server.id)) continue;
+    try { // a document this device does not have yet: fetched now, so it is there when there is no internet
+      const text = await pullDocumentFile(server.id);
+      if (text === null) continue;
+      const meta = server.data;
+      await putExport({ ...meta, blob: base64ToBlob(text, meta.format === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf'), dirty: false, syncedAt: new Date().toISOString() });
+      changedScreen = true;
+    } catch { problems += 1; }
+  }
+  if (problems === 0) documentsInfo.lastOkAt = new Date().toISOString();
+  if (changedScreen && !document.body.classList.contains('sheet-open') && /\/settings\/exports/.test(location.hash)) render({ keepScroll: true });
+}
+// The server now has this version of the document. If it was changed again while it was being sent, it stays waiting to be sent.
+async function markDocumentSent(sent) {
+  const fresh = (state.exports.get(sent.tripId) ?? []).find((r) => r.id === sent.id) ?? sent;
+  await putExport({ ...fresh, syncedAt: new Date().toISOString(), dirty: fresh.updatedAt !== sent.updatedAt });
+}
+async function removeExport(record) {
+  await dbDelete('exports', record.id);
+  state.exports.set(record.tripId, (state.exports.get(record.tripId) ?? []).filter((r) => r.id !== record.id));
+}
+
 let pullInFlight = null; // single-flight guard: a flapping connection must never run two pulls at once
 
 // Phase 2, step 2b: pulls down whatever another phone signed into the same account has pushed that
@@ -465,6 +541,7 @@ async function doPullSync() {
     try { await pullOneTrip(row.id, row.change_count); } catch (error) { failed = true; noteSyncProblem(error); /* try again next time */ }
   }
   if (!failed) noteSyncOk();
+  await syncDocuments().catch(() => {}); // documents too: the file lands on this phone as soon as it exists
 }
 
 async function pullOneTrip(tripId, serverChangeCount) {

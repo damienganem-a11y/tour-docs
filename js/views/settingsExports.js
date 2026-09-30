@@ -57,6 +57,7 @@ export function exportsSettingsPage(ctx, trip) {
     hasTables ? h('p', { class: 'muted count-line' }, 'One card per travel party and table, filled in from the bookings. The logo and colour come from Settings > Brand.') : null,
     trip.restaurants.length > 0 ? reservationButton : null,
     trip.restaurants.length > 0 ? h('p', { class: 'muted count-line' }, 'All restaurants of one evening on one compact sheet, with an option to include dietary needs.') : null,
+    documentsLine(ctx),
     current.length === 0
       ? h('p', { class: 'empty' }, archived.length === 0 ? 'Nothing created yet.' : 'Nothing current: everything is archived below.')
       : h('ul', { class: 'list' }, current.map((record) => exportRow(ctx, trip, record))),
@@ -145,6 +146,15 @@ function archivedFolder(ctx, trip, archived) {
   folder.open = archivedOpen;
   folder.addEventListener('toggle', () => { archivedOpen = folder.open; });
   return folder;
+}
+
+// One quiet line: are the documents on this phone and level with the server? (Everything is downloaded as soon as it exists.)
+function documentsLine(ctx) {
+  const at = ctx.documentsInfo().lastOkAt;
+  const text = at
+    ? `Shared with your other devices. Everything is saved on this phone and works without internet (checked ${new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}).`
+    : 'Shared with your other devices as soon as you are online. What is listed here is saved on this phone.';
+  return h('p', { class: 'muted count-line' }, text);
 }
 
 function exportRow(ctx, trip, record) {

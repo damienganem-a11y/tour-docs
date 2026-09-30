@@ -63,6 +63,7 @@ export async function pullJournalEntries(tripId, afterSeq = 0) {
 export async function deleteTripRemote(tripId) {
   const supabase = await getClient();
   await supabase.from('journal_entries').delete().eq('trip_id', tripId);
+  await supabase.from('documents').delete().eq('trip_id', tripId);
   const { error } = await supabase.from('trips').delete().eq('id', tripId);
   if (error) throw error;
 }
@@ -149,5 +150,75 @@ export async function watchServerChanges(onChange, onStatus) {
   const supabase = await getClient();
   return supabase.channel('tour-docs-trips')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
+}
+
+// ---------- Documents (Settings > Documents), shared like trips (owner's request, 1 Oct 2026) ----------
+// Every document made on one device is copied to the server and comes down to the other devices at once, file included, so
+// it can be opened without internet (a plane, a bus in the desert). Table `documents`: id, trip_id, owner_id, data (the
+// document's name, version, format, dates... everything but the file), file (the file itself, as base64 text), updated_at.
+
+// The document's own details, without the file and without this device's private bookkeeping.
+export function documentMeta(record) {
+  const { blob, syncedAt, dirty, ...meta } = record; // eslint-disable-line no-unused-vars
+  return meta;
+}
+
+// A file (Blob) to text and back, so it fits in a table column.
+export function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+export function base64ToBlob(text, type) {
+  const bytes = Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type });
+}
+
+// What is on the server: every document's details, but NOT its file (downloaded only for documents this device lacks).
+export async function pullDocumentList() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('documents').select('id, trip_id, data');
+  if (error) throw error;
+  return data;
+}
+export async function pullDocumentFile(id) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('documents').select('file').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data?.file ?? null;
+}
+// First time on the server: details and file. Later changes (rename, archive) send only the details.
+export async function pushDocument(record, { withFile }) {
+  const supabase = await getClient();
+  const row = { id: record.id, trip_id: record.tripId, data: documentMeta(record) };
+  if (withFile) row.file = await blobToBase64(record.blob);
+  const { error } = await supabase.from('documents').upsert(row, { onConflict: 'id' });
+  if (error) throw error;
+}
+export async function deleteDocumentRemote(id) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('documents').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// Pure and network-free, so it is easy to test: what should this device do about ONE document?
+//   local   this device's copy (or undefined); it may carry `deletedAt` (deleted here, not yet deleted on the server),
+//           `dirty` (changed here, not yet sent) and `syncedAt` (the server has had it at some point)
+//   server  the server's details for it (or undefined)
+// Answers: 'download' | 'upload' | 'push' | 'adopt' | 'delete-remote' | 'delete-local' | 'none'
+// When both sides changed, the newest change (updatedAt) wins.
+export function decideDocument(local, server) {
+  if (local?.deletedAt) return server ? 'delete-remote' : 'delete-local';
+  if (!local) return 'download';
+  if (!server) return local.syncedAt ? 'delete-local' : 'upload'; // once known to the server and now gone: deleted on another device
+  const localAt = local.updatedAt ?? local.createdAt ?? '';
+  const serverAt = server.updatedAt ?? server.createdAt ?? '';
+  if (local.dirty && localAt >= serverAt) return 'push';
+  if (serverAt > localAt) return 'adopt';
+  return 'none';
 }
