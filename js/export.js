@@ -403,6 +403,18 @@ export async function exportFinalTrip(ctx, trip, format) {
 
 // Re-shares a version already sitting in the archive: no rebuilding, just the same file again.
 // `format` defaults to 'pdf' for a version saved before Excel export existed.
+// Opens a version from the archive in the phone's OWN viewer (owner's request, 1 Oct 2026): on iPhone, Safari's
+// PDF viewer (with Apple's share icon: AirDrop, WhatsApp, Save to Files, Print...), on a computer the browser's viewer.
+// It must run straight from the tap (a browser only allows opening a window then), so it is not async. If the
+// phone refuses to open it, the share sheet is offered instead, so a tap is never a dead end.
+export function previewSavedExport(record) {
+  const spec = FORMATS[record.format ?? 'pdf'];
+  const url = URL.createObjectURL(new Blob([record.blob], { type: spec.mimeType }));
+  const opened = window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+  if (!opened) shareSavedExport(record);
+}
+
 export async function shareSavedExport(record) {
   const spec = FORMATS[record.format ?? 'pdf'];
   await shareOrDownloadFile(record.blob, fileNameFor(`${record.title} v${record.version}`, spec.extension), spec.mimeType);

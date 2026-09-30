@@ -653,3 +653,8 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
   background: var(--track); color: var(--ink-soft, inherit); pointer-events: none;
 }
 .pull-indicator--ready { background: #ff8f00; color: #1b1b1b; }
+
+/* An archive row: tap the row to view the file, the Share button next to it goes straight to sharing */
+.export-row { display: flex; align-items: stretch; gap: 8px; }
+.export-row .row { flex: 1; min-width: 0; }
+.export-share { width: auto; flex: 0 0 auto; padding: 0 16px; }

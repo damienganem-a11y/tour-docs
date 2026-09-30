@@ -17,6 +17,7 @@ import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnl
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
+import { previewSavedExport } from './export.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
@@ -2536,6 +2537,16 @@ function readZip(bytes) {
   document.body.classList.remove('sheet-open');
   check('Nothing happens while a sheet is open', refreshed === 1);
   document.querySelectorAll('.pull-indicator').forEach((n) => n.remove());
+}
+
+// --- Archive: tapping an export opens it in the phone's own viewer ---
+{
+  const realOpen = window.open;
+  const opened = [];
+  window.open = (url) => { opened.push(url); return {}; };
+  previewSavedExport({ format: 'pdf', blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }) });
+  window.open = realOpen;
+  check('Previewing an archived export opens its file in a new window (the phone\'s own viewer)', opened.length === 1 && /^blob:/.test(opened[0]));
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

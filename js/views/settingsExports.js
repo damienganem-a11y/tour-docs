@@ -8,7 +8,7 @@ import { pageHead, exportFormatSheet } from './chrome.js';
 import { openSheet, closeSheet } from '../ui.js';
 import { choiceRow } from './move.js';
 import { bySlotOrder, slotLabel, dinnerCountIn } from '../rules.js';
-import { shareSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
+import { shareSavedExport, previewSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
@@ -135,10 +135,13 @@ function runReservations(ctx, trip, slot) {
 
 function exportRow(record) {
   const formatLabel = record.format === 'xlsx' ? 'Excel' : 'PDF'; // older records saved before Excel existed are PDFs
-  return h('li', {},
-    h('button', { class: 'row', type: 'button', onclick: () => shareSavedExport(record) },
+  // Tapping the row shows the file in the phone's own viewer (share from there with Apple's own icon);
+  // the Share button next to it goes straight to the share sheet.
+  return h('li', { class: 'export-row' },
+    h('button', { class: 'row', type: 'button', onclick: () => previewSavedExport(record) },
       h('div', { class: 'row-main' },
         h('div', { class: 'row-title' }, `${record.title}, version ${record.version}`, h('span', { class: 'tag' }, formatLabel)),
         h('div', { class: 'row-sub' }, record.updatedLine)),
-      h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')));
+      h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')),
+    h('button', { class: 'btn btn--plain export-share', type: 'button', 'aria-label': `Share ${record.title}`, onclick: () => shareSavedExport(record) }, 'Share'));
 }
