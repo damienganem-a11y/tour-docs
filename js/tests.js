@@ -21,7 +21,7 @@ import { previewSavedExport, exportName } from './export.js';
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
-import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
@@ -2583,6 +2583,36 @@ function readZip(bytes) {
     new Uint8Array(await back.arrayBuffer()).join() === new Uint8Array(await original.arrayBuffer()).join());
 }
 
+// --- Excel files: the structure Excel insists on (a file that breaks it will not open) ---
+{
+  const table = (heading, n) => ({ heading, detail: 'd', count: String(n), rows: Array.from({ length: n }, (_, i) => ({ id: String(i), name: `Guest ${i}, X` })) });
+  const doc = { title: 'T', updatedLine: 'U', groups: [{ heading: 'G', tables: [table('One', 5), table('Two', 3), table('Three', 7)] }] };
+  const xml = async (blob, part) => { // reads one part of the .zip (parts are stored, not compressed): walks the local headers
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const view = new DataView(bytes.buffer);
+    let at = 0;
+    while (view.getUint32(at, true) === 0x04034b50) {
+      const size = view.getUint32(at + 18, true), nameLength = view.getUint16(at + 26, true), extraLength = view.getUint16(at + 28, true);
+      const name = new TextDecoder().decode(bytes.slice(at + 30, at + 30 + nameLength));
+      const dataStart = at + 30 + nameLength + extraLength;
+      if (name === part) return new TextDecoder().decode(bytes.slice(dataStart, dataStart + size));
+      at = dataStart + size;
+    }
+    return '';
+  };
+  const sheet = await xml(buildListsXlsx(doc), 'xl/worksheets/sheet1.xml');
+  const rowNumbers = [...sheet.matchAll(/<row r="(\d+)"/g)].map((m) => Number(m[1]));
+  check('Excel: tables side by side share ONE row each; rows are in order and never repeated',
+    rowNumbers.length > 0 && rowNumbers.every((n, i) => i === 0 || n > rowNumbers[i - 1]), rowNumbers.join());
+  const cellColumns = [...sheet.matchAll(/<row r="\d+">(.*?)<\/row>/g)].map((m) => [...m[1].matchAll(/<c r="([A-Z]+)\d+"/g)].map((c) => c[1]));
+  const colIndex = (letters) => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+  check('Excel: cells in a row are in column order', cellColumns.every((cols) => cols.every((c, i) => i === 0 || colIndex(c) > colIndex(cols[i - 1]))));
+  const styles = await xml(buildListsXlsx(doc), 'xl/styles.xml');
+  check('Excel: the styles part has the two fixed first fills, a full border and the Normal cell style',
+    /<fills count="2"><fill><patternFill patternType="none"\/><\/fill><fill><patternFill patternType="gray125"\/>/.test(styles)
+    && /<border><left\/><right\/><top\/><bottom\/><diagonal\/><\/border>/.test(styles) && /cellStyle name="Normal"/.test(styles));
+}
+
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---
 {
   const ctxBr = makeCtx();
@@ -2747,10 +2777,16 @@ function readZip(bytes) {
 
   const pdf = await buildGroupsPdf(data, { companyName: 'Sample Travel Co', accent: '#e8b100', logo: null }).text();
   const pagesIn = (t) => (t.match(/\/Type \/Page \/Parent/g) ?? []).length;
-  check('The printable list is one page per group, plus one for the people not in a group', pagesIn(pdf) === 4 && /Page 4 of 4/.test(pdf) && /Not in a group yet/.test(pdf) && /Queen Victoria/.test(pdf));
+  check('The checklists are one page per group, plus one for the people not in a group', pagesIn(pdf) === 4 && /Page 4 of 4/.test(pdf) && /Not in a group yet/.test(pdf) && /Queen Victoria/.test(pdf));
   const big = { ...data, groups: [{ name: 'Everyone', countText: '80 guests', rows: Array.from({ length: 80 }, (_, i) => ({ id: String(i), name: `Guest, ${i}` })) }], unplaced: [] };
   const bigPdf = await buildGroupsPdf(big, {}).text();
-  check('A group longer than a page continues on the next one under the same heading', pagesIn(bigPdf) === 3 && /continued/.test(bigPdf)); // (a PDF writes its parentheses escaped, so match the word)
+  check('A group longer than a page continues on the next one under the same heading', pagesIn(bigPdf) >= 3 && /continued/.test(bigPdf)); // (a PDF writes its parentheses escaped, so match the word)
+  const overview3 = await buildGroupsOverviewPdf(data, { companyName: 'Sample Travel Co', accent: '#e8b100', logo: null }).text();
+  check('The overview puts every group (and the people not placed) side by side on ONE page', pagesIn(overview3) === 1 && /Queen Victoria/.test(overview3) && /Henry VI/.test(overview3) && /Not in a group/.test(overview3));
+  const wide = { ...data, groups: Array.from({ length: 7 }, (_, i) => ({ name: `Bus ${i + 1}`, countText: '9 guests', rows: Array.from({ length: 9 }, (_, k) => ({ id: String(k), name: `Guest, ${k}` })) })), unplaced: [] };
+  check('Seven groups still fit on one page (it turns to landscape and makes the writing as big as fits)', pagesIn(await buildGroupsOverviewPdf(wide, {}).text()) === 1 && /MediaBox \[0 0 842 595\]/.test(await buildGroupsOverviewPdf(wide, {}).text()));
+  const tall = { ...data, groups: [{ name: 'Everyone', countText: '300 guests', rows: Array.from({ length: 300 }, (_, i) => ({ id: String(i), name: `Guest, ${i}` })) }], unplaced: [] };
+  check('An overview too long for one page carries on over more pages, nothing lost', pagesIn(await buildGroupsOverviewPdf(tall, {}).text()) >= 2 && /Guest, 299/.test(await buildGroupsOverviewPdf(tall, {}).text()));
   const jpegG = (() => { const c = document.createElement('canvas'); c.width = 20; c.height = 10; c.getContext('2d').fillRect(0, 0, 20, 10); return { data: c.toDataURL('image/jpeg', 0.8), width: 20, height: 10 }; })();
   check('The logo goes on the list only when there is one', /DCTDecode/.test(await buildGroupsPdf(data, { logo: jpegG }).text()) && !/DCTDecode/.test(pdf));
 

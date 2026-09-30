@@ -7,13 +7,17 @@
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
-import { displayNames, alphabetical, capacityInfo, plural, autoSplitPlan } from '../rules.js';
+import { displayNames, alphabetical, capacityInfo, plural, joinNames, autoSplitPlan } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { choiceRow, notice } from './move.js';
 import { pickGuests } from './guestPicker.js';
 import { GROUPS_UNDO_SCOPE } from '../journal.js';
-import { exportGroupsPdf, exportGroupsXlsx, exportGroupCards } from '../export.js';
+import { exportGroupsPdf, exportGroupsOverviewPdf, exportGroupsXlsx, exportGroupCards } from '../export.js';
+
+// A labelled field for the sheets: the label above (always readable), the input, then a hint below that wraps (a placeholder
+// gets cut off on a phone, so nothing important is written as a placeholder).
+const field = (label, input, hint) => h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, label, input), hint ? h('div', { class: 'form-hint' }, hint) : null);
 
 let saving = false;
 // Saves one change; closes the sheet and redraws on success, shows the reason on failure.
@@ -58,13 +62,17 @@ function listPage(ctx, trip) {
 }
 
 function newSplitSheet(ctx, trip) {
-  const name = h('input', { class: 'text-input', type: 'text', maxlength: '60', placeholder: 'Name, for example "Nile transfer"', 'aria-label': 'Name of the split' });
-  const details = h('input', { class: 'text-input', type: 'text', maxlength: '200', placeholder: 'Details printed on cards, for example "Depart 07:30, hotel lobby" (optional)', 'aria-label': 'Details' });
-  const groups = h('input', { class: 'text-input', type: 'text', placeholder: 'Group names, separated by commas: Bus 1, Bus 2, Bus 3', 'aria-label': 'Group names' });
+  const name = h('input', { class: 'text-input', type: 'text', maxlength: '60', 'aria-label': 'Name of the split' });
+  const details = h('input', { class: 'text-input', type: 'text', maxlength: '200', 'aria-label': 'Details' });
+  const groups = h('input', { class: 'text-input', type: 'text', 'aria-label': 'Group names' });
   openSheet({
     eyebrow: 'Groups', title: 'New split',
     subtitle: 'You can rename, add and remove groups afterwards.',
-    body: [name, details, groups],
+    body: [
+      field('Name', name, 'For example: Nile transfer'),
+      field('Details printed on cards (optional)', details, 'For example: Depart 07:30, hotel lobby'),
+      field('Group names', groups, 'Separate with commas. For example: Bus 1, Bus 2, Bus 3'),
+    ],
     footer: h('button', {
       class: 'btn', type: 'button',
       onclick: async () => {
@@ -116,7 +124,8 @@ function splitPage(ctx, trip, split) {
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => autoSplitSheet(ctx, trip, split) }, 'Auto-split')),
     ...groupCards, unplacedCard,
     h('h2', { class: 'section-title' }, 'Print or share'),
-    exportButton(ctx, trip, split, 'Printable list (PDF), one group per page', exportGroupsPdf, true),
+    exportButton(ctx, trip, split, 'Overview: all groups on one page (PDF)', exportGroupsOverviewPdf, true),
+    exportButton(ctx, trip, split, 'Checklists: one page per group, with tick boxes (PDF)', exportGroupsPdf),
     exportButton(ctx, trip, split, 'Excel list, to edit', exportGroupsXlsx),
     exportButton(ctx, trip, split, 'Cards with each group\'s name (PDF)', exportGroupCards),
     h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 16px;', disabled: locked, onclick: () => deleteSplitSheet(ctx, trip, split) }, 'Delete this split'));
@@ -150,33 +159,43 @@ function exportButton(ctx, trip, split, label, run, primary = false) {
   }, label);
 }
 
-// Tap a guest: move them to another group, or take them out of the split.
+// Tap a guest: move them to another group, or take them out of the split. Their travel party comes along (owner's request,
+// 1 Oct 2026), unless the owner unticks the box for this one move.
 function moveGuestSheet(ctx, trip, split, guest) {
   const names = displayNames(trip.guests);
   const current = split.assignments[guest.id] ?? null;
+  const mates = activeGuests(trip).filter((g) => g.partyId === guest.partyId && g.id !== guest.id);
+  const together = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Include their travel party' });
+  const who = () => (together.checked ? [guest, ...mates] : [guest]);
+  const whoText = () => (together.checked && mates.length > 0 ? `${names.get(guest.id)} and their travel party` : names.get(guest.id));
+  const assign = (groupId, doneText) => save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: who().map((g) => ({ guestId: g.id, groupId })) }, doneText);
   const rows = split.groups.map((group) => choiceRow({
-    title: group.name, current: group.id === current, disabled: group.id === current,
+    title: group.name, current: group.id === current,
     side: group.capacity === null ? String(membersOf(trip, split, group.id).length) : capacityInfo(membersOf(trip, split, group.id).length, group.capacity).text,
-    onclick: () => save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: [{ guestId: guest.id, groupId: group.id }] }, `${names.get(guest.id)} moved to ${group.name}`),
+    onclick: () => assign(group.id, `${whoText()} moved to ${group.name}`),
   }));
-  if (current !== null) {
+  if (current !== null || mates.some((m) => split.assignments[m.id] !== undefined)) {
     rows.push(choiceRow({
-      title: 'Take out of every group', detail: 'They will be listed as not in a group',
-      onclick: () => save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: [{ guestId: guest.id, groupId: null }] }, `${names.get(guest.id)} taken out`),
+      title: 'Take out of every group', detail: 'Listed as not in a group',
+      onclick: () => assign(null, `${whoText()} taken out`),
     }));
   }
-  openSheet({ eyebrow: split.name, title: `Where does ${names.get(guest.id)} go?`, body: rows, cancelLabel: 'Cancel' });
+  const body = mates.length === 0 ? rows : [
+    h('label', { class: 'tick-row' }, together, h('span', {}, `Include their travel party (${joinNames([...mates].sort(alphabetical(names)).map((m) => names.get(m.id)))})`)),
+    ...rows,
+  ];
+  openSheet({ eyebrow: split.name, title: `Where does ${names.get(guest.id)} go?`, body, cancelLabel: 'Cancel' });
 }
 
 // Rename the split, change its details line, rename / resize / add / remove groups.
 function editSplitSheet(ctx, trip, split) {
   const name = h('input', { class: 'text-input', type: 'text', maxlength: '60', value: split.name, 'aria-label': 'Name of the split' });
-  const details = h('input', { class: 'text-input', type: 'text', maxlength: '200', value: split.details ?? '', placeholder: 'Details printed on cards (optional)', 'aria-label': 'Details' });
+  const details = h('input', { class: 'text-input', type: 'text', maxlength: '200', value: split.details ?? '', 'aria-label': 'Details' });
   const rows = split.groups.map((g) => ({ id: g.id, name: g.name, capacity: g.capacity }));
   const list = h('div', {});
   const draw = () => {
     list.replaceChildren(...rows.map((row, i) => h('div', { class: 'group-edit-row' },
-      h('input', { class: 'text-input', type: 'text', maxlength: '40', value: row.name, placeholder: 'Group name', 'aria-label': `Group ${i + 1} name`, oninput: (e) => { row.name = e.target.value; } }),
+      h('input', { class: 'text-input', type: 'text', maxlength: '40', value: row.name, placeholder: 'Name', 'aria-label': `Group ${i + 1} name`, oninput: (e) => { row.name = e.target.value; } }),
       h('input', { class: 'text-input group-size-input', type: 'number', min: '1', max: '500', inputmode: 'numeric', value: row.capacity ?? '', placeholder: 'Size', 'aria-label': `Group ${i + 1} size`, oninput: (e) => { row.capacity = e.target.value === '' ? null : Number(e.target.value); } }),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: rows.length === 1, 'aria-label': `Remove group ${i + 1}`, onclick: () => { rows.splice(i, 1); draw(); } }, '×'))));
   };
@@ -184,7 +203,14 @@ function editSplitSheet(ctx, trip, split) {
   openSheet({
     eyebrow: 'Groups', title: 'Edit split',
     subtitle: 'Removing a group takes its people out of it. Size is optional (a bus\'s seats).',
-    body: [name, details, list, h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => { rows.push({ id: null, name: '', capacity: null }); draw(); } }, '+ Add a group')],
+    body: [
+      field('Name', name),
+      field('Details printed on cards (optional)', details, 'For example: Depart 07:30, hotel lobby'),
+      h('div', { class: 'form-label' }, 'Groups'),
+      h('div', { class: 'form-hint' }, 'Name of each group, and its size (optional: a bus\'s seats).'),
+      list,
+      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => { rows.push({ id: null, name: '', capacity: null }); draw(); } }, '+ Add a group'),
+    ],
     footer: h('button', {
       class: 'btn', type: 'button',
       onclick: () => save(ctx, trip, { type: 'edit-split', splitId: split.id, name: name.value, details: details.value, groups: rows }, 'Split updated'),

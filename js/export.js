@@ -12,7 +12,7 @@
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
 // (shareOrDownloadFile itself now lives in ui.js, shared with Settings > Backup.)
 
-import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
+import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment, formatWeekdayDate } from './time.js';
 import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural } from './rules.js';
@@ -184,7 +184,7 @@ export async function exportConfirmationCards(ctx, trip, destination, slot) {
 // Keeps a finished file as a new version in the Exports archive, then shows it (see showPreview). Never used
 // for a file with dietary information: those go through exportAndShare.
 async function saveAndShare(ctx, trip, { title, updatedLine, format, blob }) {
-  reservePreviewWindow();
+  reservePreviewWindow(format);
   const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title, format), updatedLine, createdAt: new Date().toISOString(), format, blob };
   try {
     await ctx.saveExport(trip.id, record);
@@ -203,13 +203,18 @@ const activeGuestsOf = (trip) => trip.guests.filter((g) => !g.leftAt);
 // Everything the printable list and the Excel file need, from one split.
 export function groupsExportData(trip, split, updatedBy) {
   const rowOf = (guest) => ({ id: guest.ref, name: `${guest.last}, ${guest.first}` });
+  // The checklist adds "with Ada" under a guest whose travel party is in the same group, so the driver sees who belongs together.
+  const noteFor = (guest, members) => {
+    const others = members.filter((m) => m.partyId === guest.partyId && m.id !== guest.id);
+    return others.length > 0 ? `with ${others.map((m) => m.first).join(', ')}` : undefined;
+  };
   const membersOf = (groupId) => activeGuestsOf(trip).filter((g) => split.assignments[g.id] === groupId).sort(byName);
   return {
     title: split.name, details: split.details,
     updatedLine: `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`,
     groups: split.groups.map((group) => {
       const members = membersOf(group.id);
-      return { name: group.name, countText: group.capacity === null ? plural(members.length, 'guest') : capacityInfo(members.length, group.capacity).text, rows: members.map(rowOf) };
+      return { name: group.name, countText: group.capacity === null ? plural(members.length, 'guest') : capacityInfo(members.length, group.capacity).text, rows: members.map((m) => ({ ...rowOf(m), note: noteFor(m, members) })) };
     }),
     unplaced: activeGuestsOf(trip).filter((g) => split.assignments[g.id] === undefined).sort(byName).map(rowOf),
   };
@@ -234,7 +239,14 @@ const stampLine = (ctx) => `Updated ${formatFullMoment(new Date().toISOString(),
 export async function exportGroupsPdf(ctx, trip, split) {
   if (nobodyPlaced(trip, split)) { showToast('Nobody is in a group yet.', true); return; }
   const data = groupsExportData(trip, split, ctx.owner?.name ?? 'the owner');
-  await saveAndShare(ctx, trip, { title: `${split.name} — Groups`, updatedLine: data.updatedLine, format: 'pdf', blob: buildGroupsPdf(data, trip.branding ?? {}) });
+  await saveAndShare(ctx, trip, { title: `${split.name} — Group checklists`, updatedLine: data.updatedLine, format: 'pdf', blob: buildGroupsPdf(data, trip.branding ?? {}) });
+}
+
+// All the groups side by side on one page (landscape when there are many groups): the "who is on which bus" sheet.
+export async function exportGroupsOverviewPdf(ctx, trip, split) {
+  if (nobodyPlaced(trip, split)) { showToast('Nobody is in a group yet.', true); return; }
+  const data = groupsExportData(trip, split, ctx.owner?.name ?? 'the owner');
+  await saveAndShare(ctx, trip, { title: `${split.name} — Groups overview`, updatedLine: data.updatedLine, format: 'pdf', blob: buildGroupsOverviewPdf(data, trip.branding ?? {}) });
 }
 
 export async function exportGroupsXlsx(ctx, trip, split) {
@@ -350,7 +362,7 @@ export const sameDocument = (records, record) => records.filter((r) => !r.archiv
 // carries dietary needs: the app cannot erase a file it already handed out, but it need not keep one).
 export async function exportAndShare(ctx, trip, doc, format, { archive = true } = {}) {
   const spec = FORMATS[format];
-  reservePreviewWindow(); // straight from the tap, before anything is awaited (see showPreview)
+  reservePreviewWindow(format); // straight from the tap, before anything is awaited (see showPreview)
   let blob;
   try {
     blob = doc.blocks ? spec.buildEvening(doc) : spec.build(doc); // an evening sheet has its own layout
@@ -386,7 +398,7 @@ export async function exportEveningReservations(ctx, trip, destination, slot, fo
 // step 9). No dietary info in it, same as every other export: activityTables never reads it.
 export async function exportFinalTrip(ctx, trip, format) {
   const updatedBy = ctx.owner?.name ?? 'the owner';
-  reservePreviewWindow();
+  reservePreviewWindow(format);
   let blob;
   try {
     blob = format === 'pdf'
@@ -417,7 +429,8 @@ export async function exportFinalTrip(ctx, trip, format) {
 // a tap, but building a file takes a moment, so the window is opened empty at once (reservePreviewWindow) and the file is
 // put in it when ready (showPreview). If no window could be opened at all, the share sheet is offered instead.
 let previewWindow = null;
-function reservePreviewWindow() {
+function reservePreviewWindow(format = 'pdf') {
+  if (format !== 'pdf') return; // a phone cannot show an Excel file in a window: it goes to the share sheet (Files, Excel...)
   try { previewWindow = window.open('', '_blank'); } catch { previewWindow = null; }
 }
 function releasePreviewWindow() {
@@ -425,6 +438,7 @@ function releasePreviewWindow() {
   previewWindow = null;
 }
 async function showPreview(blob, spec, filename) {
+  if (spec.extension !== 'pdf') { releasePreviewWindow(); await shareOrDownloadFile(blob, filename, spec.mimeType); return; }
   const win = previewWindow;
   previewWindow = null;
   const url = URL.createObjectURL(new Blob([blob], { type: spec.mimeType }));
@@ -446,6 +460,7 @@ export const exportName = (record) => record.customName || (record.archivedAt ? 
 // phone refuses to open it, the share sheet is offered instead, so a tap is never a dead end.
 export function previewSavedExport(record) {
   const spec = FORMATS[record.format ?? 'pdf'];
+  if (spec.extension !== 'pdf') { shareSavedExport(record); return; } // Excel cannot be shown in a window on a phone: share sheet
   const url = URL.createObjectURL(new Blob([record.blob], { type: spec.mimeType }));
   const opened = window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);

@@ -664,3 +664,9 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 .archived-folder > summary::-webkit-details-marker { display: none; }
 .archived-folder > summary::before { content: '›'; display: inline-block; transition: transform 0.15s; font-size: 20px; }
 .archived-folder[open] > summary::before { transform: rotate(90deg); }
+
+/* Labelled fields in sheets (Groups): label above, hint below, both wrap and stay readable on a phone */
+.form-field { margin: 14px 0; }
+.form-label { display: block; font-weight: 700; margin-bottom: 6px; }
+.form-label .text-input { display: block; margin-top: 6px; font-weight: 400; }
+.form-hint { margin-top: 6px; font-size: 15px; color: var(--muted); line-height: 1.35; }

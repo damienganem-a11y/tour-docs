@@ -427,12 +427,14 @@ export function buildFinalTripPdf(toursDoc, guestsDoc) {
 //   { title, updatedLine, blocks: [ { restaurant, seating, count,
 //       tables: [ { special: true|false, rows: [ { id, name } ] } ],
 //       needs: [ { id, name, text } ] } ] }        one block per table; needs only exist when the owner ticked "Include dietary needs"
+// Everything is drawn at a scale (evK): 1 is the compact size; when there is little to show, the sheet is scaled up so the
+// writing is as big as the page allows (owner, 1 Oct 2026: "optimise the size so it is as readable as possible on A4").
+let evK = 1;
 const EVENING_GAP = 12;
-const EVENING_ROW_H = 10.5;
-const EVENING_SIZE = 8;
-const EVENING_HEAD_SIZE = 9.5;
-const EVENING_NAME_SIZE = 11;
-const EVENING_ID_W = 30;
+const EV = {
+  get rowH() { return 10.5 * evK; }, get size() { return 8 * evK; }, get headSize() { return 9.5 * evK; },
+  get nameSize() { return 11 * evK; }, get idW() { return 30 * evK; }, get small() { return 7 * evK; },
+};
 const EVENING_LAYOUTS = [
   { width: 842, height: 595, cols: 5 }, // A4 landscape
   { width: 595, height: 842, cols: 4 }, // A4 portrait
@@ -442,23 +444,28 @@ const EVENING_LAYOUTS = [
 // height used, so a piece can be measured first and only then placed in a column. Placing = moving every item by the same offset.
 function evening_piece(colW, draw) {
   const items = [];
-  const text = (str, x, y, { font = FONT_REGULAR, size = EVENING_SIZE, gray = 0 } = {}) => items.push({ type: 'text', x, y, font, size, gray, text: str });
+  const text = (str, x, y, { font = FONT_REGULAR, size = EV.size, gray = 0 } = {}) => items.push({ type: 'text', x, y, font, size, gray, text: str });
   const rect = (x, y, w, h, gray) => items.push({ type: 'rect', x, y, w, h, gray });
   const height = draw({ text, rect, colW });
   return { items, height };
 }
 
-const eveningLines = (str, size, width, font = FONT_REGULAR) => wrapText(str, font, size, width).flatMap((l) => breakToWidth(l, font, size, width));
+let evBroken = 0; // how many times a single word had to be split across lines (a scaled-up layout must not add any)
+const eveningLines = (str, size, width, font = FONT_REGULAR) => wrapText(str, font, size, width).flatMap((l) => {
+  const parts = breakToWidth(l, font, size, width);
+  if (parts.length > 1) evBroken += 1;
+  return parts;
+});
 
 // The restaurant's name, once, at the top of its column (with "(cont.)" where a column carries on from the one before).
 function eveningNameBox(name, cont, colW) {
   return evening_piece(colW, ({ text, rect }) => {
-    const lines = eveningLines(`${name}${cont ? ' (cont.)' : ''}`, EVENING_NAME_SIZE, colW, FONT_BOLD);
+    const lines = eveningLines(`${name}${cont ? ' (cont.)' : ''}`, EV.nameSize, colW, FONT_BOLD);
     let y = 0;
-    for (const line of lines) { y -= EVENING_NAME_SIZE + 2; text(line, 0, y, { font: FONT_BOLD, size: EVENING_NAME_SIZE }); }
-    y -= 4;
+    for (const line of lines) { y -= EV.nameSize + 2 * evK; text(line, 0, y, { font: FONT_BOLD, size: EV.nameSize }); }
+    y -= 4 * evK;
     rect(0, y, colW, 1.2, 0.25);
-    return -y + 6;
+    return -y + 6 * evK;
   });
 }
 
@@ -466,33 +473,34 @@ function eveningNameBox(name, cont, colW) {
 function eveningTableBox(block, rows, { first, last }, colW) {
   return evening_piece(colW, ({ text, rect }) => {
     const table = block.tables[0];
-    const bandH = EVENING_HEAD_SIZE + 8;
+    const bandH = EV.headSize + 8 * evK;
     rect(0, -bandH, colW, bandH, 0.9);
     const label = `${block.seating}  ·  ${block.count} ${block.count === 1 ? 'person' : 'people'}${first ? '' : ' (cont.)'}`;
-    text(label, 3, -EVENING_HEAD_SIZE - 3, { font: FONT_BOLD, size: EVENING_HEAD_SIZE });
+    text(label, 3, -EV.headSize - 3 * evK, { font: FONT_BOLD, size: EV.headSize });
     let y = -bandH - 1;
-    if (table.special && first) { y -= EVENING_ROW_H; text('Special request', 3, y, { font: FONT_BOLD, size: 7, gray: 0.35 }); }
-    const nameW = colW - EVENING_ID_W - 2;
+    if (table.special && first) { y -= EV.rowH; text('Special request', 3, y, { font: FONT_BOLD, size: EV.small, gray: 0.35 }); }
+    const nameW = colW - EV.idW - 2;
     for (const row of rows) {
-      eveningLines(row.name, EVENING_SIZE, nameW).forEach((line, i) => {
-        y -= EVENING_ROW_H;
+      eveningLines(row.name, EV.size, nameW).forEach((line, i) => {
+        y -= EV.rowH;
         if (i === 0) text(row.id || '', 3, y);
-        text(line, 3 + EVENING_ID_W, y);
+        text(line, 3 + EV.idW, y);
       });
     }
     if (last && block.needs?.length > 0) {
-      y -= 4;
-      y -= EVENING_ROW_H; text('* Dietary needs', 3, y, { font: FONT_BOLD, size: 7, gray: 0.35 });
+      y -= 4 * evK;
+      y -= EV.rowH; text('* Dietary needs', 3, y, { font: FONT_BOLD, size: EV.small, gray: 0.35 });
       for (const need of block.needs) {
-        for (const line of eveningLines(`${need.id} ${need.name}: ${need.text}`, 7, colW - 3)) { y -= 9; text(line, 3, y, { size: 7 }); }
+        for (const line of eveningLines(`${need.id} ${need.name}: ${need.text}`, EV.small, colW - 3)) { y -= 9 * evK; text(line, 3, y, { size: EV.small }); }
       }
     }
-    return -y + 10; // a little air before the next table
+    return -y + 10 * evK; // a little air before the next table
   });
 }
 
 // Lays the whole doc out for one page shape. Returns the pages and how many tables had to be carried over to another column.
 function layoutEvening(doc, { width, height, cols }) {
+  evBroken = 0;
   const colW = (width - MARGIN * 2 - EVENING_GAP * (cols - 1)) / cols;
   const bottom = MARGIN;
   const pages = [];
@@ -535,12 +543,12 @@ function layoutEvening(doc, { width, height, cols }) {
       const columnRoom = top - bottom - eveningNameBox(restaurant.name, true, colW).height; // what a fresh column offers a table
       if (boxes[0].height > columnRoom) {
         // Taller than a whole column (very rare): the only case where a table is split, into pieces that each fit a column.
-        const capacity = columnRoom - EVENING_HEAD_SIZE * 2 - 30;
+        const capacity = columnRoom - EV.headSize * 2 - 30 * evK;
         const chunks = [];
         let chunk = [];
         let used = 0;
         for (const row of block.tables[0].rows) {
-          const h = eveningLines(row.name, EVENING_SIZE, colW - EVENING_ID_W - 2).length * EVENING_ROW_H;
+          const h = eveningLines(row.name, EV.size, colW - EV.idW - 2).length * EV.rowH;
           if (used + h > capacity && chunk.length > 0) { chunks.push(chunk); chunk = []; used = 0; }
           chunk.push(row); used += h;
         }
@@ -558,13 +566,26 @@ function layoutEvening(doc, { width, height, cols }) {
     }
   });
   if (page.length > 0) pages.push(page);
-  return { pages, carried };
+  return { pages, carried, broken: evBroken };
 }
 
-// Picks landscape or portrait, whichever needs fewer pages (then fewer tables carried over; landscape when equal).
+// Picks the layout: landscape or portrait, whichever needs fewer pages (then fewer tables carried over; landscape when equal), and
+// then the biggest scale at which it still needs no more pages (and carries no more tables) than the compact size does.
 export function buildEveningPdf(doc) {
-  const tries = EVENING_LAYOUTS.map((shape) => ({ shape, ...layoutEvening(doc, shape) }));
-  tries.sort((a, b) => a.pages.length - b.pages.length || a.carried - b.carried); // stable: landscape first when equal
+  const tries = [];
+  for (const shape of EVENING_LAYOUTS) {
+    evK = 1;
+    const base = layoutEvening(doc, shape);
+    let best = { shape, k: 1, ...base };
+    for (let k = 2.4; k > 1.05; k -= 0.1) {
+      evK = k;
+      const scaled = layoutEvening(doc, shape);
+      if (scaled.pages.length <= base.pages.length && scaled.carried <= base.carried && scaled.broken <= base.broken) { best = { shape, k, ...scaled }; break; }
+    }
+    tries.push(best);
+  }
+  evK = 1;
+  tries.sort((a, b) => a.pages.length - b.pages.length || a.carried - b.carried || b.k - a.k); // stable: landscape first when all equal
   const best = tries[0];
   return new Blob([serializePdf(best.pages, { width: best.shape.width, height: best.shape.height })], { type: 'application/pdf' });
 }
@@ -706,62 +727,87 @@ export function buildCardsPdf(cards, brand = {}) {
 //   brand { companyName, accent, logo }   (Settings > Brand)
 // Never carries dietary information (CLAUDE.md).
 
-const LIST_MARGIN = 40;
-const LIST_ROW_H = 17;
-const LIST_ROWS_PER_PAGE = 37;
+// ---------- Groups: the checklist per group, and the one-page overview (owner, 1 Oct 2026) ----------
+//
+// Two PDFs for a split (a bus split, a boat, a guided tour...), both dressed in the company's look (logo, colour):
+//   - the checklists: one A4 page per group, a bold colour band with the group's name, then the guests with a box to tick.
+//     The rows are made as tall as the page allows (a small group gets big, easy lines); a long group continues on more pages.
+//   - the overview: ALL groups side by side as columns on ONE page (A4 portrait, or landscape when there are many groups),
+//     with the writing as big as fits. Only when even that cannot fit does it carry on onto a second page.
+// data = { title, details, updatedLine, groups: [ { name, countText, rows: [ { id, name, note? } ] } ], unplaced: [ rows ] }
 
-function drawListPage(plan, number, total, data, brand, accent, logoImage) {
-  const items = [];
-  const left = LIST_MARGIN;
-  const right = CARD_PAGE.width - LIST_MARGIN;
-  const top = CARD_PAGE.height - LIST_MARGIN;
-  const put = (str, x, y, { font = FONT_REGULAR, size = 10, gray = 0, rgb, align = 'left', maxWidth } = {}) => {
-    const shown = maxWidth ? fitOneLine(str, font, size, maxWidth) : str;
-    const width = textWidth(shown, font, size);
-    items.push({ type: 'text', x: align === 'right' ? x - width : x, y, font, size, gray, rgb, text: shown });
-  };
-  const box = (x, y, size) => { // an empty square to tick, drawn as four thin lines
-    items.push({ type: 'rect', x, y, w: size, h: 0.7, gray: 0.45 }, { type: 'rect', x, y: y + size, w: size, h: 0.7, gray: 0.45 });
-    items.push({ type: 'rect', x, y, w: 0.7, h: size, gray: 0.45 }, { type: 'rect', x: x + size, y, w: 0.7, h: size + 0.7, gray: 0.45 });
-  };
+const WHITE = [1, 1, 1];
+const putIn = (items) => (str, x, y, { font = FONT_REGULAR, size = 10, gray = 0, rgb, align = 'left', maxWidth } = {}) => {
+  const shown = maxWidth ? fitOneLine(str, font, size, maxWidth) : str;
+  const width = textWidth(shown, font, size);
+  items.push({ type: 'text', x: align === 'right' ? x - width : align === 'center' ? x - width / 2 : x, y, font, size, gray, rgb, text: shown });
+};
+const boxIn = (items) => (x, y, size, gray = 0.45) => { // an empty square to tick, drawn as four thin lines
+  const t = 0.9;
+  items.push({ type: 'rect', x, y, w: size, h: t, gray }, { type: 'rect', x, y: y + size - t, w: size, h: t, gray });
+  items.push({ type: 'rect', x, y, w: t, h: size, gray }, { type: 'rect', x: x + size - t, y, w: t, h: size, gray });
+};
+// The biggest font size (from `from` down to `to`) at which `str` still fits `width`.
+const fitSize = (str, font, from, to, width) => { let size = from; while (size > to && textWidth(str, font, size) > width) size -= 0.5; return size; };
 
-  // The header: logo (or company name) on the left, the split's name and details on the right.
+// The logo (or, without one, the company's name) in the top right corner of a coloured band of height bandH at the page top.
+function bandBadge(items, put, brand, logoImage, pageW, pageTop, bandH, margin) {
+  const w = 128, h = 58;
+  const x = pageW - margin - w, y = pageTop - bandH + (bandH - h) / 2;
   if (logoImage) {
-    const scale = Math.min(120 / logoImage.width, 34 / logoImage.height);
-    items.push({ type: 'image', name: logoImage.name, x: left, y: top - logoImage.height * scale, w: logoImage.width * scale, h: logoImage.height * scale });
+    items.push({ type: 'rect', x, y, w, h, rgb: WHITE });
+    const k = Math.min((w - 16) / logoImage.width, (h - 14) / logoImage.height);
+    items.push({ type: 'image', name: logoImage.name, x: x + (w - logoImage.width * k) / 2, y: y + (h - logoImage.height * k) / 2, w: logoImage.width * k, h: logoImage.height * k });
   } else if (brand.companyName) {
-    put(brand.companyName, left, top - 14, { font: FONT_BOLD, size: 13, rgb: accent, maxWidth: 200 });
+    put(brand.companyName, pageW - margin, y + h / 2 - 4, { font: FONT_BOLD, size: fitSize(brand.companyName, FONT_BOLD, 16, 8, w + 20), rgb: WHITE, align: 'right', maxWidth: w + 20 });
   }
-  put(data.title, right, top - 12, { font: FONT_BOLD, size: 13, align: 'right', maxWidth: 330 });
-  if (data.details) put(data.details, right, top - 26, { size: 8, gray: 0.4, align: 'right', maxWidth: 330 });
-  items.push({ type: 'rect', x: left, y: top - 46, w: right - left, h: 2, rgb: accent });
+}
 
-  // The group's name, big, with its count on the right.
-  const headY = top - 80;
-  put(plan.section.heading + (plan.continued ? ' (continued)' : ''), left, headY, { font: FONT_BOLD, size: 24, maxWidth: 370 });
-  put(plan.section.countText, right, headY, { size: 11, gray: 0.4, align: 'right' });
+const CHECK_W = 595, CHECK_H = 842, CHECK_MARGIN = 36, CHECK_BAND = 128, CHECK_MIN_ROW = 24, CHECK_MAX_ROW = 58;
+const CHECK_TABLE_TOP = CHECK_H - CHECK_BAND - 44;           // where the rows start
+const CHECK_TABLE_ROOM = CHECK_TABLE_TOP - 64;               // room for rows above the footer
+const CHECK_ROWS_PER_PAGE = Math.floor(CHECK_TABLE_ROOM / CHECK_MIN_ROW);
 
-  // The table: a tinted header band, then zebra rows.
-  const bandTop = headY - 20;
-  items.push({ type: 'rect', x: left, y: bandTop - 16, w: right - left, h: 16, rgb: paler(accent, 0.14) });
-  put('#', left + 24, bandTop - 11, { font: FONT_BOLD, size: 8, gray: 0.35, align: 'right' });
-  put('NAME', left + 36, bandTop - 11, { font: FONT_BOLD, size: 8, gray: 0.35 });
-  put('ID', left + 330, bandTop - 11, { font: FONT_BOLD, size: 8, gray: 0.35 });
-  const firstRowTop = bandTop - 16;
+function drawChecklistPage(plan, number, total, data, brand, accent, logoImage) {
+  const items = [];
+  const put = putIn(items), box = boxIn(items);
+  const left = CHECK_MARGIN, right = CHECK_W - CHECK_MARGIN;
+  const bandTop = CHECK_H;
+
+  // The colour band: the split's name small, the group's name huge, its count and the details underneath.
+  items.push({ type: 'rect', x: 0, y: bandTop - CHECK_BAND, w: CHECK_W, h: CHECK_BAND, rgb: accent });
+  items.push({ type: 'rect', x: 0, y: bandTop - CHECK_BAND - 3, w: CHECK_W, h: 3, rgb: paler(accent, 0.55) });
+  const nameRoom = right - left - 150;
+  const title = plan.section.heading + (plan.continued ? ' (continued)' : '');
+  put(data.title.toUpperCase(), left, bandTop - 34, { font: FONT_BOLD, size: 10, rgb: paler(accent, 0.3), maxWidth: nameRoom });
+  put(title, left, bandTop - 80, { font: FONT_BOLD, size: fitSize(title, FONT_BOLD, 40, 18, nameRoom), rgb: WHITE, maxWidth: nameRoom });
+  const sub = [plan.section.countText, data.details].filter(Boolean).join('   ·   ');
+  put(sub, left, bandTop - 106, { size: 11, rgb: paler(accent, 0.2), maxWidth: nameRoom });
+  bandBadge(items, put, brand, logoImage, CHECK_W, bandTop, CHECK_BAND, CHECK_MARGIN);
+
+  // The rows, as tall as the page allows for this group.
+  const rowH = plan.rowH;
+  const nameSize = Math.min(20, rowH * 0.48), noteSize = Math.min(9, nameSize * 0.6), boxSize = Math.min(24, rowH * 0.5);
   plan.rows.forEach((row, i) => {
-    const rowTop = firstRowTop - i * LIST_ROW_H;
-    if (i % 2 === 1) items.push({ type: 'rect', x: left, y: rowTop - LIST_ROW_H, w: right - left, h: LIST_ROW_H, gray: 0.96 });
-    put(String(plan.first + i + 1), left + 24, rowTop - 12, { size: 9, gray: 0.4, align: 'right' });
-    put(row.name, left + 36, rowTop - 12, { size: 10.5, maxWidth: 280 });
-    put(row.id ?? '', left + 330, rowTop - 12, { size: 9, gray: 0.4, maxWidth: 90 });
-    box(right - 20, rowTop - 13, 9);
+    const rowTop = CHECK_TABLE_TOP - i * rowH;
+    if (i % 2 === 0) items.push({ type: 'rect', x: left, y: rowTop - rowH, w: right - left, h: rowH, rgb: paler(accent, 0.08) });
+    const mid = rowTop - rowH / 2;
+    put(String(plan.first + i + 1), left + 22, mid - nameSize * 0.35, { size: nameSize * 0.7, gray: 0.5, align: 'right' });
+    if (row.note) {
+      put(row.name, left + 36, mid + 1, { font: FONT_BOLD, size: nameSize, maxWidth: right - left - 170 });
+      put(row.note, left + 36, mid - noteSize - 1, { size: noteSize, gray: 0.5, maxWidth: right - left - 170 });
+    } else {
+      put(row.name, left + 36, mid - nameSize * 0.35, { font: FONT_BOLD, size: nameSize, maxWidth: right - left - 170 });
+    }
+    put(row.id ?? '', right - 46, mid - nameSize * 0.3, { size: nameSize * 0.7, gray: 0.5, align: 'right', maxWidth: 80 });
+    box(right - boxSize - 8, mid - boxSize / 2, boxSize, 0.35);
   });
-  if (plan.rows.length === 0 && plan.section.empty) put(plan.section.empty, left + 36, firstRowTop - 24, { gray: 0.45 });
+  if (plan.rows.length === 0 && plan.section.empty) put(plan.section.empty, left + 12, CHECK_TABLE_TOP - 30, { gray: 0.45, size: 12 });
 
-  // The footer: when it was made, and the page number.
-  items.push({ type: 'rect', x: left, y: 38, w: right - left, h: 0.5, gray: 0.8 });
-  put(data.updatedLine, left, 26, { size: 7, gray: 0.45, maxWidth: 400 });
-  put(`Page ${number} of ${total}`, right, 26, { size: 7, gray: 0.45, align: 'right' });
+  // The footer: a colour rule, when it was made, and the page number.
+  items.push({ type: 'rect', x: left, y: 48, w: right - left, h: 1.5, rgb: accent });
+  put(brand.companyName ? `${brand.companyName}  ·  ${data.updatedLine}` : data.updatedLine, left, 32, { size: 7.5, gray: 0.45, maxWidth: 420 });
+  put(`Page ${number} of ${total}`, right, 32, { size: 7.5, gray: 0.45, align: 'right' });
   return items;
 }
 
@@ -774,12 +820,96 @@ export function buildGroupsPdf(data, brand = {}) {
   }
   const plans = [];
   for (const section of sections) {
-    const pageCount = Math.max(1, Math.ceil(section.rows.length / LIST_ROWS_PER_PAGE));
+    const pageCount = Math.max(1, Math.ceil(section.rows.length / CHECK_ROWS_PER_PAGE));
     for (let i = 0; i < pageCount; i++) {
-      plans.push({ section, rows: section.rows.slice(i * LIST_ROWS_PER_PAGE, (i + 1) * LIST_ROWS_PER_PAGE), first: i * LIST_ROWS_PER_PAGE, continued: i > 0 });
+      const rows = section.rows.slice(i * CHECK_ROWS_PER_PAGE, (i + 1) * CHECK_ROWS_PER_PAGE);
+      // A group that fits on one page gets rows as tall as the page allows (big and easy to read); a longer one uses the smallest row.
+      const rowH = pageCount === 1 ? Math.min(CHECK_MAX_ROW, Math.max(CHECK_MIN_ROW, CHECK_TABLE_ROOM / Math.max(rows.length, 1))) : CHECK_MIN_ROW;
+      plans.push({ section, rows, rowH, first: i * CHECK_ROWS_PER_PAGE, continued: i > 0 });
     }
   }
-  const pages = plans.map((plan, i) => drawListPage(plan, i + 1, plans.length, data, brand, accent, logoImage));
-  const bytes = serializePdf(pages, { width: CARD_PAGE.width, height: CARD_PAGE.height, images: logoImage ? [logoImage] : [] });
+  const pages = plans.map((plan, i) => drawChecklistPage(plan, i + 1, plans.length, data, brand, accent, logoImage));
+  const bytes = serializePdf(pages, { width: CHECK_W, height: CHECK_H, images: logoImage ? [logoImage] : [] });
   return new Blob([bytes], { type: 'application/pdf' });
+}
+
+// ----- The overview: every group a column, all on one page -----
+
+const OVERVIEW_SHAPES = [{ width: 595, height: 842 }, { width: 842, height: 595 }]; // portrait first: a tie goes to portrait
+const OVERVIEW_MARGIN = 30, OVERVIEW_GAP = 10, OVERVIEW_BAND = 78, OVERVIEW_HEAD = 34;
+
+// How the columns would look at one font size on one page shape: how many pages it takes, and whether every name fits its column.
+function overviewFit(columns, shape, size) {
+  const colW = (shape.width - OVERVIEW_MARGIN * 2 - OVERVIEW_GAP * (columns.length - 1)) / columns.length;
+  const numW = size * 1.9, idW = size * 2.6;
+  const nameW = colW - numW - idW - 8;
+  const longest = Math.max(0, ...columns.flatMap((c) => c.rows.map((r) => textWidth(r.name, FONT_BOLD, size))));
+  const namesFit = longest <= nameW;
+  const rowH = size * 1.75;
+  const room = shape.height - OVERVIEW_MARGIN - OVERVIEW_BAND - OVERVIEW_HEAD - 40;
+  const perPage = Math.max(1, Math.floor(room / rowH));
+  const most = Math.max(1, ...columns.map((c) => c.rows.length));
+  // On one page, spare height goes into taller rows (airier, easier to read) rather than being left empty.
+  const tallRowH = perPage >= most ? Math.min(size * 2.7, room / most) : rowH;
+  return { colW, numW, idW, rowH: Math.max(rowH, tallRowH), perPage, pages: Math.ceil(most / perPage), size, shape, namesFit };
+}
+
+function drawOverviewPage(fit, pageIndex, columns, data, brand, accent, logoImage) {
+  const items = [];
+  const put = putIn(items);
+  const { shape, colW, numW, idW, rowH, perPage, size } = fit;
+  const W = shape.width, H = shape.height;
+
+  // The colour band across the top: the split's name and details, the logo on the right.
+  items.push({ type: 'rect', x: 0, y: H - OVERVIEW_BAND, w: W, h: OVERVIEW_BAND, rgb: accent });
+  const roomForTitle = W - OVERVIEW_MARGIN * 2 - 150;
+  put(data.title, OVERVIEW_MARGIN, H - 40, { font: FONT_BOLD, size: fitSize(data.title, FONT_BOLD, 26, 14, roomForTitle), rgb: WHITE, maxWidth: roomForTitle });
+  if (data.details) put(data.details, OVERVIEW_MARGIN, H - 60, { size: 11, rgb: paler(accent, 0.2), maxWidth: roomForTitle });
+  bandBadge(items, put, brand, logoImage, W, H, OVERVIEW_BAND, OVERVIEW_MARGIN);
+
+  const top = H - OVERVIEW_BAND - 14;
+  columns.forEach((col, c) => {
+    const x = OVERVIEW_MARGIN + c * (colW + OVERVIEW_GAP);
+    const colAccent = col.unplaced ? [0.45, 0.45, 0.45] : accent;
+    // the column's head: the group's name and count on its colour
+    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD, w: colW, h: OVERVIEW_HEAD, rgb: colAccent });
+    put(col.name, x + 8, top - 15, { font: FONT_BOLD, size: fitSize(col.name, FONT_BOLD, 13, 8, colW - 16), rgb: WHITE, maxWidth: colW - 16 });
+    put(col.countText, x + 8, top - 28, { size: 8, rgb: paler(colAccent, 0.25), maxWidth: colW - 16 });
+    const slice = col.rows.slice(pageIndex * perPage, (pageIndex + 1) * perPage);
+    slice.forEach((row, i) => {
+      const rowTop = top - OVERVIEW_HEAD - i * rowH;
+      if (i % 2 === 0) items.push({ type: 'rect', x, y: rowTop - rowH, w: colW, h: rowH, rgb: paler(colAccent, 0.09) });
+      const base = rowTop - rowH / 2 - size * 0.34;
+      put(String(pageIndex * perPage + i + 1), x + numW - 2, base, { size: size * 0.75, gray: 0.5, align: 'right' });
+      put(row.name, x + numW + 4, base, { font: FONT_BOLD, size, maxWidth: colW - numW - idW - 8 });
+      put(row.id ?? '', x + colW - 4, base, { size: size * 0.75, gray: 0.5, align: 'right', maxWidth: idW });
+    });
+    // a thin colour rule under the last row of the column
+    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD - Math.max(slice.length, 1) * rowH - 1, w: colW, h: 1.2, rgb: colAccent });
+  });
+
+  items.push({ type: 'rect', x: OVERVIEW_MARGIN, y: 34, w: W - OVERVIEW_MARGIN * 2, h: 1, rgb: accent });
+  put(brand.companyName ? `${brand.companyName}  ·  ${data.updatedLine}` : data.updatedLine, OVERVIEW_MARGIN, 22, { size: 7.5, gray: 0.45, maxWidth: W - OVERVIEW_MARGIN * 2 - 80 });
+  if (fit.pages > 1) put(`Page ${pageIndex + 1} of ${fit.pages}`, W - OVERVIEW_MARGIN, 22, { size: 7.5, gray: 0.45, align: 'right' });
+  return items;
+}
+
+export function buildGroupsOverviewPdf(data, brand = {}) {
+  const accent = accentOf(brand);
+  const logoImage = logoImageOf(brand);
+  const columns = data.groups.map((g) => ({ name: g.name, countText: g.countText, rows: g.rows }));
+  if (data.unplaced.length > 0) columns.push({ name: 'Not in a group', countText: `${data.unplaced.length} ${data.unplaced.length === 1 ? 'guest' : 'guests'}`, rows: data.unplaced, unplaced: true });
+  // Try both page shapes and every size from big to small: fewest pages first, then the biggest writing.
+  let best = null;
+  for (const shape of OVERVIEW_SHAPES) {
+    for (let size = 16; size >= 6; size -= 0.5) {
+      const fit = overviewFit(columns, shape, size);
+      if (!fit.namesFit) continue;
+      if (!best || fit.pages < best.pages || (fit.pages === best.pages && fit.size > best.size)) best = fit;
+      break; // sizes only get smaller from here
+    }
+  }
+  best ??= overviewFit(columns, OVERVIEW_SHAPES[1], 6); // very many groups: smallest writing, a long name is cut short with "..."
+  const pages = Array.from({ length: best.pages }, (_, i) => drawOverviewPage(best, i, columns, data, brand, accent, logoImage));
+  return new Blob([serializePdf(pages, { width: best.shape.width, height: best.shape.height, images: logoImage ? [logoImage] : [] })], { type: 'application/pdf' });
 }

@@ -56,7 +56,7 @@ function buildZip(entries) {
     const offset = out.length;
 
     out.u32(0x04034b50).u16(20).u16(0).u16(0).u16(time).u16(day)
-      .u32(crc).u32(data.length).u32(data.length).u16(name.length).u16(0)
+      .u32(crc).u32(data.length).u32(data.length).u16(new TextEncoder().encode(name).length).u16(0)
       .utf8(name).raw(data);
 
     centralRecords.push({ name, crc, size: data.length, offset });
@@ -65,7 +65,7 @@ function buildZip(entries) {
   const centralStart = out.length;
   for (const { name, crc, size, offset } of centralRecords) {
     out.u32(0x02014b50).u16(20).u16(20).u16(0).u16(0).u16(time).u16(day)
-      .u32(crc).u32(size).u32(size).u16(name.length).u16(0).u16(0).u16(0).u16(0).u32(0).u32(offset)
+      .u32(crc).u32(size).u32(size).u16(new TextEncoder().encode(name).length).u16(0).u16(0).u16(0).u16(0).u32(0).u32(offset)
       .utf8(name);
   }
   const centralSize = out.length - centralStart;
@@ -115,33 +115,32 @@ function rowXml(rowNumber, values) {
 const TABLE_COLS = 3;  // #, ID, Name
 const GAP_COLS = 1;    // one blank column between one table and the next
 
-// The rows of one table (an activity, or At leisure/Needs a look), starting at `startCol`.
+// The rows of one table (an activity, or At leisure/Needs a look), starting at `startCol`, as { row, values } pieces.
+// Tables sit side by side, so several pieces share one row number: sheetXml merges them into ONE <row> each.
+// (Excel refuses a sheet with the same row twice, or rows out of order.)
 function tableRows(table, startCol, startRow) {
-  const rows = [];
+  const pieces = [];
   const heading = table.count ? `${table.heading}  (${table.count})` : table.heading;
-  rows.push(rowXml(startRow, [{ col: startCol, text: heading, bold: true }]));
-  if (table.detail) rows.push(rowXml(startRow + 1, [{ col: startCol, text: table.detail }]));
-  rows.push(rowXml(startRow + 2, [
+  pieces.push({ row: startRow, values: [{ col: startCol, text: heading, bold: true }] });
+  if (table.detail) pieces.push({ row: startRow + 1, values: [{ col: startCol, text: table.detail }] });
+  pieces.push({ row: startRow + 2, values: [
     { col: startCol, text: '#', bold: true }, { col: startCol + 1, text: 'ID', bold: true }, { col: startCol + 2, text: 'Name', bold: true },
-  ]));
+  ] });
   table.rows.forEach((row, i) => {
-    rows.push(rowXml(startRow + 3 + i, [
+    pieces.push({ row: startRow + 3 + i, values: [
       { col: startCol, text: String(i + 1) }, { col: startCol + 1, text: row.id }, { col: startCol + 2, text: row.name },
-    ]));
+    ] });
   });
-  return rows;
+  return pieces;
 }
 
 // One sheet: the doc's title and "Updated ..." line, then every table of this half-day side by side.
 function sheetXml(doc, group) {
   const headRow = 4; // title, updated line, a blank row, then the tables start
-  const rows = [
-    rowXml(1, [{ col: 0, text: doc.title, bold: true }]),
-    rowXml(2, [{ col: 0, text: doc.updatedLine }]),
-  ];
+  const byRow = new Map([[1, [{ col: 0, text: doc.title, bold: true }]], [2, [{ col: 0, text: doc.updatedLine }]]]);
 
   const tableCount = group.tables.length;
-  const totalCols = tableCount * (TABLE_COLS + GAP_COLS);
+  const totalCols = Math.max(1, tableCount) * (TABLE_COLS + GAP_COLS);
   const cols = Array.from({ length: totalCols }, (_, i) => {
     const withinTable = i % (TABLE_COLS + GAP_COLS);
     const width = withinTable === 0 ? 4.5 : withinTable === 1 ? 10 : withinTable === 2 ? 24 : 2.5;
@@ -150,8 +149,9 @@ function sheetXml(doc, group) {
 
   group.tables.forEach((table, i) => {
     const startCol = i * (TABLE_COLS + GAP_COLS);
-    rows.push(...tableRows(table, startCol, headRow));
+    for (const piece of tableRows(table, startCol, headRow)) byRow.set(piece.row, [...(byRow.get(piece.row) ?? []), ...piece.values]);
   });
+  const rows = [...byRow.keys()].sort((a, b) => a - b).map((rowNumber) => rowXml(rowNumber, [...byRow.get(rowNumber)].sort((a, b) => a.col - b.col)));
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
     + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
@@ -190,13 +190,17 @@ function coreXml() {
 const APP_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
   + `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Tour Docs</Application></Properties>`;
 
+// The styles part follows the layout Excel itself writes (the two fixed first fills "none" and "gray125", a border made of its
+// five sides, a named "Normal" cell style). Excel refuses (or offers to "repair") a file whose styles cut these corners, and
+// the earlier, shorter version of this part was the likely reason a groups file would not open in Excel (1 Oct 2026).
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
   + `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-  + `<fonts count="2"><font><sz val="10"/><name val="Calibri"/></font><font><b/><sz val="10"/><name val="Calibri"/></font></fonts>`
-  + `<fills count="1"><fill><patternFill patternType="none"/></fill></fills>`
-  + `<borders count="1"><border/></borders>`
-  + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0"/></cellStyleXfs>`
-  + `<cellXfs count="2"><xf numFmtId="0" fontId="0" xfId="0"/><xf numFmtId="0" fontId="1" xfId="0" applyFont="1"/></cellXfs>`
+  + `<fonts count="2"><font><sz val="10"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="10"/><name val="Calibri"/><family val="2"/></font></fonts>`
+  + `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>`
+  + `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`
+  + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`
+  + `<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>`
+  + `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>`
   + `</styleSheet>`;
 
 // Assembles a whole workbook (all the fixed parts, plus one worksheet per given { name, xml }) into
@@ -209,6 +213,7 @@ function assembleWorkbook(sheets) {
 
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
     + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+    + `<bookViews><workbookView activeTab="0"/></bookViews>`
     + `<sheets>${sheets.map((s, i) => `<sheet name="${xmlEscape(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>`
     + `</workbook>`;
 
@@ -291,7 +296,7 @@ export function buildGroupsXlsx(doc, rows) {
   const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
   const flatXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
     + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` // header row stays in view
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews>` // header row stays in view
     + `<cols>${cols}</cols><sheetData>${flatRows.join('')}</sheetData></worksheet>`;
   const sheets = [{ name: sheetName('All guests', usedNames), xml: flatXml }];
   for (const group of doc.groups) sheets.push({ name: sheetName(group.heading, usedNames), xml: sheetXml(doc, group) });
@@ -320,7 +325,7 @@ export function buildEveningXlsx(doc) {
   const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
   const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
     + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews>`
     + `<cols>${cols}</cols><sheetData>${sheetRows.join('')}</sheetData></worksheet>`;
   return assembleWorkbook([{ name: sheetName('Evening', new Set()), xml }]);
 }

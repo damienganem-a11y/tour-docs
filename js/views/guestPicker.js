@@ -1,5 +1,6 @@
-// A sheet to tick several guests at once, with a live count top-right, a name search, and the offer to
-// add a ticked guest's travel party too. Shared by Settings > Groups. (Dining has its own older copy,
+// A sheet to tick several guests at once, with a live count top-right, a name search, and a "Keep travel parties
+// together" switch (on by default: ticking one guest ticks their whole travel party, unticking unticks it; owner, 1 Oct 2026).
+// Shared by Settings > Groups. (Dining has its own older copy,
 // tied to dinner tables: see dining.js's guestPicker.)
 //   candidates   the guests that can be ticked
 //   mates(guest) the guest's travel-party members who are also candidates
@@ -41,14 +42,14 @@ export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, 
     else if (ceiling !== null && total > ceiling) status.textContent = overText;
   };
 
-  const offerParty = (guest) => {
-    const others = mates(guest).filter((c) => !checked.has(c.id));
-    if (others.length === 0) { partyPrompt.replaceChildren(); return; }
-    const otherNames = joinNames([...others].sort(alphabetical(names)).map((c) => names.get(c.id)));
-    partyPrompt.replaceChildren(notice(`${names.get(guest.id)} travels with ${otherNames}`),
-      h('div', { class: 'card-actions' },
-        h('button', { class: 'btn btn--small', type: 'button', onclick: () => { for (const c of others) checked.add(c.id); partyPrompt.replaceChildren(); fill(); say(); } }, `Add ${otherNames} too`),
-        h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => partyPrompt.replaceChildren() }, 'No')));
+  // Ticking (or unticking) a guest does the same for their travel party, unless the owner switched that off.
+  const together = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Keep travel parties together' });
+  together.addEventListener('change', () => partyPrompt.replaceChildren());
+  const setTicked = (guest, on) => {
+    const party = together.checked ? [guest, ...mates(guest)] : [guest];
+    for (const member of party) { if (on) checked.add(member.id); else checked.delete(member.id); }
+    fill();
+    say();
   };
 
   // The search matches by name only. Ticks are kept across searches.
@@ -59,10 +60,7 @@ export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, 
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
       : shown.map((guest) => {
           const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });
-          box.addEventListener('change', () => {
-            if (box.checked) { checked.add(guest.id); offerParty(guest); } else { checked.delete(guest.id); partyPrompt.replaceChildren(); }
-            say();
-          });
+          box.addEventListener('change', () => setTicked(guest, box.checked));
           return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
         })));
   };
@@ -74,5 +72,6 @@ export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, 
 
   say();
   fill();
-  openSheet({ eyebrow, title, subtitle, titleBadge, body: [partyPrompt, search, list], cancelLabel: 'Cancel', footer: [status, confirmBtn] });
+  const togetherRow = h('label', { class: 'tick-row' }, together, h('span', {}, 'Keep travel parties together'));
+  openSheet({ eyebrow, title, subtitle, titleBadge, body: [togetherRow, partyPrompt, search, list], cancelLabel: 'Cancel', footer: [status, confirmBtn] });
 }
