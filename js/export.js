@@ -91,7 +91,7 @@ export function destinationExportDoc(trip, destination, slot, updatedBy) {
 // Off by default and chosen again at every export. Off = no dietary text and not even a marker, so the
 // sheet gives no hint that anybody has a need. On = an asterisk after each affected guest plus their need written out
 // under the block, and the header says the file is for the restaurants only.
-// (The file is never saved in the Exports archive when it carries dietary needs: see exportEveningReservations.)
+// (A file that carries dietary needs is kept in Documents too, under a title ending ", with dietary" so it is its own document.)
 export function eveningReservationDoc(trip, destination, slot, updatedBy, { includeDietary = false } = {}) {
   const blocks = [];
   const restaurants = trip.restaurants.filter((r) => r.destinationId === destination.id).sort((a, b) => a.name.localeCompare(b.name));
@@ -120,7 +120,7 @@ export function eveningReservationDoc(trip, destination, slot, updatedBy, { incl
   }
   const stamp = `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${updatedBy}`;
   return {
-    title: `${destination.name} — Day ${slot.day} · ${slot.half}, restaurant reservations`,
+    title: `${destination.name} — Day ${slot.day} · ${slot.half}, restaurant reservations${includeDietary ? ', with dietary' : ''}`,
     updatedLine: includeDietary ? `${stamp} · Contains dietary information: for the restaurants only` : stamp,
     blocks,
   };
@@ -181,8 +181,8 @@ export async function exportConfirmationCards(ctx, trip, destination, slot) {
   await saveAndShare(ctx, trip, { title, updatedLine, format: 'pdf', blob });
 }
 
-// Keeps a finished file as a new version in the Exports archive, then hands it to the share sheet. Only for
-// files that hold no dietary information (see exportAndShare's `archive` option for the one that may).
+// Keeps a finished file as a new version in the Exports archive, then shows it (see showPreview). Never used
+// for a file with dietary information: those go through exportAndShare.
 async function saveAndShare(ctx, trip, { title, updatedLine, format, blob }) {
   reservePreviewWindow();
   const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title, format), updatedLine, createdAt: new Date().toISOString(), format, blob };
@@ -378,7 +378,7 @@ export async function exportAndShare(ctx, trip, doc, format, { archive = true } 
 export async function exportEveningReservations(ctx, trip, destination, slot, format, { includeDietary = false } = {}) {
   const doc = eveningReservationDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner', { includeDietary });
   if (doc.blocks.length === 0) { showToast('No tables are booked that evening yet.', true); return; }
-  await exportAndShare(ctx, trip, doc, format, { archive: !includeDietary });
+  await exportAndShare(ctx, trip, doc, format);
 }
 
 // The final export of the whole trip (SPEC.md, "5. Export"): every tour's guest list, and every

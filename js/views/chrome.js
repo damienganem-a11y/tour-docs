@@ -85,7 +85,7 @@ export function exportFormatSheet(run, { dietary = false } = {}) {
     body: [
       ...(dietary ? [
         h('label', { class: 'tick-row' }, box, h('span', {}, 'Include dietary needs (allergies)')),
-        h('p', { class: 'muted' }, 'Only for the restaurant. A file that includes them is shared but not kept in the Exports archive.'),
+        h('p', { class: 'muted' }, 'Only for the restaurant. The file is kept in Documents, named “with dietary”.'),
       ] : []),
       h('button', { class: 'btn', type: 'button', onclick: () => go('pdf') }, 'PDF — for WhatsApp and printing'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => go('xlsx') }, 'Excel (.xlsx) — to edit the list further'),

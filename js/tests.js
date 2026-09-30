@@ -2509,6 +2509,8 @@ function readZip(bytes) {
   check('Evening sheet, dietary switch ON: the guest is marked with * and the need is written out',
     /Shellfish allergy/.test(onText) && mine(on).some((b) => b.tables[0].rows.some((r) => / \*$/.test(r.name)) && b.needs.length === 1));
   check('...and the header says the file is for the restaurants only', /for the restaurants only/.test(on.updatedLine) && !/for the restaurants only/.test(off.updatedLine));
+  check('The sheet with dietary needs has its own title ending ", with dietary" (so it is kept in Documents as a separate document)',
+    /, with dietary$/.test(on.title) && !/dietary/i.test(off.title));
   check('A guest with a need who is NOT booked that evening never appears, switch on or off',
     !onText.includes(bystander.dietary) && !offText.includes(bystander.dietary));
   check('Every table is its own block with its own count (two tables at 19:00 are NOT read as one group of 6)',
