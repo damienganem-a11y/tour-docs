@@ -8,9 +8,21 @@ import { h } from '../dom.js';
 import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
+import { sendMagicLink } from '../auth.js';
 import { listMembers, inviteMember, removeMember, cleanInviteEmail, MEMBER_ROLES } from '../sync.js';
 
 const ROLE_LABEL = { team: 'Team', viewer: 'View only' };
+
+// Sends the person the sign-in e-mail (the code and the link that opens the app) so that inviting is one tap for the owner and one
+// tap for them. Returns a sentence saying how it went. (The e-mail is the usual sign-in one: Supabase limits how many it sends per hour.)
+async function sendSignInEmail(address) {
+  try {
+    await sendMagicLink(address, address.split('@')[0]);
+    return `${address} invited, and a sign-in e-mail is on its way.`;
+  } catch (error) {
+    return `${address} is invited, but the e-mail could not be sent (${error.message}). They can open the app and sign in with this address.`;
+  }
+}
 
 export function teamSettingsPage(ctx, trip) {
   const head = pageHead({
@@ -33,10 +45,12 @@ export function teamSettingsPage(ctx, trip) {
         : members.map((m) => h('div', { class: 'card' },
             h('div', { class: 'card-row' },
               h('div', {}, h('div', { class: 'act-name' }, m.email), h('div', { class: 'muted' }, ROLE_LABEL[m.role] ?? m.role)),
-              h('button', {
-                class: 'btn btn--small btn--plain', type: 'button',
-                onclick: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
-              }, 'Remove'))))));
+              h('div', { class: 'card-actions' },
+                h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => showToast(await sendSignInEmail(m.email)) }, 'Send e-mail again'),
+                h('button', {
+                  class: 'btn btn--small btn--plain', type: 'button',
+                  onclick: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
+                }, 'Remove')))))));
     } catch {
       list.replaceChildren(h('p', { class: 'empty' }, 'The team cannot be shown: sign in online first (the sync light at the top), and the trip must have reached the server.'));
     }
@@ -53,8 +67,8 @@ export function teamSettingsPage(ctx, trip) {
       try {
         await inviteMember(trip.id, address, role.value);
         email.value = '';
-        showToast(`${address} invited`);
         load();
+        showToast(await sendSignInEmail(address)); // one tap: invited AND e-mailed
       } catch {
         say('Could not invite them. Are you signed in online, and is this trip on the server (see the sync light)?');
       }
@@ -67,7 +81,7 @@ export function teamSettingsPage(ctx, trip) {
     notice('In this first version, the people you invite can look at the trip and its documents, kept up to date, but cannot change anything yet.'),
     list,
     h('h2', { class: 'section-title' }, 'Invite someone'),
-    h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'E-mail address', email), h('div', { class: 'form-hint' }, 'They sign in with this address, using the code sent by e-mail.')),
+    h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'E-mail address', email), h('div', { class: 'form-hint' }, 'They receive the usual sign-in e-mail (a code, and a link that opens the app). One tap to invite, one tap for them.')),
     h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Role', role)),
     invite, message);
 }
