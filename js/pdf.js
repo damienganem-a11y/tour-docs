@@ -100,17 +100,25 @@ function wrapText(text, font, size, maxWidth) {
 // the next tile (its numbering carries on, e.g. 41, 42, 43...), rather than
 // becoming one very tall column; in practice a tile is tall enough that this rarely happens.
 
-const TILE_GAP = 8;
-const ROW_H = 9;
-const TITLE_SIZE = 8;
-const DETAIL_SIZE = 6;
-const HEAD_SIZE = 6.5;
-const CELL_SIZE = 7;
-// Fixed so every tile is exactly the same height, whether or not it actually has a title to show
-// (a continuing tile leaves this space blank): title (up to 2 lines) + detail line + column headings.
-const TITLE_BLOCK_H = TITLE_SIZE * 1.2 * 2 + DETAIL_SIZE * 1.3 + 4;
-const COLHEAD_H = HEAD_SIZE * 1.3 + 3;
-const TILE_HEADER_H = TITLE_BLOCK_H + COLHEAD_H;
+// Every size below is at scale 1 (the compact size). setListScale(k) makes them all k times bigger: when a list has little in it,
+// it is drawn bigger so the writing fills the A4 page (owner, 1 Oct 2026); see bestLayout below.
+let listK = 1;
+let TILE_GAP, ROW_H, TITLE_SIZE, DETAIL_SIZE, HEAD_SIZE, CELL_SIZE, TITLE_BLOCK_H, COLHEAD_H, TILE_HEADER_H;
+function setListScale(k) {
+  listK = k;
+  TILE_GAP = 8 * k;
+  ROW_H = 9 * k;
+  TITLE_SIZE = 8 * k;
+  DETAIL_SIZE = 6 * k;
+  HEAD_SIZE = 6.5 * k;
+  CELL_SIZE = 7 * k;
+  // Fixed so every tile is exactly the same height, whether or not it actually has a title to show
+  // (a continuing tile leaves this space blank): title (up to 2 lines) + detail line + column headings.
+  TITLE_BLOCK_H = TITLE_SIZE * 1.2 * 2 + DETAIL_SIZE * 1.3 + 4 * k;
+  COLHEAD_H = HEAD_SIZE * 1.3 + 3 * k;
+  TILE_HEADER_H = TITLE_BLOCK_H + COLHEAD_H;
+}
+setListScale(1);
 
 // A tile's own width, its two label columns' widths and headings, and how many rows fit before it
 // spills into a further tile — bundled up as one "kind", since a tour's guest list and a guest's own
@@ -119,7 +127,9 @@ const TILE_HEADER_H = TITLE_BLOCK_H + COLHEAD_H;
 const ACTIVITY_TILE = { tileWidth: 124, numColW: 12, idColW: 26, rowsPerTile: 40, labels: ['#', 'ID', 'Name'] };
 const GUEST_TILE = { tileWidth: 230, numColW: 14, idColW: 78, rowsPerTile: 30, labels: ['#', 'When', 'Doing what, where'] };
 
-const tileHeight = (kind) => TILE_HEADER_H + kind.rowsPerTile * ROW_H + 4;
+const tileHeight = (kind) => TILE_HEADER_H + kind.rowsPerTile * ROW_H + 4 * listK;
+// The same kind, drawn k times bigger.
+const scaleKind = (kind, k) => ({ ...kind, tileWidth: kind.tileWidth * k, numColW: kind.numColW * k, idColW: kind.idColW * k });
 
 // Splits one table's rows into same-sized chunks of kind.rowsPerTile, each becoming one tile. Only
 // the first chunk carries the table's own title and detail line; later chunks just carry the column
@@ -159,7 +169,7 @@ function breakToWidth(line, font, size, width) {
 
 function wrappedRows(table, kind) {
   if (!table.wrap) return table.rows;
-  const nameW = kind.tileWidth - kind.numColW - 8 - kind.idColW - 4;
+  const nameW = kind.tileWidth - kind.numColW - 8 * listK - kind.idColW - 4 * listK;
   const breakLong = (line) => breakToWidth(line, FONT_REGULAR, CELL_SIZE, nameW);
   return table.rows.flatMap((row) => {
     const lines = wrapText(row.name, FONT_REGULAR, CELL_SIZE, nameW).flatMap(breakLong);
@@ -177,7 +187,10 @@ function wrappedRows(table, kind) {
 // call is drawn at that one size, since a doc is always either all tours or all guest itineraries,
 // never a mix of both (see xlsx.js and buildFinalTripPdf below for how the two parts of the final
 // trip export are combined).
-function layoutPages(doc, kind = ACTIVITY_TILE) {
+function layoutPages(doc, baseKind = ACTIVITY_TILE, scale = 1) {
+  setListScale(scale);
+  const kind = scaleKind(baseKind, scale);
+  let overflow = false; // true when a row of tiles is taller than a whole page (only happens at a scale that is too big)
   const pages = [];
   let page = [];
   let y = PAGE_HEIGHT - MARGIN; // where the next thing (a text line, or a fresh row of tiles) starts
@@ -212,14 +225,15 @@ function layoutPages(doc, kind = ACTIVITY_TILE) {
   writeDocHead();
 
   // Places tiles left to right, wrapping to further rows (and pages) as needed, then leaves y just
-  // below the row(s) it used.
-  const perRow = Math.max(1, Math.floor((USABLE_WIDTH + TILE_GAP) / (kind.tileWidth + TILE_GAP)));
-  const rowHeight = tileHeight(kind);
-  function placeTileRow(tiles) {
+  // below the row(s) it used. `groupKind` is the tile shape for this half-day (see below).
+  function placeTileRow(tiles, groupKind) {
+    const perRow = Math.max(1, Math.floor((USABLE_WIDTH + TILE_GAP) / (groupKind.tileWidth + TILE_GAP)));
+    const rowHeight = tileHeight(groupKind);
     for (let i = 0; i < tiles.length; i += perRow) {
       ensureRoom(rowHeight);
-      tiles.slice(i, i + perRow).forEach((tile, col) => drawTile(tile, MARGIN + col * (kind.tileWidth + TILE_GAP), y, { text, rule }, kind));
-      y -= rowHeight + 6;
+      if (y - rowHeight < MARGIN) overflow = true;
+      tiles.slice(i, i + perRow).forEach((tile, col) => drawTile(tile, MARGIN + col * (groupKind.tileWidth + TILE_GAP), y, { text, rule }, groupKind));
+      y -= rowHeight + 6 * listK;
     }
   }
 
@@ -237,10 +251,28 @@ function layoutPages(doc, kind = ACTIVITY_TILE) {
     // at leisure") sits right next to the next one instead of wasting the rest of its own row, and
     // only a table with more guests than fit in one tile spills into more tiles of its own, still
     // read left to right in order (as SPEC.md's "one list per activity" — just several per row).
-    placeTileRow(group.tables.flatMap((table) => tilesFor(table, kind)));
+    // A tile is only as tall as this half-day's longest list needs (up to the usual most), so a light half-day takes little room
+    // and can be drawn bigger.
+    const longest = Math.max(1, ...group.tables.map((table) => wrappedRows(table, kind).length));
+    const groupKind = { ...kind, rowsPerTile: Math.min(kind.rowsPerTile, Math.max(6, longest)) };
+    placeTileRow(group.tables.flatMap((table) => tilesFor(table, groupKind)), groupKind);
   });
   startPage(); // flush whatever is left onto the final page
+  pages.overflow = overflow;
   return pages;
+}
+
+// Lays a doc out as big as it can be without needing more pages than the compact size does (and without a row of tiles
+// running off the page or a tile wider than the page).
+function bestLayout(doc, kind) {
+  const base = layoutPages(doc, kind, 1);
+  for (let k = 2.4; k > 1.05; k -= 0.1) {
+    if (kind.tileWidth * k > USABLE_WIDTH) continue;
+    const pages = layoutPages(doc, kind, k);
+    if (!pages.overflow && pages.length <= base.length) { setListScale(1); return pages; }
+  }
+  setListScale(1);
+  return base;
 }
 
 // Draws one tile (a table, or one chunk of a long one) with its top-left corner at (left, top), at
@@ -258,18 +290,18 @@ function drawTile(tile, left, top, { text, rule }, kind) {
   }
   const headY = top - TITLE_BLOCK_H; // baseline of the column headings
   text(labels[0], left + numColW, headY, { font: FONT_BOLD, size: HEAD_SIZE, gray: 0.4, align: 'right' });
-  text(labels[1], left + numColW + 8, headY, { font: FONT_BOLD, size: HEAD_SIZE, gray: 0.4 });
-  text(labels[2], left + numColW + 8 + idColW, headY, { font: FONT_BOLD, size: HEAD_SIZE, gray: 0.4 });
-  rule(left, headY - 3, tileWidth);
+  text(labels[1], left + numColW + 8 * listK, headY, { font: FONT_BOLD, size: HEAD_SIZE, gray: 0.4 });
+  text(labels[2], left + numColW + 8 * listK + idColW, headY, { font: FONT_BOLD, size: HEAD_SIZE, gray: 0.4 });
+  rule(left, headY - 3 * listK, tileWidth);
 
   const firstRowY = top - TILE_HEADER_H - ROW_H;
-  const nameX = left + numColW + 8 + idColW;
-  const nameW = tileWidth - numColW - 8 - idColW - 4;
+  const nameX = left + numColW + 8 * listK + idColW;
+  const nameW = tileWidth - numColW - 8 * listK - idColW - 4 * listK;
   let number = tile.firstNumber;
   tile.rows.forEach((row, i) => {
     const rowY = firstRowY - i * ROW_H;
     if (!row.cont) text(String(number++), left + numColW, rowY, { size: CELL_SIZE, align: 'right' });
-    text(row.id || '', left + numColW + 8, rowY, { size: CELL_SIZE, maxWidth: idColW });
+    text(row.id || '', left + numColW + 8 * listK, rowY, { size: CELL_SIZE, maxWidth: idColW });
     text(row.name, nameX, rowY, { size: CELL_SIZE, maxWidth: nameW });
   });
 }
@@ -400,7 +432,7 @@ function serializePdf(pages, { width = PAGE_WIDTH, height = PAGE_HEIGHT, images 
 
 // The one thing most of the app calls: doc (see layoutPages above) -> a ready-to-share PDF Blob.
 export function buildListsPdf(doc) {
-  const bytes = serializePdf(layoutPages(doc));
+  const bytes = serializePdf(bestLayout(doc, ACTIVITY_TILE));
   return new Blob([bytes], { type: 'application/pdf' });
 }
 
@@ -410,7 +442,7 @@ export function buildListsPdf(doc) {
 // land in the one file, tours first — the tour pages already know to start a fresh page per half-day;
 // the guest pages just flow on continuously, since there is no single "half-day" they belong to.
 export function buildFinalTripPdf(toursDoc, guestsDoc) {
-  const pages = [...layoutPages(toursDoc, ACTIVITY_TILE), ...layoutPages(guestsDoc, GUEST_TILE)];
+  const pages = [...bestLayout(toursDoc, ACTIVITY_TILE), ...bestLayout(guestsDoc, GUEST_TILE)];
   return new Blob([serializePdf(pages)], { type: 'application/pdf' });
 }
 
