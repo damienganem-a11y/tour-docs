@@ -184,13 +184,14 @@ export async function exportConfirmationCards(ctx, trip, destination, slot) {
 // Keeps a finished file as a new version in the Exports archive, then hands it to the share sheet. Only for
 // files that hold no dietary information (see exportAndShare's `archive` option for the one that may).
 async function saveAndShare(ctx, trip, { title, updatedLine, format, blob }) {
+  reservePreviewWindow();
   const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title), updatedLine, createdAt: new Date().toISOString(), format, blob };
   try {
     await ctx.saveExport(trip.id, record);
   } catch {
-    showToast('Could not save this export to the archive, but sharing it anyway.', true);
+    showToast('Could not save this export to the archive, but showing it anyway.', true);
   }
-  await shareOrDownloadFile(blob, fileNameFor(title, FORMATS[format].extension), FORMATS[format].mimeType);
+  await showPreview(blob, FORMATS[format], fileNameFor(title, FORMATS[format].extension));
 }
 
 // ---------- Groups (Settings > Groups) ----------
@@ -344,10 +345,12 @@ export function nextVersion(records, title) {
 // carries dietary needs: the app cannot erase a file it already handed out, but it need not keep one).
 export async function exportAndShare(ctx, trip, doc, format, { archive = true } = {}) {
   const spec = FORMATS[format];
+  reservePreviewWindow(); // straight from the tap, before anything is awaited (see showPreview)
   let blob;
   try {
     blob = doc.blocks ? spec.buildEvening(doc) : spec.build(doc); // an evening sheet has its own layout
   } catch {
+    releasePreviewWindow();
     showToast(`Could not build the ${spec.label} file.`, true);
     return;
   }
@@ -359,11 +362,11 @@ export async function exportAndShare(ctx, trip, doc, format, { archive = true } 
     try {
       await ctx.saveExport(trip.id, record);
     } catch {
-      showToast('Could not save this export to the archive, but sharing it anyway.', true);
+      showToast('Could not save this export to the archive, but showing it anyway.', true);
     }
   }
-  await shareOrDownloadFile(blob, fileNameFor(doc.title, spec.extension), spec.mimeType);
-  if (!archive) showToast('Shared, not kept in the Exports archive: it contains dietary needs.');
+  await showPreview(blob, spec, fileNameFor(doc.title, spec.extension));
+  if (!archive) showToast('Not kept in the Exports archive: it contains dietary needs. Share it from the viewer.');
 }
 
 // The reservation sheet of one whole evening, every restaurant at once (see eveningReservationDoc).
@@ -378,12 +381,14 @@ export async function exportEveningReservations(ctx, trip, destination, slot, fo
 // step 9). No dietary info in it, same as every other export: activityTables never reads it.
 export async function exportFinalTrip(ctx, trip, format) {
   const updatedBy = ctx.owner?.name ?? 'the owner';
+  reservePreviewWindow();
   let blob;
   try {
     blob = format === 'pdf'
       ? buildFinalTripPdf(finalTripToursDoc(trip, updatedBy), finalTripGuestsDocForPdf(trip, updatedBy))
       : buildFinalTripXlsx(finalTripToursDoc(trip, updatedBy), finalTripGuestsRowsForXlsx(trip));
   } catch {
+    releasePreviewWindow();
     showToast(`Could not build the ${FORMATS[format].label} file.`, true);
     return;
   }
@@ -396,10 +401,36 @@ export async function exportFinalTrip(ctx, trip, format) {
   try {
     await ctx.saveExport(trip.id, record);
   } catch {
-    showToast('Could not save this export to the archive, but sharing it anyway.', true);
+    showToast('Could not save this export to the archive, but showing it anyway.', true);
   }
-  await shareOrDownloadFile(blob, fileNameFor(title, FORMATS[format].extension), FORMATS[format].mimeType);
+  await showPreview(blob, FORMATS[format], fileNameFor(title, FORMATS[format].extension));
 }
+
+// ---------- Showing a finished file first, sharing it from there ----------
+// Creating a document (owner's request, 1 Oct 2026) opens it in the phone's own viewer (on iPhone, Safari's PDF viewer with
+// Apple's share icon); the owner closes it or shares it from there. A browser only allows opening a window straight from
+// a tap, but building a file takes a moment, so the window is opened empty at once (reservePreviewWindow) and the file is
+// put in it when ready (showPreview). If no window could be opened at all, the share sheet is offered instead.
+let previewWindow = null;
+function reservePreviewWindow() {
+  try { previewWindow = window.open('', '_blank'); } catch { previewWindow = null; }
+}
+function releasePreviewWindow() {
+  try { previewWindow?.close(); } catch { /* already gone */ }
+  previewWindow = null;
+}
+async function showPreview(blob, spec, filename) {
+  const win = previewWindow;
+  previewWindow = null;
+  const url = URL.createObjectURL(new Blob([blob], { type: spec.mimeType }));
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+  if (win && !win.closed) { win.location.href = url; return; }
+  if (window.open(url, '_blank')) return;
+  await shareOrDownloadFile(blob, filename, spec.mimeType);
+}
+
+// The name an archived version is listed under: the owner's own name for it if they renamed it.
+export const exportName = (record) => record.customName || `${record.title}, version ${record.version}`;
 
 // Re-shares a version already sitting in the archive: no rebuilding, just the same file again.
 // `format` defaults to 'pdf' for a version saved before Excel export existed.
@@ -417,5 +448,5 @@ export function previewSavedExport(record) {
 
 export async function shareSavedExport(record) {
   const spec = FORMATS[record.format ?? 'pdf'];
-  await shareOrDownloadFile(record.blob, fileNameFor(`${record.title} v${record.version}`, spec.extension), spec.mimeType);
+  await shareOrDownloadFile(record.blob, fileNameFor(record.customName || `${record.title} v${record.version}`, spec.extension), spec.mimeType);
 }

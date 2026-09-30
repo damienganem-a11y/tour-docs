@@ -8,13 +8,15 @@ import { pageHead, exportFormatSheet } from './chrome.js';
 import { openSheet, closeSheet } from '../ui.js';
 import { choiceRow } from './move.js';
 import { bySlotOrder, slotLabel, dinnerCountIn } from '../rules.js';
-import { shareSavedExport, previewSavedExport, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
+import { previewSavedExport, exportName, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
 
 export function exportsSettingsPage(ctx, trip) {
   const records = [...ctx.exportsFor(trip.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const current = records.filter((r) => !r.archivedAt);
+  const archived = records.filter((r) => r.archivedAt);
 
   const finalExportButton = h('button', {
     class: 'btn', type: 'button',
@@ -25,27 +27,27 @@ export function exportsSettingsPage(ctx, trip) {
       busy = false;
       ctx.refresh();
     }),
-  }, 'Export the whole trip');
+  }, 'Create the final export of the whole trip');
 
   const destinationExportButton = h('button', {
     class: 'btn btn--plain', type: 'button',
     onclick: () => pickDestination(ctx, trip),
-  }, 'Export a destination or half-day');
+  }, 'Create a destination or half-day list');
 
   const reservationButton = h('button', {
     class: 'btn btn--plain', type: 'button',
     onclick: () => pickReservationEvening(ctx, trip),
-  }, 'Export an evening’s reservations');
+  }, 'Create an evening’s reservations');
 
   const hasTables = trip.dinnerBookings.some((b) => dinnerCountIn(trip, b) > 0);
-  const cardsButton = h('button', { class: 'btn', type: 'button', onclick: () => pickCardsEvening(ctx, trip) }, 'Export confirmation cards');
+  const cardsButton = h('button', { class: 'btn', type: 'button', onclick: () => pickCardsEvening(ctx, trip) }, 'Create confirmation cards');
 
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
       eyebrow: 'Exports archive',
-      title: 'Exports archive',
-      subtitle: 'Every list you have exported, newest first.',
+      title: 'Documents',
+      subtitle: 'Create a document, look at it, then close it or share it. Every one you made is kept below, newest first.',
     }),
     finalExportButton,
     h('p', { class: 'muted count-line' }, 'Every tour’s guest list, and every guest’s own whole trip, in one file.'),
@@ -54,12 +56,14 @@ export function exportsSettingsPage(ctx, trip) {
     hasTables ? h('p', { class: 'muted count-line' }, 'One card per travel party and table, filled in from the bookings. The logo and colour come from Settings > Brand.') : null,
     trip.restaurants.length > 0 ? reservationButton : null,
     trip.restaurants.length > 0 ? h('p', { class: 'muted count-line' }, 'All restaurants of one evening on one compact sheet, with an option to include dietary needs.') : null,
-    records.length === 0
-      ? h('p', { class: 'empty' }, 'Nothing exported yet.')
-      : h('ul', { class: 'list' }, records.map((record) => exportRow(record))));
+    current.length === 0
+      ? h('p', { class: 'empty' }, archived.length === 0 ? 'Nothing created yet.' : 'Nothing current: everything is archived below.')
+      : h('ul', { class: 'list' }, current.map((record) => exportRow(ctx, trip, record))),
+    archived.length > 0 ? h('h2', { class: 'section-title' }, `Archived (${archived.length})`) : null,
+    archived.length > 0 ? h('p', { class: 'muted count-line' }, 'Documents that are no longer current. Restore one, or delete it for good.') : null,
+    archived.length > 0 ? h('ul', { class: 'list' }, archived.map((record) => exportRow(ctx, trip, record))) : null);
 }
 
-// Export a destination or half-day: pick the destination, then "all of it" or one half-day.
 function pickDestination(ctx, trip) {
   openSheet({
     eyebrow: 'Exports archive', title: 'Export which destination?',
@@ -133,15 +137,59 @@ function runReservations(ctx, trip, slot) {
   }, { dietary: true });
 }
 
-function exportRow(record) {
+function exportRow(ctx, trip, record) {
   const formatLabel = record.format === 'xlsx' ? 'Excel' : 'PDF'; // older records saved before Excel existed are PDFs
   // Tapping the row shows the file in the phone's own viewer (share from there with Apple's own icon);
-  // the Share button next to it goes straight to the share sheet.
+  // the "..." button next to it is for renaming, archiving and deleting.
   return h('li', { class: 'export-row' },
     h('button', { class: 'row', type: 'button', onclick: () => previewSavedExport(record) },
       h('div', { class: 'row-main' },
-        h('div', { class: 'row-title' }, `${record.title}, version ${record.version}`, h('span', { class: 'tag' }, formatLabel)),
+        h('div', { class: 'row-title' }, exportName(record), h('span', { class: 'tag' }, formatLabel)),
         h('div', { class: 'row-sub' }, record.updatedLine)),
       h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')),
-    h('button', { class: 'btn btn--plain export-share', type: 'button', 'aria-label': `Share ${record.title}`, onclick: () => shareSavedExport(record) }, 'Share'));
+    h('button', { class: 'btn btn--plain export-share', type: 'button', 'aria-label': `Options for ${exportName(record)}`, onclick: () => recordOptions(ctx, trip, record) }, '···'));
+}
+
+// What can be done with one document: rename it, move it to Archived (or back), delete it for good (only from Archived).
+function recordOptions(ctx, trip, record) {
+  const done = async (action) => { closeSheet(); await action(); ctx.refresh(); };
+  openSheet({
+    eyebrow: record.archivedAt ? 'Archived document' : 'Document', title: exportName(record),
+    body: [
+      choiceRow({ title: 'Rename', onclick: () => renameRecord(ctx, trip, record) }),
+      record.archivedAt
+        ? choiceRow({ title: 'Restore (no longer archived)', onclick: () => done(() => ctx.updateExport(trip.id, record.id, { archivedAt: null })) })
+        : choiceRow({ title: 'Archive (no longer current)', onclick: () => done(() => ctx.updateExport(trip.id, record.id, { archivedAt: new Date().toISOString() })) }),
+      record.archivedAt ? choiceRow({ title: 'Delete for good', detail: 'The file is erased from this phone', onclick: () => confirmDelete(ctx, trip, record) }) : null,
+    ],
+    cancelLabel: 'Close',
+  });
+}
+
+function renameRecord(ctx, trip, record) {
+  const input = h('input', { class: 'text-input', type: 'text', maxlength: '80', value: exportName(record), 'aria-label': 'Name of the document' });
+  const save = async () => {
+    const name = input.value.trim();
+    closeSheet();
+    // an empty name (or the original one) goes back to the automatic name
+    await ctx.updateExport(trip.id, record.id, { customName: name === `${record.title}, version ${record.version}` ? '' : name });
+    ctx.refresh();
+  };
+  openSheet({
+    eyebrow: 'Rename', title: 'New name',
+    body: h('form', { onsubmit: (event) => { event.preventDefault(); save(); } }, input, h('button', { class: 'btn', type: 'submit' }, 'Save')),
+    cancelLabel: 'Cancel',
+  });
+  input.focus();
+}
+
+function confirmDelete(ctx, trip, record) {
+  openSheet({
+    eyebrow: 'Delete for good?', title: exportName(record), subtitle: 'The file is erased from this phone and cannot be brought back. You can create it again from the bookings.',
+    body: h('button', {
+      class: 'btn btn--danger', type: 'button',
+      onclick: async () => { closeSheet(); await ctx.deleteExport(trip.id, record.id); ctx.refresh(); },
+    }, 'Delete for good'),
+    cancelLabel: 'Keep it',
+  });
 }

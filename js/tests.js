@@ -17,7 +17,7 @@ import { biometricRegistered, biometricLockOn, disableBiometric, tryBiometricUnl
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
-import { previewSavedExport } from './export.js';
+import { previewSavedExport, exportName } from './export.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
@@ -2546,6 +2546,8 @@ function readZip(bytes) {
   window.open = (url) => { opened.push(url); return {}; };
   previewSavedExport({ format: 'pdf', blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }) });
   window.open = realOpen;
+  check('A document is listed by its automatic name, or by the owner\'s own name once renamed',
+    exportName({ title: 'Lisbon', version: 2 }) === 'Lisbon, version 2' && exportName({ title: 'Lisbon', version: 2, customName: 'Lisbon final' }) === 'Lisbon final');
   check('Previewing an archived export opens its file in a new window (the phone\'s own viewer)', opened.length === 1 && /^blob:/.test(opened[0]));
 }
 

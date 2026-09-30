@@ -284,6 +284,19 @@ const ctx = {
     state.exports.set(tripId, [...ctx.exportsFor(tripId), record]);
   },
 
+  // Archive housekeeping (Settings > Exports archive): rename a version, move it to Archived and back, delete it for good.
+  async updateExport(tripId, recordId, changes) {
+    const old = ctx.exportsFor(tripId).find((r) => r.id === recordId);
+    if (!old) return;
+    const record = { ...old, ...changes };
+    await dbPut('exports', record);
+    state.exports.set(tripId, ctx.exportsFor(tripId).map((r) => (r.id === recordId ? record : r)));
+  },
+  async deleteExport(tripId, recordId) {
+    await dbDelete('exports', recordId);
+    state.exports.set(tripId, ctx.exportsFor(tripId).filter((r) => r.id !== recordId));
+  },
+
   // Redraw the current screen without jumping back to the top.
   refresh() { render({ keepScroll: true }); },
 };
