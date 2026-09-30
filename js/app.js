@@ -32,6 +32,7 @@ import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import * as biometrics from './biometrics.js';
 import { enablePullToRefresh } from './pullRefresh.js';
+import { sameDocument } from './export.js';
 import { passcodeView } from './views/passcode.js';
 import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
@@ -279,9 +280,14 @@ const ctx = {
   },
 
   // Used by export.js: keep a PDF that was just built, so it can be found again in the Exports archive.
+  // Making the same document again (same title, same kind of file) replaces the current one: the new copy becomes the
+  // current document and the previous one moves to Archived, keeping its version number (owner's request, 1 Oct 2026).
   async saveExport(tripId, record) {
+    const now = new Date().toISOString();
+    const replaced = sameDocument(ctx.exportsFor(tripId), record);
+    for (const old of replaced) await dbPut('exports', { ...old, archivedAt: now });
     await dbPut('exports', record);
-    state.exports.set(tripId, [...ctx.exportsFor(tripId), record]);
+    state.exports.set(tripId, [...ctx.exportsFor(tripId).map((r) => (replaced.includes(r) ? { ...r, archivedAt: now } : r)), record]);
   },
 
   // Archive housekeeping (Settings > Exports archive): rename a version, move it to Archived and back, delete it for good.

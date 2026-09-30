@@ -22,7 +22,7 @@ import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
-import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
+import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
@@ -1889,6 +1889,15 @@ if (keptBefore === null) localStorage.removeItem('tourdocs.unlockedUntil'); else
     && nextVersion([{ title: 'Lisbon' }], 'Lisbon') === 2
     && nextVersion([{ title: 'Lisbon' }, { title: 'Lisbon' }, { title: 'Marrakech' }], 'Lisbon') === 3
     && nextVersion([{ title: 'Lisbon' }], 'Marrakech') === 1);
+  check('Versions are also counted per kind of file, and a deleted version\'s number is not handed out again',
+    nextVersion([{ title: 'L', format: 'pdf', version: 1 }, { title: 'L', format: 'xlsx', version: 2 }], 'L', 'xlsx') === 3
+    && nextVersion([{ title: 'L', format: 'pdf', version: 2 }], 'L', 'pdf') === 3
+    && nextVersion([{ title: 'L', format: 'pdf', version: 1 }], 'L', 'xlsx') === 1);
+  {
+    const cur = { id: 'a', title: 'L', format: 'pdf' };
+    check('Making the same document again replaces the current copy only: same title AND same kind of file, not archived ones',
+      sameDocument([cur, { id: 'b', title: 'L', format: 'xlsx' }, { id: 'c', title: 'L', format: 'pdf', archivedAt: 'x' }, { id: 'd', title: 'M', format: 'pdf' }], { id: 'n', title: 'L', format: 'pdf' }).map((r) => r.id).join() === 'a');
+  }
 
   const record = {
     id: newId(), tripId: ctx1.state.id, title: 'Lisbon', version: 1,
@@ -2547,7 +2556,7 @@ function readZip(bytes) {
   previewSavedExport({ format: 'pdf', blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }) });
   window.open = realOpen;
   check('A document is listed by its automatic name, or by the owner\'s own name once renamed',
-    exportName({ title: 'Lisbon', version: 2 }) === 'Lisbon, version 2' && exportName({ title: 'Lisbon', version: 2, customName: 'Lisbon final' }) === 'Lisbon final');
+    exportName({ title: 'Lisbon', version: 2 }) === 'Lisbon' && exportName({ title: 'Lisbon', version: 2, archivedAt: 'x' }) === 'Lisbon, version 2' && exportName({ title: 'Lisbon', version: 2, customName: 'Lisbon final' }) === 'Lisbon final');
   check('Previewing an archived export opens its file in a new window (the phone\'s own viewer)', opened.length === 1 && /^blob:/.test(opened[0]));
 }
 

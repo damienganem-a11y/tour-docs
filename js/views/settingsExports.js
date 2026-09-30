@@ -8,7 +8,7 @@ import { pageHead, exportFormatSheet } from './chrome.js';
 import { openSheet, closeSheet } from '../ui.js';
 import { choiceRow } from './move.js';
 import { bySlotOrder, slotLabel, dinnerCountIn } from '../rules.js';
-import { previewSavedExport, exportName, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
+import { previewSavedExport, exportName, sameDocument, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
@@ -153,12 +153,18 @@ function exportRow(ctx, trip, record) {
 // What can be done with one document: rename it, move it to Archived (or back), delete it for good (only from Archived).
 function recordOptions(ctx, trip, record) {
   const done = async (action) => { closeSheet(); await action(); ctx.refresh(); };
+  // Bringing an old copy back makes it the current one: the copy that was current moves to Archived (only one current copy of a document).
+  const restore = async () => {
+    const now = new Date().toISOString();
+    for (const current of sameDocument(ctx.exportsFor(trip.id), record)) await ctx.updateExport(trip.id, current.id, { archivedAt: now });
+    await ctx.updateExport(trip.id, record.id, { archivedAt: null });
+  };
   openSheet({
     eyebrow: record.archivedAt ? 'Archived document' : 'Document', title: exportName(record),
     body: [
       choiceRow({ title: 'Rename', onclick: () => renameRecord(ctx, trip, record) }),
       record.archivedAt
-        ? choiceRow({ title: 'Restore (no longer archived)', onclick: () => done(() => ctx.updateExport(trip.id, record.id, { archivedAt: null })) })
+        ? choiceRow({ title: 'Restore (no longer archived)', onclick: () => done(restore) })
         : choiceRow({ title: 'Archive (no longer current)', onclick: () => done(() => ctx.updateExport(trip.id, record.id, { archivedAt: new Date().toISOString() })) }),
       record.archivedAt ? choiceRow({ title: 'Delete for good', detail: 'The file is erased from this phone', onclick: () => confirmDelete(ctx, trip, record) }) : null,
     ],
@@ -172,7 +178,7 @@ function renameRecord(ctx, trip, record) {
     const name = input.value.trim();
     closeSheet();
     // an empty name (or the original one) goes back to the automatic name
-    await ctx.updateExport(trip.id, record.id, { customName: name === `${record.title}, version ${record.version}` ? '' : name });
+    await ctx.updateExport(trip.id, record.id, { customName: name === exportName({ ...record, customName: '' }) ? '' : name });
     ctx.refresh();
   };
   openSheet({

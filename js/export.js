@@ -185,7 +185,7 @@ export async function exportConfirmationCards(ctx, trip, destination, slot) {
 // files that hold no dietary information (see exportAndShare's `archive` option for the one that may).
 async function saveAndShare(ctx, trip, { title, updatedLine, format, blob }) {
   reservePreviewWindow();
-  const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title), updatedLine, createdAt: new Date().toISOString(), format, blob };
+  const record = { id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title, format), updatedLine, createdAt: new Date().toISOString(), format, blob };
   try {
     await ctx.saveExport(trip.id, record);
   } catch {
@@ -330,13 +330,18 @@ function fileNameFor(title, extension) {
   return `${slug || 'export'}.${extension}`;
 }
 
-// Versions are counted per title ("Lisbon", "Lisbon — Day 1 · Afternoon", ... each start at 1 and
-// count up on their own), so "Kyoto tours, version 3" means the third time that exact list was
-// exported, however many other things were exported in between — PDF and Excel share the same count,
-// since they are the same export, just in a different file.
-export function nextVersion(records, title) {
-  return records.filter((r) => r.title === title).length + 1;
+// Versions are counted per document: the same title AND the same kind of file (PDF, Excel), so "Lisbon, version 3" is the third
+// time that exact file was made, however many other things were made in between. Only a document that has been replaced by a
+// newer one shows its version number (owner's request, 1 Oct 2026: the newest copy is simply "the" document, without a number).
+// A deleted version's number is never handed out again. `format` may be left out to count both kinds together.
+const formatOf = (record) => record.format ?? 'pdf'; // versions saved before Excel existed are PDFs
+export function nextVersion(records, title, format) {
+  const same = records.filter((r) => r.title === title && (format === undefined || formatOf(r) === format));
+  return Math.max(same.length, ...same.map((r) => r.version).filter(Number.isFinite)) + 1;
 }
+
+// The current (not archived) copy of the same document, if there is one: creating the document again replaces it.
+export const sameDocument = (records, record) => records.filter((r) => !r.archivedAt && r.id !== record.id && r.title === record.title && formatOf(r) === formatOf(record));
 
 // Builds the file (format: 'pdf' or 'xlsx'), saves it as a new version in the Exports archive, and
 // opens the share sheet (or, if the browser has no share sheet, downloads the file instead — still
@@ -356,7 +361,7 @@ export async function exportAndShare(ctx, trip, doc, format, { archive = true } 
   }
   if (archive) {
     const record = {
-      id: newId(), tripId: trip.id, title: doc.title, version: nextVersion(ctx.exportsFor(trip.id), doc.title),
+      id: newId(), tripId: trip.id, title: doc.title, version: nextVersion(ctx.exportsFor(trip.id), doc.title, format),
       updatedLine: doc.updatedLine, createdAt: new Date().toISOString(), format, blob,
     };
     try {
@@ -395,7 +400,7 @@ export async function exportFinalTrip(ctx, trip, format) {
   const title = `${trip.name} — Final export`;
   const updatedLine = `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`;
   const record = {
-    id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title),
+    id: newId(), tripId: trip.id, title, version: nextVersion(ctx.exportsFor(trip.id), title, format),
     updatedLine, createdAt: new Date().toISOString(), format, blob,
   };
   try {
@@ -429,8 +434,9 @@ async function showPreview(blob, spec, filename) {
   await shareOrDownloadFile(blob, filename, spec.mimeType);
 }
 
-// The name an archived version is listed under: the owner's own name for it if they renamed it.
-export const exportName = (record) => record.customName || `${record.title}, version ${record.version}`;
+// The name a document is listed under: the owner's own name if they renamed it; otherwise its title, with ", version N" only
+// once it has been replaced by a newer copy (archived).
+export const exportName = (record) => record.customName || (record.archivedAt ? `${record.title}, version ${record.version}` : record.title);
 
 // Re-shares a version already sitting in the archive: no rebuilding, just the same file again.
 // `format` defaults to 'pdf' for a version saved before Excel export existed.
