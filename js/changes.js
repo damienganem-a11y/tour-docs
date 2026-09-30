@@ -731,7 +731,8 @@ export function applyChange(ctx, tripId, changes) {
 async function doApply(ctx, tripId, changes) {
   const trip = ctx.trip(tripId);
   const journal = ctx.journal(tripId);
-  const check = validateChanges(trip, ctx.owner, changes, journal);
+  const actor = ctx.userFor ? ctx.userFor(tripId) : ctx.owner; // the person, with the role they have ON THIS TRIP
+  const check = validateChanges(trip, actor, changes, journal);
   if (!check.ok) return check;
 
   // Work on a copy. The real trip is only replaced once the copy is safely saved, so a failed
@@ -768,7 +769,7 @@ async function doApply(ctx, tripId, changes) {
   const base = () => ({
     id: newId(), tripId: trip.id, at,
     seq: next.changeCount, n: entries.length, // n = this entry's place inside its action
-    who: { id: ctx.owner.id, name: ctx.owner.name, role: ctx.owner.role },
+    who: { id: actor.id, name: actor.name, role: actor.role },
     source: 'app',                          // later: 'colleague request', 'whatsapp'...
     batchId,
   });

@@ -26,7 +26,7 @@ import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
+  pullMyAccess, roleOf, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
@@ -45,6 +45,9 @@ import { rollCallView } from './views/rollcall.js';
 // journal entries and saved export versions of each trip (by trip id; also stored on the phone,
 // this is a copy in memory). `locked` is true while the access code has not been entered (see gate.js).
 const state = { owner: undefined, trips: new Map(), journal: new Map(), exports: new Map(), locked: false };
+// The person's role on each trip that is shared with them: 'owner', 'team' or 'viewer' (SPEC.md, Team). A trip that is not in
+// this list is the person's own (a local trip, or one created here), so they are its owner. Kept on the device so it works offline.
+const tripRoles = new Map();
 // Does this browser hold a live online login? true / false, or null while unknown (not checked yet, or
 // offline so it cannot be checked). Only `false` changes what the sync light says (see syncStatus).
 let hasSession = null;
@@ -97,6 +100,7 @@ async function checkSession() {
 // bumped on accepted:true: a rejected push means the server already had this changeCount or newer
 // from elsewhere, so THIS push never actually landed and nothing here should be trusted as pushed.
 async function pushAndTrack(trip, entries = []) {
+  if (ctx.roleFor(trip.id) !== 'owner') return; // a trip shared WITH this person is only ever read from the server
   try {
     const { accepted } = await pushTrip(trip);
     if (accepted) {
@@ -160,6 +164,9 @@ const ctx = {
   trip: (id) => state.trips.get(id),
   journal: (tripId) => state.journal.get(tripId) ?? [],
   documentsInfo: () => documentsInfo,
+  // The role on this trip, and the person with that role: what the one change function checks (a viewer cannot change anything).
+  roleFor: (tripId) => tripRoles.get(tripId) ?? 'owner',
+  userFor: (tripId) => ({ ...state.owner, role: ctx.roleFor(tripId) }),
   exportsFor: (tripId) => (state.exports.get(tripId) ?? []).filter((r) => !r.deletedAt), // a document deleted here waits, hidden, until the server has been told
   go(hash) { location.hash = hash; },
 
@@ -375,6 +382,7 @@ async function start() {
     state.owner = await dbGet('settings', 'owner');
     companyLook = (await dbGet('settings', 'companyLook')) ?? null;
     companyLookAsked = Boolean(await dbGet('settings', 'companyLookAsked'));
+    for (const [id, role] of Object.entries((await dbGet('settings', 'tripRoles')) ?? {})) tripRoles.set(id, role);
     for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); }
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
@@ -438,6 +446,7 @@ async function backfillPush() {
   try { remote = await pullTripList(); } catch (error) { noteSyncProblem(error); return; } // offline, or not reachable yet: try again next boot
   const remoteById = new Map(remote.map((r) => [r.id, r.change_count]));
   for (const trip of state.trips.values()) {
+    if (ctx.roleFor(trip.id) !== 'owner') continue; // shared with this person: nothing of theirs to send
     const serverCount = remoteById.get(trip.id);
     try {
       if (serverCount === undefined || serverCount < (trip.changeCount ?? 0)) {
@@ -467,6 +476,7 @@ async function enforceDietaryExpiry() {
   try {
     const now = new Date();
     for (const trip of [...state.trips.values()]) {
+      if (ctx.roleFor(trip.id) !== 'owner') continue; // the owner's devices erase, and it reaches this one through the sync
       const expiry = dietaryExpiry(trip);
       if (expiry === null || now.toISOString() < expiry) continue;
       if (dietaryErasureDue(trip, now)) await applyChange(ctx, trip.id, { type: 'erase-dietary' });
@@ -518,6 +528,8 @@ async function doSyncDocuments() {
     const server = serverById.get(local.id);
     try {
       const decision = decideDocument(local, server?.data);
+      const mine = ctx.roleFor(local.tripId) === 'owner'; // on a shared trip a person's own documents stay on their device
+      if (!mine && ['upload', 'push', 'delete-remote'].includes(decision)) { if (decision === 'delete-remote') await removeExport(local); continue; }
       if (decision === 'upload') { await pushDocument(local, { withFile: true }); await markDocumentSent(local); }
       else if (decision === 'push') { await pushDocument(local, { withFile: false }); await markDocumentSent(local); }
       else if (decision === 'adopt') { await putExport({ ...server.data, blob: local.blob, dirty: false, syncedAt: new Date().toISOString() }); changedScreen = true; }
@@ -559,9 +571,21 @@ function pullSync() {
   return pullInFlight;
 }
 
+// Works out, from the server's list, the role of the signed-in person on every trip they can see (their own, and those they were
+// invited to), and remembers it on the device. Never blocks the pull: if it cannot be asked, the roles already known stay.
+async function learnRoles(remote) {
+  try {
+    const { userId, invitations } = await pullMyAccess();
+    if (!userId) return;
+    for (const row of remote) tripRoles.set(row.id, roleOf(row.owner_id, userId, invitations.get(row.id)));
+    await dbPut('settings', Object.fromEntries(tripRoles), 'tripRoles');
+  } catch { /* keep what is known */ }
+}
+
 async function doPullSync() {
   let remote;
   try { remote = await pullTripList(); } catch (error) { noteSyncProblem(error); return; } // offline, or not reachable yet: try again later
+  await learnRoles(remote);
   let failed = false;
   for (const row of remote) {
     try { await pullOneTrip(row.id, row.change_count); } catch (error) { failed = true; noteSyncProblem(error); /* try again next time */ }
@@ -572,7 +596,10 @@ async function doPullSync() {
 
 async function pullOneTrip(tripId, serverChangeCount) {
   const local = state.trips.get(tripId);
-  const decision = local
+  const shared = ctx.roleFor(tripId) !== 'owner'; // this person cannot change it, so it can never be ahead of the server
+  const decision = shared && local
+    ? ((local.changeCount ?? 0) < serverChangeCount ? 'pull' : 'in-sync')
+    : local
     ? decideSync({ localChangeCount: local.changeCount ?? 0, pushedChangeCount: await getPushedChangeCount(tripId), serverChangeCount })
     : 'pull'; // no local copy at all: a genuinely new trip for this phone, nothing to lose
 
@@ -701,7 +728,7 @@ async function purgeExpiredTrips() {
     // second time. Acceptable: the owner's own promise is "gone from this phone for good"; a stray
     // server-side row with no local trace left is a smaller loose end than the resurrection bug this
     // fixes.
-    deleteTripRemote(trip.id).catch(() => {});
+    if (ctx.roleFor(trip.id) === 'owner') deleteTripRemote(trip.id).catch(() => {}); // only the owner may erase a trip on the server
   }
 }
 

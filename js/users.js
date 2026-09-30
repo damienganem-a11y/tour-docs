@@ -8,7 +8,9 @@ export const makeOwner = (id, name) => ({ id, name, role: 'owner' });
 
 const PERMISSIONS = {
   owner: ['change', 'force'], // can change anyone's bookings directly, and force a move into a full tour
-  colleague: [],       // later
+  team: [],            // invited to work on a trip: view-only in this first version; will get 'change' with co-editing (SPEC.md, Team)
+  viewer: [],          // invited to look only
+  colleague: [],       // (old name, kept so nothing breaks)
   guest: [],           // later
 };
 

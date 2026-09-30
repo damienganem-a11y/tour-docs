@@ -19,6 +19,7 @@ import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryExpiry, dietaryErasureDue } from './rules.js';
+import { roleOf, cleanInviteEmail } from './sync.js';
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
@@ -2635,6 +2636,25 @@ function readZip(bytes) {
   const arcD = makeCtx();
   await applyChange(arcD, trip.id, { type: 'archive-trip' });
   check('An archived trip is erased too', (await applyChange(arcD, trip.id, { type: 'erase-dietary' })).ok && arcD.state.guests.every((g) => !g.dietary));
+}
+
+// --- Team: roles on a shared trip (view-only invitations) ---
+{
+  check('The owner of the trip is its owner; an invited person has the role they were invited with',
+    roleOf('u1', 'u1', undefined) === 'owner' && roleOf('u1', 'u2', 'team') === 'team' && roleOf('u1', 'u2', 'viewer') === 'viewer');
+  check('Anything unknown is treated as the safest role (view only)', roleOf('u1', 'u2', undefined) === 'viewer' && roleOf('u1', 'u2', 'boss') === 'viewer' && roleOf(undefined, 'u2', undefined) === 'viewer');
+  check('An invitation address is cleaned (lowercase, no spaces); nonsense is refused',
+    cleanInviteEmail('  Mr.Porter@Example.COM ') === 'mr.porter@example.com' && cleanInviteEmail('not an email') === null && cleanInviteEmail('') === null && cleanInviteEmail(undefined) === null);
+  const ctxT = makeCtx();
+  ctxT.userFor = () => ({ ...owner, role: 'viewer' });
+  const refused = await applyChange(ctxT, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('A view-only person cannot change anything: the one change function refuses, and nothing is saved', !refused.ok && /permission/.test(refused.error) && ctxT.commits.length === 0);
+  ctxT.userFor = () => ({ ...owner, role: 'team' });
+  check('Nor can a Team person, in this first version', !(await applyChange(ctxT, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE))).ok);
+  const ctxO = makeCtx();
+  ctxO.userFor = () => ({ ...owner, role: 'owner' });
+  const allowed = await applyChange(ctxO, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('The owner still can, and the journal names who did it, with their role', allowed.ok && ctxO.entries[0].who.role === 'owner' && ctxO.entries[0].who.name === owner.name);
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

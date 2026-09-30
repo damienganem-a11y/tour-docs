@@ -31,7 +31,7 @@ export async function pushJournalEntries(tripId, entries) {
 // one is. Used by the one-time backfill AND by step 2b's pull (below) to find what's changed.
 export async function pullTripList() {
   const supabase = await getClient();
-  const { data, error } = await supabase.from('trips').select('id, change_count'); // RLS scopes this to the signed-in owner
+  const { data, error } = await supabase.from('trips').select('id, change_count, owner_id'); // RLS: the person's own trips, and trips they were invited to
   if (error) throw error;
   return data;
 }
@@ -221,4 +221,50 @@ export function decideDocument(local, server) {
   if (local.dirty && localAt >= serverAt) return 'push';
   if (serverAt > localAt) return 'adopt';
   return 'none';
+}
+
+// ---------- Team: who else can see a trip (Settings > Team) ----------
+// The owner of a trip invites people by e-mail address; they sign in with that address and see the trip. Roles: 'team' and 'viewer'
+// (both view-only in this first version). The owner is whoever owns the trip. Server side: supabase/team.sql.
+
+export const MEMBER_ROLES = ['team', 'viewer'];
+
+// The address as it will be stored (lowercase, no spaces), or null when it cannot be an e-mail address.
+export function cleanInviteEmail(text) {
+  const email = String(text ?? '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+// Pure: the role of the signed-in person on one trip, from the trip's owner and their invitation (if any).
+// A trip they neither own nor were invited to is not visible to them at all; an unknown role is treated as the safest one.
+export function roleOf(ownerId, userId, invitedAs) {
+  if (ownerId && userId && ownerId === userId) return 'owner';
+  return MEMBER_ROLES.includes(invitedAs) ? invitedAs : 'viewer';
+}
+
+// Who the signed-in person is, and the trips they were invited to: { userId, invitations: Map(tripId -> role) }.
+export async function pullMyAccess() {
+  const supabase = await getClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { userId: null, invitations: new Map() };
+  const { data, error } = await supabase.from('trip_members').select('trip_id, role').ilike('email', session.user.email ?? '');
+  if (error) throw error;
+  return { userId: session.user.id, invitations: new Map(data.map((row) => [row.trip_id, row.role])) };
+}
+
+export async function listMembers(tripId) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('trip_members').select('email, role, created_at').eq('trip_id', tripId).order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+export async function inviteMember(tripId, email, role) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('trip_members').upsert({ trip_id: tripId, email, role }, { onConflict: 'trip_id,email' });
+  if (error) throw error;
+}
+export async function removeMember(tripId, email) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('trip_members').delete().eq('trip_id', tripId).eq('email', email);
+  if (error) throw error;
 }

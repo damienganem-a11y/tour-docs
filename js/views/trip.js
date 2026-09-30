@@ -26,6 +26,7 @@ import { warningsSettingsPage } from './settingsWarnings.js';
 import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
 import { groupsSettingsPage } from './settingsGroups.js';
+import { teamSettingsPage } from './settingsTeam.js';
 import { notice } from './move.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
@@ -36,6 +37,7 @@ const SETTINGS_MENU = [
   { label: 'Guests', page: 'guests' },
   { label: 'Groups', page: 'groups' },
   { label: 'Brand', page: 'brand' },
+  { label: 'Team', page: 'team', ownerOnly: true },
   { label: 'Journal', page: 'journal', ownerOnly: true },
   { label: 'Exports archive', page: 'exports' },
   { label: 'Warnings', page: 'warnings' },
@@ -93,6 +95,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   if (mode === 'settings' && page === 'brand') {
     return { node: h('div', { class: 'screen' }, brandSettingsPage(ctx, trip)) };
   }
+  if (mode === 'settings' && page === 'team') {
+    return { node: h('div', { class: 'screen' }, teamSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'backup') {
     return { node: h('div', { class: 'screen' }, backupSettingsPage(ctx, trip)) };
   }
@@ -115,7 +120,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
   const readOnlyNotice = trip.archivedAt
     ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes again.')
-    : null;
+    : ctx.roleFor(trip.id) !== 'owner'
+      ? notice('You can look at this trip, but only its owner can change it (for now).')
+      : null;
 
   // Settings: the full trip heading and the menu.
   if (mode === 'settings') {
@@ -124,7 +131,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
       title: trip.name,
       subtitle: `${tripDates(trip.start, trip.days)} · ${trip.destinations.length} destinations · ${trip.guests.length} guests`,
     });
-    return { node: h('div', { class: 'screen' }, topBar, head, readOnlyNotice, settingsMenu(trip)) };
+    return { node: h('div', { class: 'screen' }, topBar, head, readOnlyNotice, settingsMenu(ctx, trip)) };
   }
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
@@ -139,9 +146,10 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   return { node: h('div', { class: 'screen' }, topBar, readOnlyNotice, content, tabs) };
 }
 
-function settingsMenu(trip) {
+function settingsMenu(ctx, trip) {
+  const isOwner = ctx.roleFor(trip.id) === 'owner';
   return h('div', { class: 'menu' },
-    SETTINGS_MENU.map((item) => {
+    SETTINGS_MENU.filter((item) => isOwner || item.page !== 'team').map((item) => {
       // A screen that exists is a link; one that does not exist yet says in which step it arrives.
       if (item.page) {
         return h('a', { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
