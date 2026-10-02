@@ -97,6 +97,9 @@
 //   { type: 'erase-dietary' }  erase all allergy/dietary text (automatic, after the last dinner); never undoable
 //   { type: 'set-branding', companyName, accent, cardNote, logo }  the look of the confirmation cards (Settings > Brand);
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
+//   { type: 'guest-links', action, guestIds: [id, ...] }      the personal links of the guest app (Settings > Guest links), owner only.
+//       action: 'create' (a guest who has none gets one), 'renew' (a new secret: the old link stops working),
+//       'switch-off' or 'switch-on'. Never undoable (a renewed link must not come back), and the journal never holds the secret.
 //   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
@@ -104,7 +107,7 @@
 // Undo never deletes anything from the journal: it writes new entries saying what was taken back.
 // Privacy: journal entries never contain dietary info.
 
-import { newId } from './ids.js';
+import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
@@ -133,6 +136,8 @@ const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-
 // Erasing every guest's allergy and dietary information (automatic, after the trip's last dinner; see rules.js's dietaryExpiry).
 // Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
 const DIETARY_TYPES = new Set(['erase-dietary']);
+// The guest app's personal links (Settings > Guest links): owner only (not in TEAM_TYPES), on their own, never undoable.
+const GUEST_LINK_TYPES = new Set(['guest-links']);
 const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-guests']);
 
 const fail = (error) => ({ ok: false, error });
@@ -157,7 +162,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type) || GUEST_LINK_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
@@ -170,6 +175,7 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
   if (BRANDING_TYPES.has(changes[0].type)) return validateBranding(changes[0]);
   if (DIETARY_TYPES.has(changes[0].type)) return { ok: true };
+  if (GUEST_LINK_TYPES.has(changes[0].type)) return validateGuestLinks(trip, changes[0]);
   if (SPLIT_TYPES.has(changes[0].type)) return validateSplitChange(trip, changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
@@ -572,6 +578,17 @@ function validateRenameTrip(change) {
 
 // The card branding: a short name, a #rrggbb colour, a short note, and a small JPEG logo (or none). The
 // size limits keep the trip (and every journal line that carries it) small enough to sync comfortably.
+function validateGuestLinks(trip, change) {
+  if (!['create', 'renew', 'switch-off', 'switch-on'].includes(change.action)) return fail('Unknown action for guest links.');
+  if (!Array.isArray(change.guestIds) || change.guestIds.length === 0) return fail('Choose at least one guest.');
+  if (new Set(change.guestIds).size !== change.guestIds.length) return fail('The same guest appears twice in the same change.');
+  for (const id of change.guestIds) {
+    if (!trip.guests.some((g) => g.id === id)) return fail('That guest is not on this trip.');
+    if ((change.action === 'switch-off' || change.action === 'switch-on' || change.action === 'renew') && !trip.guestLinks?.[id]) return fail('That guest has no link yet.');
+  }
+  return { ok: true };
+}
+
 function validateBranding(change) {
   if (typeof change.companyName !== 'string' || change.companyName.trim().length > 60) return fail('The company name must be 60 letters or fewer.');
   if (!/^#[0-9a-f]{6}$/i.test(change.accent ?? '')) return fail('The colour must look like #1d5c57.');
@@ -1218,6 +1235,28 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     const affected = next.guests.filter((g) => g.dietary);
     for (const guest of affected) guest.dietary = '';
     entries.push({ ...base(), type: 'erase-dietary', ...guestWhere, count: affected.length });
+    return save(ctx, next, entries, {});
+  }
+
+  // Personal links for the guest app. The secret lives only on the trip (and in the guest's link): the journal records just who and how many.
+  if (GUEST_LINK_TYPES.has(changes[0].type)) {
+    const c = changes[0];
+    next.guestLinks ??= {};
+    let count = 0;
+    for (const guestId of c.guestIds) {
+      const link = next.guestLinks[guestId];
+      if (c.action === 'create') {
+        if (link) continue; // already has one: nothing to do
+        next.guestLinks[guestId] = { token: newToken(), active: true, createdAt: new Date().toISOString() };
+      } else if (c.action === 'renew') {
+        next.guestLinks[guestId] = { token: newToken(), active: true, createdAt: new Date().toISOString() };
+      } else {
+        link.active = c.action === 'switch-on';
+      }
+      count++;
+    }
+    const only = c.guestIds.length === 1 ? names.get(c.guestIds[0]) : null;
+    entries.push({ ...base(), type: 'guest-links', ...guestWhere, action: c.action, count, guestName: only });
     return save(ctx, next, entries, {});
   }
 

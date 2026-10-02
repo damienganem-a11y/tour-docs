@@ -27,6 +27,8 @@ import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, p
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
+import { buildGuestSheet, guestSheetRows } from './guestSheet.js';
+import { newToken } from './ids.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
@@ -2637,6 +2639,56 @@ function readZip(bytes) {
   const arcD = makeCtx();
   await applyChange(arcD, trip.id, { type: 'archive-trip' });
   check('An archived trip is erased too', (await applyChange(arcD, trip.id, { type: 'erase-dietary' })).ok && arcD.state.guests.every((g) => !g.dietary));
+}
+
+// --- Guest links and the guest's own sheet (Phase 5, step 1) ---
+{
+  const ctxG = makeCtx();
+  const guest = ctxG.state.guests.find((g) => g.dietary) ?? ctxG.state.guests[0];
+  const tokens = new Set(Array.from({ length: 50 }, () => newToken()));
+  check('A guest-link secret is 22 letters/digits/-/_ and never repeats', tokens.size === 50 && [...tokens].every((t) => /^[A-Za-z0-9_-]{22}$/.test(t)));
+
+  const none = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'create', guestIds: [] });
+  const unknown = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'create', guestIds: ['nobody'] });
+  const early = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'switch-off', guestIds: [guest.id] });
+  check('Guest links: nothing chosen, an unknown guest, or switching off a link that does not exist are refused', !none.ok && !unknown.ok && !early.ok);
+
+  const created = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'create', guestIds: ctxG.state.guests.map((g) => g.id) });
+  const links = ctxG.state.guestLinks;
+  check('Create links gives every guest their own active link', created.ok && Object.keys(links).length === ctxG.state.guests.length && Object.values(links).every((l) => l.active && l.token.length === 22) && new Set(Object.values(links).map((l) => l.token)).size === ctxG.state.guests.length);
+  const firstToken = links[guest.id].token;
+  await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'create', guestIds: [guest.id] });
+  check('Creating again leaves an existing link as it is', ctxG.state.guestLinks[guest.id].token === firstToken);
+
+  const renewed = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'renew', guestIds: [guest.id] });
+  check('A new link replaces the secret (the old one is no longer on the trip)', renewed.ok && ctxG.state.guestLinks[guest.id].token !== firstToken && ctxG.state.guestLinks[guest.id].active);
+  const off = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'switch-off', guestIds: [guest.id] });
+  check('Switching a link off keeps the secret but turns it off', off.ok && ctxG.state.guestLinks[guest.id].active === false);
+
+  const journalText = JSON.stringify(ctxG.entries);
+  check('The journal never holds a link secret', Object.values(ctxG.state.guestLinks).every((l) => !journalText.includes(l.token)) && !journalText.includes(firstToken));
+  check('The journal reads well for each action', groupBatches(ctxG.entries).map(summarize).some((t) => /Created guest links for \d+ guests/.test(t)) && groupBatches(ctxG.entries).map(summarize).some((t) => /Made a new guest link/.test(t)) && groupBatches(ctxG.entries).map(summarize).some((t) => /Switched off the guest link/.test(t)));
+  const undoLinks = await applyChange(ctxG, trip.id, { type: 'undo' });
+  check('Guest links can never be undone with Undo (a renewed link must not come back)', lastUndoable(ctxG.entries, ['guest-links']) === null && !(undoLinks.ok && ctxG.state.guestLinks[guest.id].active === true && ctxG.state.guestLinks[guest.id].token === firstToken));
+
+  const colleague = makeCtx();
+  colleague.userFor = () => ({ ...owner, role: 'team' });
+  check('A Team colleague cannot make guest links', !validateChanges(colleague.state, { ...owner, role: 'team' }, [{ type: 'guest-links', action: 'create', guestIds: [guest.id] }]).ok);
+
+  const sheet = buildGuestSheet(ctxG.state, guest, '2027-01-01T00:00:00.000Z');
+  const sheetText = JSON.stringify(sheet);
+  check('A guest sheet holds the trip, the guest\'s first name and every half-day in order',
+    sheet.v === 1 && sheet.trip === ctxG.state.name && sheet.first === guest.first && sheet.days.reduce((n, d) => n + d.parts.length, 0) === ctxG.state.slots.length);
+  check('A guest sheet never holds allergies, notes, the guest\'s last name, seat or any internal ID',
+    (!guest.dietary || !sheetText.includes(guest.dietary)) && !sheetText.includes(guest.last) && !sheetText.includes(guest.id) && !sheetText.includes(guest.ref) && !/"notes"|"dietary"|"seat"/.test(sheetText));
+  const allText = JSON.stringify(ctxG.state.guests.map((g) => buildGuestSheet(ctxG.state, g, 'x')));
+  check('No sheet of any guest holds anyone\'s allergy text', ctxG.state.guests.filter((g) => g.dietary).every((g) => !allText.includes(g.dietary)));
+  const withActivity = sheet.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity');
+  check('An activity part has its name, local start time and meeting point', !withActivity || (typeof withActivity.name === 'string' && (withActivity.time === null || /^\d\d:\d\d$/.test(withActivity.time))));
+
+  const rows = guestSheetRows(ctxG.state, 'x');
+  const offRow = rows.find((r) => r.guestId === guest.id);
+  check('A switched-off link has no content; the others have a sheet', offRow.active === false && offRow.sheet === null && rows.filter((r) => r.active).every((r) => r.sheet && r.sheet.first));
 }
 
 // --- Team: roles on a shared trip (view-only invitations) ---

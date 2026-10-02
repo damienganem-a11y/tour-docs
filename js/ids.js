@@ -13,3 +13,11 @@ export function newId() {
   const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+// A long random secret for a guest's personal link (Settings > Guest links). 22 letters and digits = 128 bits of
+// randomness: nobody can guess one. Letters, digits, "-" and "_" only, so it is safe to put in a web address.
+export function newToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const text = btoa(String.fromCharCode(...bytes));
+  return text.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}

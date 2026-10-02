@@ -19,12 +19,13 @@ import {
   getPushedChangeCount, bumpPushedChangeCount,
 } from './db.js';
 import { newId } from './ids.js';
+import { guestSheetRows } from './guestSheet.js';
 import { defaultBranding, brandingFromLook } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
-  pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
+  pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullMyAccess, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
@@ -110,10 +111,35 @@ async function pushAndTrack(trip, entries = []) {
       if (entries.length > 0) await pushJournalEntries(trip.id, entries);
       await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
     }
+    if (accepted || trip.guestLinks) await sendGuestSheets(trip); // never throws: see below
     noteSyncOk();
   } catch (error) {
     noteSyncProblem(error);
     throw error;
+  }
+}
+
+// The guests' personal sheets (Phase 5, the guest app): after a trip reaches the server, each guest who has a link gets their
+// up-to-date sheet there. Only sheets that really changed are sent (compared with what this session last sent). A failure never
+// breaks the trip's own sync: it is kept in guestSheetInfo, which Settings > Guest links shows.
+const guestSheetInfo = { lastOkAt: null, error: null, sent: new Map() };
+async function sendGuestSheets(trip, { force = false } = {}) {
+  if (!trip.guestLinks) return;
+  try {
+    const now = new Date().toISOString();
+    const rows = guestSheetRows(trip, '');
+    const before = guestSheetInfo.sent.get(trip.id) ?? new Map();
+    const signature = (row) => JSON.stringify(row);
+    // Only the sheets that changed since this session last sent them (all of them after a forced send or on the first send).
+    const changed = rows.filter((row) => force || before.get(row.token) !== signature(row));
+    if (changed.length === 0 && before.size === rows.length) return; // nothing new, no link removed
+    for (const row of changed) if (row.sheet) row.sheet.updatedAt = now;
+    await pushGuestSheets(trip.id, changed, rows.map((r) => r.token));
+    guestSheetInfo.sent.set(trip.id, new Map(rows.map((r) => [r.token, signature(r)])));
+    guestSheetInfo.lastOkAt = now;
+    guestSheetInfo.error = null;
+  } catch (error) {
+    guestSheetInfo.error = plainSyncError(error?.message);
   }
 }
 
@@ -172,6 +198,13 @@ const ctx = {
   documentsInfo: () => documentsInfo,
   // The role on this trip, and the person with that role: what the one change function checks (a viewer cannot change anything).
   roleFor: (tripId) => tripRoles.get(tripId) ?? 'owner',
+  // Settings > Guest links: how the last sending of the guests' sheets went, and a way to send them again right now.
+  guestSheetStatus: () => ({ lastOkAt: guestSheetInfo.lastOkAt, error: guestSheetInfo.error }),
+  async resendGuestSheets(tripId) {
+    const trip = state.trips.get(tripId);
+    if (trip) await sendGuestSheets(trip, { force: true });
+    return ctx.guestSheetStatus();
+  },
   userFor: (tripId) => ({ ...state.owner, role: ctx.roleFor(tripId) }),
   // Requests: a Team colleague asks, the owner's device applies (sendRequest is called by the one change function).
   requestsFor: (tripId) => requestRows.filter((r) => r.trip_id === tripId),
@@ -273,6 +306,7 @@ const ctx = {
       bookings: {},
       dinnerBookings: [],
       rollCalls: [],
+      guestLinks: {}, // a copy never inherits the originals' personal links (each link belongs to one trip's guest)
     };
     await dbPut('trips', copy);
     state.trips.set(copy.id, copy);
@@ -477,6 +511,7 @@ async function backfillPush() {
           await pushJournalEntries(trip.id, ctx.journal(trip.id));
           await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
         }
+        await sendGuestSheets(trip); // once per boot, for the guests' links
       }
     } catch (error) { noteSyncProblem(error); /* try again next boot */ }
   }

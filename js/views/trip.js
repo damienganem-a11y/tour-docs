@@ -27,6 +27,7 @@ import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
 import { groupsSettingsPage } from './settingsGroups.js';
 import { teamSettingsPage } from './settingsTeam.js';
+import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
 
@@ -39,6 +40,7 @@ const SETTINGS_MENU = [
   { label: 'Groups', page: 'groups' },
   { label: 'Brand', page: 'brand' },
   { label: 'Team', page: 'team', ownerOnly: true },
+  { label: 'Guest links', page: 'guestlinks', ownerOnly: true },
   { label: 'Requests', page: 'requests' },
   { label: 'Journal', page: 'journal', ownerOnly: true },
   { label: 'Exports archive', page: 'exports' },
@@ -103,6 +105,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   if (mode === 'settings' && page === 'team') {
     return { node: h('div', { class: 'screen' }, teamSettingsPage(ctx, trip)) };
   }
+  if (mode === 'settings' && page === 'guestlinks') {
+    return { node: h('div', { class: 'screen' }, guestLinksSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'backup') {
     return { node: h('div', { class: 'screen' }, backupSettingsPage(ctx, trip)) };
   }
@@ -155,7 +160,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
 
 function settingsMenu(ctx, trip) {
   const role = ctx.roleFor(trip.id);
-  const visible = (item) => (item.page === 'team' ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
+  const visible = (item) => ((item.page === 'team' || item.page === 'guestlinks') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
   return h('div', { class: 'menu' },
     SETTINGS_MENU.filter(visible).map((item) => {
       // A screen that exists is a link; one that does not exist yet says in which step it arrives.

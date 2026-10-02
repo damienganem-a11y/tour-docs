@@ -58,12 +58,29 @@ export async function pullJournalEntries(tripId, afterSeq = 0) {
   return data.map((row) => row.data);
 }
 
+// The guests' personal sheets (Phase 5): one row per link. `rows` is [{ token, guestId, active, sheet }] from guestSheet.js. A switched-off
+// link keeps no content. Rows of this trip whose secret is no longer on the trip (a renewed link) are deleted, so an old link
+// stops working at once. `rows` may be only the sheets that changed; `currentTokens` is every secret the trip has now. Owner only (the server's rules say so too).
+export async function pushGuestSheets(tripId, rows, currentTokens = rows.map((r) => r.token)) {
+  const supabase = await getClient();
+  if (rows.length > 0) {
+    const { error } = await supabase.from('guest_links').upsert(
+      rows.map((r) => ({ token: r.token, trip_id: tripId, guest_id: r.guestId, active: r.active, data: r.sheet ?? {}, updated_at: new Date().toISOString() })),
+      { onConflict: 'token' });
+    if (error) throw error;
+  }
+  const query = supabase.from('guest_links').delete().eq('trip_id', tripId);
+  const { error } = await (currentTokens.length > 0 ? query.not('token', 'in', `(${currentTokens.join(',')})`) : query);
+  if (error) throw error;
+}
+
 // A purged trip (deleted locally 30 days ago) is erased on the server too, so no other phone on the
 // account ever pulls it back from the dead.
 export async function deleteTripRemote(tripId) {
   const supabase = await getClient();
   await supabase.from('journal_entries').delete().eq('trip_id', tripId);
   await supabase.from('documents').delete().eq('trip_id', tripId);
+  await supabase.from('guest_links').delete().eq('trip_id', tripId);
   const { error } = await supabase.from('trips').delete().eq('id', tripId);
   if (error) throw error;
 }

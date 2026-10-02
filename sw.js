@@ -15,7 +15,7 @@
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.52.0'; // keep equal to js/version.js
+const VERSION = '0.53.0'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
 const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)
@@ -37,6 +37,7 @@ const FILES = [
   'js/db.js',
   'js/dom.js',
   'js/export.js',
+  'js/guestSheet.js',
   'js/gate.js',
   'js/ids.js',
   'js/journal.js',
@@ -75,6 +76,7 @@ const FILES = [
   'js/views/settingsParties.js',
   'js/views/settingsRequests.js',
   'js/views/settingsTeam.js',
+  'js/views/settingsGuestLinks.js',
   'js/views/settingsTouring.js',
   'js/views/settingsWarnings.js',
   'js/views/trip.js',
