@@ -147,7 +147,10 @@ const ctx = {
     if (navigator.onLine) {
       try { probe = await syncProbe(); } catch (error) { probeError = error?.message ?? 'unreachable'; }
     }
-    return diagnoseSync({ online: navigator.onLine, probe, probeError, localCount: state.trips.size, ...syncInfo });
+    const result = diagnoseSync({ online: navigator.onLine, probe, probeError, localCount: state.trips.size, ...syncInfo });
+    // Who this person is on each trip (their own, or shared with them), so a wrong role is easy to spot.
+    for (const trip of state.trips.values()) result.lines.push(`Your role on "${trip.name}": ${ctx.roleFor(trip.id) === 'owner' ? 'owner' : ctx.roleFor(trip.id) === 'team' ? 'Team (view-only for now)' : 'View only'}.`);
+    return result;
   },
   get trips() { return [...state.trips.values()]; },
   get companyLook() { return companyLook; },
