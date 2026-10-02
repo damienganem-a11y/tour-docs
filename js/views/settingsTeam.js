@@ -24,6 +24,16 @@ async function sendSignInEmail(address) {
   }
 }
 
+// One person of the team: the e-mail address (wraps, however long) with the role under it, then the two buttons side by side.
+export function memberCard(member, { resend, remove }) {
+  return h('div', { class: 'card team-member' },
+    h('div', { class: 'act-name team-email' }, member.email),
+    h('div', { class: 'muted' }, ROLE_LABEL[member.role] ?? member.role),
+    h('div', { class: 'card-actions' },
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Resend e-mail'),
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: remove }, 'Remove')));
+}
+
 export function teamSettingsPage(ctx, trip) {
   const head = pageHead({
     back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
@@ -42,15 +52,10 @@ export function teamSettingsPage(ctx, trip) {
       const members = await listMembers(trip.id);
       list.replaceChildren(...(members.length === 0
         ? [h('p', { class: 'empty' }, 'Nobody else yet. Invite a colleague below.')]
-        : members.map((m) => h('div', { class: 'card' },
-            h('div', { class: 'card-row' },
-              h('div', {}, h('div', { class: 'act-name' }, m.email), h('div', { class: 'muted' }, ROLE_LABEL[m.role] ?? m.role)),
-              h('div', { class: 'card-actions' },
-                h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => showToast(await sendSignInEmail(m.email)) }, 'Send e-mail again'),
-                h('button', {
-                  class: 'btn btn--small btn--plain', type: 'button',
-                  onclick: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
-                }, 'Remove')))))));
+        : members.map((m) => memberCard(m, {
+            resend: async () => showToast(await sendSignInEmail(m.email)),
+            remove: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
+          }))));
     } catch {
       list.replaceChildren(h('p', { class: 'empty' }, 'The team cannot be shown: sign in online first (the sync light at the top), and the trip must have reached the server.'));
     }

@@ -670,3 +670,8 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 .form-label { display: block; font-weight: 700; margin-bottom: 6px; }
 .form-label .text-input { display: block; margin-top: 6px; font-weight: 400; }
 .form-hint { margin-top: 6px; font-size: 15px; color: var(--muted); line-height: 1.35; }
+
+/* Settings > Team: a long e-mail address wraps instead of pushing the buttons out of the card */
+.team-email { overflow-wrap: anywhere; word-break: break-word; }
+.team-member .card-actions { margin-top: 10px; }
+.team-member .card-actions .btn { flex: 1 1 0; min-width: 0; width: auto; }
