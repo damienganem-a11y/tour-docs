@@ -20,6 +20,7 @@ import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryExpiry, dietaryErasureDue } from './rules.js';
 import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
+import { signInAddress } from './views/settingsTeam.js';
 import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.js';
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
@@ -2756,6 +2757,12 @@ function readZip(bytes) {
   check('A QR code is a square with the three finder patterns in the corners', cells.length === cells[0].length && cells.length >= 21 && finder(0, 0) && finder(0, cells.length - 7) && finder(cells.length - 7, 0));
   check('A short link gives a small code, a longer one a bigger code; too long is refused', qrCells('A').length === 21 && qrCells('x'.repeat(100)).length > qrCells('A').length && (() => { try { qrCells('x'.repeat(300)); return false; } catch { return true; } })());
   check('The QR picture is an SVG that holds no script', /^<svg /.test(qrSvg('hello')) && !/<script|onload/i.test(qrSvg('hello')));
+}
+
+// --- Test-access QR codes (Settings > Team) ---
+{
+  const address = new URL(signInAddress('mr.porter@example.com', 'mr.porter'));
+  check('A team member\'s QR address opens the app with the e-mail and name in the address, and nothing secret', address.searchParams.get('email') === 'mr.porter@example.com' && address.searchParams.get('name') === 'mr.porter' && address.hash === '' && !/token|password|secret/i.test(address.search));
 }
 
 // --- Team: roles on a shared trip (view-only invitations) ---

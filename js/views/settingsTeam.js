@@ -9,6 +9,8 @@ import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { sendMagicLink } from '../auth.js';
+import { openSheet } from '../ui.js';
+import { qrSvg } from '../qr.js';
 import { listMembers, inviteMember, removeMember, cleanInviteEmail, MEMBER_ROLES } from '../sync.js';
 
 const ROLE_LABEL = { team: 'Team', viewer: 'View only' };
@@ -24,12 +26,33 @@ async function sendSignInEmail(address) {
   }
 }
 
+// The address a test-access QR code opens: the app itself, with the person's e-mail (and a name) already in the sign-in form.
+export function signInAddress(email, name) {
+  const url = new URL('./', window.location.href);
+  url.search = new URLSearchParams({ email, name }).toString();
+  url.hash = '';
+  return url.href;
+}
+
+// Shows the QR code for one team member. It holds no secret: it only fills in the sign-in form on the other device.
+function accessSheet(member) {
+  const address = signInAddress(member.email, member.email.split('@')[0]);
+  const picture = h('div', { class: 'qr-box' });
+  picture.innerHTML = qrSvg(address, { pixels: 260 }); // drawn by qr.js from the address, nothing typed by anyone
+  openSheet({
+    eyebrow: ROLE_LABEL[member.role] ?? member.role, title: member.email,
+    subtitle: 'On the other device: scan this, tap "Send me a sign-in link", then type the code from the e-mail. If that device is signed in already, sign out first (Trips screen).',
+    body: [picture, h('p', { class: 'muted qr-url' }, address)],
+  });
+}
+
 // One person of the team: the e-mail address (wraps, however long) with the role under it, then the two buttons side by side.
-export function memberCard(member, { resend, remove }) {
+export function memberCard(member, { resend, remove, access }) {
   return h('div', { class: 'card team-member' },
     h('div', { class: 'act-name team-email' }, member.email),
     h('div', { class: 'muted' }, ROLE_LABEL[member.role] ?? member.role),
     h('div', { class: 'card-actions' },
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: access }, 'QR code'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Re-send email'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: remove }, 'Remove')));
 }
@@ -53,6 +76,7 @@ export function teamSettingsPage(ctx, trip) {
       list.replaceChildren(...(members.length === 0
         ? [h('p', { class: 'empty' }, 'Nobody else yet. Invite a colleague below.')]
         : members.map((m) => memberCard(m, {
+            access: () => accessSheet(m),
             resend: async () => showToast(await sendSignInEmail(m.email)),
             remove: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
           }))));

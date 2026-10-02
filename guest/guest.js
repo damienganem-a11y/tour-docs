@@ -145,22 +145,22 @@ function partView(part, sheet) {
   return node;
 }
 
+// The "Next up" card, shown in the header of the programme.
+function nextCard(sheet) {
+  const next = nextUp(sheet);
+  if (!next) return null;
+  const what = next.part.kind === 'dinner' ? `Dinner at ${next.part.restaurant}` : next.part.name;
+  const detail = next.part.kind === 'dinner' ? `Table for ${next.part.seating}` : [next.part.time ? `Starts ${next.part.time}` : null, next.part.meeting ? `Meet: ${next.part.meeting}` : null].filter(Boolean).join(' · ');
+  return h('div', { class: 'next' }, h('div', { class: 'next-label' }, `Next up · ${dayDate(next.day.date)} · ${next.part.half}`), h('div', { class: 'next-what' }, what), detail ? h('div', { class: 'next-line' }, detail) : null);
+}
+
 function programmeView(sheet) {
   const today = localToday();
-  return [
-    (() => {
-      const next = nextUp(sheet);
-      if (!next) return null;
-      const what = next.part.kind === 'dinner' ? `Dinner at ${next.part.restaurant}` : next.part.name;
-      const detail = next.part.kind === 'dinner' ? `Table for ${next.part.seating}` : [next.part.time ? `Starts ${next.part.time}` : null, next.part.meeting ? `Meet: ${next.part.meeting}` : null].filter(Boolean).join(' · ');
-      return h('div', { class: 'next' }, h('div', { class: 'half' }, `Next up · ${dayDate(next.day.date)} · ${next.part.half}`), h('div', { class: 'what' }, what), detail ? h('div', { class: 'line' }, detail) : null);
-    })(),
-    ...sheet.days.map((day) => h('section', { class: `day${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
-      h('div', { class: 'day-head' },
-        h('div', { class: 'day-title' }, `Day ${day.day} · ${day.destination}`, day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null),
-        h('div', { class: 'day-date' }, dayDate(day.date))),
-      day.parts.map((p) => partView(p, sheet)))),
-  ];
+  return sheet.days.map((day) => h('section', { class: `day${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
+    h('div', { class: 'day-head' },
+      h('div', { class: 'day-num' }, h('span', {}, 'DAY'), String(day.day)),
+      h('div', { class: 'day-title' }, day.destination, day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null, h('div', { class: 'day-date' }, dayDate(day.date)))),
+    day.parts.map((p) => partView(p, sheet))));
 }
 
 // ---------- the Tours tab ----------
@@ -189,24 +189,26 @@ function toursView(sheet) {
 }
 
 // ---------- one tour ----------
-function tourView(sheet, tour) {
+function tourView(sheet, tour, offline) {
   const info = tour.info ?? {};
   const difficulty = difficultyBlock(info);
-  const gallery = info.photos?.length
-    ? h('div', { class: 'gallery' }, info.photos.map((p) => h('figure', { class: 'shot' }, h('img', { src: p.url, alt: p.caption || tour.name, loading: 'lazy' }), p.caption ? h('figcaption', {}, p.caption) : null)))
-    : null;
-  const section = (title, text) => (text ? h('div', { class: 'info-block' }, h('div', { class: 'half' }, title), h('div', {}, text)) : null);
+  const photos = info.photos ?? [];
+  const gallery = photos.length
+    ? h('div', { class: 'gallery' }, photos.map((p) => h('figure', { class: 'shot' }, h('img', { src: p.url, alt: p.caption || tour.name, loading: 'lazy' }), p.caption ? h('figcaption', {}, p.caption) : null)))
+    : h('div', { class: 'gallery gallery--none' });
+  const section = (title, text) => (text ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, title), h('div', { class: 'block-text' }, text)) : null);
   return [
-    h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
-    gallery,
-    h('h1', {}, tour.name),
-    h('div', { class: 'line' }, `${dayDate(tour.date)} · ${tour.half} · ${tour.destination}`),
-    h('div', { class: 'chips big' }, info.duration ? chip(info.duration) : null, difficulty?.chip ?? null, availabilityChip(tour)),
-    difficulty?.panel ?? null,
-    section('When and where', [tour.time ? `Starts ${tour.time}` : null, tour.meeting ? `Meet: ${tour.meeting}` : null].filter(Boolean).join(' · ')),
-    section('What happens', info.description),
-    section('Included', info.included),
-    section('What to bring', info.bring),
+    h('div', { class: 'tour-top' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'), gallery),
+    h('div', { class: 'content content--tour' },
+      offline,
+      h('div', { class: 'line' }, `${dayDate(tour.date)} · ${tour.half} · ${tour.destination}`),
+      h('h2', { class: 'tour-title' }, tour.name),
+      h('div', { class: 'chips big' }, info.duration ? chip(info.duration) : null, difficulty?.chip ?? null, availabilityChip(tour)),
+      difficulty?.panel ?? null,
+      section('When and where', [tour.time ? `Starts ${tour.time}` : null, tour.meeting ? `Meet: ${tour.meeting}` : null].filter(Boolean).join(' · ')),
+      section('What happens', info.description),
+      section('Included', info.included),
+      section('What to bring', info.bring)),
   ].filter(Boolean);
 }
 
@@ -225,21 +227,38 @@ function tabs() {
   return h('nav', { class: 'tabs' }, tab('programme', 'My programme'), tab('tours', 'Tours'));
 }
 
+// Sets the company colour and a readable text colour to put on it (white on a dark colour, near-black on a light one).
+function applyAccent(accent) {
+  const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#1d5c57';
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  const root = document.documentElement.style;
+  root.setProperty('--brand', hex);
+  root.setProperty('--on-brand', luminance > 0.62 ? '#111827' : '#ffffff');
+  root.setProperty('--theme', hex);
+  const meta = document.querySelector('meta[name=theme-color]');
+  if (meta) meta.setAttribute('content', hex);
+}
+
 function paint() {
   const sheet = currentSheet;
   if (!sheet) return;
-  document.documentElement.style.setProperty('--brand', /^#[0-9a-f]{6}$/i.test(sheet.accent) ? sheet.accent : '#1d5c57');
+  applyAccent(sheet.accent);
   document.title = sheet.trip;
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
   if (view.tour !== undefined && !tour) { view = { tab: 'programme' }; }
-  const head = [
-    sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
-    h('h1', {}, tour ? sheet.trip : `Hello ${sheet.first}`),
-    tour ? null : h('p', { class: 'sub' }, sheet.trip),
-  ];
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
-  const body = tour ? tourView(sheet, tour) : [tabs(), installHint(), offline, ...(view.tab === 'tours' ? toursView(sheet) : programmeView(sheet)), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)];
-  app.replaceChildren(...(tour ? [offline, ...body] : [...head, ...body]).filter(Boolean));
+  if (tour) {
+    app.replaceChildren(...tourView(sheet, tour, offline));
+    return;
+  }
+  const hero = h('header', { class: 'hero' },
+    sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
+    h('h1', {}, `Hello ${sheet.first}`),
+    h('p', { class: 'sub' }, sheet.trip),
+    view.tab === 'programme' ? nextCard(sheet) : null);
+  const content = view.tab === 'tours' ? toursView(sheet) : programmeView(sheet);
+  app.replaceChildren(hero, h('div', { class: 'content' }, tabs(), installHint(), offline, ...content, h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
 }
 
 function render(sheet, { offline = false } = {}) {

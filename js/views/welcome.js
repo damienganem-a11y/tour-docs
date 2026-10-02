@@ -177,7 +177,17 @@ function sentScreen(ctx) {
   };
 }
 
+// A test-access QR code (Settings > Team) opens the app at  <app>/?email=...&name=...  so the form is already filled in: the person only taps
+// "Send me a sign-in link" and types the code from the e-mail. Used once per page load; whatever was typed or kept afterwards wins.
+function prefillFromAddress() {
+  if (pendingEmail !== '' || pendingName !== '') return;
+  const params = new URLSearchParams(location.search);
+  const email = (params.get('email') ?? '').trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { pendingEmail = email; pendingName = (params.get('name') ?? '').trim().slice(0, 60); }
+}
+
 function formScreen(ctx) {
+  prefillFromAddress();
   const message = h('div', { class: 'message', role: 'alert', hidden: step !== 'error' });
   if (step === 'error') message.textContent = errorText;
 
