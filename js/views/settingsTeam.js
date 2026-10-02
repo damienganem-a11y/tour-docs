@@ -30,7 +30,7 @@ export function memberCard(member, { resend, remove }) {
     h('div', { class: 'act-name team-email' }, member.email),
     h('div', { class: 'muted' }, ROLE_LABEL[member.role] ?? member.role),
     h('div', { class: 'card-actions' },
-      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Resend e-mail'),
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Re-send email'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: remove }, 'Remove')));
 }
 
