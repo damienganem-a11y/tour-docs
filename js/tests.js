@@ -27,7 +27,7 @@ import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, p
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
-import { buildGuestSheet, guestSheetRows, SHEET_VERSION } from './guestSheet.js';
+import { buildGuestSheet, guestSheetRows, SHEET_VERSION, availabilityOf } from './guestSheet.js';
 import { newToken } from './ids.js';
 import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
@@ -2731,6 +2731,19 @@ function readZip(bytes) {
   const withActivity = sheet.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity');
   check('An activity part has its name, local start time and meeting point', !withActivity || (typeof withActivity.name === 'string' && (withActivity.time === null || /^\d\d:\d\d$/.test(withActivity.time))));
 
+  check('The sheet lists the trip\'s tours with their information, never an internal ID', Array.isArray(sheet.tours) && sheet.tours.length > 30 && sheet.tours.every((t) => t.name && !('_id' in t) && !('id' in t)));
+  const hike = sheet.tours.find((t) => t.name.startsWith("Tiger's Nest hike"));
+  check('A tour carries its duration, difficulty, details, description and photos', hike.info.duration === 'About 6 hours' && hike.info.difficulty === 'demanding' && /thin/.test(hike.info.difficultyNote) && hike.info.photos.length === 3 && hike.availability);
+  check('Dinners that are still activities are not listed as tours, and each programme activity points to its tour', !sheet.tours.some((t) => /^dinner/i.test(t.name))
+    && sheet.days.flatMap((d) => d.parts).filter((p) => p.kind === 'activity' && !/^dinner/i.test(p.name)).every((p) => p.tour >= 0 && sheet.tours[p.tour].name === p.name));
+  check('"mine" marks only the tour the guest is booked on, in that half-day', sheet.days.flatMap((d) => d.parts).filter((p) => p.kind === 'activity' && p.tour >= 0).every((p) => sheet.tours[p.tour].mine));
+  {
+    const act = { id: 'a', slotId: ctxG.state.slots[0].id, capacity: 10 };
+    const fake = { ...ctxG.state, activities: [act], guests: ctxG.state.guests.slice(0, 10), bookings: {} };
+    const fill = (n) => { fake.bookings = {}; fake.guests.slice(0, n).forEach((g) => { fake.bookings[g.id] = { [act.slotId]: { kind: 'activity', activityId: 'a' } }; }); return availabilityOf(fake, act); };
+    check('Availability: plenty = available, 2 left or fewer = limited, full = waitlist, no capacity = available', fill(5) === 'available' && fill(8) === 'limited' && fill(9) === 'limited' && fill(10) === 'waitlist'
+      && availabilityOf(fake, { ...act, capacity: null }) === 'available');
+  }
   const rows = guestSheetRows(ctxG.state, 'x');
   const offRow = rows.find((r) => r.guestId === guest.id);
   check('A switched-off link has no content; the others have a sheet', offRow.active === false && offRow.sheet === null && rows.filter((r) => r.active).every((r) => r.sheet && r.sheet.first));

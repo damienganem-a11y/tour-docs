@@ -30,3 +30,38 @@ h1 { font-family: var(--serif); font-size: 32px; line-height: 1.1; margin: 6px 0
 .next .half, .next .line { color: rgba(255,255,255,.85); }
 .next .what { font-size: 21px; }
 button.link { background: none; border: 0; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; padding: 0 0 0 6px; }
+
+/* tabs */
+.tabs { display: flex; background: color-mix(in srgb, var(--brand) 10%, white); border-radius: 12px; padding: 4px; margin: 0 0 16px; }
+.tab { flex: 1; border: 0; background: none; font: inherit; font-weight: 700; padding: 10px; border-radius: 9px; color: var(--muted); }
+.tab.is-on { background: var(--card); color: var(--brand); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+/* chips and the difficulty "i" */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chips.big { margin: 10px 0 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #ece8dc; color: var(--ink); }
+.chip--easy { background: #e0efdf; color: #26572b; }
+.chip--moderate { background: #fbeccd; color: #7a4f0c; }
+.chip--demanding { background: #f6dcd6; color: #8a2b1c; }
+.chip--available { background: #e0efdf; color: #26572b; }
+.chip--limited { background: #fbeccd; color: #7a4f0c; }
+.chip--waitlist { background: #f6dcd6; color: #8a2b1c; }
+.chip--mine { background: var(--brand); color: #fff; }
+.info-btn { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid currentColor; background: none; color: inherit; font: italic 700 13px Georgia, serif; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.diff-panel { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 10px; padding: 12px 14px; margin: 8px 0 4px; font-size: 15px; }
+.diff-help { font-weight: 700; margin-bottom: 6px; }
+/* programme rows that open a tour */
+.part--tap { cursor: pointer; }
+.more { color: var(--brand); font-weight: 700; font-size: 14px; margin-top: 4px; }
+/* tours list */
+.tour-group { margin: 0 0 18px; }
+.tour-group-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 4px 8px; }
+.tour-card { display: flex; gap: 12px; align-items: center; justify-content: space-between; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 0 0 10px; cursor: pointer; }
+.tour-card-text { min-width: 0; }
+.thumb { width: 84px; height: 64px; object-fit: cover; border-radius: 10px; flex: none; background: #ddd; }
+/* one tour */
+.back { border: 0; background: none; color: var(--brand); font: inherit; font-weight: 700; padding: 4px 0 12px; }
+.gallery { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px 14px; padding: 0 16px; -webkit-overflow-scrolling: touch; }
+.shot { flex: 0 0 86%; margin: 0; scroll-snap-align: center; }
+.shot img { width: 100%; height: 210px; object-fit: cover; border-radius: 14px; background: #ddd; display: block; }
+.shot figcaption { font-size: 13px; color: var(--muted); margin: 4px 2px 0; }
+.info-block { margin: 16px 0; }
