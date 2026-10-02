@@ -127,6 +127,9 @@ const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 're
 // other change — nothing about the trip changes while it is read-only.
 const TRIP_INFO_TYPES = new Set(['rename-trip']);
 const BRANDING_TYPES = new Set(['set-branding']);
+// What a Team colleague may ask for: moving guests, roll call, and dinner tables. Everything else (settings, guests, groups, branding, the trip
+// itself, undo) stays with the owner.
+const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // Erasing every guest's allergy and dietary information (automatic, after the trip's last dinner; see rules.js's dietaryExpiry).
 // Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
 const DIETARY_TYPES = new Set(['erase-dietary']);
@@ -142,6 +145,7 @@ const fail = (error) => ({ ok: false, error });
 export function validateChanges(trip, user, changes, journal = []) {
   if (!canUser(user, 'change')) return fail('You do not have permission to change bookings.');
   if (!trip) return fail('This trip is not on this phone.');
+  if (user?.role === 'team' && Array.isArray(changes) && !changes.every((c) => TEAM_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
   // Archived trips are read-only, except for undoing and the archive/delete actions themselves (so
   // a trip can be un-archived, or a deleted trip reinstated, without needing to be un-archived first).
   if (trip.archivedAt && changes[0]?.type !== 'undo' && !TRIP_TYPES.has(changes[0]?.type) && !DIETARY_TYPES.has(changes[0]?.type)) {
@@ -723,15 +727,27 @@ export function enqueue(fn) {
 //   ctx.commit(newTrip, entries) saves the trip AND the journal entries together, then makes the
 //                                app use the new trip (returns a promise)
 // Returns { ok: true, entries } or { ok: false, error }.
-export function applyChange(ctx, tripId, changes) {
+// opts.as      the person on whose behalf the change is applied (used by the owner's device for a colleague's request)
+// opts.request { id, at } the request being applied: written in the journal, so it shows who asked, and when
+export function applyChange(ctx, tripId, changes, opts = {}) {
   const list = Array.isArray(changes) ? changes : [changes];
-  return enqueue(() => doApply(ctx, tripId, list));
+  // A Team colleague never changes the trip themselves: the change is checked against their copy, then sent as a request
+  // that the owner's device applies (SPEC.md, Team step B).
+  if (!opts.as && ctx.roleFor?.(tripId) === 'team') return requestChange(ctx, tripId, list);
+  return enqueue(() => doApply(ctx, tripId, list, opts));
 }
 
-async function doApply(ctx, tripId, changes) {
+async function requestChange(ctx, tripId, list) {
+  const check = validateChanges(ctx.trip(tripId), ctx.userFor(tripId), list, ctx.journal(tripId));
+  if (!check.ok) return check;
+  await ctx.sendRequest(tripId, list);
+  return { ok: true, requested: true, entries: [] };
+}
+
+async function doApply(ctx, tripId, changes, opts = {}) {
   const trip = ctx.trip(tripId);
   const journal = ctx.journal(tripId);
-  const actor = ctx.userFor ? ctx.userFor(tripId) : ctx.owner; // the person, with the role they have ON THIS TRIP
+  const actor = opts.as ?? (ctx.userFor ? ctx.userFor(tripId) : ctx.owner); // the person, with the role they have ON THIS TRIP
   const check = validateChanges(trip, actor, changes, journal);
   if (!check.ok) return check;
 
@@ -770,7 +786,8 @@ async function doApply(ctx, tripId, changes) {
     id: newId(), tripId: trip.id, at,
     seq: next.changeCount, n: entries.length, // n = this entry's place inside its action
     who: { id: actor.id, name: actor.name, role: actor.role },
-    source: 'app',                          // later: 'colleague request', 'whatsapp'...
+    source: opts.request ? 'colleague request' : 'app',   // later: 'whatsapp'...
+    ...(opts.request ? { requestId: opts.request.id, requestedAt: opts.request.at } : {}),
     batchId,
   });
 

@@ -19,7 +19,7 @@ import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryExpiry, dietaryErasureDue } from './rules.js';
-import { roleOf, cleanInviteEmail } from './sync.js';
+import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
@@ -2649,12 +2649,32 @@ function readZip(bytes) {
   ctxT.userFor = () => ({ ...owner, role: 'viewer' });
   const refused = await applyChange(ctxT, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
   check('A view-only person cannot change anything: the one change function refuses, and nothing is saved', !refused.ok && /permission/.test(refused.error) && ctxT.commits.length === 0);
-  ctxT.userFor = () => ({ ...owner, role: 'team' });
-  check('Nor can a Team person, in this first version', !(await applyChange(ctxT, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE))).ok);
+  // A Team colleague asks: the change is checked against their copy, then sent as a request; nothing is changed on their side.
+  const ctxTeam = makeCtx();
+  ctxTeam.roleFor = () => 'team';
+  ctxTeam.userFor = () => ({ ...owner, id: 'colleague-1', name: 'Mr Porter', role: 'team' });
+  ctxTeam.sent = [];
+  ctxTeam.sendRequest = async (tripId, changes) => { ctxTeam.sent.push({ tripId, changes }); };
+  const asked = await applyChange(ctxTeam, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
+  check('A Team person\'s change is sent as a request and nothing is changed on their side',
+    asked.ok && asked.requested === true && ctxTeam.sent.length === 1 && ctxTeam.sent[0].changes[0].type === 'move' && ctxTeam.commits.length === 0);
+  const settingsAsk = await applyChange(ctxTeam, trip.id, { type: 'set-branding', companyName: 'X', accent: '#112233', cardNote: '', logo: null });
+  check('...but a settings change is refused: it stays with the owner', !settingsAsk.ok && /owner/.test(settingsAsk.error) && ctxTeam.sent.length === 1);
+  const forceAsk = await applyChange(ctxTeam, trip.id, { ...moveOf(stranger.ref, 'S05', { kind: 'activity', activityId: hammam.id }), force: true });
+  check('...and a Team person cannot ask to FORCE a move into a full tour', !forceAsk.ok && ctxTeam.sent.length === 1);
   const ctxO = makeCtx();
   ctxO.userFor = () => ({ ...owner, role: 'owner' });
   const allowed = await applyChange(ctxO, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE));
   check('The owner still can, and the journal names who did it, with their role', allowed.ok && ctxO.entries[0].who.role === 'owner' && ctxO.entries[0].who.name === owner.name);
+  // The owner's device applies the colleague's request on their behalf: the journal says who asked, and when.
+  const ctxApply = makeCtx();
+  ctxApply.roleFor = () => 'owner';
+  const applied = await applyChange(ctxApply, trip.id, moveOf(inHammam[0].ref, 'S05', LEISURE), { as: { id: 'colleague-1', name: 'Mr Porter', role: 'team' }, request: { id: 'req-1', at: '2026-10-02T09:00:00.000Z' } });
+  const first = ctxApply.entries[0];
+  check('A request applied by the owner\'s device is journaled under the colleague, as a request, with the moment they asked',
+    applied.ok && first.who.name === 'Mr Porter' && first.who.role === 'team' && first.source === 'colleague request' && first.requestId === 'req-1' && first.requestedAt === '2026-10-02T09:00:00.000Z');
+  const who = trip.guests.find((g) => g.ref === inHammam[0].ref);
+  check('A request is described in a few words for the lists', /Leisure|leisure/.test(describeRequest(trip, [moveOf(inHammam[0].ref, 'S05', LEISURE)], new Map([[who.id, 'Amira Y.']]))) && /Amira Y\./.test(describeRequest(trip, [moveOf(inHammam[0].ref, 'S05', LEISURE)], new Map([[who.id, 'Amira Y.']]))));
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

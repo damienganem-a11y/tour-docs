@@ -312,7 +312,7 @@ async function saveChanges(ctx, trip, changes, done) {
   if (result.ok) {
     closeSheet();
     ctx.refresh();
-    showToast(done);
+    showToast(result.requested ? 'Request sent to the owner. It shows here once applied.' : done);
   } else {
     showToast(result.error, true);
   }

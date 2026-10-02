@@ -26,7 +26,7 @@ import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullMyAccess, roleOf, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
+  pullMyAccess, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
@@ -48,6 +48,9 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // The person's role on each trip that is shared with them: 'owner', 'team' or 'viewer' (SPEC.md, Team). A trip that is not in
 // this list is the person's own (a local trip, or one created here), so they are its owner. Kept on the device so it works offline.
 const tripRoles = new Map();
+// Requests (SPEC.md, Team step B): what the server last said about them, and the ones made here that are not sent yet (kept on the device).
+let requestRows = [];
+let outbox = [];
 // Does this browser hold a live online login? true / false, or null while unknown (not checked yet, or
 // offline so it cannot be checked). Only `false` changes what the sync light says (see syncStatus).
 let hasSession = null;
@@ -170,6 +173,16 @@ const ctx = {
   // The role on this trip, and the person with that role: what the one change function checks (a viewer cannot change anything).
   roleFor: (tripId) => tripRoles.get(tripId) ?? 'owner',
   userFor: (tripId) => ({ ...state.owner, role: ctx.roleFor(tripId) }),
+  // Requests: a Team colleague asks, the owner's device applies (sendRequest is called by the one change function).
+  requestsFor: (tripId) => requestRows.filter((r) => r.trip_id === tripId),
+  outboxFor: (tripId) => outbox.filter((r) => r.tripId === tripId),
+  async sendRequest(tripId, changes) {
+    outbox.push({ id: newId(), tripId, requesterName: state.owner.name, changes, requestedAt: new Date().toISOString() });
+    await dbPut('settings', outbox, 'outbox');
+    flushOutbox().catch(() => {});
+  },
+  async declineRequest(id) { await finishRequest(id, 'declined', null); await processRequests(); render({ keepScroll: true }); },
+  async retryRequest(id) { await reopenRequest(id); await processRequests(); render({ keepScroll: true }); },
   exportsFor: (tripId) => (state.exports.get(tripId) ?? []).filter((r) => !r.deletedAt), // a document deleted here waits, hidden, until the server has been told
   go(hash) { location.hash = hash; },
 
@@ -386,6 +399,7 @@ async function start() {
     companyLook = (await dbGet('settings', 'companyLook')) ?? null;
     companyLookAsked = Boolean(await dbGet('settings', 'companyLookAsked'));
     for (const [id, role] of Object.entries((await dbGet('settings', 'tripRoles')) ?? {})) tripRoles.set(id, role);
+    outbox = (await dbGet('settings', 'outbox')) ?? [];
     for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); }
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
@@ -466,6 +480,46 @@ async function backfillPush() {
       }
     } catch (error) { noteSyncProblem(error); /* try again next boot */ }
   }
+}
+
+// ---------- Requests from colleagues ----------
+// A Team colleague's change waits in the outbox on their device until it has been sent (works offline), then the OWNER'S device claims it,
+// applies it through the one change function (the journal says who asked, and when), and records the outcome.
+let flushing = false;
+async function flushOutbox() {
+  if (flushing || outbox.length === 0 || hasSession === false || !navigator.onLine) return;
+  flushing = true;
+  try {
+    for (const request of [...outbox]) {
+      try {
+        await sendRequestRemote(request);
+        outbox = outbox.filter((r) => r.id !== request.id);
+        await dbPut('settings', outbox, 'outbox');
+      } catch { break; /* the next round tries again */ }
+    }
+  } finally { flushing = false; }
+}
+
+let processing = false;
+async function processRequests() {
+  if (processing || !state.owner || hasSession === false || !navigator.onLine) return;
+  processing = true;
+  try {
+    requestRows = await pullRequests();
+    for (const row of requestRows) {
+      // only the owner's own devices apply requests, and only for trips they have; oldest first, so the earlier request wins
+      if (row.status !== 'pending' || ctx.roleFor(row.trip_id) !== 'owner' || !state.trips.has(row.trip_id)) continue;
+      if (!(await claimRequest(row.id))) continue; // another of the owner's devices has it
+      const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team' };
+      let result;
+      try { result = await applyChange(ctx, row.trip_id, row.changes, { as, request: { id: row.id, at: row.requested_at } }); }
+      catch { result = { ok: false, error: 'It could not be applied.' }; }
+      await finishRequest(row.id, result.ok ? 'applied' : 'failed', result.ok ? null : result.error);
+    }
+    requestRows = await pullRequests();
+  } catch { /* the next round tries again */ }
+  processing = false;
+  if (/\/settings\/requests/.test(location.hash) && !document.body.classList.contains('sheet-open')) render({ keepScroll: true });
 }
 
 // ---------- Allergies and dietary needs are erased after the trip's last dinner (owner's rule) ----------
@@ -671,7 +725,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }

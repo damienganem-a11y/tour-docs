@@ -27,6 +27,7 @@ import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
 import { groupsSettingsPage } from './settingsGroups.js';
 import { teamSettingsPage } from './settingsTeam.js';
+import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
 
 // The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
@@ -38,6 +39,7 @@ const SETTINGS_MENU = [
   { label: 'Groups', page: 'groups' },
   { label: 'Brand', page: 'brand' },
   { label: 'Team', page: 'team', ownerOnly: true },
+  { label: 'Requests', page: 'requests' },
   { label: 'Journal', page: 'journal', ownerOnly: true },
   { label: 'Exports archive', page: 'exports' },
   { label: 'Warnings', page: 'warnings' },
@@ -95,6 +97,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   if (mode === 'settings' && page === 'brand') {
     return { node: h('div', { class: 'screen' }, brandSettingsPage(ctx, trip)) };
   }
+  if (mode === 'settings' && page === 'requests') {
+    return { node: h('div', { class: 'screen' }, requestsSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'team') {
     return { node: h('div', { class: 'screen' }, teamSettingsPage(ctx, trip)) };
   }
@@ -120,9 +125,11 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
   const readOnlyNotice = trip.archivedAt
     ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes again.')
-    : ctx.roleFor(trip.id) !== 'owner'
-      ? notice('You can look at this trip, but only its owner can change it (for now).')
-      : null;
+    : ctx.roleFor(trip.id) === 'viewer'
+      ? notice('You can look at this trip, but only its owner can change it.')
+      : ctx.roleFor(trip.id) === 'team'
+        ? notice('You are on the team: the changes you make are sent to the owner as requests, and applied there.')
+        : null;
 
   // Settings: the full trip heading and the menu.
   if (mode === 'settings') {
@@ -147,9 +154,10 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
 }
 
 function settingsMenu(ctx, trip) {
-  const isOwner = ctx.roleFor(trip.id) === 'owner';
+  const role = ctx.roleFor(trip.id);
+  const visible = (item) => (item.page === 'team' ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
   return h('div', { class: 'menu' },
-    SETTINGS_MENU.filter((item) => isOwner || item.page !== 'team').map((item) => {
+    SETTINGS_MENU.filter(visible).map((item) => {
       // A screen that exists is a link; one that does not exist yet says in which step it arrives.
       if (item.page) {
         return h('a', { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },

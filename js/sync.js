@@ -151,6 +151,7 @@ export async function watchServerChanges(onChange, onStatus) {
   return supabase.channel('tour-docs-trips')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
 }
 
@@ -267,4 +268,73 @@ export async function removeMember(tripId, email) {
   const supabase = await getClient();
   const { error } = await supabase.from('trip_members').delete().eq('trip_id', tripId).eq('email', email);
   if (error) throw error;
+}
+
+// ---------- Requests from colleagues (Settings > Requests; server side: supabase/requests.sql) ----------
+// A Team colleague's change is sent as a request: a row holding the change(s) exactly as the one change function takes them. The OWNER'S
+// device claims it, applies it, and records the outcome. Statuses: pending, applying, applied, failed (does not fit any more), declined.
+
+export async function sendRequestRemote(request) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('requests').insert({
+    id: request.id, trip_id: request.tripId, requester_name: request.requesterName, changes: request.changes, requested_at: request.requestedAt,
+  });
+  if (error && !/duplicate key/i.test(error.message)) throw error; // sending the same request twice is harmless
+}
+
+// The requests this person can see: all on the trips they own, and their own on others. Oldest first.
+export async function pullRequests() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('requests')
+    .select('id, trip_id, requested_by, requester_email, requester_name, changes, requested_at, status, note, decided_at')
+    .order('requested_at', { ascending: true }).limit(300);
+  if (error) throw error;
+  return data;
+}
+
+// Takes a pending request so that only ONE of the owner's devices applies it. A claim left behind by a device that stopped half-way
+// (older than 2 minutes) may be taken over. Returns true when this device now holds it.
+export async function claimRequest(id) {
+  const supabase = await getClient();
+  const now = new Date().toISOString();
+  const first = await supabase.from('requests').update({ status: 'applying', decided_at: now }).eq('id', id).eq('status', 'pending').select('id');
+  if (first.error) throw first.error;
+  if (first.data.length > 0) return true;
+  const stale = new Date(Date.now() - 120000).toISOString();
+  const second = await supabase.from('requests').update({ status: 'applying', decided_at: now }).eq('id', id).eq('status', 'applying').lt('decided_at', stale).select('id');
+  if (second.error) throw second.error;
+  return second.data.length > 0;
+}
+
+export async function finishRequest(id, status, note = null) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('requests').update({ status, note, decided_at: new Date().toISOString() }).eq('id', id);
+  if (error) throw error;
+}
+
+// The owner asks for another go at a request that no longer fitted.
+export async function reopenRequest(id) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('requests').update({ status: 'pending', note: null }).eq('id', id);
+  if (error) throw error;
+}
+
+// What a request says, in a few words, from the trip it concerns: "Amira Y. to At leisure (Day 1 · Afternoon)".
+export function describeRequest(trip, changes, names) {
+  const slotName = (slotId) => { const s = trip?.slots.find((x) => x.id === slotId); return s ? `Day ${s.day} · ${s.half}` : ''; };
+  return (changes ?? []).map((c) => {
+    const guest = trip?.guests.find((g) => g.id === c.guestId);
+    const who = guest ? (names?.get(guest.id) ?? `${guest.first} ${guest.last}`) : '';
+    if (c.type === 'move') {
+      const target = c.to?.kind === 'leisure' ? 'At leisure' : c.to?.kind === 'waitlist' ? 'a waitlist' : trip?.activities.find((a) => a.id === c.to?.activityId)?.name ?? 'another tour';
+      return `${who} to ${target} (${slotName(c.slotId)})`;
+    }
+    if (c.type === 'book-dinner' || c.type === 'add-to-dinner-table') {
+      const restaurant = trip?.restaurants.find((r) => r.id === (c.restaurantId ?? trip.dinnerBookings.find((b) => b.id === c.bookingId)?.restaurantId))?.name ?? 'a restaurant';
+      return `Dinner at ${restaurant}${c.seating ? `, ${c.seating}` : ''}`;
+    }
+    if (c.type === 'move-dinner-table') return 'Move a dinner table';
+    if (c.type === 'checkin' || c.type === 'checkout') return `${c.type === 'checkin' ? 'Check in' : 'Check out'} ${who}`;
+    return String(c.type).replace(/-/g, ' ');
+  }).join('; ');
 }
