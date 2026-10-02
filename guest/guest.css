@@ -25,3 +25,8 @@ h1 { font-family: var(--serif); font-size: 32px; line-height: 1.1; margin: 6px 0
 .foot { text-align: center; color: var(--muted); font-size: 13px; margin-top: 22px; }
 .problem { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 18px; margin-top: 12vh; text-align: center; }
 .problem h1 { font-size: 26px; }
+
+.next { background: var(--brand); color: #fff; border-radius: 16px; padding: 14px 16px; margin: 0 0 16px; }
+.next .half, .next .line { color: rgba(255,255,255,.85); }
+.next .what { font-size: 21px; }
+button.link { background: none; border: 0; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; padding: 0 0 0 6px; }

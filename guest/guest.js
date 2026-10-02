@@ -62,6 +62,31 @@ const dayDate = (iso) => MONTHS_DAY.format(new Date(`${iso}T00:00:00Z`));
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const updatedText = (iso) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
 
+// "Next up": the first thing still to come (an activity or a dinner), so the guest sees at once where to be next. The clock time of a
+// part is its start time, or a usual hour for its half-day; it is read in the phone's own clock (a guest on the trip is in the place).
+const USUAL_HOUR = { Morning: '09:00', Afternoon: '14:00', Evening: '19:00' };
+function nextUp(sheet, now = new Date()) {
+  for (const day of sheet.days) {
+    for (const part of day.parts) {
+      if (part.kind !== 'activity' && part.kind !== 'dinner') continue;
+      if (part.kind === 'activity' && part.cancelled) continue;
+      const clock = part.time || (part.kind === 'dinner' ? part.seating : null) || USUAL_HOUR[part.half] || '12:00';
+      const start = new Date(`${day.date}T${/^\d\d:\d\d$/.test(clock) ? clock : '12:00'}:00`);
+      if (start.getTime() >= now.getTime() - 60 * 60000) return { day, part, clock };
+    }
+  }
+  return null;
+}
+
+// On an iPhone, in Safari (not yet on the Home Screen), a short hint on how to keep the app. Dismissed for good with the button.
+function installHint() {
+  const iphone = /iphone|ipad/i.test(navigator.userAgent);
+  const installed = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (!iphone || installed || store.get('tourdocs.guest.hintDone')) return null;
+  return h('div', { class: 'banner' }, 'To keep this on your phone: tap the Share button, then "Add to Home Screen". ',
+    h('button', { class: 'link', type: 'button', onclick: (e) => { store.set('tourdocs.guest.hintDone', '1'); e.target.parentNode.remove(); } }, 'OK'));
+}
+
 function partView(part) {
   const lines = [];
   let cls = 'part';
@@ -95,6 +120,14 @@ function render(sheet, { offline = false } = {}) {
     sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
     h('h1', {}, `Hello ${sheet.first}`),
     h('p', { class: 'sub' }, `Your programme for ${sheet.trip}`),
+    installHint(),
+    (() => {
+      const next = nextUp(sheet);
+      if (!next) return null;
+      const what = next.part.kind === 'dinner' ? `Dinner at ${next.part.restaurant}` : next.part.name;
+      const detail = next.part.kind === 'dinner' ? `Table for ${next.part.seating}` : [next.part.time ? `Starts ${next.part.time}` : null, next.part.meeting ? `Meet: ${next.part.meeting}` : null].filter(Boolean).join(' · ');
+      return h('div', { class: 'next' }, h('div', { class: 'half' }, `Next up · ${dayDate(next.day.date)} · ${next.part.half}`), h('div', { class: 'what' }, what), detail ? h('div', { class: 'line' }, detail) : null);
+    })(),
     offline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null,
     ...sheet.days.map((day) => h('section', { class: `day${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
       h('div', { class: 'day-head' },
