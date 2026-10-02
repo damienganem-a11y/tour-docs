@@ -678,3 +678,8 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 
 /* The Excel import summary */
 .import-lines { margin: 0 0 12px; padding-left: 20px; line-height: 1.6; }
+
+/* Settings > Guest links: the QR code sheet */
+.qr-box { display: flex; justify-content: center; padding: 8px 0; }
+.qr-box svg { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; }
+.qr-url { word-break: break-all; font-size: 13px; text-align: center; }

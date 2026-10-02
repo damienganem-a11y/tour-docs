@@ -14,6 +14,7 @@ import { alphabetical, displayNames, plural } from '../rules.js';
 import { formatFullMoment } from '../time.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
+import { qrSvg } from '../qr.js';
 
 // Where the guest app lives: the "guest" folder next to this app. The secret goes after the "#", which a browser never sends to
 // the web server, so it does not appear in any server log.
@@ -48,6 +49,16 @@ export function guestLinksSettingsPage(ctx, trip) {
     try { await navigator.share({ title: trip.name, text: `${guest.first}, your programme for ${trip.name}:`, url }); } catch { /* cancelled: nothing to do */ }
   }
 
+  // The link as a QR code, to show on the phone for the guest to scan, or to print. Drawn right here, no internet needed.
+  function qrSheet(guest, url) {
+    const picture = h('div', { class: 'qr-box' });
+    picture.innerHTML = qrSvg(url, { pixels: 260 }); // the picture is made by qr.js from the link, nothing typed by anyone
+    openSheet({
+      eyebrow: 'QR code', title: guest.first, subtitle: 'Ask the guest to point their camera at it.',
+      body: [picture, h('p', { class: 'muted qr-url' }, url)],
+    });
+  }
+
   function renewSheet(guest) {
     openSheet({
       eyebrow: 'New link', title: `New link for ${guest.first}?`,
@@ -70,6 +81,7 @@ export function guestLinksSettingsPage(ctx, trip) {
     if (link.active) {
       card.append(h('div', { class: 'card-actions' },
         h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => copy(url) }, 'Copy link'),
+        h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => qrSheet(guest, url) }, 'QR code'),
         navigator.share ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => share(guest, url) }, 'Share') : null));
     }
     card.append(h('div', { class: 'card-actions' },

@@ -27,8 +27,9 @@ import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, p
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
-import { buildGuestSheet, guestSheetRows } from './guestSheet.js';
+import { buildGuestSheet, guestSheetRows, SHEET_VERSION } from './guestSheet.js';
 import { newToken } from './ids.js';
+import { qrCells, qrSvg } from './qr.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
 
@@ -1666,6 +1667,16 @@ check('Everything the home page loads (styles, icon, manifest, script) is in the
 check('The sample trip is in the offline list (so "Load the sample trip" works without internet)', listed.includes('data/tour_docs_sample_trip_ZX-01.json'));
 check('The version in sw.js and in js/version.js is the same', swText.includes(`const VERSION = '${APP_VERSION}'`), APP_VERSION);
 
+{
+  const guestSw = await (await fetch('./guest/sw.js', { cache: 'no-cache' })).text();
+  check('The guest app\'s service worker has the same version as the app', guestSw.includes(`const VERSION = '${APP_VERSION}'`), APP_VERSION);
+  const guestFiles = [...guestSw.match(/const FILES = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]).filter((f) => f !== './');
+  const missingGuest = [];
+  for (const f of guestFiles) if (!(await fetch(`./guest/${f}`)).ok) missingGuest.push(f);
+  check('Every file the guest app\'s service worker lists exists', missingGuest.length === 0, missingGuest.join());
+  const guestJs = await (await fetch('./guest/guest.js')).text();
+  check('The guest app understands the sheet format the app writes (SHEET_VERSION)', guestJs.includes('SUPPORTED_SHEET = ' + SHEET_VERSION));
+}
 // --- Installing on the phone ---
 const manifest = await (await fetch('./manifest.webmanifest')).json();
 check('The install manifest has a name, opens full screen and starts at the app',
@@ -2689,6 +2700,15 @@ function readZip(bytes) {
   const rows = guestSheetRows(ctxG.state, 'x');
   const offRow = rows.find((r) => r.guestId === guest.id);
   check('A switched-off link has no content; the others have a sheet', offRow.active === false && offRow.sheet === null && rows.filter((r) => r.active).every((r) => r.sheet && r.sheet.first));
+}
+
+// --- QR codes (the guests' links). The picture was also decoded by a real QR reader when it was written: see SPEC.md ---
+{
+  const cells = qrCells('https://example.com/guest/#eB21LnCclPB3iCj2kGIjuA');
+  const finder = (r, c) => [0, 1, 2, 3, 4, 5, 6].every((i) => cells[r][c + i] && cells[r + 6][c + i] && cells[r + i][c] && cells[r + i][c + 6]) && !cells[r + 1][c + 1] && cells[r + 3][c + 3];
+  check('A QR code is a square with the three finder patterns in the corners', cells.length === cells[0].length && cells.length >= 21 && finder(0, 0) && finder(0, cells.length - 7) && finder(cells.length - 7, 0));
+  check('A short link gives a small code, a longer one a bigger code; too long is refused', qrCells('A').length === 21 && qrCells('x'.repeat(100)).length > qrCells('A').length && (() => { try { qrCells('x'.repeat(300)); return false; } catch { return true; } })());
+  check('The QR picture is an SVG that holds no script', /^<svg /.test(qrSvg('hello')) && !/<script|onload/i.test(qrSvg('hello')));
 }
 
 // --- Team: roles on a shared trip (view-only invitations) ---
