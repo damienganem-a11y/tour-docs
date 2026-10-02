@@ -29,6 +29,7 @@ import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, 
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildGuestSheet, guestSheetRows, SHEET_VERSION } from './guestSheet.js';
 import { newToken } from './ids.js';
+import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
@@ -2652,6 +2653,39 @@ function readZip(bytes) {
   check('An archived trip is erased too', (await applyChange(arcD, trip.id, { type: 'erase-dietary' })).ok && arcD.state.guests.every((g) => !g.dietary));
 }
 
+// --- Tour information for guests (activity.info) ---
+{
+  check('Tour info: nothing typed gives no info at all; typed text is trimmed', cleanTourInfo({ duration: ' ', description: '' }) === null && cleanTourInfo({ duration: ' About 2 hours ' }).duration === 'About 2 hours');
+  check('Tour info: only Easy, Moderate or Demanding; other values are refused', DIFFICULTIES.join() === 'easy,moderate,demanding' && tourInfoError({ difficulty: 'extreme' }) !== null && tourInfoError({ difficulty: 'moderate' }) === null && tourInfoError({ difficulty: '' }) === null);
+  check('Tour info: too long a text is refused, with its name in the message', /description/i.test(tourInfoError({ description: 'x'.repeat(1001) })) && /difficulty details/i.test(tourInfoError({ difficultyNote: 'x'.repeat(601) })));
+  check('Tour info: a photo must be an https address or a demo picture; scripts and data pictures are refused',
+    tourInfoError({ photos: [{ url: 'https://example.com/a.jpg' }, { url: 'demo/a.svg' }] }) === null && tourInfoError({ photos: [{ url: 'javascript:alert(1)' }] }) !== null && tourInfoError({ photos: [{ url: 'data:image/png;base64,AAAA' }] }) !== null && tourInfoError({ photos: Array(7).fill({ url: 'https://example.com/a.jpg' }) }) !== null);
+
+  const ctxI = makeCtx();
+  const nest = ctxI.state.activities.find((a) => a.name.startsWith("Tiger's Nest hike"));
+  check('The sample trip loads the tour information, with three photos and a difficulty on the Tiger\'s Nest hike',
+    nest.info?.difficulty === 'demanding' && nest.info.photos.length === 3 && /thin/.test(nest.info.difficultyNote) && ctxI.state.activities.find((a) => a.name === 'Archery with local teams').info.photos.length === 3);
+  const plain = ctxI.state.activities.find((a) => a.name === 'Sintra palaces');
+  check('An activity with no information has none (null), and older trips without the field still work', plain.info === null);
+
+  const slot = ctxI.state.slots.find((x) => x.id === nest.slotId);
+  const added = await applyChange(ctxI, trip.id, { type: 'add-activity', slotId: slot.id, name: 'Test walk', meeting: '', startTime: '', capacity: null, info: { duration: 'About 1 hour', difficulty: 'easy', difficultyNote: 'Flat.' } });
+  const created = ctxI.state.activities.find((a) => a.name === 'Test walk');
+  check('Adding an activity can carry its tour information', added.ok && created.info.duration === 'About 1 hour' && created.info.difficulty === 'easy' && created.info.photos.length === 0);
+  const bad = await applyChange(ctxI, trip.id, { type: 'add-activity', slotId: slot.id, name: 'Bad', meeting: '', startTime: '', capacity: null, info: { difficulty: 'impossible' } });
+  check('A wrong difficulty is refused with a plain sentence', !bad.ok && /Easy, Moderate or Demanding/.test(bad.error));
+
+  const edited = await applyChange(ctxI, trip.id, { type: 'edit-activity', activityId: nest.id, name: nest.name, meeting: nest.meeting, startTime: '09:00', capacity: nest.capacity, info: { duration: 'About 7 hours', difficulty: 'demanding', difficultyNote: 'Changed.' } });
+  const nestNow = () => ctxI.state.activities.find((a) => a.id === nest.id);
+  check('Editing the text of the tour information keeps its photos', edited.ok && nestNow().info.duration === 'About 7 hours' && nestNow().info.photos.length === 3);
+  check('The Journal says the tour information was updated', /tour information updated/.test(summarize(groupBatches(ctxI.entries).at(-1))));
+  const keep = await applyChange(ctxI, trip.id, { type: 'edit-activity', activityId: nest.id, name: nest.name, meeting: nest.meeting, startTime: '09:00', capacity: nest.capacity });
+  check('An edit that does not mention the information leaves it as it is', keep.ok && nestNow().info.duration === 'About 7 hours');
+  const undone = await applyChange(ctxI, trip.id, { type: 'undo', scope: DESTINATION_UNDO_SCOPE });
+  const undone2 = await applyChange(ctxI, trip.id, { type: 'undo', scope: DESTINATION_UNDO_SCOPE });
+  check('Undo brings the earlier tour information back', undone.ok && undone2.ok && nestNow().info.duration === 'About 6 hours' && nestNow().info.difficultyNote.includes('thin'));
+}
+
 // --- Guest links and the guest's own sheet (Phase 5, step 1) ---
 {
   const ctxG = makeCtx();
@@ -2763,6 +2797,10 @@ function readZip(bytes) {
   const ada = imported.guests.find((g) => g.first === 'Ada');
   check('Sign-ups carry over: a named activity, and "At leisure" as a status', imported.bookings[ada.id][imported.slots[0].id]?.kind === 'activity'
     && imported.bookings[imported.guests.find((g) => g.first === 'Cleo').id][imported.slots[0].id]?.kind === 'leisure');
+  check('Optional tour columns come through the Excel import (duration, difficulty, details, description, bring, included)',
+    imported.activities[0].info?.duration === 'About 2.5 hours' && imported.activities[0].info.difficulty === 'moderate' && /cobbled/.test(imported.activities[0].info.difficultyNote) && imported.activities[0].info.bring === 'Comfortable shoes' && imported.activities[1].info === null);
+  const badDifficulty = structuredClone(sheets); badDifficulty.Activities[1][10] = 'Brutal';
+  check('A wrong difficulty in the Excel file is refused with its row', (() => { try { tripRawFromWorkbook(badDifficulty, { name: 'x' }); return ''; } catch (e) { return e.message; } })().includes('Activities, row 2'));
   check('Capacity and the dietary note come through; the import reports what it found', imported.activities[0].capacity === 20 && imported.guests.find((g) => g.first === 'Ben').dietary === 'Peanut allergy' && found.summary.guests === 3 && found.summary.signups === 3);
   const wrong = (edit) => { const copy = structuredClone(sheets); edit(copy); try { tripRawFromWorkbook(copy, { name: 'x' }); return ''; } catch (e) { return e.message; } };
   check('A missing sheet is named in plain words', /no sheet called "Guests"/.test(wrong((s) => { delete s.Guests; })));

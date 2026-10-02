@@ -378,6 +378,7 @@ export function buildTemplateXlsx() {
     ['Activities: one line per activity offered in a half-day. Slot ID names the half-day (S01, S02...) and is the same on every line of that half-day. Half-day is Morning, Afternoon or Evening. Capacity empty = no limit.'],
     ['Sign-ups (optional): what each guest chose, one line per guest and half-day. Activity is the exact name from the Activities sheet, or "At leisure".'],
     ['The example lines are invented: replace or delete them. Dates look like 2027-01-12 and times like 15:00.'],
+    ['On the Activities sheet, the last six columns (Duration, Difficulty, Difficulty details, Description, What to bring, Included) are optional and are what guests read about each tour. Difficulty is Easy, Moderate or Demanding.'],
   ];
   const sheets = [
     { name: 'Read me', xml: plain(['How to fill this in'], [140], readMe.map((r) => [r[0]])) },
@@ -387,9 +388,9 @@ export function buildTemplateXlsx() {
     { name: 'Guests', xml: plain(['Guest ID', 'First name', 'Last name', 'Party ID', 'Party type', 'Dietary / allergies', 'Notes'], [10, 16, 16, 10, 12, 30, 30], [
       ['G001', 'Ada', 'Example', 'P01', 'Couple', '', ''], ['G002', 'Ben', 'Example', 'P01', 'Couple', 'Peanut allergy', ''], ['G003', 'Cleo', 'Sample', '', 'Solo', '', 'Window seat'],
     ]) },
-    { name: 'Activities', xml: plain(['Slot ID', 'Day', 'Date', 'Destination', 'Half-day', 'Activity', 'Start', 'Meeting point', 'Capacity'], [9, 6, 12, 18, 11, 34, 8, 22, 10], [
-      ['S01', 1, '2027-01-12', 'Lisbon', 'Afternoon', 'Alfama walking tour', '15:00', 'Hotel lobby', 20], ['S01', 1, '2027-01-12', 'Lisbon', 'Afternoon', 'Tram 28 and viewpoints', '15:30', 'Hotel entrance', 16],
-      ['S02', 2, '2027-01-13', 'Lisbon', 'Morning', 'Sintra palaces', '08:30', 'Hotel lobby', 50],
+    { name: 'Activities', xml: plain(['Slot ID', 'Day', 'Date', 'Destination', 'Half-day', 'Activity', 'Start', 'Meeting point', 'Capacity', 'Duration', 'Difficulty', 'Difficulty details', 'Description', 'What to bring', 'Included'], [9, 6, 12, 18, 11, 34, 8, 22, 10, 16, 12, 34, 40, 24, 24], [
+      ['S01', 1, '2027-01-12', 'Lisbon', 'Afternoon', 'Alfama walking tour', '15:00', 'Hotel lobby', 20, 'About 2.5 hours', 'Moderate', '2.5 km on steep, cobbled streets with many steps.', 'A guided walk through the old quarter, with a stop for a coffee.', 'Comfortable shoes', 'Guide, coffee'], ['S01', 1, '2027-01-12', 'Lisbon', 'Afternoon', 'Tram 28 and viewpoints', '15:30', 'Hotel entrance', 16, '', '', '', '', '', ''],
+      ['S02', 2, '2027-01-13', 'Lisbon', 'Morning', 'Sintra palaces', '08:30', 'Hotel lobby', 50, '', '', '', '', '', ''],
     ]) },
     { name: 'Sign-ups', xml: plain(['Guest ID', 'Slot ID', 'Activity'], [10, 9, 34], [['G001', 'S01', 'Alfama walking tour'], ['G002', 'S01', 'Alfama walking tour'], ['G003', 'S01', 'At leisure']]) },
   ];

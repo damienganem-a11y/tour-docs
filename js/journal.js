@@ -307,6 +307,7 @@ function summarizeEditActivity(entry) {
   if (entry.from.meeting !== entry.to.meeting) changed.push('meeting point updated');
   if (entry.from.capacity !== entry.to.capacity) changed.push(`capacity set to ${entry.to.capacity === null ? 'no limit' : entry.to.capacity}`);
   if (entry.from.startsAt !== entry.to.startsAt) changed.push('time updated');
+  if (JSON.stringify(entry.from.info ?? null) !== JSON.stringify(entry.to.info ?? null)) changed.push('tour information updated');
   return `"${entry.from.name}": ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
 }
 

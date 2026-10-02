@@ -20,6 +20,7 @@ import { slotLabel, countIn, plural, bySlotOrder } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { notice } from './move.js';
+import { DIFFICULTIES, DIFFICULTY_LABEL } from '../tourInfo.js';
 import { DESTINATION_UNDO_SCOPE } from '../journal.js';
 
 // A time field that adds the ":" for you after the hour: many phone keyboards (numeric ones especially)
@@ -161,6 +162,30 @@ function editDestination(ctx, trip, destination) {
   });
 }
 
+// The part of the activity form that is about what a GUEST reads (tourInfo.js): duration, what happens, how demanding it is, what to bring,
+// what is included. Folded away (a <details>) so the everyday form stays short. read() gives the info object for the change.
+function tourInfoFields(info) {
+  const text = (label, value, max, placeholder) => h('input', { class: 'text-input', type: 'text', value: value ?? '', maxlength: String(max), placeholder, 'aria-label': label });
+  const area = (label, value, max, placeholder) => h('textarea', { class: 'text-input', rows: '4', maxlength: String(max), placeholder, 'aria-label': label }, value ?? '');
+  const duration = text('Duration', info?.duration, 40, 'Duration, e.g. About 3 hours');
+  const difficulty = h('select', { class: 'text-input', 'aria-label': 'Difficulty' },
+    h('option', { value: '' }, 'Difficulty: not shown'),
+    DIFFICULTIES.map((d) => h('option', { value: d, selected: info?.difficulty === d ? 'selected' : null }, DIFFICULTY_LABEL[d])));
+  const difficultyNote = area('Difficulty details', info?.difficultyNote, 600, 'Why this level: distance, climb, number of steps, heat, tight spaces, who should think twice...');
+  const description = area('Description', info?.description, 1000, 'What happens, in a few lines');
+  const bring = text('What to bring', info?.bring, 200, 'What to bring (optional)');
+  const included = text('Included', info?.included, 200, 'What is included (optional)');
+  const node = h('details', { class: 'info-fields', open: info ? 'open' : null },
+    h('summary', {}, 'Tour information for guests'), duration, difficulty, difficultyNote, description, bring, included);
+  return {
+    node,
+    read: () => ({
+      duration: duration.value, difficulty: difficulty.value, difficultyNote: difficultyNote.value,
+      description: description.value, bring: bring.value, included: included.value,
+    }),
+  };
+}
+
 function editActivity(ctx, trip, slot, destination, activity) {
   const nameInput = h('input', { class: 'text-input', type: 'text', value: activity.name, 'aria-label': 'Name', maxlength: '80' });
   const meetingInput = h('input', { class: 'text-input', type: 'text', value: activity.meeting ?? '', placeholder: 'Meeting point (optional)', 'aria-label': 'Meeting point' });
@@ -169,18 +194,20 @@ function editActivity(ctx, trip, slot, destination, activity) {
     class: 'text-input', type: 'number', min: '1', value: activity.capacity ?? '', placeholder: 'No limit', inputmode: 'numeric', 'aria-label': 'Capacity',
   });
 
+  const infoFields = tourInfoFields(activity.info);
   const confirm = h('button', {
     class: 'btn', type: 'button',
     onclick: () => save(ctx, trip.id, {
       type: 'edit-activity', activityId: activity.id,
       name: nameInput.value, meeting: meetingInput.value, startTime: timeInput.value.trim(),
       capacity: capacityInput.value.trim() === '' ? null : Number(capacityInput.value),
+      info: infoFields.read(),
     }, `"${nameInput.value.trim()}" updated`),
   }, 'Save');
 
   openSheet({
     eyebrow: slotLabel(trip, slot), title: `Edit "${activity.name}"`, subtitle: destination.name,
-    body: [nameInput, meetingInput, timeInput, capacityInput, confirm], cancelLabel: 'Cancel',
+    body: [nameInput, meetingInput, timeInput, capacityInput, infoFields.node, confirm], cancelLabel: 'Cancel',
   });
 }
 
@@ -193,18 +220,20 @@ function addActivity(ctx, trip, destination) {
   const timeInput = timeField('', 'Start time');
   const capacityInput = h('input', { class: 'text-input', type: 'number', min: '1', placeholder: 'No limit', inputmode: 'numeric', 'aria-label': 'Capacity' });
 
+  const infoFields = tourInfoFields(null);
   const confirm = h('button', {
     class: 'btn', type: 'button',
     onclick: () => save(ctx, trip.id, {
       type: 'add-activity', slotId: select.value,
       name: nameInput.value, meeting: meetingInput.value, startTime: timeInput.value.trim(),
       capacity: capacityInput.value.trim() === '' ? null : Number(capacityInput.value),
+      info: infoFields.read(),
     }, `"${nameInput.value.trim()}" added`),
   }, 'Add');
 
   openSheet({
     eyebrow: destination.name, title: 'Add an activity',
-    body: [select, nameInput, meetingInput, timeInput, capacityInput, confirm], cancelLabel: 'Cancel',
+    body: [select, nameInput, meetingInput, timeInput, capacityInput, infoFields.node, confirm], cancelLabel: 'Cancel',
   });
 }
 

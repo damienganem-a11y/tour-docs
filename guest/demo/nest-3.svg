@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid slice">
+<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9dff0"/><stop offset="1" stop-color="#f8efe0"/></linearGradient></defs>
+<rect width="800" height="520" fill="url(#s)"/><polygon points="0,520 0,360 200,250 420,380 800,240 800,520" fill="#8da597"/><path d="M120 500 C 220 430 260 460 340 390 S 520 330 600 270" stroke="#e9d7a8" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="2 22"/></svg>

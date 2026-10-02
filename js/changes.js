@@ -31,8 +31,9 @@
 //   (Several 'checkin' changes for the same roll call may be made together: a travel party checked in at once.)
 //   Settings (step 7), each on its own:
 //   { type: 'edit-destination', destinationId, name, country, timeZone }
-//   { type: 'add-activity', slotId, name, meeting, startTime, capacity }     startTime: "HH:MM" or '' for none
-//   { type: 'edit-activity', activityId, name, meeting, startTime, capacity }
+//   { type: 'add-activity', slotId, name, meeting, startTime, capacity, info }     startTime: "HH:MM" or '' for none
+//   { type: 'edit-activity', activityId, name, meeting, startTime, capacity, info }
+//       info (optional, see tourInfo.js): what a guest reads about the tour. Left out on an edit = unchanged. Photos left out = kept.
 //   { type: 'replace-destination', destinationId, name, country, timeZone }  a rare fix: the destination becomes a
 //       different place. Its tours are cancelled and everybody on them goes to At leisure, in the same one action.
 //   { type: 'add-restaurant', destinationId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes }
@@ -111,6 +112,7 @@ import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
+import { tourInfoError, cleanTourInfo } from './tourInfo.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 
@@ -298,7 +300,7 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'edit-activity') {
       const activity = trip.activities.find((a) => a.id === entry.activityId);
       if (!activity) return fail('This action cannot be undone: the activity no longer exists.');
-      if (activity.name !== entry.to.name || activity.meeting !== entry.to.meeting || activity.capacity !== entry.to.capacity || activity.startsAt !== entry.to.startsAt) {
+      if (activity.name !== entry.to.name || activity.meeting !== entry.to.meeting || activity.capacity !== entry.to.capacity || activity.startsAt !== entry.to.startsAt || JSON.stringify(activity.info ?? null) !== JSON.stringify(entry.to.info ?? null)) {
         return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
       }
     }
@@ -398,6 +400,8 @@ function reconcileTables(existingTables, newSizes) {
 // Checks one settings change (see the list at the top). None of these touch bookings directly, except
 // replace-destination, which also cancels tours (checked here as "the destination exists", the tours
 // themselves are handled like normal cancel-tours when the change is applied).
+const infoProblem = (change) => { const e = tourInfoError(change.info); return e ? fail(e) : { ok: true }; };
+
 function validateSettingsChange(trip, change) {
   if (change.type === 'add-activity') {
     const slot = trip.slots.find((s) => s.id === change.slotId);
@@ -405,7 +409,7 @@ function validateSettingsChange(trip, change) {
     if (isBlank(change.name)) return fail('Give the activity a name.');
     if (change.startTime && !TIME_RE.test(change.startTime)) return fail('The time should look like 09:30.');
     if (change.capacity !== null && (!Number.isInteger(change.capacity) || change.capacity < 1)) return fail('Capacity is a whole number of 1 or more, or "no limit".');
-    return { ok: true };
+    return infoProblem(change);
   }
   if (change.type === 'edit-activity') {
     const activity = trip.activities.find((a) => a.id === change.activityId);
@@ -414,7 +418,7 @@ function validateSettingsChange(trip, change) {
     if (isBlank(change.name)) return fail('Give the activity a name.');
     if (change.startTime && !TIME_RE.test(change.startTime)) return fail('The time should look like 09:30.');
     if (change.capacity !== null && (!Number.isInteger(change.capacity) || change.capacity < 1)) return fail('Capacity is a whole number of 1 or more, or "no limit".');
-    return { ok: true };
+    return infoProblem(change);
   }
   if (change.type === 'add-restaurant') {
     if (!trip.destinations.some((d) => d.id === change.destinationId)) return fail('That destination does not exist.');
@@ -956,13 +960,13 @@ async function doApply(ctx, tripId, changes, opts = {}) {
       const startsAt = change.startTime ? localToInstant(slot.date, change.startTime, destination.timeZone) : null;
 
       if (change.type === 'add-activity') {
-        const activity = { id: newId(), slotId: slot.id, name, meeting, startsAt, capacity: change.capacity, cancelled: false };
+        const activity = { id: newId(), slotId: slot.id, name, meeting, startsAt, capacity: change.capacity, cancelled: false, info: cleanTourInfo(change.info) };
         next.activities.push(activity);
         entries.push({ ...base(), type: 'add-activity', activityId: activity.id, activityLabel: name, ...where(trip, slot) });
       } else {
         const activity = next.activities.find((a) => a.id === change.activityId);
-        const from = { name: activity.name, meeting: activity.meeting, capacity: activity.capacity, startsAt: activity.startsAt };
-        const to = { name, meeting, capacity: change.capacity, startsAt };
+        const from = { name: activity.name, meeting: activity.meeting, capacity: activity.capacity, startsAt: activity.startsAt, info: activity.info ?? null };
+        const to = { name, meeting, capacity: change.capacity, startsAt, info: change.info === undefined ? (activity.info ?? null) : cleanTourInfo(change.info, activity.info?.photos ?? []) };
         Object.assign(activity, to);
         entries.push({ ...base(), type: 'edit-activity', activityId: activity.id, ...where(trip, slot), from, to });
       }

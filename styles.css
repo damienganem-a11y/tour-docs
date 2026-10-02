@@ -683,3 +683,8 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 .qr-box { display: flex; justify-content: center; padding: 8px 0; }
 .qr-box svg { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; }
 .qr-url { word-break: break-all; font-size: 13px; text-align: center; }
+
+/* Settings > Touring: the folded "Tour information for guests" part of the activity form */
+.info-fields { margin: 4px 0 12px; }
+.info-fields summary { cursor: pointer; font-weight: 700; color: var(--brand); padding: 10px 0; }
+textarea.text-input { resize: vertical; min-height: 96px; font: inherit; }

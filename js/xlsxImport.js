@@ -8,7 +8,8 @@
 // The expected sheets are those of the sample trip's Excel file (Tour_Docs_sample_trip_ZX-01.xlsx):
 //   Itinerary   Day, Date, Stop, Destination, Country, Time zone (Note is ignored)
 //   Guests      Guest ID, First name, Last name, Party ID, Party type, Dietary / allergies, Notes (Joins at stop... are ignored)
-//   Activities  Slot ID, Day, Date, Destination, Half-day, Activity, Start, Meeting point, Capacity
+//   Activities  Slot ID, Day, Date, Destination, Half-day, Activity, Start, Meeting point, Capacity, and optional Duration, Difficulty
+//               (Easy / Moderate / Demanding), Difficulty details, Description, What to bring, Included
 //   Sign-ups    Guest ID, Slot ID, Activity            (optional: who chose what; "At leisure" is a status)
 // Column names are found by their heading, in any order and in any case. Every problem is reported in plain words.
 
@@ -157,6 +158,9 @@ export function tripRawFromWorkbook(sheets, { name, code = '' }) {
     slot: { heading: 'Slot ID' }, day: { heading: 'Day' }, date: { heading: 'Date' }, destination: { heading: 'Destination' },
     half: { heading: 'Half-day' }, activity: { heading: 'Activity' }, start: { heading: 'Start', optional: true },
     meeting: { heading: 'Meeting point', optional: true }, capacity: { heading: 'Capacity', optional: true },
+    duration: { heading: 'Duration', optional: true }, difficulty: { heading: 'Difficulty', optional: true },
+    difficultyNote: { heading: 'Difficulty details', optional: true }, description: { heading: 'Description', optional: true },
+    bring: { heading: 'What to bring', optional: true }, included: { heading: 'Included', optional: true },
   });
   const destinationByName = new Map(destinations.map((d) => [d.name, d]));
   const slots = new Map();
@@ -171,7 +175,12 @@ export function tripRawFromWorkbook(sheets, { name, code = '' }) {
     if (!name) throw new Error(`Activities, row ${r.row}: the Activity has no name.`);
     const capacity = r.capacity === null || clean(r.capacity) === '' ? null : Number(r.capacity);
     if (capacity !== null && !Number.isFinite(capacity)) throw new Error(`Activities, row ${r.row}: the Capacity must be a number (or empty for no limit).`);
-    slot.options.push({ id: `${slotId}-${slot.options.length + 1}`, name, start: toClock(r.start) ?? '', meeting: clean(r.meeting), cap: capacity });
+    const difficulty = clean(r.difficulty).toLowerCase();
+    if (difficulty && !['easy', 'moderate', 'demanding'].includes(difficulty)) throw new Error(`Activities, row ${r.row}: the Difficulty must be Easy, Moderate or Demanding (or empty).`);
+    slot.options.push({
+      id: `${slotId}-${slot.options.length + 1}`, name, start: toClock(r.start) ?? '', meeting: clean(r.meeting), cap: capacity,
+      duration: clean(r.duration), difficulty, difficulty_note: clean(r.difficultyNote), description: clean(r.description), bring: clean(r.bring), included: clean(r.included),
+    });
     slots.set(slotId, slot);
   }
   if (slots.size === 0) throw new Error('The sheet "Activities" has no activities.');
