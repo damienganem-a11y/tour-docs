@@ -353,3 +353,45 @@ export function buildEveningXlsx(doc, brand = {}) {
   });
   return assembleWorkbook([{ name: sheetName('Evening', new Set()), xml }], brand.accent);
 }
+
+// The blank trip file to fill in (Trips > "Excel template"): the sheets that xlsxImport.js reads, headings in the first row, and a few
+// invented example lines to replace. Same column names as the sample trip's Excel file.
+export function buildTemplateXlsx() {
+  const plain = (headers, widths, rows) => {
+    const body = [
+      rowXml(1, headers.map((text, col) => ({ col, text, style: STYLE.HEADING }))),
+      ...rows.map((values, i) => rowXml(2 + i, values.map((text, col) => ({ col, text: text === null ? '' : String(text), style: i % 2 === 0 ? STYLE.TINT : undefined })))),
+    ];
+    const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
+      + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+      + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`
+      + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>`
+      + `<cols>${cols}</cols><sheetData>${body.join('')}</sheetData>${printSetup(true)}</worksheet>`;
+  };
+  const readMe = [
+    ['Tour Docs trip template'],
+    ['Fill in the sheets Itinerary, Guests and Activities (Sign-ups is optional), then in Tour Docs: Trips > Import a trip from Excel.'],
+    [''],
+    ['Itinerary: one line per day. Stop = the number of the destination (1, 2, 3...); lines of the same stop share a Destination, Country and Time zone (like Europe/Lisbon).'],
+    ['Guests: one line per guest. Guests with the same Party ID travel together (leave it empty for a guest travelling alone). Dietary / allergies stays private to the app.'],
+    ['Activities: one line per activity offered in a half-day. Slot ID names the half-day (S01, S02...) and is the same on every line of that half-day. Half-day is Morning, Afternoon or Evening. Capacity empty = no limit.'],
+    ['Sign-ups (optional): what each guest chose, one line per guest and half-day. Activity is the exact name from the Activities sheet, or "At leisure".'],
+    ['The example lines are invented: replace or delete them. Dates look like 2027-01-12 and times like 15:00.'],
+  ];
+  const sheets = [
+    { name: 'Read me', xml: plain(['How to fill this in'], [140], readMe.map((r) => [r[0]])) },
+    { name: 'Itinerary', xml: plain(['Day', 'Date', 'Stop', 'Destination', 'Country', 'Time zone', 'Note'], [6, 12, 6, 18, 16, 20, 30], [
+      [1, '2027-01-12', 1, 'Lisbon', 'Portugal', 'Europe/Lisbon', 'Arrival'], [2, '2027-01-13', 1, 'Lisbon', 'Portugal', 'Europe/Lisbon', ''], [3, '2027-01-14', 2, 'Marrakech', 'Morocco', 'Africa/Casablanca', ''],
+    ]) },
+    { name: 'Guests', xml: plain(['Guest ID', 'First name', 'Last name', 'Party ID', 'Party type', 'Dietary / allergies', 'Notes'], [10, 16, 16, 10, 12, 30, 30], [
+      ['G001', 'Ada', 'Example', 'P01', 'Couple', '', ''], ['G002', 'Ben', 'Example', 'P01', 'Couple', 'Peanut allergy', ''], ['G003', 'Cleo', 'Sample', '', 'Solo', '', 'Window seat'],
+    ]) },
+    { name: 'Activities', xml: plain(['Slot ID', 'Day', 'Date', 'Destination', 'Half-day', 'Activity', 'Start', 'Meeting point', 'Capacity'], [9, 6, 12, 18, 11, 34, 8, 22, 10], [
+      ['S01', 1, '2027-01-12', 'Lisbon', 'Afternoon', 'Alfama walking tour', '15:00', 'Hotel lobby', 20], ['S01', 1, '2027-01-12', 'Lisbon', 'Afternoon', 'Tram 28 and viewpoints', '15:30', 'Hotel entrance', 16],
+      ['S02', 2, '2027-01-13', 'Lisbon', 'Morning', 'Sintra palaces', '08:30', 'Hotel lobby', 50],
+    ]) },
+    { name: 'Sign-ups', xml: plain(['Guest ID', 'Slot ID', 'Activity'], [10, 9, 34], [['G001', 'S01', 'Alfama walking tour'], ['G002', 'S01', 'Alfama walking tour'], ['G003', 'S01', 'At leisure']]) },
+  ];
+  return assembleWorkbook(sheets, undefined);
+}

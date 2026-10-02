@@ -675,3 +675,6 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
 .team-email { overflow-wrap: anywhere; word-break: break-word; }
 .team-member .card-actions { margin-top: 10px; }
 .team-member .card-actions .btn { flex: 1 1 0; min-width: 0; width: auto; }
+
+/* The Excel import summary */
+.import-lines { margin: 0 0 12px; padding-left: 20px; line-height: 1.6; }

@@ -20,11 +20,12 @@ import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryExpiry, dietaryErasureDue } from './rules.js';
 import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
+import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.js';
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
-import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
+import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
 import { looksLikeAuthCallback, cleanEmailCode } from './auth.js';
@@ -2675,6 +2676,33 @@ function readZip(bytes) {
     applied.ok && first.who.name === 'Mr Porter' && first.who.role === 'team' && first.source === 'colleague request' && first.requestId === 'req-1' && first.requestedAt === '2026-10-02T09:00:00.000Z');
   const who = trip.guests.find((g) => g.ref === inHammam[0].ref);
   check('A request is described in a few words for the lists', /Leisure|leisure/.test(describeRequest(trip, [moveOf(inHammam[0].ref, 'S05', LEISURE)], new Map([[who.id, 'Amira Y.']]))) && /Amira Y\./.test(describeRequest(trip, [moveOf(inHammam[0].ref, 'S05', LEISURE)], new Map([[who.id, 'Amira Y.']]))));
+}
+
+// --- Importing a trip from Excel ---
+{
+  check('An Excel date number and a typed date both become a plain date; an Excel time fraction becomes a clock time',
+    toIsoDate(46399) === '2027-01-12' && toIsoDate('2027-1-5') === '2027-01-05' && toIsoDate('soon') === null && toClock(0.625) === '15:00' && toClock('9:30') === '09:30' && toClock('') === null);
+  const sheets = await readXlsx(await buildTemplateXlsx().arrayBuffer());
+  check('The template can be read back: its sheets are there', ['Read me', 'Itinerary', 'Guests', 'Activities', 'Sign-ups'].every((n) => n in sheets));
+  const found = tripRawFromWorkbook(sheets, { name: 'Template trip', code: 'T-1' });
+  const imported = buildTrip(found.raw);
+  check('The template becomes a real trip: destinations, half-days, activities, guests and parties',
+    imported.destinations.length === 2 && imported.slots.length === 2 && imported.activities.length === 3 && imported.guests.length === 3 && imported.parties.length === 2 && imported.start === '2027-01-12' && imported.days === 3);
+  const ada = imported.guests.find((g) => g.first === 'Ada');
+  check('Sign-ups carry over: a named activity, and "At leisure" as a status', imported.bookings[ada.id][imported.slots[0].id]?.kind === 'activity'
+    && imported.bookings[imported.guests.find((g) => g.first === 'Cleo').id][imported.slots[0].id]?.kind === 'leisure');
+  check('Capacity and the dietary note come through; the import reports what it found', imported.activities[0].capacity === 20 && imported.guests.find((g) => g.first === 'Ben').dietary === 'Peanut allergy' && found.summary.guests === 3 && found.summary.signups === 3);
+  const wrong = (edit) => { const copy = structuredClone(sheets); edit(copy); try { tripRawFromWorkbook(copy, { name: 'x' }); return ''; } catch (e) { return e.message; } };
+  check('A missing sheet is named in plain words', /no sheet called "Guests"/.test(wrong((s) => { delete s.Guests; })));
+  check('A missing column is named in plain words', /needs a column called "Last name"/.test(wrong((s) => { s.Guests[0][2] = 'Surname'; })));
+  check('A bad date points at the sheet and the row', /Itinerary, row 2/.test(wrong((s) => { s.Itinerary[1][1] = 'tomorrow'; })));
+  check('An activity in a destination that is not in the Itinerary is refused, with its row', /Activities, row 2.*"Atlantis"/.test(wrong((s) => { s.Activities[1][3] = 'Atlantis'; })));
+  const typo = structuredClone(sheets); typo['Sign-ups'][1][2] = 'Alfama walkin tour'; typo['Sign-ups'][2][2] = 'Not on trip';
+  const typoFound = tripRawFromWorkbook(typo, { name: 'x' });
+  check('A mistyped activity name is kept (and reported), and "Not on trip" becomes At leisure',
+    typoFound.warnings.some((w) => /not offered/.test(w)) && typoFound.warnings.some((w) => /Not on trip/.test(w)) && typoFound.raw.signups.G002.S01 === 'At leisure');
+  const noSignups = structuredClone(sheets); delete noSignups['Sign-ups'];
+  check('The Sign-ups sheet is optional', tripRawFromWorkbook(noSignups, { name: 'x' }).warnings.some((w) => /no "Sign-ups" sheet/.test(w)));
 }
 
 // --- Confirmation cards: branding (Settings > Brand) and the cards themselves ---

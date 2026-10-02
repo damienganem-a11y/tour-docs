@@ -9,6 +9,9 @@ import { openSheet, closeSheet, showToast } from '../ui.js';
 import { tripDates } from '../time.js';
 import { APP_VERSION } from '../version.js';
 import { exportFinalTrip } from '../export.js';
+import { readXlsx, tripRawFromWorkbook } from '../xlsxImport.js';
+import { buildTemplateXlsx } from '../xlsx.js';
+import { shareOrDownloadFile } from '../ui.js';
 import { pageHead, exportFormatSheet, syncDot } from './chrome.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
@@ -29,11 +32,18 @@ export function tripsView(ctx) {
 
   // Takes the text of a trip file, checks it, saves it on the phone and opens it.
   async function useTrip(json) {
+    let raw;
+    try { raw = JSON.parse(json); } catch { showError('This file is not valid JSON.'); return null; }
+    return useRaw(raw);
+  }
+
+  // Checks a raw trip (from a .json file or an Excel file), saves it on the phone and opens it.
+  async function useRaw(raw) {
     let trip;
     try {
-      trip = buildTrip(JSON.parse(json));
+      trip = buildTrip(raw);
     } catch (error) {
-      showError(error instanceof SyntaxError ? 'This file is not valid JSON.' : error.message);
+      showError(error.message);
       return null;
     }
     try {
@@ -85,6 +95,24 @@ export function tripsView(ctx) {
     }
   }
 
+  // Excel import: read the file, show what was found (and anything odd) in plain words, then create the trip on a tap.
+  const excelInput = h('input', {
+    class: 'file-input', type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    onchange: async () => {
+      const file = excelInput.files[0];
+      excelInput.value = '';
+      if (!file) return;
+      message.hidden = true;
+      let found;
+      try {
+        found = tripRawFromWorkbook(await readXlsx(await file.arrayBuffer()), { name: file.name.replace(/\.xlsx$/i, '').replace(/[_-]+/g, ' ').trim(), code: '' });
+      } catch (error) {
+        showError(error.message);
+        return;
+      }
+      importPreviewSheet(found, async (raw) => { closeSheet(); await useRaw(raw); });
+    },
+  });
   const fileInput = h('input', {
     class: 'file-input', type: 'file', accept: '.json,application/json',
     onchange: async () => {
@@ -130,8 +158,11 @@ export function tripsView(ctx) {
       pageHead({ eyebrow: 'Tour Docs', title: 'Your trips', subtitle: `Hello ${ctx.owner.name}`, action: syncDot(ctx) }),
       activeSection,
       h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Load a trip file (.json)'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => excelInput.click() }, 'Import a trip from Excel (.xlsx)'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => shareOrDownloadFile(buildTemplateXlsx(), 'tour-docs-trip-template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') }, 'Excel template to fill in'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: loadSample }, 'Load the sample trip'),
       fileInput,
+      excelInput,
       message,
       archivedSection,
       deletedSection,
@@ -305,6 +336,36 @@ function duplicateConfirm(ctx, trip) {
         },
       }, 'Duplicate trip'),
     ],
+    cancelLabel: 'Cancel',
+  });
+}
+
+
+// What the Excel file contains, in plain words, with the trip's name and code to confirm. `found` = { raw, summary, warnings }.
+function importPreviewSheet(found, create) {
+  const { raw, summary, warnings } = found;
+  const name = h('input', { class: 'text-input', type: 'text', maxlength: '80', value: raw.trip.name, 'aria-label': 'Trip name' });
+  const code = h('input', { class: 'text-input', type: 'text', maxlength: '20', value: raw.trip.code, 'aria-label': 'Trip code' });
+  const lines = [
+    `${summary.destinations} destinations, ${summary.days} days, starting ${raw.trip.start}`,
+    `${summary.halfDays} half-days and ${summary.activities} activities`,
+    `${summary.guests} guests, ${summary.signups} sign-ups`,
+  ];
+  openSheet({
+    eyebrow: 'Import', title: 'This is what the file contains',
+    body: [
+      h('ul', { class: 'import-lines' }, lines.map((l) => h('li', {}, l))),
+      ...warnings.map((w) => h('div', { class: 'notice' }, w)),
+      h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Trip name', name)),
+      h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Trip code (optional)', code), h('div', { class: 'form-hint' }, 'A short label, for example ZX-01.')),
+    ],
+    footer: h('button', {
+      class: 'btn', type: 'button',
+      onclick: () => {
+        if (name.value.trim() === '') { name.focus(); return; }
+        create({ ...raw, trip: { ...raw.trip, name: name.value.trim(), code: code.value.trim() } });
+      },
+    }, 'Create the trip'),
     cancelLabel: 'Cancel',
   });
 }
