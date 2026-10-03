@@ -1,18 +1,18 @@
 {
 "trip": {"code": "JET-01", "name": "Private Jet Expedition, 28 August (fictional)", "start": "2027-08-28", "days": 25, "default_vehicles": 4},
 "destinations": [
- {"index": 1, "name": "Miami", "country": "USA", "timezone": "America/New_York", "first_day": 1, "last_day": 1, "photo": "demo/city-miami.svg"},
- {"index": 2, "name": "Cusco", "country": "Peru", "timezone": "America/Lima", "first_day": 2, "last_day": 4, "photo": "demo/city-cusco.svg"},
- {"index": 3, "name": "Easter Island", "country": "Chile", "timezone": "Pacific/Easter", "first_day": 5, "last_day": 7, "photo": "demo/city-easter-island.svg"},
- {"index": 4, "name": "Apia", "country": "Samoa", "timezone": "Pacific/Apia", "first_day": 8, "last_day": 9, "photo": "demo/city-apia.svg"},
- {"index": 5, "name": "Port Douglas", "country": "Australia", "timezone": "Australia/Brisbane", "first_day": 10, "last_day": 10, "photo": "demo/city-port-douglas.svg"},
- {"index": 6, "name": "Siem Reap", "country": "Cambodia", "timezone": "Asia/Phnom_Penh", "first_day": 11, "last_day": 13, "photo": "demo/city-siem-reap.svg"},
- {"index": 7, "name": "Kathmandu", "country": "Nepal", "timezone": "Asia/Kathmandu", "first_day": 14, "last_day": 15, "photo": "demo/city-kathmandu.svg"},
- {"index": 8, "name": "Paro", "country": "Bhutan", "timezone": "Asia/Thimphu", "first_day": 16, "last_day": 16, "photo": "demo/city-paro.svg"},
- {"index": 9, "name": "Agra", "country": "India", "timezone": "Asia/Kolkata", "first_day": 17, "last_day": 18, "photo": "demo/city-agra.svg"},
- {"index": 10, "name": "Serengeti", "country": "Tanzania", "timezone": "Africa/Dar_es_Salaam", "first_day": 19, "last_day": 21, "photo": "demo/city-serengeti.svg"},
- {"index": 11, "name": "Petra", "country": "Jordan", "timezone": "Asia/Amman", "first_day": 22, "last_day": 23, "photo": "demo/city-petra.svg"},
- {"index": 12, "name": "Marrakech", "country": "Morocco", "timezone": "Africa/Casablanca", "first_day": 24, "last_day": 25, "photo": "demo/city-marrakech.svg"}
+ {"index": 1, "name": "Miami", "country": "USA", "timezone": "America/New_York", "first_day": 1, "last_day": 1, "photo": "photos/miami.jpg"},
+ {"index": 2, "name": "Cusco", "country": "Peru", "timezone": "America/Lima", "first_day": 2, "last_day": 4, "photo": "photos/machu-picchu.jpg"},
+ {"index": 3, "name": "Easter Island", "country": "Chile", "timezone": "Pacific/Easter", "first_day": 5, "last_day": 7, "photo": "photos/easter-island.jpg"},
+ {"index": 4, "name": "Apia", "country": "Samoa", "timezone": "Pacific/Apia", "first_day": 8, "last_day": 9, "photo": "photos/apia.jpg"},
+ {"index": 5, "name": "Port Douglas", "country": "Australia", "timezone": "Australia/Brisbane", "first_day": 10, "last_day": 10, "photo": "photos/port-douglas.jpg"},
+ {"index": 6, "name": "Siem Reap", "country": "Cambodia", "timezone": "Asia/Phnom_Penh", "first_day": 11, "last_day": 13, "photo": "photos/siem-reap.jpg"},
+ {"index": 7, "name": "Kathmandu", "country": "Nepal", "timezone": "Asia/Kathmandu", "first_day": 14, "last_day": 15, "photo": "photos/kathmandu.jpg"},
+ {"index": 8, "name": "Paro", "country": "Bhutan", "timezone": "Asia/Thimphu", "first_day": 16, "last_day": 16, "photo": "photos/paro.jpg"},
+ {"index": 9, "name": "Agra", "country": "India", "timezone": "Asia/Kolkata", "first_day": 17, "last_day": 18, "photo": "photos/agra.jpg"},
+ {"index": 10, "name": "Serengeti", "country": "Tanzania", "timezone": "Africa/Dar_es_Salaam", "first_day": 19, "last_day": 21, "photo": "photos/serengeti.jpg"},
+ {"index": 11, "name": "Petra", "country": "Jordan", "timezone": "Asia/Amman", "first_day": 22, "last_day": 23, "photo": "photos/petra.jpg"},
+ {"index": 12, "name": "Marrakech", "country": "Morocco", "timezone": "Africa/Casablanca", "first_day": 24, "last_day": 25, "photo": "photos/marrakech.jpg"}
 ],
 "guests": [
  {"id": "G001", "seat": "1A", "first": "Anna", "last": "Alder", "party": "P01", "ptype": "Couple", "notes": "", "dietary": ""},

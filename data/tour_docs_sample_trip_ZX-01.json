@@ -1,18 +1,18 @@
 {
 "trip": {"code": "ZX-01", "name": "Around the World, 12 January (fictional)", "start": "2027-01-12", "days": 24, "default_vehicles": 4},
 "destinations": [
- {"index": 1, "name": "Lisbon", "country": "Portugal", "timezone": "Europe/Lisbon", "first_day": 1, "last_day": 2, "photo": "demo/city-lisbon.svg"},
- {"index": 2, "name": "Marrakech", "country": "Morocco", "timezone": "Africa/Casablanca", "first_day": 3, "last_day": 4, "photo": "demo/city-marrakech.svg"},
- {"index": 3, "name": "Istanbul", "country": "Türkiye", "timezone": "Europe/Istanbul", "first_day": 5, "last_day": 6, "photo": "demo/city-istanbul.svg"},
- {"index": 4, "name": "Petra", "country": "Jordan", "timezone": "Asia/Amman", "first_day": 7, "last_day": 8, "photo": "demo/city-petra.svg"},
- {"index": 5, "name": "Paro", "country": "Bhutan", "timezone": "Asia/Thimphu", "first_day": 9, "last_day": 10, "photo": "demo/city-paro.svg"},
- {"index": 6, "name": "Siem Reap", "country": "Cambodia", "timezone": "Asia/Phnom_Penh", "first_day": 11, "last_day": 12, "photo": "demo/city-siem-reap.svg"},
- {"index": 7, "name": "Kyoto", "country": "Japan", "timezone": "Asia/Tokyo", "first_day": 13, "last_day": 14, "photo": "demo/city-kyoto.svg"},
- {"index": 8, "name": "Maldives", "country": "Maldives", "timezone": "Indian/Maldives", "first_day": 15, "last_day": 16, "photo": "demo/city-maldives.svg"},
- {"index": 9, "name": "Kigali", "country": "Rwanda", "timezone": "Africa/Kigali", "first_day": 17, "last_day": 18, "photo": "demo/city-kigali.svg"},
- {"index": 10, "name": "Cape Town", "country": "South Africa", "timezone": "Africa/Johannesburg", "first_day": 19, "last_day": 20, "photo": "demo/city-cape-town.svg"},
- {"index": 11, "name": "Seychelles", "country": "Seychelles", "timezone": "Indian/Mahe", "first_day": 21, "last_day": 22, "photo": "demo/city-seychelles.svg"},
- {"index": 12, "name": "Marrakech farewell", "country": "Morocco", "timezone": "Africa/Casablanca", "first_day": 23, "last_day": 24, "photo": "demo/city-marrakech-farewell.svg"}
+ {"index": 1, "name": "Lisbon", "country": "Portugal", "timezone": "Europe/Lisbon", "first_day": 1, "last_day": 2, "photo": "photos/lisbon.jpg"},
+ {"index": 2, "name": "Marrakech", "country": "Morocco", "timezone": "Africa/Casablanca", "first_day": 3, "last_day": 4, "photo": "photos/marrakech.jpg"},
+ {"index": 3, "name": "Istanbul", "country": "Türkiye", "timezone": "Europe/Istanbul", "first_day": 5, "last_day": 6, "photo": "photos/istanbul.jpg"},
+ {"index": 4, "name": "Petra", "country": "Jordan", "timezone": "Asia/Amman", "first_day": 7, "last_day": 8, "photo": "photos/petra.jpg"},
+ {"index": 5, "name": "Paro", "country": "Bhutan", "timezone": "Asia/Thimphu", "first_day": 9, "last_day": 10, "photo": "photos/paro.jpg"},
+ {"index": 6, "name": "Siem Reap", "country": "Cambodia", "timezone": "Asia/Phnom_Penh", "first_day": 11, "last_day": 12, "photo": "photos/siem-reap.jpg"},
+ {"index": 7, "name": "Kyoto", "country": "Japan", "timezone": "Asia/Tokyo", "first_day": 13, "last_day": 14, "photo": "photos/kyoto.jpg"},
+ {"index": 8, "name": "Maldives", "country": "Maldives", "timezone": "Indian/Maldives", "first_day": 15, "last_day": 16, "photo": "photos/maldives.jpg"},
+ {"index": 9, "name": "Kigali", "country": "Rwanda", "timezone": "Africa/Kigali", "first_day": 17, "last_day": 18, "photo": "photos/kigali.jpg"},
+ {"index": 10, "name": "Cape Town", "country": "South Africa", "timezone": "Africa/Johannesburg", "first_day": 19, "last_day": 20, "photo": "photos/cape-town.jpg"},
+ {"index": 11, "name": "Seychelles", "country": "Seychelles", "timezone": "Indian/Mahe", "first_day": 21, "last_day": 22, "photo": "photos/seychelles.jpg"},
+ {"index": 12, "name": "Marrakech farewell", "country": "Morocco", "timezone": "Africa/Casablanca", "first_day": 23, "last_day": 24, "photo": "photos/marrakech.jpg"}
 ],
 "guests": [
  {"id": "G001", "seat": "1A", "first": "Richard", "last": "Smith", "party": "P01", "ptype": "Couple", "notes": "", "dietary": ""},

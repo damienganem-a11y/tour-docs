@@ -327,6 +327,23 @@ function eatView(sheet, destination, offline) {
   ];
 }
 
+// ---------- photo credits ----------
+// The photographs come from Wikimedia Commons under free licences that ask for the photographer to be named: this page does that.
+function creditsLink(sheet) {
+  const used = [...new Set([...(sheet.destinations ?? []).map((d) => d.photo), ...(sheet.tours ?? []).flatMap((t) => (t.info?.photos ?? []).map((p) => p.url)), ...(sheet.restaurants ?? []).flatMap((r) => (r.card.photos ?? []).map((p) => p.url))])].filter((u) => /^photos\//.test(u));
+  if (!used.length) return null;
+  return h('p', { class: 'foot' }, h('button', { class: 'link-btn', type: 'button', onclick: () => go({ credits: true }) }, 'Photo credits'));
+}
+function creditsView(sheet, offline) {
+  const list = h('div', { class: 'content content--tour' }, offline, h('p', { class: 'foot' }, 'Loading…'));
+  fetch('photos/credits.json').then((r) => r.json()).then((all) => {
+    const used = new Set([...(sheet.destinations ?? []).map((d) => d.photo), ...(sheet.tours ?? []).flatMap((t) => (t.info?.photos ?? []).map((p) => p.url)), ...(sheet.restaurants ?? []).flatMap((r) => (r.card.photos ?? []).map((p) => p.url))]);
+    const rows = Object.entries(all).filter(([key]) => used.has(`photos/${key}.jpg`)).map(([key, c]) => h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, key.replace(/-/g, ' ')), h('div', { class: 'block-text' }, `${c.author}, ${c.license}`, h('br'), h('a', { href: c.source, target: '_blank', rel: 'noopener' }, 'Wikimedia Commons'))));
+    list.replaceChildren(offline ?? '', ...rows);
+  }).catch(() => { list.replaceChildren(h('p', { class: 'foot' }, 'The credits could not be loaded right now.')); });
+  return [h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'), h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, sheet.trip), h('h2', {}, 'Photo credits'))), list];
+}
+
 // ---------- one tour ----------
 function tourView(sheet, tour, offline) {
   const info = tour.info ?? {};
@@ -388,6 +405,7 @@ function paint() {
     app.replaceChildren(...passportView(sheet, offline));
     return;
   }
+  if (view.credits) { app.replaceChildren(...creditsView(sheet, offline)); return; }
   if (view.rest !== undefined && !sheet.restaurants?.[view.rest]) view = { tab: 'programme' };
   if (view.rest !== undefined) { app.replaceChildren(...restaurantView(sheet, view.rest, offline)); return; }
   if (view.eat !== undefined) { app.replaceChildren(...eatView(sheet, view.eat, offline)); return; }
@@ -412,7 +430,7 @@ function paint() {
       sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
       h('h1', {}, 'Hello ', h('em', {}, sheet.first)),
       h('p', { class: 'sub' }, sheet.trip)));
-  app.replaceChildren(hero, h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
+  app.replaceChildren(hero, h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
 }
 
 function render(sheet, { offline = false } = {}) {
@@ -429,6 +447,8 @@ function render(sheet, { offline = false } = {}) {
     for (const i of part.alt ?? []) { const first = sheet.tours?.[i]?.info?.photos?.[0]; if (first) wanted.add(first.url); }
   }
   for (const r of sheet.restaurants ?? []) for (const p of r.card.photos ?? []) wanted.add(p.url);
+  for (const d of sheet.destinations ?? []) if (d.photo) wanted.add(d.photo);
+  fetch('photos/credits.json').catch(() => {});
   for (const url of [...wanted].slice(0, 120)) fetch(url).catch(() => {});
 }
 

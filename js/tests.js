@@ -2697,7 +2697,7 @@ function readZip(bytes) {
     nest.info?.difficulty === 'demanding' && nest.info.photos.length === 3 && /thin/.test(nest.info.difficultyNote) && ctxI.state.activities.find((a) => a.name === 'Archery with local teams').info.photos.length === 3);
   const plain = ctxI.state.activities.find((a) => a.name.startsWith('Dinner'));
   check('An activity with no information has none (null), and older trips without the field still work', plain.info === null);
-  check('Every tour of the sample trip has pictures, and every destination has its own', ctxI.state.activities.filter((a) => !a.name.startsWith('Dinner')).every((a) => (a.info?.photos?.length ?? 0) === 3) && ctxI.state.destinations.every((d) => /^demo\/city-[a-z-]+\.svg$/.test(d.photo)));
+  check('Every tour of the sample trip has pictures, and every destination has its own', ctxI.state.activities.filter((a) => !a.name.startsWith('Dinner')).every((a) => (a.info?.photos?.length ?? 0) === 3) && ctxI.state.destinations.every((d) => /^(demo\/city-[a-z-]+\.svg|photos\/[a-z-]+\.jpg)$/.test(d.photo)));
 
   const slot = ctxI.state.slots.find((x) => x.id === nest.slotId);
   const added = await applyChange(ctxI, trip.id, { type: 'add-activity', slotId: slot.id, name: 'Test walk', meeting: '', startTime: '', capacity: null, info: { duration: 'About 1 hour', difficulty: 'easy', difficultyNote: 'Flat.' } });

@@ -1,0 +1,116 @@
+{
+ "miami": {
+  "author": "Averette",
+  "license": "CC BY 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Miami_skyline_20080328.jpg",
+  "title": "Miami skyline 20080328.jpg"
+ },
+ "easter-island": {
+  "author": "Mbmerino",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Moais_in_Rano_Raraku._Easter_Island.JPG",
+  "title": "Moais in Rano Raraku. Easter Island.JPG"
+ },
+ "apia": {
+  "author": "Stephen Glauser",
+  "license": "CC BY-SA 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Samoa_2009_016.jpg",
+  "title": "Samoa 2009 016.jpg"
+ },
+ "port-douglas": {
+  "author": "Mathew Attlee",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Four_Mile_Beach.jpg",
+  "title": "Four Mile Beach.jpg"
+ },
+ "siem-reap": {
+  "author": "Reinhard Onasch",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Angkor_Wat_Sunrise_(209237385).jpeg",
+  "title": "Angkor Wat Sunrise (209237385).jpeg"
+ },
+ "kathmandu": {
+  "author": "Nabin K. Sapkota",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Boudha_Stupa_2018_04.jpg",
+  "title": "Boudha Stupa 2018 04.jpg"
+ },
+ "paro": {
+  "author": "Original: Nina R from Africa Derivative work: UnpetitproleX",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Paro_Taktsang,_Bhutan_(edited).jpg",
+  "title": "Paro Taktsang, Bhutan (edited).jpg"
+ },
+ "agra": {
+  "author": "Yann; edited by King of Hearts",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Taj_Mahal,_Agra,_India_edit2.jpg",
+  "title": "Taj Mahal, Agra, India edit2.jpg"
+ },
+ "serengeti": {
+  "author": "Giles Laurent",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:020_The_lion_king_Snyggve_in_the_Serengeti_National_Park_Photo_by_Giles_Laurent.jpg",
+  "title": "020 The lion king Snyggve in the Serengeti National Park Photo by Giles Laurent.jpg"
+ },
+ "petra": {
+  "author": "Vyacheslav Argenberg",
+  "license": "CC BY 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Al-Khazneh_(The_Treasury)_2,_Petra,_Jordan.jpg",
+  "title": "Al-Khazneh (The Treasury) 2, Petra, Jordan.jpg"
+ },
+ "marrakech": {
+  "author": "Herokk",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Jemaa_el-Fnaa_Marrakech_at_sunset.jpg",
+  "title": "Jemaa el-Fnaa Marrakech at sunset.jpg"
+ },
+ "lisbon": {
+  "author": "Ingo Mehling",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lissabon_-_Alfama_-_Largo_Santa_Luzia_-_Streetcar_-_1.jpg",
+  "title": "Lissabon - Alfama - Largo Santa Luzia - Streetcar - 1.jpg"
+ },
+ "istanbul": {
+  "author": "Maskaravivek",
+  "license": "CC BY 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Hagia_Sophia_in_Istanbul.jpg",
+  "title": "Hagia Sophia in Istanbul.jpg"
+ },
+ "kyoto": {
+  "author": "Basile Morin",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Torii_path_with_lantern_at_Fushimi_Inari_Taisha_Shrine,_Kyoto,_Japan.jpg",
+  "title": "Torii path with lantern at Fushimi Inari Taisha Shrine, Kyoto, Japan.jpg"
+ },
+ "kigali": {
+  "author": "Charles J. Sharp",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Mountain_gorilla_(Gorilla_beringei_beringei)_female_3.jpg",
+  "title": "Mountain gorilla (Gorilla beringei beringei) female 3.jpg"
+ },
+ "cape-town": {
+  "author": "South African Tourism from South Africa",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Table_Mountain_from_Blouberg,_South_Africa_(4028515275).jpg",
+  "title": "Table Mountain from Blouberg, South Africa (4028515275).jpg"
+ },
+ "seychelles": {
+  "author": "Tobias Alt, Tobi 87",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Anse_Source_d%27Argent_2-La_Digue.jpg",
+  "title": "Anse Source d'Argent 2-La Digue.jpg"
+ },
+ "maldives": {
+  "author": "Frédéric Ducarme",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Baa_atoll_islands.JPG",
+  "title": "Baa atoll islands.JPG"
+ },
+ "machu-picchu": {
+  "author": "Diego Delso",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Machu_Picchu,_Per%C3%BA,_2015-07-30,_DD_60.JPG",
+  "title": "Machu Picchu, Perú, 2015-07-30, DD 60.JPG"
+ }
+}

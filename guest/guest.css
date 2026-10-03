@@ -240,3 +240,5 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
 .dish-desc { color: var(--muted); font-size: 14px; margin-top: 2px; }
 .dish .chips { margin-top: 6px; }
 .content.content--tour { margin-top: 22px; } /* tour, options, passport and restaurant pages: no overlap with the header */
+
+.link-btn { border: 0; background: none; font: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; padding: 6px; }
