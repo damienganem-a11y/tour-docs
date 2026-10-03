@@ -11,18 +11,18 @@ function card(fields, menuText, picture) {
 
 export const SAMPLE_CARDS = {
   Salsa: card({
-    cuisine: 'Latin American', vibe: 'Lively and colourful',
+    cuisine: 'Modern Australian', vibe: 'Lively and colourful',
     about: 'Bright, noisy and friendly. Dishes arrive as they are ready and everything is made to be passed around the table.',
     interior: 'Warm lighting, painted tiles, an open kitchen you can watch. Can be loud at 8 pm.',
     outdoor: 'A small covered terrace with ceiling fans, a few steps from the beach path.',
   }, `# Shareables
 Corn ribs | Smoked chilli butter, lime, fresh cheese | 14 | vegetarian, spicy, to share
-Ceviche | Local white fish, lime, coriander, sweet potato | 22 | gluten-free
+Kingfish crudo | Local fish, finger lime, coriander, sweet potato | 22 | gluten-free
 # Mains
-Slow pork | Citrus-braised shoulder, soft tortillas, pickled onion | 34
+Slow pork | Citrus-braised shoulder, flatbread, pickled onion | 34
 Charred cauliflower | Green sauce, toasted seeds, black beans | 28 | vegan
 # Desserts
-Churros | Warm, with dark chocolate sauce | 12 | vegetarian`, 'demo/cooking-1.svg'),
+Warm doughnuts | Dark chocolate sauce | 12 | vegetarian`, 'demo/cooking-1.svg'),
   Melaleuca: card({
     cuisine: 'Modern Australian', vibe: 'Calm and natural',
     about: 'A quiet garden restaurant built around local produce. The menu is short and changes with the season.',
@@ -50,7 +50,7 @@ Margherita | Tomato, mozzarella, basil | 24 | vegetarian
 # Desserts
 Tiramisu | Espresso, mascarpone, cocoa | 13 | vegetarian`, 'demo/cooking-2.svg'),
   Zinc: card({
-    cuisine: 'Seafood and grill', vibe: 'Stylish, lively bar',
+    cuisine: 'Modern Australian fusion', vibe: 'Stylish, lively bar',
     about: 'A polished corner restaurant with a long bar. Fresh seafood, charcoal grill, a good cocktail list.',
     interior: 'Zinc bar, leather seats, dim light and music. Busy and energetic after 8 pm.',
     outdoor: 'A pavement terrace for people-watching.',
@@ -63,7 +63,7 @@ Whole fish of the day | Grilled with herbs and lemon | 46 | gluten-free, to shar
 # Sweet
 Chocolate pot | Salted caramel, cream | 14 | vegetarian`, 'demo/beach-2.svg'),
   'Wrasse & Roe': card({
-    cuisine: 'Seafood', vibe: 'Casual, by the water',
+    cuisine: 'Modern Australian seafood', vibe: 'Casual, by the water',
     about: 'Simple seafood, served fast and fresh, close to the marina. Relaxed and informal.',
     interior: 'A bright dining room with big windows over the water.',
     outdoor: 'A deck over the marina: the best seats at sunset.',
