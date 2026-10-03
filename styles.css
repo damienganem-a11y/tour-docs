@@ -995,3 +995,6 @@ body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom))
 .tile-badge { position: absolute; top: 10px; right: 10px; min-width: 26px; height: 26px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--yellow); color: #000; border: 1px solid #000; font: 800 13px Outfit, sans-serif; }
 .tile-badge--row { position: static; margin-right: 8px; }
 .quote { margin: 6px 0; padding: 6px 10px; border-left: 4px solid var(--yellow); background: var(--soft); font-style: italic; }
+
+/* v0.81.1: the very top of each screen stays empty for a moment, so nothing readable sits in the band the iPhone softens at the top edge */
+.screen { padding-top: calc(env(safe-area-inset-top) + 44px); }

@@ -244,5 +244,53 @@
   "license": "CC BY-SA 3.0",
   "source": "https://commons.wikimedia.org/wiki/File:Sultanahmet_ferry_on_the_Bosphorus_in_Istanbul,_Turkey_001.jpg",
   "title": "Sultanahmet ferry on the Bosphorus in Istanbul, Turkey 001.jpg"
+ },
+ "tours/old-city-walk": {
+  "author": "Matti Blume",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Sultanahmet,_Istanbul_(P1100256).jpg",
+  "title": "Sultanahmet, Istanbul (P1100256).jpg"
+ },
+ "tours/topkapi-palace-and-hagia-sophia": {
+  "author": "Phyrexian",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:%C4%B0stanbul_-_Topkap%C4%B1_Saray%C4%B1_1291.jpg",
+  "title": "İstanbul - Topkapı Sarayı 1291.jpg"
+ },
+ "tours/spice-market-food-walk": {
+  "author": "Miomir Magdevski",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Spices_on_Spice_Bazaar_in_Istanbul_02.jpg",
+  "title": "Spices on Spice Bazaar in Istanbul 02.jpg"
+ },
+ "tours/grand-bazaar-with-a-guide": {
+  "author": "Jorge Franganillo",
+  "license": "CC BY 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Istanbul_-_Grand_Bazaar_(55105990794).jpg",
+  "title": "Istanbul - Grand Bazaar (55105990794).jpg"
+ },
+ "tours/art-galleries-of-karak-y": {
+  "author": "Wiki leylek",
+  "license": "CC BY 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Graffiti_Karak%C3%B6y,_Istanbul_13.03.2026_05.jpg",
+  "title": "Graffiti Karaköy, Istanbul 13.03.2026 05.jpg"
+ },
+ "tours/durbar-square-walk": {
+  "author": "Markus Koljonen (Dilaudid)",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Three_saddhus_at_Kathmandu_Durbar_Square.jpg",
+  "title": "Three saddhus at Kathmandu Durbar Square.jpg"
+ },
+ "tours/boudhanath-and-pashupatinath": {
+  "author": "Bijay Chaurasia",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Pashupatinath_Temple_cremations_on_the_Bagmati_River.jpg",
+  "title": "Pashupatinath Temple cremations on the Bagmati River.jpg"
+ },
+ "tours/gorilla-trekking-permit": {
+  "author": "Charles J. Sharp",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Mountain_gorilla_(Gorilla_beringei_beringei)_10_month_baby.jpg",
+  "title": "Mountain gorilla (Gorilla beringei beringei) 10 month baby.jpg"
  }
 }

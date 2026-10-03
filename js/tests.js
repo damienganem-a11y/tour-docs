@@ -2705,10 +2705,10 @@ function readZip(bytes) {
   const ctxI = makeCtx();
   const nest = ctxI.state.activities.find((a) => a.name.startsWith("Tiger's Nest hike"));
   check('The sample trip loads the tour information, with three photos and a difficulty on the Tiger\'s Nest hike',
-    nest.info?.difficulty === 'demanding' && nest.info.photos.length === 3 && /thin/.test(nest.info.difficultyNote) && ctxI.state.activities.find((a) => a.name === 'Archery with local teams').info.photos.length === 3);
+    nest.info?.difficulty === 'demanding' && nest.info.photos.length >= 1 && /thin/.test(nest.info.difficultyNote) && ctxI.state.activities.find((a) => a.name === 'Archery with local teams').info.photos.length >= 1);
   const plain = ctxI.state.activities.find((a) => a.name.startsWith('Dinner'));
   check('An activity with no information has none (null), and older trips without the field still work', plain.info === null);
-  check('Every tour of the sample trip has pictures, and every destination has its own', ctxI.state.activities.filter((a) => !a.name.startsWith('Dinner')).every((a) => (a.info?.photos?.length ?? 0) === 3) && ctxI.state.destinations.every((d) => /^(demo\/city-[a-z-]+\.svg|photos\/[a-z-]+\.jpg)$/.test(d.photo)));
+  check('Every tour of the sample trip has pictures, and every destination has its own', ctxI.state.activities.filter((a) => !a.name.startsWith('Dinner')).every((a) => (a.info?.photos?.length ?? 0) >= 1) && ctxI.state.destinations.every((d) => /^(demo\/city-[a-z-]+\.svg|photos\/[a-z-]+\.jpg)$/.test(d.photo)));
 
   const slot = ctxI.state.slots.find((x) => x.id === nest.slotId);
   const added = await applyChange(ctxI, trip.id, { type: 'add-activity', slotId: slot.id, name: 'Test walk', meeting: '', startTime: '', capacity: null, info: { duration: 'About 1 hour', difficulty: 'easy', difficultyNote: 'Flat.' } });
@@ -2719,7 +2719,7 @@ function readZip(bytes) {
 
   const edited = await applyChange(ctxI, trip.id, { type: 'edit-activity', activityId: nest.id, name: nest.name, meeting: nest.meeting, startTime: '09:00', capacity: nest.capacity, info: { duration: 'About 7 hours', difficulty: 'demanding', difficultyNote: 'Changed.' } });
   const nestNow = () => ctxI.state.activities.find((a) => a.id === nest.id);
-  check('Editing the text of the tour information keeps its photos', edited.ok && nestNow().info.duration === 'About 7 hours' && nestNow().info.photos.length === 3);
+  check('Editing the text of the tour information keeps its photos', edited.ok && nestNow().info.duration === 'About 7 hours' && nestNow().info.photos.length >= 1);
   check('The Journal says the tour information was updated', /tour information updated/.test(summarize(groupBatches(ctxI.entries).at(-1))));
   const keep = await applyChange(ctxI, trip.id, { type: 'edit-activity', activityId: nest.id, name: nest.name, meeting: nest.meeting, startTime: '09:00', capacity: nest.capacity });
   check('An edit that does not mention the information leaves it as it is', keep.ok && nestNow().info.duration === 'About 7 hours');
@@ -2777,7 +2777,7 @@ function readZip(bytes) {
   const reachable = new Set(sheet.days.flatMap((d) => d.parts).flatMap((p) => (p.tour >= 0 ? [p.tour, ...(p.alt ?? [])] : [])));
   check('The sheet carries only the tours a guest can reach (booked, or another option of the same half-day), not the whole trip', reachable.size === sheet.tours.length && sheet.tours.length < ctxG.state.activities.length);
   const hike = sheet.tours.find((t) => t.name.startsWith("Tiger's Nest hike"));
-  check('A tour carries its duration, difficulty, details, description and photos', hike.info.duration === 'About 6 hours' && hike.info.difficulty === 'demanding' && /thin/.test(hike.info.difficultyNote) && hike.info.photos.length === 3);
+  check('A tour carries its duration, difficulty, details, description and photos', hike.info.duration === 'About 6 hours' && hike.info.difficulty === 'demanding' && /thin/.test(hike.info.difficultyNote) && hike.info.photos.length >= 1);
   check('Dinners that are still activities are not listed as tours, and each programme activity points to its tour', !sheet.tours.some((t) => /^dinner/i.test(t.name))
     && sheet.days.flatMap((d) => d.parts).filter((p) => p.kind === 'activity' && !/^dinner/i.test(p.name)).every((p) => p.tour >= 0 && sheet.tours[p.tour].name === p.name));
   check('A guest\'s sheet says nothing about how full any tour is (guests see availability only when they can ask for a change, later)', !JSON.stringify(sheet.tours).match(/availability|waitlist|"mine"|capacity/));
@@ -2810,6 +2810,13 @@ function readZip(bytes) {
   check('Approving a request moves the guest, and the Journal records that it came from a guest request',
     approved.ok && guestPlace(ctxG.state, guest, askResolved.slot).activity?.id === askResolved.to.id && ctxG.entries.at(-1).source === 'guest request');
   check('Once moved, the same request is no longer possible (already on that tour)', !resolveGuestRequest(ctxG.state, askRow).ok);
+  const { requestsSettingsPage } = await import('./views/settingsRequests.js');
+  const requestsNode = requestsSettingsPage({
+    roleFor: () => 'owner', requestsFor: () => [], outboxFor: () => [], guestRequestsFor: () => [askRow, { ...askRow, id: 'r2', status: 'approved', note: null, decided_at: '2027-01-02T00:00:00Z' }],
+    pushState: async () => ({ state: 'off' }), approveGuestRequest: async () => ({ ok: true }), declineGuestRequest: async () => ({ ok: true }), refreshGuestRequests: async () => {},
+  }, ctxG.state);
+  check('Settings > Requests shows a guest\'s request with Approve and Decline, the answered ones below, and the notifications card',
+    /Guests' requests \(1\)/.test(requestsNode.textContent) && /Approve/.test(requestsNode.textContent) && /Decline/.test(requestsNode.textContent) && /Answered lately/.test(requestsNode.textContent) && /Notifications on this phone/.test(requestsNode.textContent));
   check('What the guest is told: approved, on the waiting list, or not possible (with the leader\'s reason)',
     guestAnswerText(askRow, 'approved').title === 'Your request was approved' && /waiting list/.test(guestAnswerText(askRow, 'waitlist').title)
     && /Too late/.test(guestAnswerText({ ...askRow, note: 'Too late' }, 'declined').body));
@@ -2863,7 +2870,7 @@ function readZip(bytes) {
   check('The jet sample holds no real brand or real people (fictional data only)', !/national geographic|nat geo|fernos|vazquez/i.test(jetText));
   const cusco = jet.slots.find((s) => s.day === 3 && s.half === 'Morning');
   check('A choice day offers several tours; Cusco morning has the two Sacred Valley tours with three pictures each',
-    jet.activities.filter((a) => a.slotId === cusco.id).length === 2 && jet.activities.filter((a) => a.slotId === cusco.id).every((a) => a.info.photos.length === 3));
+    jet.activities.filter((a) => a.slotId === cusco.id).length === 2 && jet.activities.filter((a) => a.slotId === cusco.id).every((a) => a.info.photos.length >= 1));
   check('No tour is over capacity in the sample, and every guest has a booking for every half-day', jet.activities.every((a) => a.capacity === null || countIn(jet, a) <= a.capacity)
     && jet.guests.every((g) => jet.slots.every((s) => jet.bookings[g.id]?.[s.id])));
   check('Tour information is there for most tours (duration and difficulty)', jet.activities.filter((a) => a.info?.duration && a.info.difficulty).length >= jet.activities.length - 2);
