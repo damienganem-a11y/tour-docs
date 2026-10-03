@@ -152,8 +152,8 @@ function nextCard(sheet) {
   return h('div', { class: 'next' }, h('div', { class: 'next-label' }, `Next up · ${dayDate(next.day.date)} · ${next.part.half}`), h('div', { class: 'next-what' }, what), detail ? h('div', { class: 'next-line' }, detail) : null);
 }
 
-// The programme is folded by destination: tap Lisbon to open its days. Consecutive days in the same place form one group. The group
-// holding today (or, failing that, the next thing to come) starts open; the others start closed. What the guest opens stays open.
+// The programme is folded by destination: tap Lisbon to open its days. Consecutive days in the same place form one group. Everything starts
+// closed (the "Next up" card at the top already says what is coming); each group opens and closes freely, and what the guest opens stays open.
 const openGroups = new Set();
 function destinationGroups(sheet) {
   const groups = [];
@@ -172,11 +172,6 @@ function dayRange(group) {
 function programmeView(sheet) {
   const today = localToday();
   const groups = destinationGroups(sheet);
-  if (openGroups.size === 0) {
-    const next = nextUp(sheet);
-    const here = groups.find((g) => g.days.some((d) => d.date === today)) ?? groups.find((g) => next && g.days.includes(next.day)) ?? groups[0];
-    if (here) openGroups.add(here.key);
-  }
   return groups.map((group) => {
     const open = openGroups.has(group.key);
     const head = h('button', { class: 'dest-head', type: 'button', 'aria-expanded': String(open) },
@@ -190,31 +185,6 @@ function programmeView(sheet) {
           h('div', { class: 'day-title' }, dayDate(day.date), day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null)),
         day.parts.map((p) => partView(p, sheet)))) : null);
   });
-}
-
-// ---------- the Tours tab ----------
-function toursView(sheet) {
-  const tours = sheet.tours ?? [];
-  if (tours.length === 0) return [h('p', { class: 'muted' }, 'No tours to show yet.')];
-  const groups = [];
-  tours.forEach((tour, index) => {
-    const key = `${tour.day}|${tour.destination}|${tour.half}`;
-    let group = groups.find((g) => g.key === key);
-    if (!group) { group = { key, tour, items: [] }; groups.push(group); }
-    group.items.push({ tour, index });
-  });
-  return groups.map((group) => h('section', { class: 'tour-group' },
-    h('div', { class: 'tour-group-head' }, `Day ${group.tour.day} · ${group.tour.half} · ${group.tour.destination}`, h('span', { class: 'day-date' }, dayDate(group.tour.date))),
-    group.items.map(({ tour, index }) => {
-      const photo = tour.info?.photos?.[0];
-      const card = h('div', { class: 'tour-card', role: 'button', tabindex: '0' },
-        h('div', { class: 'tour-card-text' },
-          h('div', { class: 'what' }, tour.name),
-          h('div', { class: 'chips' }, tour.info?.duration ? chip(tour.info.duration) : null, tour.info?.difficulty ? chip(DIFFICULTY[tour.info.difficulty].label, `chip--${tour.info.difficulty}`) : null)),
-        photo ? h('img', { class: 'thumb', src: photo.url, alt: '', loading: 'lazy' }) : null);
-      card.addEventListener('click', () => openTour(index));
-      return card;
-    })));
 }
 
 // ---------- one tour ----------
@@ -242,19 +212,13 @@ function tourView(sheet, tour, offline) {
 }
 
 // ---------- which screen is shown ----------
-// view: { tab: 'programme' | 'tours' } or { tour: index }. The tour page is a step in the phone's history, so the back gesture returns to the list.
-let view = { tab: 'programme' };
-let lastTab = 'programme'; // the tab to return to from a tour page
+// The tour page is a step in the phone's history, so the back gesture returns to the programme.
+let view = { tab: 'programme' }; // the programme, or { tour: index } for one tour's page
 let currentSheet = null;
 let currentOffline = false;
 
-function openTour(index) { lastTab = view.tab ?? lastTab; history.pushState({ tour: index }, ''); view = { tour: index }; paint(); window.scrollTo(0, 0); }
-window.addEventListener('popstate', (event) => { view = event.state?.tour !== undefined ? { tour: event.state.tour } : { tab: lastTab }; if (currentSheet) paint(); });
-
-function tabs() {
-  const tab = (id, label) => h('button', { class: `tab${view.tab === id ? ' is-on' : ''}`, type: 'button', onclick: () => { view = { tab: id }; paint(); window.scrollTo(0, 0); } }, label);
-  return h('nav', { class: 'tabs' }, tab('programme', 'My programme'), tab('tours', 'Tours'));
-}
+function openTour(index) { history.pushState({ tour: index }, ''); view = { tour: index }; paint(); window.scrollTo(0, 0); }
+window.addEventListener('popstate', (event) => { view = event.state?.tour !== undefined ? { tour: event.state.tour } : { tab: 'programme' }; if (currentSheet) paint(); });
 
 // The company colour is kept for small touches only (a stripe at the top): the rest of the look is fixed, so a light or unusual company colour
 // can never make the app hard to read. Falls back to a calm green when the colour is missing or odd.
@@ -281,9 +245,8 @@ function paint() {
     sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
     h('h1', {}, `Hello ${sheet.first}`),
     h('p', { class: 'sub' }, sheet.trip),
-    view.tab === 'programme' ? nextCard(sheet) : null);
-  const content = view.tab === 'tours' ? toursView(sheet) : programmeView(sheet);
-  app.replaceChildren(hero, h('div', { class: 'content' }, tabs(), installHint(), offline, ...content, h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
+    nextCard(sheet));
+  app.replaceChildren(hero, h('div', { class: 'content' }, installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
 }
 
 function render(sheet, { offline = false } = {}) {

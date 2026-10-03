@@ -208,6 +208,7 @@ const ctx = {
     previewRole = role === 'viewer' || role === 'team' ? role : null;
     try { if (previewRole) sessionStorage.setItem('tourdocs.preview', previewRole); else sessionStorage.removeItem('tourdocs.preview'); } catch { /* works without */ }
     render();
+    if (!previewRole) backfillPush().catch(() => {}); // a change made in a Team preview is sent to the server now that this device is the owner again
   },
   // Settings > Guest links: how the last sending of the guests' sheets went, and a way to send them again right now.
   guestSheetStatus: () => ({ lastOkAt: guestSheetInfo.lastOkAt, error: guestSheetInfo.error }),

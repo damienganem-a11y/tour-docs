@@ -24,9 +24,6 @@ main { max-width: 600px; margin: 0 auto; min-height: 100vh; background: var(--bg
 
 /* body */
 .content { padding: 0 16px calc(env(safe-area-inset-bottom) + 40px); margin-top: -30px; }
-.tabs { display: flex; gap: 4px; background: var(--card); border-radius: 999px; padding: 5px; box-shadow: var(--shadow); margin: 0 0 18px; }
-.tab { flex: 1; border: 0; background: none; font: inherit; font-weight: 750; padding: 11px 8px; border-radius: 999px; color: var(--muted); }
-.tab.is-on { background: var(--primary); color: var(--on-primary); }
 .banner { background: var(--mid-bg); color: var(--mid); border-radius: 14px; padding: 11px 14px; margin: 0 0 14px; font-size: 15px; font-weight: 600; }
 .foot { text-align: center; color: var(--muted); font-size: 13px; margin: 24px 0 0; }
 button.link { background: none; border: 0; color: inherit; font: inherit; font-weight: 800; text-decoration: underline; padding: 0 0 0 6px; }
@@ -61,15 +58,6 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 .info-btn { width: 20px; height: 20px; border-radius: 50%; border: 2px solid currentColor; background: none; color: inherit; font: italic 800 13px Georgia, serif; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .diff-panel { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); border-left: 5px solid var(--primary); padding: 14px 16px; margin: 10px 0 6px; font-size: 15px; }
 .diff-help { font-weight: 800; margin-bottom: 6px; }
-
-/* tours list */
-.tour-group { margin: 0 0 20px; }
-.tour-group-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 800; margin: 0 6px 10px; }
-.tour-group-head .day-date { margin: 0; letter-spacing: 0; text-transform: none; font-size: 13px; }
-.tour-card { display: flex; gap: 14px; align-items: center; justify-content: space-between; background: var(--card); border-radius: 20px; box-shadow: var(--shadow); padding: 14px 16px; margin: 0 0 12px; cursor: pointer; }
-.tour-card:active { background: var(--bg); }
-.tour-card-text { min-width: 0; }
-.thumb { width: 92px; height: 74px; object-fit: cover; border-radius: 14px; flex: none; background: #d9dee8; }
 
 /* one tour */
 .tour-top { position: relative; background: linear-gradient(155deg, #1d3a63 0%, #0f1f3a 100%); border-top: 6px solid var(--accent); padding: calc(env(safe-area-inset-top) + 12px) 0 34px; border-radius: 0 0 34px 34px; }

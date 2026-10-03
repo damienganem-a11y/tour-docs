@@ -175,7 +175,7 @@ function tourInfoFields(info) {
   const description = area('Description', info?.description, 1000, 'What happens, in a few lines');
   const bring = text('What to bring', info?.bring, 200, 'What to bring (optional)');
   const included = text('Included', info?.included, 200, 'What is included (optional)');
-  const node = h('details', { class: 'info-fields', open: info ? 'open' : null },
+  const node = h('details', { class: 'info-fields' },
     h('summary', {}, 'Tour information for guests'), duration, difficulty, difficultyNote, description, bring, included);
   return {
     node,

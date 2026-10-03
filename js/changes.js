@@ -752,8 +752,13 @@ export function enqueue(fn) {
 // opts.request { id, at } the request being applied: written in the journal, so it shows who asked, and when
 export function applyChange(ctx, tripId, changes, opts = {}) {
   const list = Array.isArray(changes) ? changes : [changes];
-  // Previewing another role (owner only, views/preview.js): looking, never changing.
-  if (ctx.previewRole && !opts.as) return Promise.resolve(fail('You are previewing another role: nothing can be changed. Exit the preview first.'));
+  // Previewing another role (owner only, views/preview.js). View only: looking, never changing. Team: what a colleague does becomes a REAL test request,
+  // applied at once through this same function as "Preview (Team)" (the Journal says so), so the owner sees how it all looks. It changes the trip.
+  if (ctx.previewRole && !opts.as) {
+    if (ctx.previewRole !== 'team') return Promise.resolve(fail('You are previewing View only: nothing can be changed. Exit the preview first.'));
+    const as = { id: 'preview-team', name: 'Preview (Team)', role: 'team' };
+    return enqueue(() => doApply(ctx, tripId, list, { as, request: { id: newId(), at: new Date().toISOString() } })).then((r) => (r.ok ? { ...r, preview: true } : r));
+  }
   // A Team colleague never changes the trip themselves: the change is checked against their copy, then sent as a request
   // that the owner's device applies (SPEC.md, Team step B).
   if (!opts.as && ctx.roleFor?.(tripId) === 'team') return requestChange(ctx, tripId, list);

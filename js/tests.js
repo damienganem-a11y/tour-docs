@@ -2788,7 +2788,17 @@ function readZip(bytes) {
   const ctxP = makeCtx();
   ctxP.previewRole = 'viewer';
   const refused = await applyChange(ctxP, trip.id, { type: 'rename-trip', name: 'Should not happen' });
-  check('While previewing another role nothing can be changed, and the reason says so', !refused.ok && /previewing/i.test(refused.error) && ctxP.state.name !== 'Should not happen');
+  check('Previewing View only: nothing can be changed, and the reason says so', !refused.ok && /previewing/i.test(refused.error) && ctxP.state.name !== 'Should not happen');
+  ctxP.previewRole = 'team';
+  const slotP = ctxP.state.slots.find((x) => x.half === 'Afternoon' && ctxP.state.activities.some((a) => a.slotId === x.id));
+  const guestP = ctxP.state.guests.find((g) => ctxP.state.bookings[g.id]?.[slotP.id]?.kind === 'activity'); // someone booked on a tour then, so moving them to leisure is a real change
+  const toLeisure = { type: 'move', guestId: guestP.id, slotId: slotP.id, to: { kind: 'leisure' } };
+  const asked = await applyChange(ctxP, trip.id, toLeisure);
+  const last = ctxP.entries.at(-1);
+  check('Previewing Team: a booking change is really applied, as a test request from "Preview (Team)", written in the Journal', asked.ok && asked.preview === true && ctxP.state.bookings[guestP.id][slotP.id].kind === 'leisure'
+    && last.who.name === 'Preview (Team)' && last.who.role === 'team' && last.source === 'colleague request', JSON.stringify(asked).slice(0, 200));
+  const settingsAsTeam = await applyChange(ctxP, trip.id, { type: 'rename-trip', name: 'Should not happen' });
+  check('Previewing Team: what a Team colleague may not do (settings, trip) is refused, as for the real thing', !settingsAsTeam.ok && /owner/i.test(settingsAsTeam.error) && ctxP.state.name !== 'Should not happen');
   ctxP.previewRole = null;
   check('Once the preview is over the owner changes things again', (await applyChange(ctxP, trip.id, { type: 'rename-trip', name: 'Back to normal' })).ok);
 }

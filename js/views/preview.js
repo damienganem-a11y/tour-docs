@@ -14,10 +14,10 @@ export function openPreviewSheet(ctx) {
     h('div', {}, LABEL[role]), h('div', { class: 'muted', style: 'font-size:14px;font-weight:400;margin-top:2px;' }, text));
   openSheet({
     eyebrow: 'Preview', title: 'See the app as someone else',
-    subtitle: 'Nothing can be changed while you preview. You stay signed in as yourself.',
+    subtitle: 'You stay signed in as yourself.',
     body: [
-      choice('viewer', 'Sees the trip and its documents, changes nothing.'),
-      choice('team', 'Works on bookings and roll call. Their changes would go to you as requests.'),
+      choice('viewer', 'Sees the trip and its documents. Nothing can be changed.'),
+      choice('team', 'Works on bookings and roll call. What you do here is REALLY applied, as a test request from "Preview (Team)", and shows in the Journal. Undo takes it back.'),
     ],
   });
 }
@@ -27,6 +27,6 @@ export function previewBar(ctx) {
   const role = ctx.previewRole;
   if (!role) return null;
   return h('div', { class: 'preview-bar', role: 'status' },
-    h('span', {}, `Previewing as ${LABEL[role]}`),
+    h('span', {}, role === 'team' ? 'Previewing as Team: changes are real test requests' : 'Previewing as View only'),
     h('button', { type: 'button', onclick: () => { ctx.setPreview(null); ctx.go('#/'); } }, 'Exit preview'));
 }
