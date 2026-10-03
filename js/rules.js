@@ -13,14 +13,18 @@ export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // ["Simon B."] -> "Simon B."   ["Simon B.", "Anne B."] -> "Simon B. and Anne B."
 export const joinNames = (list) => (list.length <= 1 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`);
 
-// The usual order of a day (Morning, Afternoon, Evening), not alphabetical (which would put Afternoon
+// The parts of a day a programme can be built from. "Full day" is one booking that covers the whole day (a reef trip, a safari, a mountain hike):
+// a day that has a Full day part has no Morning or Afternoon part (an Evening can still follow it).
+export const PARTS_OF_DAY = ['Morning', 'Afternoon', 'Evening', 'Full day'];
+
+// The usual order of a day (Full day, or Morning, Afternoon, Evening), not alphabetical (which would put Afternoon
 // before Evening before Morning). Any other half-day name from the data is put after these.
-const HALF_ORDER = ['Morning', 'Afternoon', 'Evening'];
+const HALF_ORDER = ['Full day', 'Morning', 'Afternoon', 'Evening'];
 export const halfRank = (half) => {
   const i = HALF_ORDER.indexOf(half);
   return i === -1 ? HALF_ORDER.length : i;
 };
-// Half-days in trip order: by day, then Morning/Afternoon/Evening.
+// Half-days in trip order: by day, then Full day / Morning / Afternoon / Evening.
 export const bySlotOrder = (a, b) => a.day - b.day || halfRank(a.half) - halfRank(b.half);
 
 // "2A" -> { row: 2, letter: 'A' }; anything else (blank, not set) -> null.

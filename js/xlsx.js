@@ -375,7 +375,7 @@ export function buildTemplateXlsx() {
     [''],
     ['Itinerary: one line per day. Stop = the number of the destination (1, 2, 3...); lines of the same stop share a Destination, Country and Time zone (like Europe/Lisbon).'],
     ['Guests: one line per guest. Guests with the same Party ID travel together (leave it empty for a guest travelling alone). Dietary / allergies stays private to the app.'],
-    ['Activities: one line per activity offered in a half-day. Slot ID names the half-day (S01, S02...) and is the same on every line of that half-day. Half-day is Morning, Afternoon or Evening. Capacity empty = no limit.'],
+    ['Activities: one line per activity offered in a half-day. Slot ID names the half-day (S01, S02...) and is the same on every line of that half-day. Half-day is Morning, Afternoon, Evening or Full day (a Full day replaces the Morning and the Afternoon of that day). Capacity empty = no limit.'],
     ['Sign-ups (optional): what each guest chose, one line per guest and half-day. Activity is the exact name from the Activities sheet, or "At leisure".'],
     ['The example lines are invented: replace or delete them. Dates look like 2027-01-12 and times like 15:00.'],
     ['On the Activities sheet, the last six columns (Duration, Difficulty, Difficulty details, Description, What to bring, Included) are optional and are what guests read about each tour. Difficulty is Easy, Moderate or Demanding.'],

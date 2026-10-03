@@ -70,7 +70,7 @@ const updatedText = (iso) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', 
 
 // "Next up": the first thing still to come (an activity or a dinner), so the guest sees at once where to be next. The clock time of a
 // part is its start time, or a usual hour for its half-day; it is read in the phone's own clock (a guest on the trip is in the place).
-const USUAL_HOUR = { Morning: '09:00', Afternoon: '14:00', Evening: '19:00' };
+const USUAL_HOUR = { 'Full day': '08:00', Morning: '09:00', Afternoon: '14:00', Evening: '19:00' };
 function nextUp(sheet, now = new Date()) {
   for (const day of sheet.days) {
     for (const part of day.parts) {

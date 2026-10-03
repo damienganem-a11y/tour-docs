@@ -2767,6 +2767,22 @@ function readZip(bytes) {
   check('Tour information is there for most tours (duration and difficulty)', jet.activities.filter((a) => a.info?.duration && a.info.difficulty).length >= jet.activities.length - 2);
 }
 
+// --- Full day (a part of the day that covers the whole day) ---
+{
+  const slots = [{ day: 2, half: 'Evening' }, { day: 2, half: 'Full day' }, { day: 1, half: 'Afternoon' }, { day: 2, half: 'Morning' }, { day: 1, half: 'Morning' }];
+  check('Full day sorts first in its day, before Morning, Afternoon and Evening', slots.sort(bySlotOrder).map((x) => `${x.day}${x.half}`).join() === '1Morning,1Afternoon,2Full day,2Morning,2Evening');
+  const base = structuredClone(raw);
+  const withFullDay = (edit) => { const copy = structuredClone(base); edit(copy); return copy; };
+  const typed = buildTrip(withFullDay((r) => { r.slots.find((x) => x.id === 'S12').half = 'full day'; }));
+  check('"full day" typed in a file becomes the part of the day "Full day"', typed.slots.some((x) => x.ref === 'S12' && x.half === 'Full day'));
+  const clash = (() => { try { buildTrip(withFullDay((r) => { r.slots.find((x) => x.id === 'S14').half = 'Full day'; })); return ''; } catch (e) { return e.message; } })();
+  check('A Full day next to a Morning or Afternoon of the same day is refused, in plain words', /Day 8 has a Full day/.test(clash) && /replaces the Morning and the Afternoon/.test(clash), clash);
+  const jetFull = buildTrip(await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json());
+  const fullSlots = jetFull.slots.filter((x) => x.half === 'Full day');
+  check('The jet sample uses real Full day slots (5 days), with no Morning or Afternoon on those days', fullSlots.length === 5 && fullSlots.every((f) => !jetFull.slots.some((o) => o.day === f.day && (o.half === 'Morning' || o.half === 'Afternoon'))));
+  check('A Full day tour is booked once and counted once', (() => { const reef = jetFull.activities.find((a) => a.name.startsWith('Great Barrier Reef')); return jetFull.slots.find((x) => x.id === reef.slotId).half === 'Full day' && countIn(jetFull, reef) > 0; })());
+}
+
 // --- Preview as another role (owner only) ---
 {
   const ctxP = makeCtx();

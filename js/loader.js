@@ -29,7 +29,7 @@
 
 import { newId } from './ids.js';
 import { isValidTimeZone, localToInstant } from './time.js';
-import { bySlotOrder } from './rules.js';
+import { bySlotOrder, PARTS_OF_DAY } from './rules.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
 
 const AT_LEISURE = 'at leisure'; // the words used in the file (compared in lower case)
@@ -86,19 +86,26 @@ export function buildTrip(raw) {
   const slotByRef = new Map();
   const optionsBySlot = new Map();
 
-  for (const s of raw.slots) {
+  for (let s of raw.slots) {
     need(isText(s.id), 'A half-day has no id.');
     need(!slotByRef.has(s.id), `The half-day ${s.id} appears twice.`);
     const destination = destinationByName.get(s.dest);
     need(destination, `The half-day ${s.id} is in "${s.dest}", which is not in the destinations list.`);
     need(/^\d{4}-\d{2}-\d{2}$/.test(s.date ?? ''), `The half-day ${s.id} needs a date like 2027-01-12.`);
-    need(isText(s.half), `The half-day ${s.id} needs a part of the day (Morning, Afternoon...).`);
+    need(isText(s.half), `The half-day ${s.id} needs a part of the day (Morning, Afternoon, Evening or Full day).`);
+    s = { ...s, half: PARTS_OF_DAY.find((p) => p.toLowerCase() === s.half.trim().toLowerCase()) ?? s.half.trim() }; // "full day" typed in Excel -> "Full day"
     need(Array.isArray(s.options), `The half-day ${s.id} has no list of activities.`);
 
     const slot = { id: newId(), ref: s.id, destinationId: destination.id, day: s.day, date: s.date, half: s.half };
     slotByRef.set(s.id, slot);
     optionsBySlot.set(slot.id, s.options); // the activities offered in this half-day, as written in the file
     slots.push(slot);
+  }
+  // A Full day covers the whole day: it cannot sit next to a Morning or an Afternoon of the same day (an Evening can follow it).
+  for (const slot of slots) {
+    if (slot.half !== 'Full day') continue;
+    const clash = slots.find((o) => o.day === slot.day && (o.half === 'Morning' || o.half === 'Afternoon'));
+    need(!clash, `Day ${slot.day} has a Full day (${slot.ref}) and also a ${clash?.half} (${clash?.ref}). A Full day replaces the Morning and the Afternoon.`);
   }
   slots.sort(bySlotOrder);
 
