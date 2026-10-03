@@ -48,6 +48,7 @@ export function groupBatches(entries) {
         : types.has('edit-activity') ? 'edit-activity'
         : types.has('add-restaurant') ? 'add-restaurant'
         : types.has('edit-restaurant') ? 'edit-restaurant'
+        : types.has('restaurant-card') ? 'restaurant-card'
         // A book-dinner, add-to-dinner-table or move-dinner-table batch also contains one 'move'
         // entry per guest — must classify by its own kind, not fall through to 'move' below.
         : types.has('book-dinner') ? 'book-dinner'
@@ -84,7 +85,7 @@ export function groupBatches(entries) {
 // offers to take back something that belongs there.
 export const USE_UNDO_SCOPE = ['move', 'cancel-tour'];                // By destination, By guest
 export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity']; // Settings > Touring
-export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant']; // Settings > Dining
+export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant', 'restaurant-card']; // Settings > Dining
 // Use > Dining's own Undo (Phase 3 step 2a/2b). A guest later moved off a table through the ordinary
 // Move sheet is a plain 'move' batch — undoable from Touring/By guest's own Undo, not this one; a
 // known, minor, accepted edge (see the step's plan).
@@ -182,6 +183,12 @@ export function summarize(batch) {
   if (batch.kind === 'edit-activity') return summarizeEditActivity(batch.entries[0]);
   if (batch.kind === 'add-restaurant') { const e = batch.entries[0]; return `Added "${e.restaurantLabel}" (${e.slotLabel})`; }
   if (batch.kind === 'edit-restaurant') return summarizeEditRestaurant(batch.entries[0]);
+  if (batch.kind === 'restaurant-card') {
+    const e = batch.entries[0];
+    const dishes = (card) => (card?.sections ?? []).reduce((n, s) => n + s.items.length, 0);
+    if (!e.to.card) return `"${e.restaurantLabel}": presentation and menu removed`;
+    return `"${e.restaurantLabel}": presentation and menu saved (${dishes(e.to.card)} dishes)`;
+  }
   if (batch.kind === 'book-dinner') return summarizeBookDinner(batch);
   if (batch.kind === 'add-to-dinner-table') return summarizeAddToDinnerTable(batch);
   if (batch.kind === 'move-dinner-table') return summarizeMoveDinnerTable(batch);

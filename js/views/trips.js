@@ -14,6 +14,7 @@ import { buildTemplateXlsx } from '../xlsx.js';
 import { shareOrDownloadFile } from '../ui.js';
 import { openPreviewSheet } from './preview.js';
 import { pageHead, exportFormatSheet, syncDot } from './chrome.js';
+import { SAMPLE_CARDS } from '../sampleMenus.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
 const JET_SAMPLE_URL = './data/tour_docs_sample_trip_JET-01.json'; // a fictional 25-day private-jet trip (tools/make_jet_sample.py)
@@ -82,6 +83,9 @@ export function tripsView(ctx) {
         type: 'add-restaurant', destinationId: destination.id, name,
         seatings: ['18:45', '19:15'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4],
       });
+      // Each restaurant also gets an invented presentation and menu (see sampleMenus.js), so the guest app has something to show.
+      const added = ctx.trip(trip.id)?.restaurants.find((r) => r.name === name && r.destinationId === destination.id);
+      if (added && SAMPLE_CARDS[name]) await applyChange(ctx, trip.id, { type: 'restaurant-card', restaurantId: added.id, card: SAMPLE_CARDS[name] });
     }
     ctx.refresh();
   }

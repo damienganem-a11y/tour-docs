@@ -46,6 +46,7 @@
 //       up to how many people, so Strict mode always fits on exactly one table or becomes a Special
 //       request — never two joined tables).
 //   { type: 'edit-restaurant', restaurantId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes }
+//   { type: 'restaurant-card', restaurantId, card }   the restaurant's presentation and menu (menuCard.js); card null removes it
 //   { type: 'book-dinner', slotId, restaurantId, seating, guestIds: [id, ...], tableId? }
 //       Phase 3 step 2a/2b: always creates a NEW table. tableId (Strict only, step 2b): book directly
 //       onto that specific, currently-empty table instead of letting dinnerFit search for one — the
@@ -113,13 +114,14 @@ import { canUser } from './users.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
+import { menuCardError, cleanMenuCard } from './menuCard.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 
 // The changes that belong to a roll call. Each one is made on its own (never mixed with others).
 const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // Settings changes (step 7): each is made on its own, like cancel-tour and undo.
-const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant']);
+const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant', 'restaurant-card']);
 // Booking a dinner table, or adding to an existing one (Phase 3 step 2a/2b): also made on its own,
 // like cancel-tour.
 const DINING_BOOKING_TYPES = new Set(['book-dinner', 'add-to-dinner-table', 'move-dinner-table']);
@@ -307,6 +309,11 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'add-restaurant') {
       if (!trip.restaurants.some((r) => r.id === entry.restaurantId)) return fail('This action cannot be undone: the restaurant no longer exists.');
     }
+    if (entry.type === 'restaurant-card') {
+      const restaurant = trip.restaurants.find((r) => r.id === entry.restaurantId);
+      if (!restaurant) return fail('This action cannot be undone: the restaurant no longer exists.');
+      if (JSON.stringify(restaurant.card ?? null) !== JSON.stringify(entry.to.card)) return fail(`This action cannot be undone: the card of "${entry.restaurantLabel}" has changed since.`);
+    }
     if (entry.type === 'edit-restaurant') {
       const restaurant = trip.restaurants.find((r) => r.id === entry.restaurantId);
       if (!restaurant) return fail('This action cannot be undone: the restaurant no longer exists.');
@@ -431,6 +438,11 @@ function validateSettingsChange(trip, change) {
   if (change.type === 'edit-restaurant') {
     if (!trip.restaurants.some((r) => r.id === change.restaurantId)) return fail('That restaurant does not exist.');
     return validateRestaurantFields(change);
+  }
+  if (change.type === 'restaurant-card') {
+    if (!trip.restaurants.some((r) => r.id === change.restaurantId)) return fail('That restaurant does not exist.');
+    const problem = menuCardError(change.card);
+    return problem ? fail(problem) : { ok: true };
   }
   // edit-destination and replace-destination
   const destination = trip.destinations.find((d) => d.id === change.destinationId);
@@ -985,6 +997,19 @@ async function doApply(ctx, tripId, changes, opts = {}) {
       return save(ctx, next, entries, {});
     }
 
+    if (change.type === 'restaurant-card') {
+      const restaurant = next.restaurants.find((r) => r.id === change.restaurantId);
+      const destination = trip.destinations.find((d) => d.id === restaurant.destinationId);
+      const from = { card: restaurant.card ?? null };
+      const to = { card: cleanMenuCard(change.card) };
+      restaurant.card = to.card;
+      entries.push({
+        ...base(), type: 'restaurant-card', restaurantId: restaurant.id, restaurantLabel: restaurant.name,
+        slotId: null, slotLabel: destination.name, place: { name: destination.name, timeZone: destination.timeZone }, from, to,
+      });
+      return save(ctx, next, entries, {});
+    }
+
     if (change.type === 'add-restaurant' || change.type === 'edit-restaurant') {
       const existing = change.type === 'edit-restaurant' ? next.restaurants.find((r) => r.id === change.restaurantId) : null;
       const destination = change.type === 'add-restaurant'
@@ -1004,7 +1029,7 @@ async function doApply(ctx, tripId, changes, opts = {}) {
       const destWhere = { slotId: null, slotLabel: destination.name, place: { name: destination.name, timeZone: destination.timeZone } };
 
       if (change.type === 'add-restaurant') {
-        const restaurant = { id: newId(), destinationId: destination.id, name, seatings, ...fields };
+        const restaurant = { id: newId(), destinationId: destination.id, name, seatings, card: null, ...fields };
         next.restaurants.push(restaurant);
         entries.push({ ...base(), type: 'add-restaurant', restaurantId: restaurant.id, restaurantLabel: name, ...destWhere });
       } else {
@@ -1463,6 +1488,14 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'add-restaurant') {
     next.restaurants = next.restaurants.filter((r) => r.id !== entry.restaurantId); // as if it was never added
     entries.push({ ...base(), type: 'restaurant-remove', cause: 'undo', restaurantId: entry.restaurantId, restaurantLabel: entry.restaurantLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'restaurant-card') {
+    next.restaurants.find((r) => r.id === entry.restaurantId).card = entry.from.card;
+    entries.push({
+      ...base(), type: 'restaurant-card', cause: 'undo', restaurantId: entry.restaurantId, restaurantLabel: entry.restaurantLabel,
+      slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
+    });
     return;
   }
   if (entry.type === 'edit-restaurant') {

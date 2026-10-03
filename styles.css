@@ -844,3 +844,7 @@ button.menu-row:active { background: var(--brand-tint); }
 /* v0.71.0: the Settings button and the compass are the same button in the same place (right); crisp icons */
 .cog .icon svg, .tile-icon .icon svg { shape-rendering: geometricPrecision; }
 .cog--home .icon svg circle[fill='#fff'] { fill: var(--brand); }
+
+/* v0.73.0: a tick box with its words beside it (restaurant menu: show prices) */
+.check-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 15px; }
+.check-row input { width: 22px; height: 22px; }

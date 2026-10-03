@@ -13,6 +13,7 @@
 
 import { guestPlace, samePlace, bySlotOrder } from './rules.js';
 import { formatTime } from './time.js';
+import { guestMenuCard } from './menuCard.js';
 
 // The sheet's own format number: the guest app refuses a sheet it does not understand instead of showing it wrongly.
 export const SHEET_VERSION = 1;
@@ -39,7 +40,7 @@ function toursOf(trip, guest, destinationOf) {
 }
 
 // What the guest sees for one half-day. `kind` is one of: activity, leisure, dinner, waitlist, open (nothing confirmed yet).
-function partOf(trip, guest, slot, destination, tours) {
+function partOf(trip, guest, slot, destination, tours, restaurants) {
   const place = guestPlace(trip, guest, slot);
   if (place.kind === 'activity') {
     const a = place.activity;
@@ -59,6 +60,7 @@ function partOf(trip, guest, slot, destination, tours) {
       .map((other) => other.first);
     return {
       kind: 'dinner', restaurant: place.restaurant.name, seating: place.booking.seating,
+      rest: restaurants.findIndex((r) => r._id === place.restaurant.id), // which entry of the sheet's restaurants opens when tapped (-1: none)
       confirmed: place.booking.status === 'confirmed', with: withNames,
     };
   }
@@ -70,6 +72,10 @@ function partOf(trip, guest, slot, destination, tours) {
 export function buildGuestSheet(trip, guest, now) {
   const days = [];
   const tours = toursOf(trip, guest, (slot) => trip.destinations.find((d) => d.id === slot.destinationId));
+  // Restaurants that have a presentation or menu (the dine-around). Prices are left out here unless the leader chose to show them.
+  const restaurants = trip.restaurants.filter((r) => r.card).map((r) => ({
+    _id: r.id, name: r.name, destination: trip.destinations.find((d) => d.id === r.destinationId)?.name ?? '', card: guestMenuCard(r.card),
+  }));
   for (const slot of [...trip.slots].sort(bySlotOrder)) {
     const destination = trip.destinations.find((d) => d.id === slot.destinationId);
     let day = days.find((d) => d.day === slot.day && d.destination === destination.name);
@@ -77,7 +83,7 @@ export function buildGuestSheet(trip, guest, now) {
       day = { day: slot.day, date: slot.date, destination: destination.name, country: destination.country || '', parts: [] };
       days.push(day);
     }
-    day.parts.push({ half: slot.half, ...partOf(trip, guest, slot, destination, tours) });
+    day.parts.push({ half: slot.half, ...partOf(trip, guest, slot, destination, tours, restaurants) });
   }
   // The sheet only carries the tours a guest can reach: the ones they are booked on and the other options of the same half-day. (Every tour of the
   // trip would make each sheet several times bigger, for nothing.) The indices in the parts are renumbered to match.
@@ -104,6 +110,7 @@ export function buildGuestSheet(trip, guest, now) {
       return { name: d.name, country: d.country || '', photo: d.photo || '', tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null };
     }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
+    restaurants: restaurants.map(({ _id, ...restaurant }) => restaurant),
     tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };
 }

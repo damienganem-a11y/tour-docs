@@ -32,6 +32,8 @@ import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, 
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
 import { buildGuestSheet, guestSheetRows, SHEET_VERSION } from './guestSheet.js';
 import { newToken } from './ids.js';
+import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
+import { SAMPLE_CARDS } from './sampleMenus.js';
 import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
@@ -1103,6 +1105,31 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
     !(await applyChange(ctx8r, trip.id, { type: 'edit-restaurant', restaurantId: 'nope', name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [] })).ok
     && !(await applyChange(ctx8r, trip.id, { type: 'edit-restaurant', restaurantId: casaDoRio, name: '  ', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [] })).ok);
   check('Only the owner can edit a restaurant', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'edit-restaurant', restaurantId: casaDoRio, name: 'X', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 4, tableSizes: [] })).ok);
+
+  // --- Restaurant presentation and menu (v0.73.0) ---
+  const menuText = '# Shareables\nBurrata | Tomato, basil | 16 | Vegetarian, to share\n# Mains\nBarramundi | Grilled | 38';
+  const parsedMenu = parseMenuText(menuText);
+  check('Menu text: # opens a section, a dish is name | description | price | tags', parsedMenu.length === 2 && parsedMenu[0].items[0].price === '16' && parsedMenu[0].items[0].tags.join() === 'vegetarian,to share' && parsedMenu[1].items[0].name === 'Barramundi');
+  check('Menu text round trip: text, sections, text again gives the same text', menuToText(parseMenuText(menuToText(parsedMenu))) === menuToText(parsedMenu));
+  const goodCard = { cuisine: 'Italian', vibe: 'Warm', about: 'Nice', photos: [{ url: 'demo/cooking-1.svg', caption: '' }], showPrices: false, currency: 'EUR', sections: parsedMenu };
+  const beforeCard = structuredClone(ctx8r.state);
+  const savedCard = await applyChange(ctx8r, trip.id, { type: 'restaurant-card', restaurantId: casaDoRio, card: goodCard });
+  check('Restaurant card saved, cleaned, and journaled', savedCard.ok && casaDoRioNow().card.sections.length === 2 && casaDoRioNow().card.cuisine === 'Italian'
+    && /presentation and menu saved \(2 dishes\)/.test(summarize(groupBatches(ctx8r.entries).at(-1))), summarize(groupBatches(ctx8r.entries).at(-1)));
+  check('Refused: a card on an unknown restaurant, a section with no name, a bad tag, a photo that is not https',
+    !(await applyChange(ctx8r, trip.id, { type: 'restaurant-card', restaurantId: 'nope', card: goodCard })).ok
+    && !(await applyChange(ctx8r, trip.id, { type: 'restaurant-card', restaurantId: casaDoRio, card: { ...goodCard, sections: [{ name: ' ', items: [] }] } })).ok
+    && !(await applyChange(ctx8r, trip.id, { type: 'restaurant-card', restaurantId: casaDoRio, card: { ...goodCard, sections: [{ name: 'A', items: [{ name: 'B', tags: ['nuts'] }] }] } })).ok
+    && !(await applyChange(ctx8r, trip.id, { type: 'restaurant-card', restaurantId: casaDoRio, card: { ...goodCard, photos: [{ url: 'javascript:alert(1)' }] } })).ok);
+  const guestCard = guestMenuCard(casaDoRioNow().card);
+  check('Prices are not even in the guest\'s copy while "show prices" is off', guestCard.sections.every((sec) => sec.items.every((i) => i.price === null)) && !JSON.stringify(guestCard).includes('"16"'));
+  await applyChange(ctx8r, trip.id, { type: 'restaurant-card', restaurantId: casaDoRio, card: { ...goodCard, showPrices: true } });
+  check('With "show prices" on the guest\'s copy has the prices', guestMenuCard(casaDoRioNow().card).sections[0].items[0].price === '16');
+  await applyChange(ctx8r, trip.id, { type: 'undo' });
+  await applyChange(ctx8r, trip.id, { type: 'undo' });
+  check('Undo puts the restaurant back exactly (no card)', restoredExactly(ctx8r.state, beforeCard));
+  check('Only the owner can set a restaurant card', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'restaurant-card', restaurantId: casaDoRio, card: goodCard })).ok);
+  check('The sample restaurants\' menus are all valid', Object.values(SAMPLE_CARDS).every((c) => menuCardError(c) === null) && Object.keys(SAMPLE_CARDS).length === 5);
 
   // =====================================================================
   // Phase 3 step 2a/2b: booking a dinner table, then adding to one and browsing by table

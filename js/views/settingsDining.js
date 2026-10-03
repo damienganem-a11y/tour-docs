@@ -15,6 +15,7 @@ import { plural } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { DINING_UNDO_SCOPE } from '../journal.js';
+import { parseMenuText, menuToText, MENU_TAGS } from '../menuCard.js';
 
 // Saves one settings change; closes the sheet and redraws on success, shows the reason on failure.
 let saving = false;
@@ -70,7 +71,14 @@ function restaurantRow(ctx, trip, destination, restaurant) {
       h('div', { class: 'act-name' }, restaurant.name),
       h('div', { class: 'count' }, destination?.name ?? '')),
     h('div', { class: 'muted' }, restaurantSummary(restaurant)));
-  return h('div', { class: 'card' }, head);
+  const cardLine = restaurant.card
+    ? `Presentation and menu: ${restaurant.card.sections.reduce((n, sec) => n + sec.items.length, 0)} dishes · prices ${restaurant.card.showPrices ? 'shown' : 'hidden'}`
+    : 'No presentation or menu yet';
+  const cardButton = h('button', {
+    class: 'btn btn--plain', type: 'button', disabled: Boolean(trip.archivedAt),
+    onclick: () => editCard(ctx, trip, destination, restaurant),
+  }, restaurant.card ? 'Edit presentation and menu' : '+ Presentation and menu');
+  return h('div', { class: 'card' }, head, h('div', { class: 'muted' }, cardLine), cardButton);
 }
 
 // ---------- Sheets ----------
@@ -160,5 +168,38 @@ function editRestaurant(ctx, trip, destination, restaurant) {
     eyebrow: destination?.name ?? 'Dining', title: `Edit "${restaurant.name}"`,
     subtitle: 'Seating times and table sizes are typed as a list, e.g. "19:00, 21:00".',
     body: [...nodes, confirm], cancelLabel: 'Cancel',
+  });
+}
+
+// The restaurant's presentation (how it feels) and menu (rewritten the same way for every restaurant), shown to guests in their app.
+// The menu is typed or pasted in one box: a line starting with # is a section, a dish is  name | description | price | tags.
+// (Claude can turn an uploaded menu into exactly this text; see SPEC.md "Restaurant menus".)
+function editCard(ctx, trip, destination, restaurant) {
+  const card = restaurant.card;
+  const text = (label, value, max, placeholder) => h('input', { class: 'text-input', type: 'text', value: value ?? '', maxlength: String(max), placeholder, 'aria-label': label });
+  const area = (label, value, rows, placeholder) => h('textarea', { class: 'text-input', rows: String(rows), placeholder, 'aria-label': label }, value ?? '');
+  const cuisine = text('Kind of food', card?.cuisine, 60, 'Kind of food, e.g. Modern Australian');
+  const vibe = text('Atmosphere', card?.vibe, 80, 'Atmosphere, e.g. Relaxed, barefoot-friendly');
+  const about = area('Description', card?.about, 3, 'A short description of the restaurant');
+  const interior = area('Inside', card?.interior, 2, 'Inside: lighting, style, noise');
+  const outdoor = area('Outside', card?.outdoor, 2, 'Outside: terrace, garden, view');
+  const photos = area('Photos', (card?.photos ?? []).map((p) => (p.caption ? `${p.url} | ${p.caption}` : p.url)).join('\n'), 3, 'Photos: one web address (https://...) per line, then | and a caption');
+  const menu = area('Menu', menuToText(card?.sections), 10, '# Shareables\nBurrata | Tomato, basil | 16 | vegetarian, to share\n# Mains\nBarramundi | Grilled, lemon butter | 38');
+  const currency = text('Currency', card?.currency, 6, 'Currency, e.g. AUD');
+  const prices = h('input', { type: 'checkbox', checked: card?.showPrices === true, 'aria-label': 'Show prices to guests' });
+  const priceRow = h('label', { class: 'check-row' }, prices, ' Show prices to guests (off: prices are not even sent)');
+  const buildCard = () => ({
+    cuisine: cuisine.value, vibe: vibe.value, about: about.value, interior: interior.value, outdoor: outdoor.value,
+    photos: photos.value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [url, ...rest] = l.split('|'); return { url: url.trim(), caption: rest.join('|').trim() }; }),
+    showPrices: prices.checked, currency: currency.value, sections: parseMenuText(menu.value),
+  });
+  const confirm = h('button', {
+    class: 'btn', type: 'button',
+    onclick: () => save(ctx, trip.id, { type: 'restaurant-card', restaurantId: restaurant.id, card: buildCard() }, `"${restaurant.name}" saved`),
+  }, 'Save');
+  openSheet({
+    eyebrow: destination?.name ?? 'Dining', title: `${restaurant.name}: presentation and menu`,
+    subtitle: `Menu: # starts a section; a dish is name | description | price | tags. Tags: ${MENU_TAGS.join(', ')}.`,
+    body: [cuisine, vibe, about, interior, outdoor, photos, menu, currency, priceRow, confirm], cancelLabel: 'Cancel',
   });
 }

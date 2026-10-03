@@ -150,6 +150,7 @@ function partView(part, sheet) {
     lines.push(h('div', { class: 'what' }, `Dinner at ${part.restaurant}`));
     lines.push(h('div', { class: 'line' }, `Table for ${part.seating}${part.with?.length ? ` · with ${part.with.join(', ')}` : ''}`));
     lines.push(h('span', { class: part.confirmed ? 'tag' : 'tag warn' }, part.confirmed ? 'Confirmed' : 'Being confirmed'));
+    if (part.rest >= 0) { cls += ' part--tap'; lines.push(h('div', { class: 'more' }, 'Restaurant and menu ›')); }
   } else if (part.kind === 'waitlist') {
     lines.push(h('div', { class: 'what' }, part.name));
     lines.push(h('span', { class: 'tag warn' }, 'On the waiting list'));
@@ -158,7 +159,7 @@ function partView(part, sheet) {
     lines.push(h('div', { class: 'what' }, 'To be confirmed'));
   }
   const node = h('div', { class: cls }, h('div', { class: 'half' }, part.half), lines);
-  if (cls.includes('part--tap')) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.addEventListener('click', () => openTour(part.tour)); }
+  if (cls.includes('part--tap')) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.addEventListener('click', () => (part.kind === 'dinner' ? openRestaurant(part.rest) : openTour(part.tour))); }
   return node;
 }
 
@@ -199,7 +200,9 @@ function programmeView(sheet) {
       h('div', { class: 'dest-label' }, h('div', { class: 'dest-name' }, group.destination), h('div', { class: 'dest-sub' }, `${dayRange(group)} · ${dayDate(group.days[0].date)}${group.days.length > 1 ? ` – ${dayDate(group.days[group.days.length - 1].date)}` : ''}`)),
       h('span', { class: 'dest-chev' }, open ? '–' : '+'));
     head.addEventListener('click', () => { if (openGroups.has(group.key)) openGroups.delete(group.key); else openGroups.add(group.key); paint(); });
-    return h('section', { class: `dest${open ? ' is-open' : ''}` }, head,
+    const dining = (sheet.restaurants ?? []).filter((r) => r.destination === group.destination);
+    const eat = open && dining.length ? h('button', { class: 'eat-row', type: 'button', onclick: () => go({ eat: group.destination }) }, h('span', {}, `Where to dine in ${group.destination}`), h('span', { class: 'eat-count' }, `${dining.length} restaurants ›`)) : null;
+    return h('section', { class: `dest${open ? ' is-open' : ''}` }, head, eat,
       open ? group.days.map((day) => h('div', { class: `pass${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
         h('div', { class: 'stub' }, h('i', {}, 'DAY'), String(day.day), day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null),
         h('div', { class: 'pass-body' }, h('div', { class: 'pass-date' }, dayDate(day.date)), day.parts.map((p) => partView(p, sheet))))) : null);
@@ -275,6 +278,55 @@ function optionsView(sheet, tourIndex, offline) {
   ];
 }
 
+// ---------- restaurants (the dine-around) ----------
+// Every restaurant is shown in the same order and the same style, whatever its own menu looks like: guests choose for the food.
+function restaurantView(sheet, index, offline) {
+  const r = sheet.restaurants[index];
+  const card = r.card;
+  const photos = card.photos ?? [];
+  const gallery = photos.length
+    ? h('div', { class: 'gallery' }, photos.map((p) => h('figure', { class: 'shot' }, picture(p.url, '', p.caption || r.name), p.caption ? h('figcaption', {}, p.caption) : null)))
+    : h('div', { class: 'gallery gallery--none' });
+  const block = (title, body) => (body ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, title), h('div', { class: 'block-text' }, body)) : null);
+  const money = (price) => (price ? `${card.currency ? `${card.currency} ` : ''}${price}` : null);
+  const menu = card.sections.map((section) => h('div', { class: 'menu-section' },
+    h('div', { class: 'menu-title' }, section.name),
+    section.items.map((item) => h('div', { class: 'dish' },
+      h('div', { class: 'dish-row' }, h('div', { class: 'dish-name' }, item.name), item.price ? h('div', { class: 'dish-price' }, money(item.price)) : null),
+      item.description ? h('div', { class: 'dish-desc' }, item.description) : null,
+      item.tags?.length ? h('div', { class: 'chips' }, item.tags.map((t) => chip(t, 'chip--tag'))) : null))));
+  const others = sheet.restaurants.map((x, i) => ({ x, i })).filter(({ x, i }) => i !== index && x.destination === r.destination);
+  return [
+    h('div', { class: 'tour-top' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'), gallery),
+    h('div', { class: 'content content--tour' },
+      offline,
+      h('div', { class: 'line' }, r.destination),
+      h('h2', { class: 'tour-title' }, r.name),
+      h('div', { class: 'chips big' }, card.cuisine ? chip(card.cuisine) : null, card.vibe ? chip(card.vibe, 'chip--place') : null),
+      block('About', card.about), block('Inside', card.interior), block('Outside', card.outdoor),
+      card.sections.length ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Menu'), ...menu, card.showPrices ? null : h('p', { class: 'foot' }, 'Prices are not shown: dinner is included.')) : null,
+      others.length ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Other restaurants here'),
+        others.map(({ x, i }) => h('button', { class: 'eat-row', type: 'button', onclick: () => openRestaurant(i) }, h('span', {}, x.name), h('span', { class: 'eat-count' }, `${x.card.cuisine ?? ''} ›`)))) : null),
+  ].filter(Boolean);
+}
+
+function eatView(sheet, destination, offline) {
+  const list = sheet.restaurants.map((r, i) => ({ r, i })).filter(({ r }) => r.destination === destination);
+  return [
+    h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
+      h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, destination), h('h2', {}, 'Where to dine'))),
+    h('div', { class: 'content content--tour' }, offline,
+      list.map(({ r, i }) => {
+        const photo = r.card.photos?.[0];
+        const card = h('div', { class: 'option-card', role: 'button', tabindex: '0' },
+          photo ? picture(photo.url, 'thumb', '') : null,
+          h('div', { class: 'option-text' }, h('div', { class: 'what' }, r.name), h('div', { class: 'line' }, [r.card.cuisine, r.card.vibe].filter(Boolean).join(' · '))));
+        card.addEventListener('click', () => openRestaurant(i));
+        return card;
+      })),
+  ];
+}
+
 // ---------- one tour ----------
 function tourView(sheet, tour, offline) {
   const info = tour.info ?? {};
@@ -312,6 +364,7 @@ let currentOffline = false;
 function go(next) { history.pushState({ view: next }, ''); view = next; paint(); window.scrollTo(0, 0); }
 function openTour(index) { go({ tour: index }); }
 function openOptions(index) { go({ options: index }); }
+function openRestaurant(index) { if (index >= 0) go({ rest: index }); }
 window.addEventListener('popstate', (event) => { view = event.state?.view ?? { tab: 'programme' }; if (currentSheet) paint(); });
 
 // The company colour is kept for small touches only (a stripe at the top): the rest of the look is fixed, so a light or unusual company colour
@@ -335,6 +388,9 @@ function paint() {
     app.replaceChildren(...passportView(sheet, offline));
     return;
   }
+  if (view.rest !== undefined && !sheet.restaurants?.[view.rest]) view = { tab: 'programme' };
+  if (view.rest !== undefined) { app.replaceChildren(...restaurantView(sheet, view.rest, offline)); return; }
+  if (view.eat !== undefined) { app.replaceChildren(...eatView(sheet, view.eat, offline)); return; }
   if (view.options !== undefined) {
     app.replaceChildren(...optionsView(sheet, view.options, offline));
     return;
@@ -372,6 +428,7 @@ function render(sheet, { offline = false } = {}) {
     for (const p of sheet.tours?.[part.tour]?.info?.photos ?? []) wanted.add(p.url);
     for (const i of part.alt ?? []) { const first = sheet.tours?.[i]?.info?.photos?.[0]; if (first) wanted.add(first.url); }
   }
+  for (const r of sheet.restaurants ?? []) for (const p of r.card.photos ?? []) wanted.add(p.url);
   for (const url of [...wanted].slice(0, 120)) fetch(url).catch(() => {});
 }
 

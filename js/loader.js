@@ -18,7 +18,7 @@
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled, short, info } ]   short: a one-word keyword for compact lists (optional); info: what a guest can read about the tour
 //                          (tourInfo.js: duration, description, difficulty, difficultyNote, bring, included, photos), or null
 //   trip.restaurants   [ { id, destinationId, name, seatings, mode, seatsPerSeating, maxTableSize,
-//                          tables: [{id,size}] } ]   Phase 3 step 1 (Settings)
+//                          tables: [{id,size}], card } ]   Phase 3 step 1 (Settings); card: presentation + menu, see menuCard.js (or null)
 //   trip.dinnerBookings [ { id, slotId, restaurantId, seating, tableIds, status } ]  Phase 3 step 2a:
 //                          one per table; membership is derived from trip.bookings, like activities
 //   trip.parties       [ { id, ref, type } ]                                   travel parties

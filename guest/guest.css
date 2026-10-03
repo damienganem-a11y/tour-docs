@@ -225,3 +225,18 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
     radial-gradient(circle at 85% 15%, rgba(228, 87, 46, .35) 0, rgba(228, 87, 46, 0) 38%),
     linear-gradient(160deg, #2f9a73 0%, #1b6a4d 100%);
 }
+
+/* v0.73.0: restaurants and menus (the dine-around). Same order and same look for every restaurant. */
+.chip--tag { background: #eef5ee; color: #2f6b45; }
+.eat-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; margin: 6px 0 10px; padding: 14px 16px; border: 0; border-radius: 16px; background: #fff; box-shadow: var(--shadow); font: inherit; font-weight: 700; color: var(--ink); text-align: left; cursor: pointer; }
+.eat-count { font-weight: 600; font-size: 13px; color: var(--muted); }
+.dest .eat-row { width: calc(100% - 0px); background: var(--bg); box-shadow: none; }
+.menu-section { margin: 14px 0 6px; }
+.menu-title { font-family: Outfit, -apple-system, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); padding-bottom: 6px; border-bottom: 2px solid var(--accent); margin-bottom: 8px; }
+.dish { padding: 8px 0 10px; border-bottom: 1px solid rgba(0, 0, 0, .07); }
+.dish-row { display: flex; justify-content: space-between; gap: 12px; }
+.dish-name { font-weight: 700; }
+.dish-price { font-weight: 700; color: var(--muted); white-space: nowrap; }
+.dish-desc { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.dish .chips { margin-top: 6px; }
+.content.content--tour { margin-top: 22px; } /* tour, options, passport and restaurant pages: no overlap with the header */
