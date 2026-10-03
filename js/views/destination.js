@@ -9,7 +9,7 @@
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn, slotLabel } from '../rules.js';
-import { pageHead } from './chrome.js';
+import { pageHead, accentTitle } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo, proposePromotion } from './move.js';
 import { undoButton } from './undo.js';
 import { forcedPlacements, waitlistOrder, USE_UNDO_SCOPE } from '../journal.js';
@@ -31,14 +31,14 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   // Strip 1: destinations. Strip 2: the half-days of the chosen destination.
   const destinationStrip = strip(trip.destinations.map((d) => ({
     label: d.name, href: `${base}/${d.id}`, active: d.id === destination.id,
-  })));
+  })), false, true);
   const slotStrip = strip(slots.map((s) => ({
     label: `Day ${s.day} ${s.half}`, href: `${base}/${destination.id}/${s.id}`, active: s === slot,
   })), true);
 
   if (!slot) {
     return h('div', {}, destinationStrip,
-      pageHead({ eyebrow: 'Touring', title: destination.name }),
+      pageHead({ eyebrow: 'Touring', title: accentTitle(destination.name) }),
       h('p', { class: 'empty' }, 'This destination has no half-days yet.'));
   }
 
@@ -85,7 +85,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
     slotStrip,
     pageHead({
       eyebrow: 'Touring',
-      title: destination.name,
+      title: accentTitle(destination.name),
       // The destination is the title right above and the day/half is already highlighted in the
       // strip above that, so the only thing worth repeating here is the calendar date — small, and
       // tucked under the title (tightSubtitle) rather than spanning full width below the row, so it
@@ -125,9 +125,14 @@ function rollCallActions(ctx, trip, activity) {
 }
 
 // A row of tappable pills that scrolls sideways.
-function strip(items, small = false) {
-  const node = h('nav', { class: `strip${small ? ' strip--small' : ''}` },
-    items.map((i) => h('a', { class: `strip-item${i.active ? ' is-active' : ''}`, href: i.href }, i.label)));
+function strip(items, small = false, route = false) {
+  // route: the destinations drawn as stops on a dotted route (done = ticked, here = coral, to come = hollow)
+  const here = items.findIndex((i) => i.active);
+  const node = route
+    ? h('nav', { class: 'strip strip--route' }, items.map((i, n) => h('a', { class: `stop${i.active ? ' is-active' : ''}${n < here ? ' is-done' : ''}`, href: i.href },
+        h('span', { class: 'stop-dot' }, n < here ? '✓' : ''), h('span', {}, i.label))))
+    : h('nav', { class: `strip${small ? ' strip--small' : ''}` },
+        items.map((i) => h('a', { class: `strip-item${i.active ? ' is-active' : ''}`, href: i.href }, i.label)));
   // Once the strip is on screen, scroll it so the chosen pill is visible (12 destinations do not fit).
   requestAnimationFrame(() => {
     const pill = node.querySelector('.is-active');

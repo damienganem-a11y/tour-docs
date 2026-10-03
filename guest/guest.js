@@ -196,11 +196,9 @@ function programmeView(sheet) {
       h('span', { class: 'dest-chev' }, open ? '–' : '+'));
     head.addEventListener('click', () => { if (openGroups.has(group.key)) openGroups.delete(group.key); else openGroups.add(group.key); paint(); });
     return h('section', { class: `dest${open ? ' is-open' : ''}` }, head,
-      open ? group.days.map((day) => h('div', { class: `day${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
-        h('div', { class: 'day-head' },
-          h('div', { class: 'day-num' }, h('span', {}, 'DAY'), String(day.day)),
-          h('div', { class: 'day-title' }, dayDate(day.date), day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null)),
-        day.parts.map((p) => partView(p, sheet)))) : null);
+      open ? group.days.map((day) => h('div', { class: `pass${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
+        h('div', { class: 'stub' }, h('i', {}, 'DAY'), String(day.day), day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null),
+        h('div', { class: 'pass-body' }, h('div', { class: 'pass-date' }, dayDate(day.date)), day.parts.map((p) => partView(p, sheet))))) : null);
   });
 }
 
@@ -274,7 +272,7 @@ function applyAccent(accent) {
   const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#1d5c57';
   document.documentElement.style.setProperty('--accent', hex);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.setAttribute('content', '#1d3a63');
+  if (meta) meta.setAttribute('content', '#12372f');
 }
 
 function paint() {
@@ -293,12 +291,16 @@ function paint() {
     app.replaceChildren(...tourView(sheet, tour, offline));
     return;
   }
-  const hero = h('header', { class: 'hero' },
-    sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
-    h('h1', {}, `Hello ${sheet.first}`),
-    h('p', { class: 'sub' }, sheet.trip),
-    nextCard(sheet));
-  app.replaceChildren(hero, h('div', { class: 'content' }, installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
+  const next = nextUp(sheet);
+  const art = next && next.part.kind === 'activity' && next.part.tour >= 0 ? sheet.tours?.[next.part.tour]?.info?.photos?.[0] : null;
+  const hero = h('header', { class: `hero${art ? ' hero--art' : ''}` },
+    art ? picture(art.url, 'hero-art', '') : null,
+    next ? h('div', { class: 'stamp', 'aria-hidden': 'true' }, h('span', {}, next.day.destination.toUpperCase()), h('b', {}, dayDate(next.day.date).replace(/^[A-Za-z]+, /, '').toUpperCase()), h('span', {}, (next.day.country || '').toUpperCase())) : null,
+    h('div', { class: 'hero-text' },
+      sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
+      h('h1', {}, 'Hello ', h('em', {}, sheet.first)),
+      h('p', { class: 'sub' }, sheet.trip)));
+  app.replaceChildren(hero, h('div', { class: 'content' }, nextCard(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
 }
 
 function render(sheet, { offline = false } = {}) {

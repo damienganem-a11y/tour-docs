@@ -185,7 +185,7 @@ function settingsMenu(ctx, trip) {
     h('div', { class: 'tiles' }, SETTINGS_SECTIONS.map((section) => {
       const items = visibleItems(ctx, trip, section);
       if (items.length === 0) return null;
-      return h('a', { class: 'tile', href: `#/trip/${trip.id}/settings/section/${section.key}` },
+      return h('a', { class: `tile tile--${section.key}`, href: `#/trip/${trip.id}/settings/section/${section.key}` },
         h('span', { class: 'tile-icon' }, icon(section.icon)),
         h('span', { class: 'tile-title' }, section.title),
         h('span', { class: 'tile-blurb' }, section.blurb));

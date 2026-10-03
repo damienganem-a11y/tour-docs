@@ -74,7 +74,7 @@ export function buildGuestSheet(trip, guest, now) {
     const destination = trip.destinations.find((d) => d.id === slot.destinationId);
     let day = days.find((d) => d.day === slot.day && d.destination === destination.name);
     if (!day) {
-      day = { day: slot.day, date: slot.date, destination: destination.name, parts: [] };
+      day = { day: slot.day, date: slot.date, destination: destination.name, country: destination.country || '', parts: [] };
       days.push(day);
     }
     day.parts.push({ half: slot.half, ...partOf(trip, guest, slot, destination, tours) });

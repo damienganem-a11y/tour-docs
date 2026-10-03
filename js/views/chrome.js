@@ -15,6 +15,13 @@ import { openOnlineSignIn } from './onlineSignIn.js';
 // eyebrow sits right above the action (Sort/Undo) — its own line, but tight against it (see
 // .page-head-eyebrow-only in styles.css), since squeezing both onto one row leaves the action's
 // own content (e.g. Sort + Undo together) too little room and forces an awkward wrap.
+// A title with its last word in the accent italic ("Siem <em>Reap</em>"), for destination names. A one-word title is left as it is.
+export function accentTitle(text) {
+  const words = String(text).split(' ');
+  if (words.length < 2) return text;
+  return [`${words.slice(0, -1).join(' ')} `, h('em', {}, words[words.length - 1])];
+}
+
 export function pageHead({ back, eyebrow, title, subtitle, action, tightSubtitle = false }) {
   const eyebrowEl = eyebrow ? h('div', { class: 'eyebrow' }, eyebrow) : null;
   const detail = subtitle ? h('div', { class: 'subtitle' }, subtitle) : null;
