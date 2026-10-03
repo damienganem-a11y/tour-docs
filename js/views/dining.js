@@ -33,7 +33,7 @@ import {
   alphabetical, plain, displayNames, guestPlace, dinnerFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates,
   capacityInfo, bySlotOrder, joinNames, plural,
 } from '../rules.js';
-import { pageHead, accentTitle } from './chrome.js';
+import { pageHead, accentTitle, destinationMenu, destinationSub } from './chrome.js';
 import { notice, choiceRow, startMove } from './move.js';
 import { undoButton } from './undo.js';
 import { DINING_USE_UNDO_SCOPE } from '../journal.js';
@@ -54,9 +54,9 @@ export function diningPage(ctx, trip, destinationId, slotId, restaurantId, seati
   const evenings = trip.slots.filter((s) => s.destinationId === destination.id && s.half === 'Evening').sort(bySlotOrder);
   const base = `#/trip/${trip.id}/use/dining`;
 
-  const destinationStrip = strip(withDining.map((d) => ({
-    label: d.name, href: `${base}/${d.id}`, active: d.id === destination.id,
-  })), false, true);
+  const destinationStrip = destinationMenu(withDining.map((d) => ({
+    label: d.name, sub: destinationSub(trip, d), href: `${base}/${d.id}`, active: d.id === destination.id,
+  })));
 
   if (evenings.length === 0) {
     return h('div', {}, destinationStrip,
@@ -100,13 +100,9 @@ export function diningPage(ctx, trip, destinationId, slotId, restaurantId, seati
 
 // A row of tappable pills that scrolls sideways — same behavior as destination.js's own strip
 // (kept local: small, and each screen's pills mean something slightly different).
-function strip(items, small = false, route = false) {
-  const here = items.findIndex((i) => i.active);
-  const node = route
-    ? h('nav', { class: 'strip strip--route' }, items.map((i, n) => h('a', { class: `stop${i.active ? ' is-active' : ''}${n < here ? ' is-done' : ''}`, href: i.href },
-        h('span', { class: 'stop-dot' }, n < here ? '✓' : ''), h('span', {}, i.label))))
-    : h('nav', { class: `strip${small ? ' strip--small' : ''}` },
-        items.map((i) => h('a', { class: `strip-item${i.active ? ' is-active' : ''}`, href: i.href }, i.label)));
+function strip(items, small = false) {
+  const node = h('nav', { class: `strip${small ? ' strip--small' : ''}` },
+    items.map((i) => h('a', { class: `strip-item${i.active ? ' is-active' : ''}`, href: i.href }, i.label)));
   requestAnimationFrame(() => {
     const pill = node.querySelector('.is-active');
     if (pill) node.scrollLeft = pill.offsetLeft - 20;

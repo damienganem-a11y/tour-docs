@@ -764,16 +764,6 @@ body { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto
 .strip-item { border: 1px solid var(--line); background: var(--card); font-family: Inter, sans-serif; }
 .strip-item.is-active { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
 
-/* the destination strip as a route: dots on a dotted line; done = green tick, here = coral, to come = hollow */
-.strip--route { gap: 0; padding-top: 8px; padding-bottom: 6px; margin-bottom: 6px; position: relative; }
-.strip--route .stop { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 78px; min-height: 0; padding: 0; border: 0; background: none; color: var(--muted); font-size: 12.5px; font-weight: 600; text-align: center; position: relative; }
-.strip--route .stop::before { content: ""; position: absolute; top: 13px; left: -50%; right: 50%; border-top: 2.5px dotted #b9ae94; z-index: 0; }
-.strip--route .stop:first-child::before { display: none; }
-.strip--route .stop-dot { position: relative; z-index: 1; width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid #b9ae94; background: var(--bg); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 800; }
-.strip--route .stop.is-done .stop-dot { background: var(--brand); border-color: var(--brand); }
-.strip--route .stop.is-active { color: var(--ink); font-weight: 800; }
-.strip--route .stop.is-active .stop-dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 6px rgba(228, 87, 46, 0.18); }
-
 /* the bottom tabs as a floating dock */
 .bottom-tabs { left: 16px; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom)); padding: 6px; gap: 4px; border: 0; border-radius: 32px; background: var(--brand); box-shadow: 0 14px 30px rgba(18, 55, 47, 0.35); max-width: 688px; margin: 0 auto; }
 .bottom-tab { min-height: 48px; border-radius: 26px; color: #c7d8d2; font-weight: 600; }
@@ -792,3 +782,26 @@ body { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto
 .tile:active { background: var(--brand-tint); }
 
 .title em { font-family: var(--italic); font-style: italic; font-weight: 600; color: var(--brand); letter-spacing: 0; }
+
+/* v0.68.0: the top bar of a trip, the destination chooser, a sheet you can drag down */
+.top-bar { margin-bottom: 8px; }
+.top-trip { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 15px Outfit, sans-serif; color: var(--muted); }
+.top-side { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.cog { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; color: var(--brand); }
+.cog:active { background: var(--brand-tint); }
+.cog .icon svg { width: 26px; height: 26px; }
+.change-trip { margin-top: 18px; }
+
+.dest-menu { display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 10px; padding: 12px 16px; border: 0; border-radius: 20px; background: var(--card); box-shadow: var(--shadow); font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
+.dest-menu:active { background: var(--brand-tint); }
+.dest-menu-pin { flex: none; width: 38px; height: 38px; border-radius: 12px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.dest-menu-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dest-menu-name { font: 700 19px Outfit, sans-serif; }
+.dest-menu-sub { font-size: 13px; color: var(--muted); }
+.dest-menu-chev { flex: none; font-size: 22px; color: var(--muted); }
+.menu-row.is-current { background: var(--brand-tint); border-radius: 14px; }
+.here-tick { color: var(--accent); font-weight: 800; font-size: 20px; }
+
+.sheet { position: relative; touch-action: pan-y; }
+.sheet::before { content: ""; position: absolute; top: 8px; left: 50%; width: 44px; height: 5px; margin-left: -22px; border-radius: 3px; background: #d9d2c0; }
+.sheet-head { padding-top: 6px; }

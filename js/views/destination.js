@@ -9,7 +9,7 @@
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn, slotLabel } from '../rules.js';
-import { pageHead, accentTitle } from './chrome.js';
+import { pageHead, accentTitle, destinationMenu, destinationSub } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo, proposePromotion } from './move.js';
 import { undoButton } from './undo.js';
 import { forcedPlacements, waitlistOrder, USE_UNDO_SCOPE } from '../journal.js';
@@ -29,9 +29,9 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   const base = `#/trip/${trip.id}/use/destination`;
 
   // Strip 1: destinations. Strip 2: the half-days of the chosen destination.
-  const destinationStrip = strip(trip.destinations.map((d) => ({
-    label: d.name, href: `${base}/${d.id}`, active: d.id === destination.id,
-  })), false, true);
+  const destinationStrip = destinationMenu(trip.destinations.map((d) => ({
+    label: d.name, sub: destinationSub(trip, d), href: `${base}/${d.id}`, active: d.id === destination.id,
+  })));
   const slotStrip = strip(slots.map((s) => ({
     label: `Day ${s.day} ${s.half}`, href: `${base}/${destination.id}/${s.id}`, active: s === slot,
   })), true);
@@ -125,15 +125,9 @@ function rollCallActions(ctx, trip, activity) {
 }
 
 // A row of tappable pills that scrolls sideways.
-function strip(items, small = false, route = false) {
-  // route: the destinations drawn as stops on a dotted route (done = ticked, here = coral, to come = hollow)
-  const here = items.findIndex((i) => i.active);
-  const node = route
-    ? h('nav', { class: 'strip strip--route' }, items.map((i, n) => h('a', { class: `stop${i.active ? ' is-active' : ''}${n < here ? ' is-done' : ''}`, href: i.href },
-        h('span', { class: 'stop-dot' }, n < here ? '✓' : ''), h('span', {}, i.label))))
-    : h('nav', { class: `strip${small ? ' strip--small' : ''}` },
-        items.map((i) => h('a', { class: `strip-item${i.active ? ' is-active' : ''}`, href: i.href }, i.label)));
-  // Once the strip is on screen, scroll it so the chosen pill is visible (12 destinations do not fit).
+function strip(items, small = false) {
+  const node = h('nav', { class: `strip${small ? ' strip--small' : ''}` },
+    items.map((i) => h('a', { class: `strip-item${i.active ? ' is-active' : ''}`, href: i.href }, i.label)));
   requestAnimationFrame(() => {
     const pill = node.querySelector('.is-active');
     if (pill) node.scrollLeft = pill.offsetLeft - 20;

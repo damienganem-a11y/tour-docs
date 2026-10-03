@@ -125,19 +125,17 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
     return { node: h('div', { class: 'screen' }, backupSettingsPage(ctx, trip)) };
   }
 
-  const link = (target, label) =>
-    h('a', { class: `switch-item${mode === target ? ' is-active' : ''}`, href: `#/trip/${trip.id}/${target}` }, label);
-  const modeSwitch = h('nav', { class: 'switch switch--compact', 'aria-label': 'Use or Settings' }, link('use', 'Use'), link('settings', 'Settings'));
-
-  // One slim row for both modes: back link, the Use/Settings switch (small — it is tapped rarely,
-  // so it should not compete with the actual screen for room), the trip's own code (Use only), and
-  // the sync light (Phase 2, step 2a) — compact here (dots only, no word) since this row is already
-  // tight; the full light-plus-word version lives on the roomier Trips screen header.
-  const topBar = h('div', { class: 'top-bar' },
-    h('a', { class: 'back-link', href: '#/' }, '‹ All trips'),
-    modeSwitch,
-    mode === 'use' ? h('span', { class: 'muted' }, trip.ref) : null,
-    syncDot(ctx, { compact: true }));
+  // One slim row, for both modes. Use: the trip's name (so you know where you are) and, on the right, the sync light and a cog that opens Settings.
+  // Settings: a way back to the trip. Changing trip lives in Settings (owner's request, 3 Oct 2026): once in a trip, you stay in it.
+  const topBar = mode === 'settings'
+    ? h('div', { class: 'top-bar' },
+        h('a', { class: 'back-link', href: `#/trip/${trip.id}/use` }, '‹ Back to the trip'),
+        syncDot(ctx, { compact: true }))
+    : h('div', { class: 'top-bar' },
+        h('span', { class: 'top-trip' }, trip.name),
+        h('span', { class: 'top-side' },
+          syncDot(ctx, { compact: true }),
+          h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog'))));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
@@ -190,7 +188,8 @@ function settingsMenu(ctx, trip) {
         h('span', { class: 'tile-title' }, section.title),
         h('span', { class: 'tile-blurb' }, section.blurb));
     })),
-    role === 'owner' ? h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 18px;', onclick: () => openPreviewSheet(ctx, trip) }, 'Preview as View only, Team or Guest') : null);
+    h('a', { class: 'btn btn--plain change-trip', href: '#/' }, 'Change trip'),
+    role === 'owner' ? h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;', onclick: () => openPreviewSheet(ctx, trip) }, 'Preview as View only, Team or Guest') : null);
 }
 
 // One group of Settings: its entries as a list, with a way back to the four tiles.

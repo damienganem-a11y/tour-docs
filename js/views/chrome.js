@@ -15,6 +15,29 @@ import { openOnlineSignIn } from './onlineSignIn.js';
 // eyebrow sits right above the action (Sort/Undo) — its own line, but tight against it (see
 // .page-head-eyebrow-only in styles.css), since squeezing both onto one row leaves the action's
 // own content (e.g. Sort + Undo together) too little room and forces an awkward wrap.
+// The destination chooser (Touring, Dining): one button showing where you are; tapping it lists the destinations, a tap on one goes there. It
+// replaces a long sideways strip: in the field you jump from place to place to check things, so a list is quicker than scrolling.
+// items: [{ label, sub, href, active }]
+export function destinationMenu(items, { eyebrow = 'Destination' } = {}) {
+  const here = items.find((i) => i.active) ?? items[0];
+  return h('button', {
+    class: 'dest-menu', type: 'button', 'aria-haspopup': 'dialog',
+    onclick: () => openSheet({
+      eyebrow, title: 'Where to?', cancelLabel: 'Close',
+      body: h('div', { class: 'menu' }, items.map((i) => h('a', { class: `menu-row${i.active ? ' is-current' : ''}`, href: i.href, onclick: () => closeSheet() },
+        h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, i.label), i.sub ? h('span', { class: 'menu-hint' }, i.sub) : null),
+        h('span', { class: 'menu-side' }, i.active ? h('span', { class: 'here-tick' }, '✓') : null)))),
+    }),
+  }, h('span', { class: 'dest-menu-pin' }, '⌖'), h('span', { class: 'dest-menu-text' }, h('span', { class: 'dest-menu-name' }, here?.label ?? ''), here?.sub ? h('span', { class: 'dest-menu-sub' }, here.sub) : null), h('span', { class: 'dest-menu-chev' }, '⌄'));
+}
+
+// "Day 3–4 · Peru": what a destination line in the chooser says under its name.
+export function destinationSub(trip, destination) {
+  const days = trip.slots.filter((x) => x.destinationId === destination.id).map((x) => x.day);
+  const range = days.length === 0 ? '' : Math.min(...days) === Math.max(...days) ? `Day ${days[0]}` : `Day ${Math.min(...days)}–${Math.max(...days)}`;
+  return [range, destination.country].filter(Boolean).join(' · ');
+}
+
 // A title with its last word in the accent italic ("Siem <em>Reap</em>"), for destination names. A one-word title is left as it is.
 export function accentTitle(text) {
   const words = String(text).split(' ');

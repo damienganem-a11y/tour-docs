@@ -22,6 +22,43 @@ export function closeSheet() {
   whenClosed?.();
 }
 
+// Dragging a sheet down closes it, like every iPhone sheet: the finger moves it, and letting go past a third of a swipe (or a quick flick) closes
+// it, otherwise it springs back. Only starts when the list inside is scrolled to its top (so scrolling a long list never closes it by mistake).
+function enableSwipeDown(sheet, backdrop) {
+  const body = sheet.querySelector('.sheet-body');
+  let startY = 0; let startAt = 0; let dy = 0; let dragging = false; let allowed = false;
+  sheet.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    startY = e.touches[0].clientY; startAt = Date.now(); dy = 0; dragging = false;
+    allowed = !body || !body.contains(e.target) || body.scrollTop <= 0;
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    const delta = e.touches[0].clientY - startY;
+    if (!dragging) { if (allowed && delta > 8) dragging = true; else return; }
+    dy = Math.max(0, delta);
+    sheet.style.transition = 'none';
+    sheet.style.animation = 'none';
+    sheet.style.transform = `translateY(${dy}px)`;
+    backdrop.style.background = `rgba(0, 0, 0, ${0.5 * (1 - Math.min(1, dy / 420))})`;
+    e.preventDefault(); // the page behind must not scroll while the sheet is being dragged
+  }, { passive: false });
+  const release = () => {
+    if (!dragging) return;
+    dragging = false;
+    const flick = dy / Math.max(1, Date.now() - startAt) > 0.6;
+    sheet.style.transition = 'transform 0.18s ease-out';
+    if (dy > 110 || (flick && dy > 30)) {
+      sheet.style.transform = 'translateY(100%)';
+      setTimeout(closeSheet, 160);
+    } else {
+      sheet.style.transform = '';
+      backdrop.style.background = '';
+    }
+  };
+  sheet.addEventListener('touchend', release);
+  sheet.addEventListener('touchcancel', release);
+}
+
 // eyebrow: small label above the title. title/subtitle: text at the top. body: elements to show inside.
 // titleBadge: an element shown top-right, level with the title (e.g. a live "2 / 4" count) — same
 // row layout as a card's own title+count (see guestCard, tableCard).
@@ -49,6 +86,7 @@ export function openSheet({ eyebrow, title, subtitle, titleBadge, body, footer, 
 
   document.body.classList.add('sheet-open'); // stops the page behind from scrolling
   document.body.append(openBackdrop);
+  enableSwipeDown(sheet, openBackdrop);
 }
 
 // ---------- Toast ----------
