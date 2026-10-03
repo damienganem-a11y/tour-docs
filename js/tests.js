@@ -25,12 +25,12 @@ import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { tourShort, PART_CODE } from './rules.js';
-import { passportState, dayIn, stampSvg } from '../guest/passport.js';
+import { passportState, dayIn, stampSvg, wallToInstant } from '../guest/passport.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
-import { buildGuestSheet, guestSheetRows, SHEET_VERSION } from './guestSheet.js';
+import { buildGuestSheet, guestSheetRows, SHEET_VERSION, guestLinkExpiry, GUEST_LINK_GRACE_DAYS } from './guestSheet.js';
 import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
@@ -1692,6 +1692,15 @@ const staleEntries = listed.filter((f) => f.endsWith('.js') && f !== 'sw.js' && 
 check(`Every one of the ${needed.size} scripts the app needs is in the offline list (a missing one would break offline)`, notListed.length === 0, notListed.join(', '));
 check('The offline list has no scripts the app does not use', staleEntries.length === 0, staleEntries.join(', '));
 
+// Every script must at least load (a typing slip in a screen would otherwise only show up when that screen is opened). app.js itself starts the
+// app, so it is left out; everything it imports is loaded here.
+const cannotLoad = [];
+for (const file of needed) {
+  if (file === 'js/app.js') continue;
+  try { await import(new URL(`../${file}`, import.meta.url).href); } catch (error) { cannotLoad.push(`${file}: ${String(error).slice(0, 80)}`); }
+}
+check(`All ${needed.size - 1} scripts load without a syntax error`, cannotLoad.length === 0, cannotLoad.join(' | '));
+
 const indexText = await (await fetch('./index.html', { cache: 'no-cache' })).text();
 const fromIndex = [...indexText.matchAll(/(?:href|src)="([^"#]+)"/g)].map((m) => m[1]).filter((u) => !u.startsWith('http'));
 check('Everything the home page loads (styles, icon, manifest, script) is in the offline list', fromIndex.every((f) => listed.includes(f)), fromIndex.filter((f) => !listed.includes(f)).join(', '));
@@ -2778,6 +2787,18 @@ function readZip(bytes) {
     && groupBatches(ctxG.entries).map(summarize).some((t) => /no longer see the other options/.test(t)));
   await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'options-on' });
   check('Switching it on again brings them back', buildGuestSheet(ctxG.state, guest, 'x').days.flatMap((d) => d.parts).some((p) => p.alt?.length > 0));
+  // v0.79.0: links expire by themselves, and a wall-clock time in a place is turned into the right moment
+  const expiryDay = guestLinkExpiry(ctxG.state);
+  const dayAfter = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const rowsBefore = guestSheetRows(ctxG.state, 'x', dayAfter(expiryDay, 0));
+  const rowsAfter = guestSheetRows(ctxG.state, 'x', dayAfter(expiryDay, 1));
+  check('A guest link works until the last day plus the grace days, then it switches itself off and the server keeps no sheet',
+    rowsBefore.some((r) => r.active && r.sheet) && rowsAfter.length > 0 && rowsAfter.every((r) => !r.active && r.sheet === null) && GUEST_LINK_GRACE_DAYS === 7);
+  check('The sheet carries its expiry day, so the guest app also stops showing it with no connection', buildGuestSheet(ctxG.state, ctxG.state.guests[0], 'x').expiresOn === expiryDay);
+  check('A wall-clock time in a place becomes the exact moment: 07:30 in Siem Reap is 00:30 UTC; 07:30 in New York in September is 11:30 UTC',
+    wallToInstant('2027-09-08', '07:30', 'Asia/Phnom_Penh').toISOString() === '2027-09-08T00:30:00.000Z' && wallToInstant('2027-09-08', '07:30', 'America/New_York').toISOString() === '2027-09-08T11:30:00.000Z');
+  const guestJsText = await (await fetch('../guest/guest.js')).text();
+  check('The guest app has no sentence about dinner being included or not (it is the trip\'s own business)', !/dinner is included/i.test(guestJsText) && /allergy or dietary/.test(guestJsText));
   const rows = guestSheetRows(ctxG.state, 'x');
   const offRow = rows.find((r) => r.guestId === guest.id);
   check('A switched-off link has no content; the others have a sheet', offRow.active === false && offRow.sheet === null && rows.filter((r) => r.active).every((r) => r.sheet && r.sheet.first));

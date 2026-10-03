@@ -46,7 +46,7 @@ export function exportsSettingsPage(ctx, trip) {
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
-      eyebrow: 'Exports archive',
+      eyebrow: 'Documents',
       title: 'Documents',
       subtitle: 'Create a document, look at it, then close it or share it. Every one you made is kept below, newest first.',
     }),
@@ -66,7 +66,7 @@ export function exportsSettingsPage(ctx, trip) {
 
 function pickDestination(ctx, trip) {
   openSheet({
-    eyebrow: 'Exports archive', title: 'Export which destination?',
+    eyebrow: 'Documents', title: 'Export which destination?',
     body: trip.destinations.map((d) => choiceRow({ title: d.name, onclick: () => pickSlot(ctx, trip, d) })),
     cancelLabel: 'Cancel',
   });
@@ -99,7 +99,7 @@ function pickCardsEvening(ctx, trip) {
     .filter((s) => trip.dinnerBookings.some((b) => b.slotId === s.id && dinnerCountIn(trip, b) > 0))
     .sort(bySlotOrder);
   openSheet({
-    eyebrow: 'Exports archive', title: 'Cards for which evening?',
+    eyebrow: 'Documents', title: 'Cards for which evening?',
     body: evenings.map((s) => choiceRow({
       title: slotLabel(trip, s),
       onclick: async () => {
@@ -120,7 +120,7 @@ function pickReservationEvening(ctx, trip) {
   const withRestaurants = new Set(trip.restaurants.map((r) => r.destinationId));
   const evenings = trip.slots.filter((s) => s.half === 'Evening' && withRestaurants.has(s.destinationId)).sort(bySlotOrder);
   openSheet({
-    eyebrow: 'Exports archive', title: 'Which evening?',
+    eyebrow: 'Documents', title: 'Which evening?',
     body: evenings.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runReservations(ctx, trip, s) })),
     cancelLabel: 'Cancel',
   });

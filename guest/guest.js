@@ -10,7 +10,7 @@
 // The app can read nothing else: no trip, no other guest. Read only.
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
-import { passportState, stampSvg } from './passport.js';
+import { passportState, stampSvg, dayIn, wallToInstant } from './passport.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
 const SHEET_KEY = 'tourdocs.guest.sheet';
@@ -80,6 +80,10 @@ const MONTHS_DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'nu
 const dayDate = (iso) => MONTHS_DAY.format(new Date(`${iso}T00:00:00Z`));
 let simulatedDate = null; // owner's preview only: "pretend today is..." (set from the sheet's previewDate)
 const localToday = () => { if (simulatedDate) return simulatedDate; const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// "Today" in a given destination, in THAT place's own time zone (not the phone's clock): the same rule as the passport. A guest who has just crossed
+// the date line, or lands late at night, then sees the same day everywhere in the app.
+const zoneOf = (sheet, destinationName) => sheet.destinations?.find((d) => d.name === destinationName)?.tz || null;
+const todayAt = (sheet, destinationName) => (simulatedDate ? simulatedDate : (zoneOf(sheet, destinationName) ? dayIn(zoneOf(sheet, destinationName), new Date()) : localToday()));
 const updatedText = (iso) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
 
 // "Next up": the first thing still to come (an activity or a dinner), so the guest sees at once where to be next. The clock time of a
@@ -91,7 +95,10 @@ function nextUp(sheet, now = simulatedDate ? new Date(`${simulatedDate}T07:00:00
       if (part.kind !== 'activity' && part.kind !== 'dinner') continue;
       if (part.kind === 'activity' && part.cancelled) continue;
       const clock = part.time || (part.kind === 'dinner' ? part.seating : null) || USUAL_HOUR[part.half] || '12:00';
-      const start = new Date(`${day.date}T${/^\d\d:\d\d$/.test(clock) ? clock : '12:00'}:00`);
+      const wall = /^\d\d:\d\d$/.test(clock) ? clock : '12:00';
+      // The part's start is read in its destination's own time zone, and compared with the real moment (when pretending, in plain wall time).
+      const zone = zoneOf(sheet, day.destination);
+      const start = !simulatedDate && zone ? wallToInstant(day.date, wall, zone) : new Date(`${day.date}T${wall}:00`);
       if (start.getTime() >= now.getTime() - 60 * 60000) return { day, part, clock };
     }
   }
@@ -155,18 +162,22 @@ function partView(part, sheet) {
   return node;
 }
 
-// The black bar under the header: where the guest is in the trip. During the trip: day x of n, the place, today's date. Before: when it starts.
-// After: that it is over. (Dates are the programme's own days, so no time zone is involved.)
+// The info bar under the header: where the guest is in the trip. During the trip: day x of n, the place, today's date. Before: when it starts.
+// After: that it is over. (Each day is judged in its own destination's time zone.)
 function tripBar(sheet) {
-  const today = localToday();
   const days = sheet.days;
   const first = days[0]; const last = days[days.length - 1];
   const cell = (label, value) => h('div', {}, h('small', {}, label), h('b', {}, value));
   if (!first) return null;
-  if (today < first.date) return h('div', { class: 'bar' }, cell('Starts', dayDate(first.date)), cell('Days', String(last.day)), cell('First stop', first.destination));
-  if (today > last.date) return h('div', { class: 'bar' }, cell('Trip', 'Complete'), cell('Days', String(last.day)), cell('Last stop', last.destination));
-  const here = days.find((d) => d.date === today) ?? days.filter((d) => d.date <= today).pop() ?? first;
-  return h('div', { class: 'bar' }, cell('Day', `${here.day} of ${last.day}`), cell('Now in', here.destination), cell('Today', dayDate(today)));
+  // Each day is compared with "today" in its own destination's time zone.
+  const isToday = (d) => d.date === todayAt(sheet, d.destination);
+  const here = days.find(isToday);
+  if (here) return h('div', { class: 'bar' }, cell('Day', `${here.day} of ${last.day}`), cell('Now in', here.destination), cell('Today', dayDate(here.date)));
+  const before = todayAt(sheet, first.destination) < first.date;
+  if (before) return h('div', { class: 'bar' }, cell('Starts', dayDate(first.date)), cell('Days', String(last.day)), cell('First stop', first.destination));
+  if (todayAt(sheet, last.destination) > last.date) return h('div', { class: 'bar' }, cell('Trip', 'Complete'), cell('Days', String(last.day)), cell('Last stop', last.destination));
+  const passed = days.filter((d) => d.date < todayAt(sheet, d.destination)).pop() ?? first; // a travel day with no programme line
+  return h('div', { class: 'bar' }, cell('Day', `${passed.day} of ${last.day}`), cell('Now in', passed.destination), cell('Today', dayDate(todayAt(sheet, passed.destination))));
 }
 
 // The "Next up" card, shown in the header of the programme.
@@ -196,7 +207,6 @@ function dayRange(group) {
 }
 
 function programmeView(sheet) {
-  const today = localToday();
   const groups = destinationGroups(sheet);
   return groups.map((group) => {
     const open = openGroups.has(group.key);
@@ -209,8 +219,8 @@ function programmeView(sheet) {
     const dining = (sheet.restaurants ?? []).filter((r) => r.destination === group.destination);
     const eat = open && dining.length ? h('button', { class: 'eat-row', type: 'button', onclick: () => go({ eat: group.destination }) }, h('span', {}, `Where to dine in ${group.destination}`), h('span', { class: 'eat-count' }, `${dining.length} restaurants ›`)) : null;
     return h('section', { class: `dest${open ? ' is-open' : ''}` }, head, eat,
-      open ? group.days.map((day) => h('div', { class: `pass${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
-        h('div', { class: 'stub' }, h('i', {}, 'DAY'), String(day.day), day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null),
+      open ? group.days.map((day) => h('div', { class: `pass${day.date === todayAt(sheet, day.destination) ? ' today' : ''}`, id: `d-${day.date}` },
+        h('div', { class: 'stub' }, h('i', {}, 'DAY'), String(day.day), day.date === todayAt(sheet, day.destination) ? h('span', { class: 'today-tag' }, 'TODAY') : null),
         h('div', { class: 'pass-body' }, h('div', { class: 'pass-date' }, dayDate(day.date)), day.parts.map((p) => partView(p, sheet))))) : null);
   });
 }
@@ -218,6 +228,9 @@ function programmeView(sheet) {
 // ---------- the passport ----------
 const STAMPS_SEEN_KEY = 'tourdocs.guest.stamps';
 const stampDate = (iso) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso}T00:00:00Z`)).toUpperCase();
+// A stamp is remembered by name AND first date, so two places with the same name (or a changed date) never share a stamp. (Older copies kept the name only: still honoured.)
+const stampKey = (d) => `${d.name}|${d.firstDate}`;
+const isSeen = (seen, d) => seen.includes(stampKey(d)) || seen.includes(d.name);
 const seenStamps = () => { try { return JSON.parse(store.get(STAMPS_SEEN_KEY)) ?? []; } catch { return []; } };
 // The stamps of the trip: given when the first day in a place begins THERE (its own time zone), whatever the phone's clock zone says.
 const passportOf = (sheet) => passportState(sheet.destinations, simulatedDate ?? new Date());
@@ -226,7 +239,7 @@ function passportRow(sheet) {
   const state = passportOf(sheet);
   if (state.length === 0) return null;
   const given = state.filter((d) => d.given).length;
-  const fresh = state.filter((d) => d.given && !seenStamps().includes(d.name)).length;
+  const fresh = state.filter((d) => d.given && !isSeen(seenStamps(), d)).length;
   const row = h('button', { class: 'passport-row', type: 'button' },
     h('span', { class: 'passport-ic' }, '◎'),
     h('span', { class: 'passport-text' }, h('span', { class: 'passport-title' }, 'My passport'), h('span', { class: 'passport-sub' }, `${given} of ${state.length} stamps`)),
@@ -240,13 +253,13 @@ function passportView(sheet, offline) {
   const state = passportOf(sheet);
   const seen = seenStamps();
   const tiles = state.map((d, i) => {
-    const fresh = d.given && !seen.includes(d.name);
+    const fresh = d.given && !isSeen(seen, d);
     const tile = h('div', { class: `stamp-tile${d.given ? '' : ' is-locked'}${fresh ? ' is-new' : ''}` });
     if (d.given) { tile.innerHTML = stampSvg(d, stampDate(d.firstDate), `p${i}`); } // drawn by passport.js from the destination's own name, not typed text
     else tile.append(h('div', { class: 'stamp-ghost' }, h('span', {}, '?')));
     return h('div', { class: 'stamp-cell' }, tile, h('div', { class: 'stamp-name' }, d.given ? d.name : `Opens ${stampDate(d.firstDate).slice(0, -5)}`), d.given ? h('div', { class: 'stamp-date' }, stampDate(d.firstDate)) : null);
   });
-  if (!simulatedDate) { const all = state.filter((d) => d.given).map((d) => d.name); store.set(STAMPS_SEEN_KEY, JSON.stringify([...new Set([...seen, ...all])])); }
+  if (!simulatedDate) { const all = state.filter((d) => d.given).map(stampKey); store.set(STAMPS_SEEN_KEY, JSON.stringify([...new Set([...seen, ...all])])); }
   return [
     h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
       h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, sheet.trip), h('h2', {}, 'My passport'))),
@@ -310,7 +323,7 @@ function restaurantView(sheet, index, offline) {
       h('h2', { class: 'tour-title' }, r.name),
       h('div', { class: 'chips big' }, card.cuisine ? chip(card.cuisine) : null, card.vibe ? chip(card.vibe, 'chip--place') : null),
       block('About', card.about), block('Inside', card.interior), block('Outside', card.outdoor),
-      card.sections.length ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Menu'), ...menu, card.showPrices ? null : h('p', { class: 'foot' }, 'Prices are not shown: dinner is included.')) : null,
+      card.sections.length ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Menu'), ...menu, h('p', { class: 'foot' }, 'Please tell your waiter about any allergy or dietary requirement before ordering. Dish tags are a guide, not a guarantee.')) : null,
       others.length ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Other restaurants here'),
         others.map(({ x, i }) => h('button', { class: 'eat-row', type: 'button', onclick: () => openRestaurant(i) }, h('span', {}, x.name), h('span', { class: 'eat-count' }, `${x.card.cuisine ?? ''} ›`)))) : null),
   ].filter(Boolean);
@@ -445,10 +458,23 @@ function paint() {
       sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
       h('p', { class: 'sub' }, 'Hello ', h('b', {}, sheet.first), ','),
       h('h1', {}, sheet.trip)));
-  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
+  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, staleNotice(sheet), ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
+}
+
+// After the link's last day the programme is no longer shown and the kept copy is erased (the server has already forgotten it).
+function expired(sheet) { return !simulatedDate && /^\d{4}-\d{2}-\d{2}$/.test(sheet.expiresOn ?? '') && localToday() > sheet.expiresOn; }
+
+// While the trip is on, a sheet nobody has refreshed for two days may be out of date (the leader's phone sends the programme, and it has been quiet).
+function staleNotice(sheet) {
+  if (simulatedDate || !sheet.updatedAt) return null;
+  const first = sheet.days[0]; const last = sheet.days[sheet.days.length - 1];
+  if (!first || todayAt(sheet, first.destination) < first.date || todayAt(sheet, last.destination) > last.date) return null;
+  if (Date.now() - Date.parse(sheet.updatedAt) < 48 * 3600000) return null;
+  return h('div', { class: 'banner' }, `This programme was last updated on ${updatedText(sheet.updatedAt)}. If something may have changed, please ask your tour leader.`);
 }
 
 function render(sheet, { offline = false } = {}) {
+  if (expired(sheet)) { store.remove(SHEET_KEY); showProblem('This trip is over', 'Your link has expired. Thank you for travelling with us.'); return; }
   if (currentSheet && offline === currentOffline && JSON.stringify(sheet) === JSON.stringify(currentSheet) && app.children.length > 0 && !app.querySelector('.problem')) return; // nothing new: do not redraw (it would close an open panel)
   currentSheet = sheet;
   currentOffline = offline;
@@ -510,7 +536,8 @@ async function refresh() {
     showProblem('No connection', 'Connect to the internet once to receive your programme. After that it works without.');
   }
   if (!scrolledToToday) {
-    const today = document.getElementById(`d-${localToday()}`);
+    const todayDay = currentSheet?.days.find((d) => d.date === todayAt(currentSheet, d.destination));
+    const today = todayDay ? document.getElementById(`d-${todayDay.date}`) : null;
     const group = today?.closest('.dest');
     if (group && group !== document.querySelector('.dest')) { group.scrollIntoView(); scrolledToToday = true; } // the first group is already at the top
   }

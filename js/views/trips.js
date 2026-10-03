@@ -186,7 +186,7 @@ export function tripsView(ctx) {
       eyebrow: 'Account', title: ctx.owner.name, subtitle: 'This phone', cancelLabel: 'Close',
       body: [
         h('div', { class: 'menu' },
-          row('My company', ctx.companyLook?.companyName || 'Logo and colour for new trips', () => { closeSheet(); openCompanyLookSheet(ctx); }),
+          row('Company look', ctx.companyLook?.companyName || 'Logo and colour for new trips', () => { closeSheet(); openCompanyLookSheet(ctx); }),
           faceId,
           ctx.previewRole ? null : row('Preview as…', 'View only, Team or Guest', () => { closeSheet(); openPreviewSheet(ctx); }),
           row('Sign out', null, () => { closeSheet(); ctx.signOut(); })),

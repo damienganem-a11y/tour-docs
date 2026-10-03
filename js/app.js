@@ -127,7 +127,8 @@ async function pushAndTrack(trip, entries = []) {
 // The guests' personal sheets (Phase 5, the guest app): after a trip reaches the server, each guest who has a link gets their
 // up-to-date sheet there. Only sheets that really changed are sent (compared with what this session last sent). A failure never
 // breaks the trip's own sync: it is kept in guestSheetInfo, which Settings > Guest links shows.
-const guestSheetInfo = { lastOkAt: null, error: null, sent: new Map() };
+const guestSheetInfo = { lastOkAt: null, error: null, sent: new Map(), heartbeatAt: new Map() };
+const HEARTBEAT_MS = 6 * 3600000; // resend every sheet at least this often while the leader's phone is open, so guests can tell a fresh programme from a forgotten one
 async function sendGuestSheets(trip, { force = false } = {}) {
   if (!trip.guestLinks) return;
   try {
@@ -136,11 +137,13 @@ async function sendGuestSheets(trip, { force = false } = {}) {
     const before = guestSheetInfo.sent.get(trip.id) ?? new Map();
     const signature = (row) => JSON.stringify(row);
     // Only the sheets that changed since this session last sent them (all of them after a forced send or on the first send).
-    const changed = rows.filter((row) => force || before.get(row.token) !== signature(row));
+    const beat = Date.now() - (guestSheetInfo.heartbeatAt.get(trip.id) ?? 0) > HEARTBEAT_MS; // time to refresh the "last updated" moment of all sheets
+    const changed = rows.filter((row) => force || beat || before.get(row.token) !== signature(row));
     if (changed.length === 0 && before.size === rows.length) return; // nothing new, no link removed
     for (const row of changed) if (row.sheet) row.sheet.updatedAt = now;
     await pushGuestSheets(trip.id, changed, rows.map((r) => r.token));
     guestSheetInfo.sent.set(trip.id, new Map(rows.map((r) => [r.token, signature(r)])));
+    if (beat || force) guestSheetInfo.heartbeatAt.set(trip.id, Date.now());
     guestSheetInfo.lastOkAt = now;
     guestSheetInfo.error = null;
   } catch (error) {

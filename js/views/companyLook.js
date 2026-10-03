@@ -9,7 +9,7 @@ import { brandForm } from './brandForm.js';
 import { defaultBranding } from '../loader.js';
 
 // onSaved(look) runs after a successful save (used to also apply the look to the trip just loaded).
-export function openCompanyLookSheet(ctx, { onSaved, title = 'My company', skipLabel = 'Cancel' } = {}) {
+export function openCompanyLookSheet(ctx, { onSaved, title = 'Company look', skipLabel = 'Cancel' } = {}) {
   const look = ctx.companyLook ?? defaultBranding();
   const form = brandForm({ initial: look, withNote: false });
 

@@ -18,6 +18,16 @@ import { guestMenuCard } from './menuCard.js';
 // The sheet's own format number: the guest app refuses a sheet it does not understand instead of showing it wrongly.
 export const SHEET_VERSION = 1;
 
+// How long a guest's link keeps working after the trip's last day (days). After that the link switches itself off and the server forgets the sheet:
+// a guest's first name and programme must not stay readable for ever. The owner can change this per trip later; this is the default.
+export const GUEST_LINK_GRACE_DAYS = 7;
+const addDays = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+// The last day on which the guest's link still works: the trip's last half-day date + the grace days (null for a trip with no days).
+export function guestLinkExpiry(trip) {
+  const dates = trip.slots.map((s) => s.date).sort();
+  return dates.length ? addDays(dates[dates.length - 1], trip.guestLinkGraceDays ?? GUEST_LINK_GRACE_DAYS) : null;
+}
+
 // The tours of the trip the guest can read about (the "Tours" tab). Dinners that still exist as activities ("Dinner: ...") are left out: dinners
 // have their own place in the programme. A cancelled tour is left out. Never any guest name or any internal ID.
 function toursOf(trip, guest, destinationOf) {
@@ -110,6 +120,7 @@ export function buildGuestSheet(trip, guest, now) {
       return { name: d.name, country: d.country || '', photo: d.photo || '', tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null };
     }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
+    expiresOn: guestLinkExpiry(trip), // the guest app also stops showing the programme after this day, even with no connection
     restaurants: restaurants.map(({ _id, ...restaurant }) => restaurant),
     tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };
@@ -117,12 +128,15 @@ export function buildGuestSheet(trip, guest, now) {
 
 // The sheets of every guest who has a personal link: [{ token, guestId, active, sheet }]. A switched-off link has no
 // content at all (sheet null): the server keeps nothing for it.
-export function guestSheetRows(trip, now) {
+export function guestSheetRows(trip, now, today = new Date().toISOString().slice(0, 10)) {
   const rows = [];
+  // An archived trip, or one past its link expiry, has every link switched off: the server keeps no sheet for it.
+  const expiry = guestLinkExpiry(trip);
+  const over = Boolean(trip.archivedAt) || (expiry !== null && today > expiry);
   for (const [guestId, link] of Object.entries(trip.guestLinks ?? {})) {
     const guest = trip.guests.find((g) => g.id === guestId);
     if (!guest) continue;
-    rows.push({ token: link.token, guestId, active: link.active === true && !guest.leftAt, sheet: link.active && !guest.leftAt ? buildGuestSheet(trip, guest, now) : null });
+    rows.push({ token: link.token, guestId, active: link.active === true && !guest.leftAt && !over, sheet: link.active && !guest.leftAt && !over ? buildGuestSheet(trip, guest, now) : null });
   }
   return rows;
 }

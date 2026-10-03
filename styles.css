@@ -865,7 +865,7 @@ button.menu-row:active { background: var(--brand-tint); }
 body { background: #fff; }
 .title { font-weight: 800; letter-spacing: -0.005em; }
 .title em { font-family: inherit; font-style: normal; color: inherit; font-weight: 800; }
-.eyebrow { color: #000; text-transform: uppercase; letter-spacing: 0.22em; font-family: Outfit, sans-serif; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 8px; }
+.eyebrow { color: #000; text-transform: uppercase; letter-spacing: 0.22em; font-family: Outfit, sans-serif; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 8px; }
 .eyebrow::before { content: ""; width: 2px; height: 13px; background: var(--yellow); }
 .eyebrow--grey { color: var(--muted); }
 .back-link { color: #000; font-family: Outfit, sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; }
@@ -977,7 +977,14 @@ button.strip-item.is-active { color: #000; }
 body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
 .toast--error { background: #fff; color: #000; border-left-color: #b3261e; }
 .toast--error::before { content: "! "; color: #b3261e; font-weight: 800; }
-.pull-indicator { border-radius: 0; background: #fff; border: 1px solid #000; color: #000; font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; }
+.pull-indicator { border-radius: 0; background: #fff; border: 1px solid #000; color: #000; font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; }
 .pull-indicator--ready { background: var(--yellow); color: #000; }
 /* "needs attention" is now yellow, not orange (the same family as the rest of the look) */
 :root { --warn-bg: #fff6cc; --warn-line: #e0b000; --warn-ink: #4a3900; }
+
+/* v0.79.0: comfortable touch targets (at least 44 px) and no text under 12 px, for a bus, a boat or bright sun */
+.sync-lights, .switch-item, button.line, .line--button, .strip-item, .menu-row, .fold-row { min-height: 44px; }
+.switch-item { display: inline-flex; align-items: center; justify-content: center; }
+.sync-lights { padding-top: 10px; padding-bottom: 10px; }
+.line--button { display: inline-flex; align-items: center; justify-content: space-between; width: 100%; }
+.sync-lights-label, .seat-when { font-size: 12px; }

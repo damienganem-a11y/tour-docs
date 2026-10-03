@@ -24,3 +24,19 @@ export function hashOf(text) {
 }
 // The stamp pictures are drawn in stamps.js (one design per place).
 export { stampSvg } from './stamps.js';
+
+// A wall-clock time in a place ("2027-09-08", "07:30", "Asia/Phnom_Penh") as the exact moment it is. Uses only the phone's own Intl: the offset
+// of the zone at that moment is read back and applied (two passes, so a daylight-saving change in between is still right).
+export function wallToInstant(date, clock, timeZone) {
+  const [y, m, d] = date.split('-').map(Number);
+  const [hh, mm] = clock.split(':').map(Number);
+  const asUtc = Date.UTC(y, m - 1, d, hh, mm);
+  const offsetAt = (instant) => {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(new Date(instant));
+    const get = (type) => Number(parts.find((p) => p.type === type).value);
+    return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - instant;
+  };
+  let instant = asUtc - offsetAt(asUtc);
+  instant = asUtc - offsetAt(instant);
+  return new Date(instant);
+}

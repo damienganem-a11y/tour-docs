@@ -46,9 +46,10 @@ const ICONS = {
 ${solid('M-52 42 V34 H-32 V28 H-12 V22 H14 V28 H34 V34 H52 V42Z')}${cut('M-50 38 H50', 1.8)}${cut('M-30 31 H-14 M16 31 H32', 1.8)}
 ${cut('M-8 22 V14 L-2 8 L4 14 V22', 2)}<circle cx="-36" cy="-26" r="7"/>${line('M-36 -38 V-35 M-48 -26 H-45 M-47 -37 L-45 -35 M-25 -37 L-27 -35', 2)}`,
 
-  miami: `<path d="M-44 22 A24 24 0 0 1 4 22Z"/>${line('M-20 -6 V-14 M-36 -2 L-42 -8 M-4 -2 L2 -8 M-44 8 L-52 6 M4 8 L12 6', 2.6)}
-${solid('M10 42 V6 H16 V-6 H22 V-20 H28 V-6 H34 V6 H40 V42Z')}${cut('M13 14 H37 M13 22 H37 M13 30 H37', 2)}${line('M22 -20 V-28', 2.2)}
-${line('M-16 42 Q-20 16 -10 -4', 3.6)}${solid('M-10 -4 q-14 -4 -22 6 q12 -8 22 -2Z M-10 -4 q-6 -16 -22 -14 q14 2 20 12Z M-10 -4 q8 -14 24 -10 q-14 0 -20 12Z M-10 -4 q14 -2 20 10 q-8 -8 -20 -6Z M-10 -4 q-14 2 -16 14 q4 -10 16 -8Z')}${line('M-52 42 H52', 3)}`,
+  miami: `<circle cx="-34" cy="-28" r="8"/>${line('M-34 -42 V-39 M-48 -28 H-45 M-47 -41 L-45 -39 M-21 -41 L-23 -39 M-20 -28 H-23', 2.6)}
+${solid('M0 42 V8 H40 V42Z M6 8 V-8 H34 V8Z M12 -8 V-22 H28 V-8Z M18 -22 V-32 H22 V-22Z')}${line('M20 -32 V-42', 2.4)}
+${cut('M3 18 H37 M3 28 H37 M3 36 H37 M9 -2 H31 M15 -14 H25', 2)}${cut('M20 8 V42', 1.6)}
+${line('M-18 42 Q-24 18 -14 -4', 3.6)}${solid('M-14 -4 q-14 -4 -22 6 q12 -8 22 -2Z M-14 -4 q-6 -16 -22 -14 q14 2 20 12Z M-14 -4 q8 -14 24 -10 q-14 0 -20 12Z M-14 -4 q14 -2 20 10 q-8 -8 -20 -6Z')}${line('M-52 42 H52', 3)}`,
 
   apia: `${solid('M-44 8 Q-44 -26 0 -34 Q44 -26 44 8Z')}${cut('M-30 6 Q-30 -16 -10 -26 M-14 6 Q-14 -18 0 -28 M2 6 Q2 -18 8 -28 M18 6 Q18 -14 26 -22 M-38 4 H38', 2)}
 ${solid('M-44 8 H44 V14 H-44Z')}${solid('M-38 14 H-33 V34 H-38Z M-4 14 H1 V34 H-4Z M33 14 H38 V34 H33Z')}${waves(40)}`,
@@ -66,10 +67,10 @@ ${cut('M-8 -12 q3 -3 6 0 M2 -12 q3 -3 6 0', 2)}${cut('M0 -9 q-1 3 1 5', 1.8)}${s
 ${line('M0 -34 V-44', 2.4)}${solid('M-6 -41 H6 L0 -47Z')}${solid('M-44 14 H44 V20 H-44Z M-40 20 H40 V26 H-40Z')}
 ${line('M0 -44 L-44 -14 M0 -44 L44 -14 M0 -44 L-30 -4 M0 -44 L30 -4', 1.6)}<path d="M-38 -10 l4 -2 v5Z M-26 -2 l4 -2 v5Z M26 -2 l-4 -2 v5Z M38 -10 l-4 -2 v5Z"/>${waves(38)}`,
 
-  paro: `${solid('M-50 42 L-48 -30 Q-30 -46 -6 -42 Q20 -46 38 -36 Q50 -30 50 -16 V42Z')}
-<g fill="${PAPER}"><rect x="-26" y="-12" width="14" height="10"/><rect x="-8" y="-4" width="16" height="10"/><rect x="12" y="2" width="14" height="10"/><rect x="-14" y="14" width="12" height="9"/></g>
-<g stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" fill="currentColor"><path d="M-29 -12 L-19 -22 L-9 -12Z"/><path d="M-11 -4 L0 -14 L11 -4Z"/><path d="M9 2 L19 -7 L29 2Z"/><path d="M-17 14 L-8 6 L1 14Z"/></g>
-${cut('M-44 -20 Q-40 0 -42 30 M30 -30 Q36 -10 32 14', 2)}${line('M-50 30 H50', 0)}${line('M-46 -16 L44 -30', 1.4)}<path d="M-30 -20 l5 -1 v5Z M-12 -23 l5 -1 v5Z M6 -26 l5 -1 v5Z M24 -28 l5 -1 v5Z" fill="${PAPER}"/>`,
+  paro: `${solid('M-52 42 L-47 -8 Q-45 -34 -22 -42 Q8 -48 30 -34 Q42 -26 40 -6 L36 42Z')}
+<g fill="${PAPER}"><rect x="-30" y="2" width="16" height="11"/><rect x="-10" y="8" width="18" height="12"/><rect x="12" y="14" width="14" height="10"/><rect x="-22" y="-14" width="12" height="9"/></g>
+<g fill="currentColor" stroke="${PAPER}" stroke-width="2" stroke-linejoin="round"><path d="M-33 2 L-22 -8 L-11 2Z"/><path d="M-13 8 L-1 -3 L11 8Z"/><path d="M9 14 L19 5 L29 14Z"/><path d="M-25 -14 L-16 -22 L-7 -14Z"/></g>
+${cut('M-40 -20 Q-34 0 -40 28 M30 -26 Q36 -10 32 8', 2)}${line('M-52 -30 L-4 -46 L46 -40', 1.6)}<path d="M-38 -33 l5 -1 v5Z M-26 -37 l5 -1 v5Z M-12 -41 l5 -1 v5Z M8 -44 l5 0 v5Z M26 -43 l5 1 v5Z"/>${line('M-52 42 H52', 3)}`,
 
   agra: `${solid('M-18 18 V2 Q-18 -20 0 -34 Q18 -20 18 2 V18Z')}${line('M0 -34 V-44', 2.4)}${solid('M-3 -42 q3 -6 6 0Z')}
 ${solid('M-34 18 V-4 Q-34 -12 -28 -12 Q-22 -12 -22 -4 V18Z M22 18 V-4 Q22 -12 28 -12 Q34 -12 34 -4 V18Z')}
@@ -109,13 +110,16 @@ ${waves(36)}${waves(44, -40, 40)}${line('M-14 10 Q-8 -8 -2 -30', 3)}${solid('M-2
 ${solid('M-48 42 Q-48 24 -28 20 H28 Q48 24 48 42Z')}
 ${cut('M-19 -18 H19', 4.4)}<circle cx="-9" cy="-9" r="3.2" fill="${PAPER}"/><circle cx="9" cy="-9" r="3.2" fill="${PAPER}"/>${cut('M-5 -4 Q0 2 5 -4 M-10 16 Q0 22 10 16', 2.6)}<ellipse cx="-3.4" cy="2" rx="1.6" ry="2.4" fill="${PAPER}"/><ellipse cx="3.4" cy="2" rx="1.6" ry="2.4" fill="${PAPER}"/>`,
 
-  'cape-town': `${solid('M-52 42 V14 Q-46 -2 -38 6 L-32 12 L-30 -18 H36 L44 12 L52 16 V42Z')}${cut('M-20 14 H30 M-24 26 H34', 2)}
-<g fill="${PAPER}" stroke="currentColor" stroke-width="2.4"><circle cx="-18" cy="-22" r="8"/><circle cx="-4" cy="-28" r="10"/><circle cx="12" cy="-26" r="9"/><circle cx="26" cy="-21" r="7"/><path d="M-26 -18 H34 V-12 Q26 -8 18 -12 Q8 -6 0 -12 Q-10 -6 -18 -12 Q-24 -10 -26 -14Z" stroke="none"/></g>
-${waves(46, -40, 40)}`,
+  'cape-town': `${solid('M-52 42 V12 Q-46 -4 -38 6 L-31 14 L-30 -16 H34 L42 8 L52 14 V42Z')}
+${line('M-35 -19 Q-31 -28 -23 -23 Q-17 -32 -7 -25 Q1 -34 11 -26 Q21 -32 27 -23 Q35 -26 38 -18', 3)}
+<path d="M-30 -16 H34 V-8 Q28 0 22 -8 Q14 2 8 -8 Q0 2 -6 -8 Q-14 0 -20 -8 Q-26 0 -30 -8Z" fill="${PAPER}"/>
+${cut('M-20 14 H30 M-24 26 H34', 2)}${waves(46, -40, 40)}`,
 
-  seychelles: `${line('M-8 10 Q-16 -16 -6 -34', 3.6)}${solid('M-6 -34 q10 -10 24 -6 q-14 0 -20 8Z M-6 -34 q-10 -10 -24 -6 q14 0 20 8Z M-6 -34 q2 -12 14 -16 q-8 8 -10 18Z M-6 -34 q-4 -10 -18 -12 q10 4 14 14Z')}
-${solid('M-36 42 Q-52 38 -48 24 Q-44 12 -28 14 Q-14 16 -16 42Z')}${solid('M-18 42 Q-24 20 -4 12 Q20 6 26 24 Q30 36 26 42Z')}${solid('M20 42 Q18 28 32 24 Q48 22 50 42Z')}
-${cut('M-40 40 Q-32 28 -18 40 M0 14 Q4 26 -2 40 M30 40 Q36 30 46 36', 2)}${waves(46, -50, 50)}<ellipse cx="38" cy="-26" rx="6" ry="7"/>${cut('M38 -33 V-19', 1.6)}`,
+  seychelles: `${line('M-14 14 Q-24 -14 -10 -34', 3.6)}${solid('M-10 -34 q10 -10 24 -6 q-14 0 -20 8Z M-10 -34 q-10 -10 -24 -6 q14 0 20 8Z M-10 -34 q2 -12 14 -16 q-8 8 -10 18Z M-10 -34 q-4 -10 -18 -12 q10 4 14 14Z')}
+<circle cx="38" cy="-30" r="7"/>${line('M38 -42 V-39 M50 -30 H47 M47 -39 L45 -37 M29 -39 L31 -37', 2)}
+<ellipse cx="-4" cy="22" rx="27" ry="20"/><ellipse cx="-38" cy="31" rx="15" ry="11"/><ellipse cx="28" cy="27" rx="21" ry="15"/>
+<g fill="none" stroke="${PAPER}" stroke-width="3"><ellipse cx="-4" cy="22" rx="27" ry="20"/><ellipse cx="-38" cy="31" rx="15" ry="11"/><ellipse cx="28" cy="27" rx="21" ry="15"/></g>
+${cut('M-12 10 Q-6 22 -14 36 M26 16 Q32 26 24 38', 2)}${waves(46, -50, 50)}`,
 
   // For any other place: a compass rose.
   compass: `<circle cx="0" cy="0" r="36" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="0" cy="0" r="30" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 4"/>

@@ -29,13 +29,6 @@ main { max-width: 600px; margin: 0 auto; min-height: 100vh; background: var(--bg
 button.link { background: none; border: 0; color: inherit; font: inherit; font-weight: 800; text-decoration: underline; padding: 0 0 0 6px; }
 
 /* days */
-.day { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); margin: 0 0 16px; overflow: hidden; }
-.day.today { outline: 3px solid var(--primary); }
-.day-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px 10px; }
-.day-num { flex: none; width: 54px; height: 54px; border-radius: 16px; background: var(--primary); color: var(--on-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; line-height: 1; }
-.day-num span { font-size: 9px; letter-spacing: .14em; font-weight: 800; opacity: .8; margin-bottom: 2px; }
-.day-title { font-size: 21px; font-weight: 800; letter-spacing: -.01em; line-height: 1.15; }
-.day-date { color: var(--muted); font-size: 14px; font-weight: 600; margin-top: 2px; letter-spacing: 0; }
 .today-tag { margin-left: 8px; background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; vertical-align: middle; }
 .part { padding: 12px 18px 14px; border-top: 1px solid var(--line); }
 .half { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 800; }
@@ -85,7 +78,6 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 .dest-name { font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
 .dest-sub { font-size: 14px; font-weight: 600; opacity: .75; margin-top: 1px; }
 .dest-chev { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; background: color-mix(in srgb, currentColor 14%, transparent); }
-.dest .day { margin: 12px 0 0; }
 
 /* other options */
 .other-btn { margin: 10px 0 0; border: 2px solid var(--primary); background: none; color: var(--primary); font: inherit; font-weight: 800; font-size: 14px; padding: 8px 16px; border-radius: 999px; }
@@ -131,10 +123,6 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
 .hero h1 { font-size: 36px; margin: 6px 0 2px; }
 .hero h1 em { font-size: 36px; }
 .company { color: #ffd9cc; }
-.stamp { position: absolute; z-index: 3; right: 18px; top: calc(env(safe-area-inset-top) + 20px); width: 92px; height: 92px; border-radius: 50%; border: 2.5px dashed rgba(255, 255, 255, 0.9); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; transform: rotate(-12deg); background: rgba(228, 87, 46, 0.45); backdrop-filter: blur(2px); font-size: 9.5px; font-weight: 800; letter-spacing: 0.14em; line-height: 1.25; padding: 0 6px; animation: stamp-in 0.5s cubic-bezier(.2, 1.4, .4, 1) both; }
-.stamp b { font: 800 17px Outfit, sans-serif; letter-spacing: 0.02em; display: block; }
-@keyframes stamp-in { from { transform: rotate(-12deg) scale(1.9); opacity: 0; } to { transform: rotate(-12deg) scale(1); opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
 
 /* Next up: a white card floating over the header's edge */
 .next { background: #fff; color: var(--ink); border: 0; border-radius: 22px; box-shadow: 0 12px 28px rgba(27, 106, 77, 0.16); margin: 0 0 18px; backdrop-filter: none; }
@@ -258,7 +246,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .hero { border-top: 6px solid var(--company); border-radius: 0; min-height: 300px; padding: calc(env(safe-area-inset-top) + 30px) 20px 22px; background: #111; align-items: flex-end; }
 .hero--art::after { background: linear-gradient(180deg, rgba(0, 0, 0, .45) 0%, rgba(0, 0, 0, 0) 35%, rgba(0, 0, 0, .82) 100%); }
 .hero-art { opacity: 1; }
-.company { position: absolute; top: calc(env(safe-area-inset-top) + 24px); left: 20px; color: #fff; font: 700 11px Outfit, sans-serif; letter-spacing: .22em; display: flex; align-items: center; gap: 10px; }
+.company { position: absolute; top: calc(env(safe-area-inset-top) + 24px); left: 20px; color: #fff; font: 700 12px Outfit, sans-serif; letter-spacing: .22em; display: flex; align-items: center; gap: 10px; }
 .company::before, .company::after { content: ""; width: 2px; height: 14px; background: var(--yellow); }
 .hero .sub { font: 500 14px Inter, sans-serif; opacity: .95; margin: 0 0 6px; }
 .hero h1 { font: 800 34px/1.05 Outfit, sans-serif; letter-spacing: -.005em; margin: 0; }
@@ -267,14 +255,14 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .bar { background: #000; color: #fff; display: grid; grid-template-columns: repeat(3, 1fr); padding: 14px 4px; }
 .bar div { text-align: center; border-left: 1px solid #444; padding: 0 6px; min-width: 0; }
 .bar div:first-child { border-left: 0; }
-.bar small { display: block; font: 600 10px Outfit, sans-serif; letter-spacing: .16em; color: #bbb; margin-bottom: 4px; }
+.bar small { display: block; font: 600 12px Outfit, sans-serif; letter-spacing: .16em; color: #bbb; margin-bottom: 4px; }
 .bar b { font: 600 14px Inter, sans-serif; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .content { margin-top: 0; padding-top: 16px; }
 
 /* Next up: a thin frame with a yellow tab */
 .next { background: #fff; border: 1px solid var(--line); border-radius: 0; box-shadow: none; margin: 0 0 16px; padding: 0; }
-.next-label { display: inline-block; background: var(--yellow); color: #000; font: 800 10px Outfit, sans-serif; letter-spacing: .18em; padding: 6px 10px; }
+.next-label { display: inline-block; background: var(--yellow); color: #000; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 6px 10px; }
 .next-what { font: 800 19px/1.2 Outfit, sans-serif; text-transform: uppercase; letter-spacing: .02em; margin: 10px 14px 4px; }
 .next-line { color: var(--muted); margin: 0 14px 14px; font-size: 14px; }
 
@@ -299,25 +287,25 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .stub { display: block; flex: none; background: none; color: #000; border: 0; border-radius: 0; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 0; text-transform: uppercase; }
 .stub i { display: inline; opacity: 1; font: inherit; margin: 0; }
 .stub i::after { content: " "; }
-.stub .today-tag { display: inline-block; margin: 0 0 0 8px; background: var(--yellow); color: #000; border-radius: 0; font: 800 11px Outfit, sans-serif; letter-spacing: .18em; padding: 2px 7px; vertical-align: 1px; }
+.stub .today-tag { display: inline-block; margin: 0 0 0 8px; background: var(--yellow); color: #000; border-radius: 0; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 2px 7px; vertical-align: 1px; }
 .pass-body { padding: 0; }
 .pass-date { font: 600 12px Inter, sans-serif; padding: 2px 0 4px; color: var(--muted); }
 .pass-body .part { display: grid; grid-template-columns: 84px 1fr; column-gap: 8px; padding: 12px 0 2px; border-top: 0; }
 .pass-body .part > * { grid-column: 2; }
 .pass-body .part > .half { grid-column: 1; grid-row: 1 / span 6; padding-top: 4px; }
-.half { color: var(--muted); font: 700 11px Outfit, sans-serif; letter-spacing: .16em; }
+.half { color: var(--muted); font: 700 12px Outfit, sans-serif; letter-spacing: .16em; }
 .what { font: 700 16px/1.25 Inter, sans-serif; text-transform: none; letter-spacing: 0; }
-.more { color: #000; text-transform: uppercase; font: 800 11px Outfit, sans-serif; letter-spacing: .16em; border-bottom: 2px solid var(--yellow); display: inline-block; width: fit-content; }
-.tag { border-radius: 0; background: var(--yellow); color: #000; font: 800 10px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; width: fit-content; }
+.more { color: #000; text-transform: uppercase; font: 800 12px Outfit, sans-serif; letter-spacing: .16em; border-bottom: 2px solid var(--yellow); display: inline-block; width: fit-content; }
+.tag { border-radius: 0; background: var(--yellow); color: #000; font: 800 12px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; width: fit-content; }
 .tag.warn { background: #000; color: #fff; }
-.other-btn, .eat-row.btn-y { border-radius: 0; border: 2px solid #000; color: #000; font: 800 11px Outfit, sans-serif; letter-spacing: .16em; }
+.other-btn, .eat-row.btn-y { border-radius: 0; border: 2px solid #000; color: #000; font: 800 12px Outfit, sans-serif; letter-spacing: .16em; }
 .other-btn:active { background: var(--yellow); color: #000; }
 .eat-row, .dest .eat-row { background: var(--yellow); color: #000; border-radius: 0; box-shadow: none; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 15px 14px; margin: 14px 0; justify-content: center; text-align: center; }
 .eat-count { display: none; }
 .dest-photo, .dest .eat-row { }
 
 /* chips: square and outlined, the one for time in yellow */
-.chip { border-radius: 0; background: #fff; border: 1px solid #000; color: #000; font: 700 11px Outfit, sans-serif; letter-spacing: .12em; text-transform: uppercase; padding: 6px 10px; }
+.chip { border-radius: 0; background: #fff; border: 1px solid #000; color: #000; font: 700 12px Outfit, sans-serif; letter-spacing: .12em; text-transform: uppercase; padding: 6px 10px; }
 .chip--time, .chip--place { background: #fff; color: #000; }
 .chip--time { background: var(--yellow); border-color: var(--yellow); }
 .chip--easy, .chip--moderate, .chip--demanding { background: #fff; color: #000; }
@@ -327,14 +315,14 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 
 /* tour, restaurant and other detail pages: black top with the pictures full width */
 .tour-top { background: #000; border-top: 6px solid var(--company); border-radius: 0; padding: calc(env(safe-area-inset-top) + 8px) 0 0; }
-.back { background: none; color: #fff; border-radius: 0; font: 800 11px Outfit, sans-serif; letter-spacing: .2em; padding: 10px 16px; margin: 0; }
+.back { background: none; color: #fff; border-radius: 0; font: 800 12px Outfit, sans-serif; letter-spacing: .2em; padding: 10px 16px; margin: 0; }
 .gallery { gap: 0; padding: 0; }
 .shot { flex: 0 0 100%; }
 .shot img, .shot .picture-missing { height: 260px; border-radius: 0; box-shadow: none; }
 .shot figcaption { margin: 0; padding: 8px 16px; background: #000; opacity: 1; font-size: 12px; }
 .tour-top--plain { padding-bottom: 20px; }
 .options-head { padding: 6px 20px 0; }
-.options-label { font: 700 11px Outfit, sans-serif; letter-spacing: .2em; opacity: 1; color: #fff; display: flex; align-items: center; gap: 10px; }
+.options-label { font: 700 12px Outfit, sans-serif; letter-spacing: .2em; opacity: 1; color: #fff; display: flex; align-items: center; gap: 10px; }
 .options-label::before { content: ""; width: 2px; height: 14px; background: var(--yellow); }
 .options-head h2 { font: 800 30px Outfit, sans-serif; letter-spacing: 0; }
 .content--tour, .content.content--tour { margin-top: 0; padding-top: 18px; }
@@ -408,3 +396,8 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .level--moderate .level-name::before { background: #ff9d00; }
 .level--demanding .level-name::before { background: #d6361f; }
 .level-note { margin-top: 6px; color: #000; font-weight: 500; }
+
+/* v0.79.0: touch targets of at least 44 px, no small print under 12 px */
+.dest-head, .passport-row, .eat-row, .option-card, .part--tap, .other-btn, .back, .link-btn, .more { min-height: 44px; }
+.bar small, .next-label, .tag, .menu-title, .stub, .half { font-size: 12px; }
+.chip--tag { font-size: 11px; }

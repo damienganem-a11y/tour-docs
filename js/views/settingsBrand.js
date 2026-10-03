@@ -35,7 +35,7 @@ export function brandSettingsPage(ctx, trip) {
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
-      eyebrow: 'Brand', title: 'Brand',
+      eyebrow: 'Settings', title: 'Company look',
       subtitle: 'How this trip\'s printed documents look.',
       action: undoButton(ctx, trip, { scope: BRANDING_UNDO_SCOPE }),
     }),
