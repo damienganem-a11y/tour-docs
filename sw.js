@@ -15,7 +15,7 @@
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.80.1'; // keep equal to js/version.js
+const VERSION = '0.81.0'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
 const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)
@@ -45,6 +45,8 @@ const FILES = [
   'js/qr.js',
   'js/tourInfo.js',
   'js/menuCard.js',
+  'js/guestRequests.js',
+  'js/pushUtil.js',
   'js/sampleMenus.js',
   'js/gate.js',
   'js/ids.js',
@@ -151,3 +153,19 @@ function withTimeout(promise, milliseconds) {
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
 }
+
+// Notifications (Web Push). The sending service (supabase/functions/send-push) sends { title, body, url }; we show it, and a tap opens (or
+// brings forward) the app at that address.
+self.addEventListener('push', (event) => {
+  let message = { title: 'Tour Docs', body: '', url: './' };
+  try { message = { ...message, ...event.data.json() }; } catch { /* a push with no readable content: show the default */ }
+  event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: message.url } }));
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || './', self.registration.scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+    for (const client of windows) { if ('focus' in client) { client.navigate?.(target).catch(() => {}); return client.focus(); } }
+    return self.clients.openWindow(target);
+  }));
+});

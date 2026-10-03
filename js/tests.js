@@ -34,6 +34,8 @@ import { buildGuestSheet, guestSheetRows, SHEET_VERSION, guestLinkExpiry, GUEST_
 import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
+import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAnswerText } from './guestRequests.js';
+import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
@@ -2787,6 +2789,35 @@ function readZip(bytes) {
     && groupBatches(ctxG.entries).map(summarize).some((t) => /no longer see the other options/.test(t)));
   await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'options-on' });
   check('Switching it on again brings them back', buildGuestSheet(ctxG.state, guest, 'x').days.flatMap((d) => d.parts).some((p) => p.alt?.length > 0));
+  // v0.81.0: a guest asks to switch tours; the owner's phone finds what is meant, and applies it with the one change function
+  const freshSheet = buildGuestSheet(ctxG.state, guest, 'x');
+  const partWithAlt = freshSheet.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity' && p.alt?.length > 0);
+  const mineTour = freshSheet.tours[partWithAlt.tour]; const toTour = freshSheet.tours[partWithAlt.alt[0]];
+  const askRow = { id: 'r1', trip_id: trip.id, guest_id: guest.id, status: 'pending', created_at: '2027-01-01T00:00:00Z',
+    payload: { day: mineTour.day, date: mineTour.date, half: mineTour.half, destination: mineTour.destination, from: mineTour.name, to: toTour.name, note: 'with friends' } };
+  const askResolved = resolveGuestRequest(ctxG.state, askRow);
+  check('A guest\'s request in words is found again in the trip: who, which half-day, from which tour to which',
+    askResolved.ok && askResolved.guest.id === guest.id && askResolved.to.name === toTour.name && askResolved.from?.name === mineTour.name && /: day \d+ .*"/.test(describeGuestRequest(ctxG.state, askRow)));
+  check('A request is refused with a plain reason when the tour is gone, the place is unknown, the guest left, or the guest is already on that tour',
+    !resolveGuestRequest(ctxG.state, { ...askRow, payload: { ...askRow.payload, to: 'No such tour' } }).ok
+    && !resolveGuestRequest(ctxG.state, { ...askRow, payload: { ...askRow.payload, destination: 'Atlantis' } }).ok
+    && !resolveGuestRequest(ctxG.state, { ...askRow, guest_id: 'nobody' }).ok
+    && !resolveGuestRequest(ctxG.state, { ...askRow, payload: { ...askRow.payload, to: mineTour.name } }).ok);
+  check('The change built for a request: a move (free place), the waiting list, or a forced move',
+    guestRequestChange(askResolved, 'move').to.kind === 'activity' && !guestRequestChange(askResolved, 'move').force
+    && guestRequestChange(askResolved, 'waitlist').to.kind === 'waitlist' && guestRequestChange(askResolved, 'force').force === true);
+  const approved = await applyChange(ctxG, trip.id, guestRequestChange(askResolved, 'force'), { request: { id: askRow.id, at: askRow.created_at }, source: 'guest request' });
+  check('Approving a request moves the guest, and the Journal records that it came from a guest request',
+    approved.ok && guestPlace(ctxG.state, guest, askResolved.slot).activity?.id === askResolved.to.id && ctxG.entries.at(-1).source === 'guest request');
+  check('Once moved, the same request is no longer possible (already on that tour)', !resolveGuestRequest(ctxG.state, askRow).ok);
+  check('What the guest is told: approved, on the waiting list, or not possible (with the leader\'s reason)',
+    guestAnswerText(askRow, 'approved').title === 'Your request was approved' && /waiting list/.test(guestAnswerText(askRow, 'waitlist').title)
+    && /Too late/.test(guestAnswerText({ ...askRow, note: 'Too late' }, 'declined').body));
+  check('Push helpers: the public key becomes bytes, a subscription gives its address and keys, and an iPhone not on the Home Screen is told to install first',
+    urlBase64ToUint8Array('AQAB').join() === '1,0,1' && subscriptionFields({ toJSON: () => ({ endpoint: 'https://x.test/e', keys: { p256dh: 'P', auth: 'A' } }) }).p256dh === 'P'
+    && pushCapability({ navigator: { userAgent: 'iPhone', standalone: false }, window: { matchMedia: () => ({ matches: false }) }, Notification: undefined }).needsInstall === true
+    && pushCapability({ navigator: { userAgent: 'iPhone', standalone: true, serviceWorker: {} }, window: { PushManager: {}, matchMedia: () => ({ matches: true }) }, Notification: { permission: 'default' } }).supported === true);
+
   // v0.80.0: the message guests read after the trip
   check('Without a message of its own, the farewell is the default one (no web address)', farewellOf(ctxG.state).text === DEFAULT_FAREWELL && farewellOf(ctxG.state).website === '' && /traveling with us/.test(DEFAULT_FAREWELL));
   const farewellSet = await applyChange(ctxG, ctxG.state.id, { type: 'guest-links', action: 'farewell', text: 'Thanks, all!', website: 'example-expeditions.com' });

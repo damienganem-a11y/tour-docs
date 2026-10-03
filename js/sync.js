@@ -170,6 +170,7 @@ export async function watchServerChanges(onChange, onStatus) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_requests' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
 }
 
@@ -355,4 +356,60 @@ export function describeRequest(trip, changes, names) {
     if (c.type === 'checkin' || c.type === 'checkout') return `${c.type === 'checkin' ? 'Check in' : 'Check out'} ${who}`;
     return String(c.type).replace(/-/g, ' ');
   }).join('; ');
+}
+
+
+// ---------- Requests from guests, and notifications (v0.81.0) ----------
+// The guests' requests ("switch me to that tour"), on the trips this person owns (the server's rules say so), newest first.
+export async function pullGuestRequests() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('guest_requests')
+    .select('id, trip_id, guest_id, kind, payload, status, note, created_at, decided_at')
+    .order('created_at', { ascending: false }).limit(200);
+  if (error) throw error;
+  return data;
+}
+
+// The owner's answer. Only a request still waiting can be answered (a guest may have taken it back): returns true when this answer was recorded.
+export async function answerGuestRequest(id, status, note = null) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('guest_requests')
+    .update({ status, note, decided_at: new Date().toISOString() }).eq('id', id).eq('status', 'pending').select('id');
+  if (error) throw error;
+  return data.length > 0;
+}
+
+// Notifications. The public key lives in the database (the setup workflow put it there); the private one only in the sending function.
+export async function getPushPublicKey() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc('get_push_public_key');
+  if (error) throw error;
+  return data || null;
+}
+export async function saveOwnerPush(fields) {
+  const supabase = await getClient();
+  const { data: session } = await supabase.auth.getSession();
+  const userId = session?.session?.user?.id;
+  if (!userId) throw new Error('Sign in online first.');
+  const { error } = await supabase.from('push_subscriptions').upsert(
+    { kind: 'owner', trip_id: '*', owner_id: userId, endpoint: fields.endpoint, p256dh: fields.p256dh, auth: fields.auth }, { onConflict: 'endpoint' });
+  if (error) throw error;
+}
+export async function removeOwnerPush(endpoint) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint).eq('kind', 'owner');
+  if (error) throw error;
+}
+// Asks the sending function to notify guests (all the trip's guests who said "notify me", or only guestIds). Returns { sent }.
+export async function notifyGuests(tripId, guestIds, message) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.functions.invoke('send-push', { body: { kind: 'to-guests', tripId, guestIds, ...message } });
+  if (error) throw error;
+  return data;
+}
+export async function notifyMe(message) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.functions.invoke('send-push', { body: { kind: 'to-me', ...message } });
+  if (error) throw error;
+  return data;
 }

@@ -11,6 +11,7 @@
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
 import { passportState, stampSvg, dayIn, wallToInstant } from './passport.js';
+import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
 const SHEET_KEY = 'tourdocs.guest.sheet';
@@ -268,6 +269,112 @@ function passportView(sheet, offline) {
   ];
 }
 
+// ---------- asking for a change, and notifications ----------
+// A guest can ask to switch to another tour of the same half-day. The request goes to the leader (who approves or declines it); the guest sees its
+// state in "My requests". The request says what is wanted in words (day, half-day, place, tour names): no internal id.
+async function callRpc(name, args) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+const REQUESTS_KEY = 'tourdocs.guest.requests';
+let myRequests = (() => { try { return JSON.parse(store.get(REQUESTS_KEY)) ?? []; } catch { return []; } })();
+async function loadMyRequests() {
+  const token = currentToken();
+  if (!token || PREVIEW) return;
+  try {
+    const list = await callRpc('list_guest_requests', { p_token: token });
+    if (!Array.isArray(list)) return;
+    const changed = JSON.stringify(list.map((r) => [r.id, r.status])) !== JSON.stringify(myRequests.map((r) => [r.id, r.status]));
+    myRequests = list; store.set(REQUESTS_KEY, JSON.stringify(list));
+    if (changed && currentSheet && !currentSheet.ended && !view.rest && view.tour === undefined && !view.options) paint();
+  } catch { /* offline: the kept list stays */ }
+}
+
+const REQUEST_ERRORS = { link: 'This link is no longer active.', request: 'This request could not be sent.', too_many: 'You already have 5 requests waiting. Please wait for an answer.' };
+async function sendSwitchRequest(sheet, mineIndex, toIndex, note) {
+  const mine = sheet.tours[mineIndex]; const to = sheet.tours[toIndex];
+  const result = await callRpc('submit_guest_request', { p_token: currentToken(), p_payload: { day: mine.day, date: mine.date, half: mine.half, destination: mine.destination, from: mine.name, to: to.name, note } });
+  if (!result.ok) throw new Error(REQUEST_ERRORS[result.error] ?? 'The request could not be sent.');
+  await loadMyRequests();
+}
+
+// A small window over the page: the question, an optional word for the leader, Send / Cancel.
+function modal(title, lines, buttons) {
+  const overlay = h('div', { class: 'modal' }, h('div', { class: 'modal-box' }, h('h3', {}, title), ...lines, h('div', { class: 'modal-actions' }, ...buttons)));
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.append(overlay);
+  return overlay;
+}
+function askSwitch(sheet, mineIndex, toIndex) {
+  const mine = sheet.tours[mineIndex]; const to = sheet.tours[toIndex];
+  if (PREVIEW) { modal('Preview', [h('p', {}, 'In the real app, the guest can send this request to the leader. Nothing is sent from a preview.')], [h('button', { class: 'btn-link', type: 'button', onclick: (e) => e.target.closest('.modal').remove() }, 'OK')]); return; }
+  const note = h('textarea', { class: 'note-input', rows: '2', maxlength: '200', placeholder: 'A word for your leader (optional)', 'aria-label': 'A word for your leader' });
+  const message = h('p', { class: 'modal-error', hidden: '' });
+  const send = h('button', { class: 'btn-link', type: 'button' }, 'Send the request');
+  const overlay = modal('Ask to switch?', [
+    h('p', {}, h('b', {}, 'Now: '), mine.name), h('p', {}, h('b', {}, 'Wanted: '), to.name),
+    h('p', { class: 'muted' }, 'Your leader decides. You will be told here, and by notification if you turned them on.'), note, message,
+  ], [send, h('button', { class: 'plain-link', type: 'button', onclick: () => overlay.remove() }, 'Cancel')]);
+  send.addEventListener('click', async () => {
+    send.disabled = true; send.textContent = 'Sending…';
+    try { await sendSwitchRequest(sheet, mineIndex, toIndex, note.value.trim()); overlay.remove(); paint(); }
+    catch (error) { message.hidden = false; message.textContent = /Failed to fetch|HTTP|NetworkError/i.test(String(error.message)) ? 'No connection. Please try again when you are online.' : error.message; send.disabled = false; send.textContent = 'Send the request'; }
+  });
+}
+
+const REQUEST_STATUS = { pending: 'Waiting for your leader', approved: 'Approved', declined: 'Not possible', cancelled: 'Taken back', failed: 'Not possible' };
+function myRequestsBlock() {
+  const recent = myRequests.filter((r) => r.status === 'pending' || Date.now() - Date.parse(r.decided_at || r.created_at) < 3 * 86400000).slice(0, 5);
+  if (recent.length === 0) return null;
+  return h('div', { class: 'requests' }, h('div', { class: 'block-title' }, 'My requests'),
+    recent.map((r) => h('div', { class: `request request--${r.status}` },
+      h('div', { class: 'request-what' }, `Day ${r.payload.day} ${String(r.payload.half).toLowerCase()}: ${r.payload.to}`),
+      h('div', { class: 'request-state' }, REQUEST_STATUS[r.status] ?? r.status, r.note ? ` · ${r.note}` : ''),
+      r.status === 'pending' ? h('button', { class: 'link-btn', type: 'button', onclick: async () => { try { await callRpc('cancel_guest_request', { p_token: currentToken(), p_id: r.id }); await loadMyRequests(); paint(); } catch { /* offline */ } } }, 'Take it back') : null)));
+}
+
+// Notifications: one row under the "Updated" line. On an iPhone the app must be on the Home Screen first.
+const PUSH_KEY = 'tourdocs.guest.push';
+function notifyRow() {
+  if (PREVIEW) return null;
+  const capability = pushCapability();
+  if (!capability.supported) return null;
+  const on = store.get(PUSH_KEY) === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  const text = capability.needsInstall ? 'To get notifications, first add this app to your Home Screen (Share button, then Add to Home Screen).'
+    : capability.denied ? 'Notifications are blocked: allow them in your phone\'s Settings.'
+    : on ? 'Notifications are on: you will hear about changes to your programme.' : 'Get a notification when your programme changes or your request is answered.';
+  const action = capability.needsInstall || capability.denied ? null
+    : h('button', { class: 'link-btn', type: 'button', onclick: async (e) => {
+      const button = e.target; button.disabled = true;
+      try { if (on) await disablePush(); else await enablePush(); } catch (error) { button.textContent = String(error.message).slice(0, 80); return; }
+      paint();
+    } }, on ? 'Turn off' : '🔔 Turn on');
+  return h('div', { class: 'notify-row' }, h('span', { class: 'notify-text' }, text), action);
+}
+async function enablePush() {
+  const key = await callRpc('get_push_public_key', {});
+  if (!key) throw new Error('Notifications are not available yet.');
+  if ((await Notification.requestPermission()) !== 'granted') throw new Error('Notifications were not allowed.');
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+  const fields = subscriptionFields(subscription);
+  const result = await callRpc('save_guest_push', { p_token: currentToken(), p_endpoint: fields.endpoint, p_p256dh: fields.p256dh, p_auth: fields.auth });
+  if (!result.ok) throw new Error('Could not save the notification.');
+  store.set(PUSH_KEY, '1');
+}
+async function disablePush() {
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  if (subscription) { await callRpc('delete_guest_push', { p_token: currentToken(), p_endpoint: subscription.endpoint }).catch(() => {}); await subscription.unsubscribe(); }
+  store.remove(PUSH_KEY);
+}
+
 // ---------- the other options of one half-day ----------
 // Shown from the "Other options" button under a tour the guest is booked on: the other tours offered at the same time, read only. Asking for a
 // change comes later (it needs the team's answer); until then the guest is told to speak to their guide.
@@ -282,7 +389,8 @@ function optionsView(sheet, tourIndex, offline) {
       h('div', { class: 'option-text' },
         h('div', { class: 'what' }, tour.name),
         h('div', { class: 'line' }, [tour.time ? `Starts ${tour.time}` : null, tour.info?.duration].filter(Boolean).join(' · ')),
-        h('div', { class: 'chips' }, tour.info?.difficulty ? chip(DIFFICULTY[tour.info.difficulty].label, `chip--${tour.info.difficulty}`) : null)));
+        h('div', { class: 'chips' }, tour.info?.difficulty ? chip(DIFFICULTY[tour.info.difficulty].label, `chip--${tour.info.difficulty}`) : null),
+        h('button', { class: 'other-btn', type: 'button', onclick: (event) => { event.stopPropagation(); askSwitch(sheet, tourIndex, index); } }, 'Ask to switch')));
     card.addEventListener('click', () => openTour(index));
     return card;
   });
@@ -293,7 +401,8 @@ function optionsView(sheet, tourIndex, offline) {
       offline,
       h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'You are booked on'), h('div', { class: 'block-text' }, mine.name)),
       ...cards,
-      h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Want to change?'), h('div', { class: 'block-text' }, 'Please speak to your guide. Soon you will be able to ask for a change here.'))),
+      h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Want to change?'), h('div', { class: 'block-text' }, 'Tap "Ask to switch" on the tour you prefer. Your leader decides and you are told here.')),
+      myRequestsBlock()),
   ];
 }
 
@@ -505,7 +614,7 @@ function paint() {
       sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
       h('p', { class: 'sub' }, 'Hello ', h('b', {}, sheet.first), ','),
       h('h1', {}, sheet.trip)));
-  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, updatedRow(sheet), nextCard(sheet), passportRow(sheet), installHint(), offline, staleNotice(sheet), ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
+  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, updatedRow(sheet), notifyRow(), myRequestsBlock(), nextCard(sheet), passportRow(sheet), installHint(), offline, staleNotice(sheet), ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
 }
 
 // The goodbye shown once the link has expired: the trip owner's own message (or the default one) and, if given, a link to the next trips.
@@ -600,6 +709,7 @@ async function refresh() {
   if (result.sheet) {
     lastChecked = new Date();
     status = 'ok';
+    loadMyRequests();
     const label = document.querySelector('.updated-text'); // the "checked" time moves on without redrawing the page
     if (label && !refreshNote && currentSheet?.updatedAt) label.textContent = `Updated ${updatedText(currentSheet.updatedAt)} · checked ${clockOf(lastChecked)}`;
     store.set(SHEET_KEY, JSON.stringify(result.sheet));

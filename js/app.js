@@ -27,9 +27,12 @@ import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
+  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe,
   pullMyAccess, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
+import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
+import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
 import * as biometrics from './biometrics.js';
@@ -56,6 +59,8 @@ const tripRoles = new Map();
 let previewRole = (() => { try { const r = sessionStorage.getItem('tourdocs.preview'); return r === 'viewer' || r === 'team' ? r : null; } catch { return null; } })();
 // Requests (SPEC.md, Team step B): what the server last said about them, and the ones made here that are not sent yet (kept on the device).
 let requestRows = [];
+// Requests from GUESTS (their app's "Ask to switch to this tour"): what the server last said. Never applied by themselves: the owner decides.
+let guestRequestRows = [];
 let outbox = [];
 // Does this browser hold a live online login? true / false, or null while unknown (not checked yet, or
 // offline so it cannot be checked). Only `false` changes what the sync light says (see syncStatus).
@@ -221,6 +226,66 @@ const ctx = {
   userFor: (tripId) => ({ ...state.owner, role: ctx.roleFor(tripId) }),
   // Requests: a Team colleague asks, the owner's device applies (sendRequest is called by the one change function).
   requestsFor: (tripId) => requestRows.filter((r) => r.trip_id === tripId),
+  guestRequestsFor: (tripId) => guestRequestRows.filter((r) => r.trip_id === tripId),
+  // The owner says yes to a guest's request. mode: 'move' (needs a free place), 'waitlist' (joins the waiting list), 'force' (over capacity).
+  // Returns { ok } or { ok: false, error, full? }: `full` tells the screen to offer the waiting list or going over capacity.
+  async approveGuestRequest(id, mode = 'move') {
+    await loadGuestRequests();
+    const row = guestRequestRows.find((r) => r.id === id);
+    const trip = row && state.trips.get(row.trip_id);
+    if (!row || !trip || row.status !== 'pending') return { ok: false, error: 'This request is not waiting any more (the guest may have taken it back).' };
+    const resolved = resolveGuestRequest(trip, row);
+    if (!resolved.ok) return resolved;
+    const result = await applyChange(ctx, trip.id, guestRequestChange(resolved, mode), { request: { id: row.id, at: row.created_at }, source: 'guest request' });
+    if (!result.ok) return { ok: false, error: result.error, full: /full|over capacity|capacity/i.test(result.error ?? '') };
+    await answerGuestRequest(row.id, 'approved', mode === 'waitlist' ? 'Waiting list' : mode === 'force' ? 'Over capacity' : null).catch(() => {});
+    notifyGuests(row.trip_id, [row.guest_id], guestAnswerText(row, mode === 'waitlist' ? 'waitlist' : 'approved')).catch(() => {});
+    await loadGuestRequests();
+    render({ keepScroll: true });
+    return { ok: true };
+  },
+  async declineGuestRequest(id, note = '') {
+    const row = guestRequestRows.find((r) => r.id === id);
+    if (!row) return { ok: false, error: 'Unknown request.' };
+    const reason = String(note ?? '').trim().slice(0, 200) || null;
+    const recorded = await answerGuestRequest(id, 'declined', reason).catch(() => false);
+    if (recorded) notifyGuests(row.trip_id, [row.guest_id], guestAnswerText({ ...row, note: reason }, 'declined')).catch(() => {});
+    await loadGuestRequests();
+    render({ keepScroll: true });
+    return { ok: true };
+  },
+  async refreshGuestRequests() { await loadGuestRequests(); render({ keepScroll: true }); },
+  // Notifications on THIS phone (owner): "a guest sent a request" arrives as a notification. Needs the app on the Home Screen (iPhone) and the
+  // one-time setup of supabase/PUSH_SETUP.md. pushState() says what to show; enablePush() asks the phone and tells the server.
+  async pushState() {
+    const capability = pushCapability();
+    if (!capability.supported) return { state: 'unsupported' };
+    if (capability.needsInstall) return { state: 'install' };
+    if (capability.denied) return { state: 'denied' };
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      return { state: existing && Notification.permission === 'granted' ? 'on' : 'off' };
+    } catch { return { state: 'off' }; }
+  },
+  async enablePush() {
+    const key = await getPushPublicKey();
+    if (!key) return { ok: false, error: 'Notifications are not set up on the server yet (see supabase/PUSH_SETUP.md).' };
+    if ((await Notification.requestPermission()) !== 'granted') return { ok: false, error: 'The phone did not allow notifications.' };
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+    await saveOwnerPush(subscriptionFields(subscription));
+    return { ok: true };
+  },
+  async disablePush() {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) { await removeOwnerPush(subscription.endpoint).catch(() => {}); await subscription.unsubscribe(); }
+    return { ok: true };
+  },
+  async testPush() { return notifyMe({ title: 'Tour Docs', body: 'Notifications work on this phone.' }); },
+  // A short message to the guests of a trip who said "notify me" in their app (Settings > Guest links). Returns { sent }.
+  async notifyAllGuests(tripId, title, body) { return notifyGuests(tripId, undefined, { title, body, url: './guest/' }); },
   outboxFor: (tripId) => outbox.filter((r) => r.tripId === tripId),
   async sendRequest(tripId, changes) {
     outbox.push({ id: newId(), tripId, requesterName: state.owner.name, changes, requestedAt: new Date().toISOString() });
@@ -350,6 +415,7 @@ const ctx = {
     state.trips.set(trip.id, trip);
     state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
     trackPush(pushAndTrack(trip, entries)).catch(() => {});
+    notifyAfterChange(trip, entries);
   },
 
   // Used by export.js: keep a PDF that was just built, so it can be found again in the Exports archive.
@@ -556,6 +622,27 @@ async function flushOutbox() {
       } catch { break; /* the next round tries again */ }
     }
   } finally { flushing = false; }
+}
+
+// Fetches the guests' requests (a missing table, before the database update, or no internet simply leaves the list as it was).
+async function loadGuestRequests() {
+  if (!state.owner || hasSession === false || !navigator.onLine) return;
+  try {
+    const before = JSON.stringify(guestRequestRows.map((r) => [r.id, r.status]));
+    guestRequestRows = await pullGuestRequests();
+    // a new request, or an answer given elsewhere: redraw the screens that show them (not while a sheet is open)
+    if (before !== JSON.stringify(guestRequestRows.map((r) => [r.id, r.status])) && !document.body.classList.contains('sheet-open') && /\/settings/.test(location.hash)) renderQuiet();
+  } catch { /* the next round tries again */ }
+}
+
+// After a change that matters to guests who said "notify me", tell them: a cancelled tour. (Best effort: a problem never blocks the change.)
+function notifyAfterChange(trip, entries) {
+  if (ctx.roleFor(trip.id) !== 'owner' || !trip.guestLinks) return;
+  const cancelled = entries.find((e) => e.type === 'cancel-tour' && !e.cause);
+  if (!cancelled) return;
+  const guestIds = [...new Set(entries.filter((e) => e.type === 'move' && e.guestId).map((e) => e.guestId))];
+  if (guestIds.length === 0) return;
+  notifyGuests(trip.id, guestIds, { title: 'A tour was cancelled', body: `"${cancelled.activityLabel}" is cancelled. Please open your programme.`, url: './guest/' }).catch(() => {});
 }
 
 let processing = false;
@@ -783,7 +870,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }

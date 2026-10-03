@@ -772,6 +772,7 @@ export function enqueue(fn) {
 //   ctx.commit(newTrip, entries) saves the trip AND the journal entries together, then makes the
 //                                app use the new trip (returns a promise)
 // Returns { ok: true, entries } or { ok: false, error }.
+// opts.source  optional: what to write as the source of the change in the journal (default 'app', or 'colleague request' when opts.request is given)
 // opts.as      the person on whose behalf the change is applied (used by the owner's device for a colleague's request)
 // opts.request { id, at } the request being applied: written in the journal, so it shows who asked, and when
 export function applyChange(ctx, tripId, changes, opts = {}) {
@@ -838,7 +839,7 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     id: newId(), tripId: trip.id, at,
     seq: next.changeCount, n: entries.length, // n = this entry's place inside its action
     who: { id: actor.id, name: actor.name, role: actor.role },
-    source: opts.request ? 'colleague request' : 'app',   // later: 'whatsapp'...
+    source: opts.source ?? (opts.request ? 'colleague request' : 'app'),   // later: 'whatsapp'... ('guest request': the owner approved a guest's request)
     ...(opts.request ? { requestId: opts.request.id, requestedAt: opts.request.at } : {}),
     batchId,
   });

@@ -121,12 +121,27 @@ export function guestLinksSettingsPage(ctx, trip) {
       h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: () => run({ type: 'guest-links', action: 'farewell', text: text.value, website: website.value }, 'Message saved') }, 'Save the message')));
   })();
 
+  // A short message to every guest who turned notifications on in their app (needs the one-time setup of supabase/PUSH_SETUP.md).
+  const announceCard = (() => {
+    const title = h('input', { class: 'text-input', type: 'text', maxlength: '80', placeholder: 'Title, e.g. Change of plan', 'aria-label': 'Notification title' });
+    const body = h('textarea', { class: 'text-input', rows: '3', maxlength: '200', placeholder: 'Message (200 letters at most)', 'aria-label': 'Notification message' });
+    return h('div', { class: 'card team-member' },
+      h('div', { class: 'act-name' }, 'Send a message to the guests'),
+      h('div', { class: 'muted' }, 'It arrives as a notification on the phones of the guests who turned notifications on in their app.'),
+      title, body,
+      h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: async () => {
+        if (!title.value.trim() || !body.value.trim()) { showToast('Write a title and a message.', true); return; }
+        try { const r = await ctx.notifyAllGuests(trip.id, title.value.trim(), body.value.trim()); showToast(r?.sent > 0 ? `Sent to ${plural(r.sent, 'phone')}` : 'No guest has notifications on yet, or the setup is not done (supabase/PUSH_SETUP.md).', !(r?.sent > 0)); if (r?.sent > 0) { title.value = ''; body.value = ''; } }
+        catch { showToast('Could not send. Are you online and signed in?', true); }
+      } }, 'Send now')));
+  })();
+
   return h('div', {}, head,
     notice('A guest sees only their own programme: their activities and times, At leisure, and their dinners with their own travel party. Never allergies, notes or other guests.'),
     without.length > 0
       ? h('button', { class: 'btn', type: 'button', onclick: () => run({ type: 'guest-links', action: 'create', guestIds: without.map((g) => g.id) }, `${plural(without.length, 'link')} created`) },
         without.length === guests.length ? 'Create links for everyone' : `Create links for the ${without.length} without one`)
       : null,
-    optionsCard, farewellCard, statusLine, sendNow,
+    optionsCard, announceCard, farewellCard, statusLine, sendNow,
     h('div', {}, ...guests.map(guestCard)));
 }

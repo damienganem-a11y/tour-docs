@@ -186,7 +186,9 @@ function settingsMenu(ctx, trip) {
     h('div', { class: 'tiles' }, SETTINGS_SECTIONS.map((section) => {
       const items = visibleItems(ctx, trip, section);
       if (items.length === 0) return null;
+      const waitingGuests = section.key === 'access' && role === 'owner' ? ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length : 0;
       return h('a', { class: `tile tile--${section.key}`, href: `#/trip/${trip.id}/settings/section/${section.key}` },
+        waitingGuests > 0 ? h('span', { class: 'tile-badge', 'aria-label': `${waitingGuests} guest requests waiting` }, String(waitingGuests)) : null,
         h('span', { class: 'tile-icon' }, icon(section.icon)),
         h('span', { class: 'tile-title' }, section.title),
         h('span', { class: 'tile-blurb' }, section.blurb));
@@ -203,5 +205,7 @@ function settingsSection(ctx, trip, key) {
     h('div', { class: 'menu' }, visibleItems(ctx, trip, section).map((item) =>
       h(item.preview ? 'button' : 'a', item.preview ? { class: 'menu-row', type: 'button', onclick: () => openPreviewSheet(ctx, trip) } : { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
         h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, item.label), item.hint ? h('span', { class: 'menu-hint' }, item.hint) : null),
-        h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null, h('span', { class: 'row-chev' }, '›'))))));
+        h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null,
+          item.page === 'requests' && ctx.roleFor(trip.id) === 'owner' && ctx.guestRequestsFor(trip.id).some((r) => r.status === 'pending') ? h('span', { class: 'tile-badge tile-badge--row' }, String(ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length)) : null,
+          h('span', { class: 'row-chev' }, '›'))))));
 }
