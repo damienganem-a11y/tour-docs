@@ -214,3 +214,14 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
 .dest-photo { position: absolute; top: 0; right: 0; bottom: 0; width: 52%; height: 100%; object-fit: cover; z-index: 0; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 60%); mask-image: linear-gradient(to right, transparent 0, #000 60%); }
 .dest-photo.picture-missing { display: none; }
 .dest.is-open .dest-photo { opacity: 0.85; }
+
+/* v0.72.1: the first card sits cleanly ABOVE the bottom edge of the header (it used to slide underneath it),
+   and a header with no picture gets a quiet "map contour lines" pattern instead of a flat green. */
+.content { position: relative; z-index: 3; margin-top: -30px; }
+.hero { padding-bottom: 64px; }
+.hero:not(.hero--art) {
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='260' viewBox='0 0 420 260' fill='none' stroke='white' stroke-opacity='.13' stroke-width='1.6'><ellipse cx='320' cy='70' rx='40' ry='22'/><ellipse cx='320' cy='70' rx='80' ry='46'/><ellipse cx='320' cy='70' rx='125' ry='72'/><ellipse cx='320' cy='70' rx='175' ry='100'/><ellipse cx='320' cy='70' rx='230' ry='130'/><ellipse cx='60' cy='250' rx='60' ry='34'/><ellipse cx='60' cy='250' rx='115' ry='64'/><ellipse cx='60' cy='250' rx='170' ry='94'/></svg>") right top / cover no-repeat,
+    radial-gradient(circle at 85% 15%, rgba(228, 87, 46, .35) 0, rgba(228, 87, 46, 0) 38%),
+    linear-gradient(160deg, #2f9a73 0%, #1b6a4d 100%);
+}
