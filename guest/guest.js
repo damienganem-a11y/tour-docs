@@ -163,6 +163,20 @@ function partView(part, sheet) {
   return node;
 }
 
+// The black bar under the header: where the guest is in the trip. During the trip: day x of n, the place, today's date. Before: when it starts.
+// After: that it is over. (Dates are the programme's own days, so no time zone is involved.)
+function tripBar(sheet) {
+  const today = localToday();
+  const days = sheet.days;
+  const first = days[0]; const last = days[days.length - 1];
+  const cell = (label, value) => h('div', {}, h('small', {}, label), h('b', {}, value));
+  if (!first) return null;
+  if (today < first.date) return h('div', { class: 'bar' }, cell('Starts', dayDate(first.date)), cell('Days', String(last.day)), cell('First stop', first.destination));
+  if (today > last.date) return h('div', { class: 'bar' }, cell('Trip', 'Complete'), cell('Days', String(last.day)), cell('Last stop', last.destination));
+  const here = days.find((d) => d.date === today) ?? days.filter((d) => d.date <= today).pop() ?? first;
+  return h('div', { class: 'bar' }, cell('Day', `${here.day} of ${last.day}`), cell('Now in', here.destination), cell('Today', dayDate(today)));
+}
+
 // The "Next up" card, shown in the header of the programme.
 function nextCard(sheet) {
   const next = nextUp(sheet);
@@ -390,7 +404,7 @@ function applyAccent(accent) {
   const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#1d5c57';
   document.documentElement.style.setProperty('--company', hex);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.setAttribute('content', '#23805f');
+  if (meta) meta.setAttribute('content', '#000000');
 }
 
 function paint() {
@@ -425,12 +439,11 @@ function paint() {
     ?? (sheet.destinations?.[0]?.photo ? { url: sheet.destinations[0].photo } : null);
   const hero = h('header', { class: `hero${art ? ' hero--art' : ''}` },
     art ? picture(art.url, 'hero-art', '') : null,
-    next ? h('div', { class: 'stamp', 'aria-hidden': 'true' }, h('span', {}, next.day.destination.toUpperCase()), h('b', {}, dayDate(next.day.date).replace(/^[A-Za-z]+, /, '').toUpperCase()), h('span', {}, (next.day.country || '').toUpperCase())) : null,
     h('div', { class: 'hero-text' },
       sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
-      h('h1', {}, 'Hello ', h('em', {}, sheet.first)),
-      h('p', { class: 'sub' }, sheet.trip)));
-  app.replaceChildren(hero, h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
+      h('p', { class: 'sub' }, 'Hello ', h('b', {}, sheet.first), ','),
+      h('h1', {}, sheet.trip)));
+  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
 }
 
 function render(sheet, { offline = false } = {}) {
