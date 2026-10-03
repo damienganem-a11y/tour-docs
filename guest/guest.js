@@ -419,7 +419,7 @@ function applyAccent(accent) {
   const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#1d5c57';
   document.documentElement.style.setProperty('--company', hex);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.setAttribute('content', '#000000');
+  if (meta) meta.setAttribute('content', '#ffffff');
 }
 
 // ---------- keeping the programme fresh ----------
