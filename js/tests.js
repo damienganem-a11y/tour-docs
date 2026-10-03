@@ -24,6 +24,7 @@ import { signInAddress } from './views/settingsTeam.js';
 import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.js';
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
+import { tourShort, PART_CODE } from './rules.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
@@ -2793,6 +2794,23 @@ function readZip(bytes) {
   check('A Full day tour is booked once and counted once', (() => { const reef = jetFull.activities.find((a) => a.name.startsWith('Great Barrier Reef')); return jetFull.slots.find((x) => x.id === reef.slotId).half === 'Full day' && countIn(jetFull, reef) > 0; })());
 }
 
+// --- Short names of tours (for compact lists such as By guest, by seat, for one destination) ---
+{
+  check('A tour\'s keyword is the one written for it', tourShort({ name: 'Angkor Wat, Ta Prohm, and Angkor Thom', short: ' Angkor ' }) === 'Angkor');
+  check('Without one, it is made from the name: first words, no brackets, no "Dinner:", cut near 14 letters',
+    tourShort({ name: 'Moroccan Culinary Tour' }) === 'Moroccan' && tourShort({ name: "Tiger's Nest Hike (challenging)" }) === "Tiger's Nest" && tourShort({ name: 'Dinner: Fado house' }) === 'Fado house'
+    && tourShort({ name: 'Extraordinarylongwordthatgoesonandon' }).length <= 14);
+  check('The parts of the day have short codes AM, PM, EV and FD', PART_CODE.Morning === 'AM' && PART_CODE.Afternoon === 'PM' && PART_CODE.Evening === 'EV' && PART_CODE['Full day'] === 'FD');
+  const ctxS = makeCtx();
+  const actS = ctxS.state.activities.find((a) => a.name === 'Alfama walking tour');
+  const addedS = await applyChange(ctxS, trip.id, { type: 'edit-activity', activityId: actS.id, name: actS.name, meeting: actS.meeting, startTime: '15:00', capacity: actS.capacity, short: 'Alfama' });
+  check('The short name can be set in Settings; it is in the Journal and Undo takes it back', addedS.ok && ctxS.state.activities.find((a) => a.id === actS.id).short === 'Alfama'
+    && /short name updated/.test(summarize(groupBatches(ctxS.entries).at(-1))) && (await applyChange(ctxS, trip.id, { type: 'undo', scope: DESTINATION_UNDO_SCOPE })).ok && (ctxS.state.activities.find((a) => a.id === actS.id).short ?? '') === '');
+  check('A short name longer than 16 letters is refused', !(await applyChange(ctxS, trip.id, { type: 'edit-activity', activityId: actS.id, name: actS.name, meeting: actS.meeting, startTime: '15:00', capacity: actS.capacity, short: 'x'.repeat(17) })).ok);
+  const jetS = buildTrip(await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json());
+  check('The jet sample gives every tour a keyword', jetS.activities.every((a) => a.short && a.short.length <= 16) && jetS.activities.find((a) => a.name.startsWith('Angkor')).short === 'Angkor');
+}
+
 // --- Preview as another role (owner only) ---
 {
   const ctxP = makeCtx();
@@ -2873,7 +2891,7 @@ function readZip(bytes) {
     && imported.bookings[imported.guests.find((g) => g.first === 'Cleo').id][imported.slots[0].id]?.kind === 'leisure');
   check('Optional tour columns come through the Excel import (duration, difficulty, details, description, bring, included)',
     imported.activities[0].info?.duration === 'About 2.5 hours' && imported.activities[0].info.difficulty === 'moderate' && /cobbled/.test(imported.activities[0].info.difficultyNote) && imported.activities[0].info.bring === 'Comfortable shoes' && imported.activities[1].info === null);
-  const badDifficulty = structuredClone(sheets); badDifficulty.Activities[1][10] = 'Brutal';
+  const badDifficulty = structuredClone(sheets); badDifficulty.Activities[1][badDifficulty.Activities[0].indexOf('Difficulty')] = 'Brutal';
   check('A wrong difficulty in the Excel file is refused with its row', (() => { try { tripRawFromWorkbook(badDifficulty, { name: 'x' }); return ''; } catch (e) { return e.message; } })().includes('Activities, row 2'));
   check('Capacity and the dietary note come through; the import reports what it found', imported.activities[0].capacity === 20 && imported.guests.find((g) => g.first === 'Ben').dietary === 'Peanut allergy' && found.summary.guests === 3 && found.summary.signups === 3);
   const wrong = (edit) => { const copy = structuredClone(sheets); edit(copy); try { tripRawFromWorkbook(copy, { name: 'x' }); return ''; } catch (e) { return e.message; } };

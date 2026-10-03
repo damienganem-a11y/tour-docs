@@ -8,8 +8,8 @@
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate, localDateNow } from '../time.js';
-import { alphabetical, bySeat, plain, displayNames, partyLabel, guestPlace, splitPastSlots } from '../rules.js';
-import { pageHead } from './chrome.js';
+import { alphabetical, bySeat, plain, displayNames, partyLabel, guestPlace, splitPastSlots, bySlotOrder, PART_CODE, tourShort } from '../rules.js';
+import { pageHead, destinationMenu, destinationSub } from './chrome.js';
 import { startMove } from './move.js';
 import { undoButton } from './undo.js';
 import { USE_UNDO_SCOPE } from '../journal.js';
@@ -23,6 +23,7 @@ export function guestPage(ctx, trip, guestId) {
 
 // Kept while the app stays open (like other screen toggles, e.g. a folded list elsewhere in Settings).
 let sortMode = 'alpha'; // 'alpha' | 'seat'
+let seatDestination = 'all'; // in seat order: 'all', or the id of the one destination whose plans are shown for each guest
 
 function sortToggle(ctx) {
   return h('button', {
@@ -44,9 +45,26 @@ function guestList(ctx, trip) {
   // against a boarding list); alphabetically it is just the name, as before.
   const rowTitle = (g) => (sortMode === 'seat' && g.seat ? `${g.seat} – ${names.get(g.id)}` : names.get(g.id));
 
+  // In seat order, you can look at ONE destination (owner's request, 3 Oct 2026: reconfirming a destination from the front of the jet to the back):
+  // each row then also lists what that guest has planned there, one short line per half-day ("D12 AM · Angkor"). Tap a line to change that half-day.
+  const seatMode = sortMode === 'seat';
+  const destination = seatMode && seatDestination !== 'all' ? trip.destinations.find((d) => d.id === seatDestination) : null;
+  const slotsHere = destination ? trip.slots.filter((s) => s.destinationId === destination.id).sort(bySlotOrder) : [];
+  const linesOf = (g) => slotsHere.map((slot) => {
+    const place = guestPlace(trip, g, slot);
+    const what = place.kind === 'activity' ? tourShort(place.activity)
+      : place.kind === 'leisure' ? 'Leisure'
+      : place.kind === 'dinner' ? `Dinner ${place.booking.seating}`
+      : place.kind === 'waitlist' ? `Wait: ${tourShort(place.activity)}`
+      : '⚠ ?';
+    const bad = place.kind === 'blank' || place.kind === 'unknown';
+    return h('button', { class: `seat-line${bad ? ' seat-line--bad' : ''}${place.kind === 'leisure' ? ' seat-line--leisure' : ''}`, type: 'button', disabled: Boolean(trip.archivedAt), onclick: () => startMove(ctx, trip, g, slot) },
+      h('span', { class: 'seat-when' }, `D${slot.day} ${PART_CODE[slot.half] ?? slot.half}`), h('span', { class: 'seat-what' }, what));
+  });
+
   // Redraws the rows that match what was typed in the search box (the full name is searched too).
   function fill() {
-    const words = plain(search.value).split(/\s+/).filter(Boolean);
+    const words = seatMode ? [] : plain(search.value).split(/\s+/).filter(Boolean);
     const shown = guests.filter((g) => {
       const text = plain(`${g.first} ${g.last}`);
       return words.every((w) => text.includes(w));
@@ -56,15 +74,24 @@ function guestList(ctx, trip) {
     list.replaceChildren(
       ...(shown.length === 0
         ? [h('li', { class: 'empty' }, 'No guest matches that search.')]
-        : shown.map((g) =>
-            h('li', {},
-              h('a', { class: 'row', href: `#/trip/${trip.id}/use/guest/${g.id}` },
-                h('div', { class: 'row-main' },
-                  h('div', { class: 'row-title' }, rowTitle(g)),
-                  h('div', { class: 'row-sub' }, partyLabel(trip, g, names))),
-                h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')))))
+        : shown.map((g) => (destination
+            ? h('li', { class: 'seat-card' },
+                h('a', { class: 'seat-head', href: `#/trip/${trip.id}/use/guest/${g.id}` }, h('span', { class: 'seat-title' }, rowTitle(g)), h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')),
+                h('div', { class: 'seat-lines' }, linesOf(g)))
+            : h('li', {},
+                h('a', { class: 'row', href: `#/trip/${trip.id}/use/guest/${g.id}` },
+                  h('div', { class: 'row-main' },
+                    h('div', { class: 'row-title' }, rowTitle(g)),
+                    h('div', { class: 'row-sub' }, partyLabel(trip, g, names))),
+                  h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'))))))
     );
   }
+
+  // In seat order the search box is not needed (a guest is found by seat); a destination chooser takes its place.
+  const chooser = destinationMenu([
+    { label: 'All destinations', sub: 'One row per guest', active: !destination, onPick: () => { seatDestination = 'all'; ctx.refresh(); } },
+    ...trip.destinations.map((d) => ({ label: d.name, sub: `${destinationSub(trip, d)} · each guest's plans there`, active: destination?.id === d.id, onPick: () => { seatDestination = d.id; ctx.refresh(); } })),
+  ], { eyebrow: 'By seat', title: 'Which destination?' });
 
   const search = h('input', {
     class: 'text-input', type: 'search', placeholder: 'Search guests',
@@ -78,7 +105,7 @@ function guestList(ctx, trip) {
       eyebrow: 'By guest',
       action: h('div', { class: 'head-actions' }, sortToggle(ctx), undoButton(ctx, trip, { scope: USE_UNDO_SCOPE })),
     }),
-    search, count, list);
+    seatMode ? chooser : search, count, list);
 }
 
 // ---------- One guest's trip ----------

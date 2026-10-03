@@ -17,14 +17,14 @@ import { openOnlineSignIn } from './onlineSignIn.js';
 // own content (e.g. Sort + Undo together) too little room and forces an awkward wrap.
 // The destination chooser (Touring, Dining): one button showing where you are; tapping it lists the destinations, a tap on one goes there. It
 // replaces a long sideways strip: in the field you jump from place to place to check things, so a list is quicker than scrolling.
-// items: [{ label, sub, href, active }]
-export function destinationMenu(items, { eyebrow = 'Destination' } = {}) {
+// items: [{ label, sub, href, active }], or with onPick instead of href when choosing changes this screen only (By guest, by seat)
+export function destinationMenu(items, { eyebrow = 'Destination', title = 'Where to?' } = {}) {
   const here = items.find((i) => i.active) ?? items[0];
   return h('button', {
     class: 'dest-menu', type: 'button', 'aria-haspopup': 'dialog',
     onclick: () => openSheet({
-      eyebrow, title: 'Where to?', cancelLabel: 'Close',
-      body: h('div', { class: 'menu' }, items.map((i) => h('a', { class: `menu-row${i.active ? ' is-current' : ''}`, href: i.href, onclick: () => closeSheet() },
+      eyebrow, title, cancelLabel: 'Close',
+      body: h('div', { class: 'menu' }, items.map((i) => h(i.onPick ? 'button' : 'a', { class: `menu-row${i.active ? ' is-current' : ''}`, ...(i.onPick ? { type: 'button' } : { href: i.href }), onclick: () => { closeSheet(); i.onPick?.(); } },
         h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, i.label), i.sub ? h('span', { class: 'menu-hint' }, i.sub) : null),
         h('span', { class: 'menu-side' }, i.active ? h('span', { class: 'here-tick' }, '✓') : null)))),
     }),

@@ -27,6 +27,21 @@ export const halfRank = (half) => {
 // Half-days in trip order: by day, then Full day / Morning / Afternoon / Evening.
 export const bySlotOrder = (a, b) => a.day - b.day || halfRank(a.half) - halfRank(b.half);
 
+// The short code of a part of the day, as used in compact lists: AM, PM, EV (evening), FD (full day).
+export const PART_CODE = { Morning: 'AM', Afternoon: 'PM', Evening: 'EV', 'Full day': 'FD' };
+
+// The one-word keyword of a tour for compact lists ("Angkor", "Cuisine"): the one written for it (activity.short), or, when none, the first words
+// of its name without any "(...)" or "Dinner:" prefix, cut at about 14 letters.
+export function tourShort(activity) {
+  const written = String(activity.short ?? '').trim();
+  if (written) return written;
+  const plainName = String(activity.name ?? '').replace(/\(.*?\)/g, '').replace(/^dinner:\s*/i, '').trim();
+  const words = plainName.split(/\s+/).filter(Boolean);
+  let out = words[0] ?? '';
+  if (words[1] && (out + ' ' + words[1]).length <= 14) out += ` ${words[1]}`;
+  return out.length > 14 ? `${out.slice(0, 13)}…` : out;
+}
+
 // "2A" -> { row: 2, letter: 'A' }; anything else (blank, not set) -> null.
 const seatParts = (seat) => {
   const m = /^(\d+)\s*([A-Za-z]*)$/.exec(String(seat ?? '').trim());

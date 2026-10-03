@@ -189,6 +189,7 @@ function tourInfoFields(info) {
 function editActivity(ctx, trip, slot, destination, activity) {
   const nameInput = h('input', { class: 'text-input', type: 'text', value: activity.name, 'aria-label': 'Name', maxlength: '80' });
   const meetingInput = h('input', { class: 'text-input', type: 'text', value: activity.meeting ?? '', placeholder: 'Meeting point (optional)', 'aria-label': 'Meeting point' });
+  const shortInput = h('input', { class: 'text-input', type: 'text', value: activity.short ?? '', maxlength: '16', placeholder: 'Short name for lists, e.g. Angkor', 'aria-label': 'Short name' });
   const timeInput = timeField(activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '', 'Start time');
   const capacityInput = h('input', {
     class: 'text-input', type: 'number', min: '1', value: activity.capacity ?? '', placeholder: 'No limit', inputmode: 'numeric', 'aria-label': 'Capacity',
@@ -201,13 +202,14 @@ function editActivity(ctx, trip, slot, destination, activity) {
       type: 'edit-activity', activityId: activity.id,
       name: nameInput.value, meeting: meetingInput.value, startTime: timeInput.value.trim(),
       capacity: capacityInput.value.trim() === '' ? null : Number(capacityInput.value),
+      short: shortInput.value,
       info: infoFields.read(),
     }, `"${nameInput.value.trim()}" updated`),
   }, 'Save');
 
   openSheet({
     eyebrow: slotLabel(trip, slot), title: `Edit "${activity.name}"`, subtitle: destination.name,
-    body: [nameInput, meetingInput, timeInput, capacityInput, infoFields.node, confirm], cancelLabel: 'Cancel',
+    body: [nameInput, shortInput, meetingInput, timeInput, capacityInput, infoFields.node, confirm], cancelLabel: 'Cancel',
   });
 }
 
@@ -217,6 +219,7 @@ function addActivity(ctx, trip, destination) {
     slots.map((s) => h('option', { value: s.id }, slotLabel(trip, s))));
   const nameInput = h('input', { class: 'text-input', type: 'text', placeholder: 'Activity name', 'aria-label': 'Name', maxlength: '80' });
   const meetingInput = h('input', { class: 'text-input', type: 'text', placeholder: 'Meeting point (optional)', 'aria-label': 'Meeting point' });
+  const shortInput = h('input', { class: 'text-input', type: 'text', maxlength: '16', placeholder: 'Short name for lists, e.g. Angkor (optional)', 'aria-label': 'Short name' });
   const timeInput = timeField('', 'Start time');
   const capacityInput = h('input', { class: 'text-input', type: 'number', min: '1', placeholder: 'No limit', inputmode: 'numeric', 'aria-label': 'Capacity' });
 
@@ -227,13 +230,14 @@ function addActivity(ctx, trip, destination) {
       type: 'add-activity', slotId: select.value,
       name: nameInput.value, meeting: meetingInput.value, startTime: timeInput.value.trim(),
       capacity: capacityInput.value.trim() === '' ? null : Number(capacityInput.value),
+      short: shortInput.value,
       info: infoFields.read(),
     }, `"${nameInput.value.trim()}" added`),
   }, 'Add');
 
   openSheet({
     eyebrow: destination.name, title: 'Add an activity',
-    body: [select, nameInput, meetingInput, timeInput, capacityInput, infoFields.node, confirm], cancelLabel: 'Cancel',
+    body: [select, nameInput, shortInput, meetingInput, timeInput, capacityInput, infoFields.node, confirm], cancelLabel: 'Cancel',
   });
 }
 

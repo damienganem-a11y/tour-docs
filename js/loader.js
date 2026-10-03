@@ -15,7 +15,7 @@
 // The trip we return looks like this (every `id` is a UUID):
 //   trip.destinations  [ { id, ref, order, name, country, timeZone, firstDay, lastDay } ]
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
-//   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled, info } ]   info: what a guest can read about the tour
+//   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled, short, info } ]   short: a one-word keyword for compact lists (optional); info: what a guest can read about the tour
 //                          (tourInfo.js: duration, description, difficulty, difficultyNote, bring, included, photos), or null
 //   trip.restaurants   [ { id, destinationId, name, seatings, mode, seatsPerSeating, maxTableSize,
 //                          tables: [{id,size}] } ]   Phase 3 step 1 (Settings)
@@ -127,6 +127,7 @@ export function buildTrip(raw) {
         meeting: o.meeting ?? '',
         capacity: o.cap === null || o.cap === undefined ? null : Number(o.cap), // no capacity = never full
         cancelled: false,
+        short: typeof o.short === 'string' ? o.short.trim().slice(0, 16) : '',
         info: cleanTourInfo({ duration: o.duration, description: o.description, difficulty: o.difficulty, difficultyNote: o.difficulty_note, bring: o.bring, included: o.included, photos: o.photos }),
       };
       activities.push(activity);
