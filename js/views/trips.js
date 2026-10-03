@@ -147,74 +147,76 @@ export function tripsView(ctx) {
           h('p', { class: 'muted' }, 'Load a trip to get started. It is saved on the phone and works without internet.'))
       : h('p', { class: 'muted' }, 'No trips in progress.');
 
-  const archivedSection = archived.length > 0
-    ? h('div', {},
-        h('button', {
-          class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
-          onclick: () => { archivedOpen = !archivedOpen; ctx.refresh(); },
-        }, `${archivedOpen ? '▾' : '▸'} Archived (${archived.length})`),
-        archivedOpen ? h('div', {}, archived.map((trip) => archivedCard(ctx, trip))) : null)
-    : null;
+  // "Add a trip": one button, one sheet (owner's request, 3 Oct 2026: the screen had a long column of buttons). The file pickers stay hidden here and
+  // are opened by a tap in the sheet.
+  const row = (title, hint, run, extra = null) => h('button', { class: 'menu-row', type: 'button', onclick: run },
+    h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, title), hint ? h('span', { class: 'menu-hint' }, hint) : null),
+    h('span', { class: 'menu-side' }, extra, h('span', { class: 'row-chev' }, '›')));
+  function openAddSheet() {
+    openSheet({
+      eyebrow: 'Trips', title: 'Add a trip', cancelLabel: 'Close',
+      body: [
+        h('div', { class: 'menu' },
+          row('Open a trip file', 'A .json file', () => { closeSheet(); fileInput.click(); }),
+          row('Import from Excel', 'An .xlsx file in the Tour Docs layout', () => { closeSheet(); excelInput.click(); }),
+          row('Excel template', 'A blank file to fill in', () => { closeSheet(); shareOrDownloadFile(buildTemplateXlsx(), 'tour-docs-trip-template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); })),
+        h('div', { class: 'section-title' }, 'Sample trips (fictional)'),
+        h('div', { class: 'menu' },
+          row('Around the World', '24 days, 80 guests', () => { closeSheet(); loadSample(); }),
+          row('Private Jet Expedition', '25 days, 40 guests, with tour information and pictures', () => { closeSheet(); loadJetSample(); })),
+      ],
+    });
+  }
 
-  const deletedSection = deleted.length > 0
-    ? h('div', {},
-        h('button', {
-          class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
-          onclick: () => { deletedOpen = !deletedOpen; ctx.refresh(); },
-        }, `${deletedOpen ? '▾' : '▸'} Recently deleted (${deleted.length})`),
-        deletedOpen ? h('div', {}, deleted.map((trip) => deletedCard(ctx, trip))) : null)
-    : null;
+  // "Account": what belongs to this phone and this person, not to a trip.
+  function openAccountSheet() {
+    const faceId = !ctx.biometricAvailable ? null
+      : ctx.biometricOn
+        ? row('Face ID / Touch ID', 'On: asked every time the app is reopened', async () => { await ctx.disableBiometric(); closeSheet(); }, h('span', { class: 'muted' }, 'Turn off'))
+        : row('Face ID / Touch ID', 'Off', async () => {
+          try { await ctx.enableBiometric(); closeSheet(); showToast('Face ID / Touch ID is on: it will be offered every time the app is reopened.'); }
+          catch (error) { showToast(`Could not turn on Face ID / Touch ID (${error.message}).`, true); }
+        }, h('span', { class: 'muted' }, 'Turn on'));
+    openSheet({
+      eyebrow: 'Account', title: ctx.owner.name, subtitle: 'This phone', cancelLabel: 'Close',
+      body: [
+        h('div', { class: 'menu' },
+          row('My company', ctx.companyLook?.companyName || 'Logo and colour for new trips', () => { closeSheet(); openCompanyLookSheet(ctx); }),
+          faceId,
+          ctx.previewRole ? null : row('Preview as…', 'View only, Team or Guest', () => { closeSheet(); openPreviewSheet(ctx); }),
+          row('Sign out', null, () => { closeSheet(); ctx.signOut(); })),
+        // So you can see at once which version is on the phone, and whether it can work offline.
+        h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION} · ${offlineStatus()}`),
+      ],
+    });
+  }
+
+  const foldRow = (open, label, count, toggle) => h('button', { class: 'fold-row', type: 'button', onclick: toggle },
+    h('span', {}, `${open ? '▾' : '▸'} ${label}`), h('span', { class: 'fold-count' }, String(count)));
 
   return {
     node: h('div', { class: 'screen' },
-      pageHead({ eyebrow: 'Tour Docs', title: 'Your trips', subtitle: `Hello ${ctx.owner.name}`, action: syncDot(ctx) }),
+      pageHead({
+        eyebrow: 'Tour Docs', title: 'Your trips', subtitle: `Hello ${ctx.owner.name}`,
+        action: h('span', { class: 'head-tools' }, syncDot(ctx),
+          h('button', { class: 'avatar', type: 'button', 'aria-label': 'Account', onclick: openAccountSheet }, (ctx.owner.name || '?').trim().slice(0, 1).toUpperCase())),
+      }),
       activeSection,
-      h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Load a trip file (.json)'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => excelInput.click() }, 'Import a trip from Excel (.xlsx)'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => shareOrDownloadFile(buildTemplateXlsx(), 'tour-docs-trip-template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') }, 'Excel template to fill in'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: loadSample }, 'Load the sample trip'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: loadJetSample }, 'Load the 25-day jet trip (sample)'),
+      h('button', { class: 'btn', type: 'button', onclick: openAddSheet }, '+ Add a trip'),
       fileInput,
       excelInput,
       message,
-      archivedSection,
-      deletedSection,
-      h('button', { class: 'btn btn--plain', type: 'button', style: 'margin-top: 12px;', onclick: () => openCompanyLookSheet(ctx) },
-        ctx.companyLook?.companyName ? `My company: ${ctx.companyLook.companyName}` : 'My company: logo and colour'),
-      faceIdSection(ctx),
-      ctx.previewRole ? null : h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;', onclick: () => openPreviewSheet(ctx) }, 'Preview as View only, Team or Guest'),
-      h('button', {
-        class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
-        onclick: () => ctx.signOut(),
-      }, 'Sign out'),
-      // So you can see at once which version is on the phone, and whether it can work offline.
-      h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION} · ${offlineStatus()}`)
+      archived.length > 0
+        ? h('div', {}, foldRow(archivedOpen, 'Archived', archived.length, () => { archivedOpen = !archivedOpen; ctx.refresh(); }),
+            archivedOpen ? h('div', {}, archived.map((trip) => archivedCard(ctx, trip))) : null)
+        : null,
+      deleted.length > 0
+        ? h('div', {}, foldRow(deletedOpen, 'Recently deleted', deleted.length, () => { deletedOpen = !deletedOpen; ctx.refresh(); }),
+            deletedOpen ? h('div', {}, deleted.map((trip) => deletedCard(ctx, trip))) : null)
+        : null,
+      h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION}`)
     ),
   };
-}
-
-// Face ID / Touch ID (biometrics.js): a device-level toggle, like Sign out just below it, not tied
-// to a trip. Off entirely when the phone/browser cannot offer it, or there is no access code to
-// begin with (nothing to speed past). On: the app locks itself on every reopen instead of just
-// remembering the code for 30 days; the code is always there too as a fallback.
-function faceIdSection(ctx) {
-  if (!ctx.biometricAvailable) return null;
-  if (ctx.biometricOn) {
-    return h('div', { class: 'muted', style: 'margin-top: 24px;' },
-      'Face ID / Touch ID is on for this phone. ',
-      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => ctx.disableBiometric() }, 'Turn it off'));
-  }
-  return h('button', {
-    class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 24px;',
-    onclick: async () => {
-      try {
-        await ctx.enableBiometric();
-        showToast('Face ID / Touch ID is on: it will be offered every time the app is reopened.');
-      } catch (error) {
-        showToast(`Could not turn on Face ID / Touch ID (${error.message}).`, true);
-      }
-    },
-  }, 'Turn on Face ID / Touch ID');
 }
 
 // Can the app open without internet? (Yes once its files are saved on the phone: after one visit with internet.)
@@ -235,17 +237,22 @@ const purgeDate = (trip) => {
 
 // ---------- Cards ----------
 
+// A trip in progress: the whole card opens it; the three less common actions (rename, duplicate, archive) sit behind a "···" button.
 function activeCard(ctx, trip) {
-  return h('div', { class: 'card' },
-    h('a', { class: 'card-title', href: `#/trip/${trip.id}/use/destination` }, trip.name),
-    h('div', { class: 'muted' }, tripDates(trip.start, trip.days)),
-    h('div', { class: 'muted' }, `${trip.destinations.length} destinations · ${trip.guests.length} guests · loaded ${loadedOn(trip)}`),
-    h('div', { class: 'card-actions' },
-      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => renameConfirm(ctx, trip) }, 'Rename'),
-      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => duplicateConfirm(ctx, trip) }, 'Duplicate trip'),
-      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => archiveConfirm(ctx, trip) }, 'Archive')));
+  const more = h('button', { class: 'card-more', type: 'button', 'aria-label': `More about ${trip.name}`, onclick: (event) => {
+    event.preventDefault();
+    const row = (title, run) => h('button', { class: 'menu-row', type: 'button', onclick: () => { closeSheet(); run(); } },
+      h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, title)), h('span', { class: 'menu-side' }, h('span', { class: 'row-chev' }, '›')));
+    openSheet({ eyebrow: 'Trip', title: trip.name, cancelLabel: 'Close', body: h('div', { class: 'menu' },
+      row('Rename', () => renameConfirm(ctx, trip)), row('Duplicate trip', () => duplicateConfirm(ctx, trip)), row('Archive', () => archiveConfirm(ctx, trip))) });
+  } }, '···');
+  return h('div', { class: 'card trip-card' },
+    h('a', { class: 'trip-card-link', href: `#/trip/${trip.id}/use/destination` },
+      h('span', { class: 'card-title' }, trip.name),
+      h('span', { class: 'muted trip-line' }, tripDates(trip.start, trip.days)),
+      h('span', { class: 'muted trip-line' }, `${trip.destinations.length} destinations · ${trip.guests.length} guests`)),
+    more);
 }
-
 function archivedCard(ctx, trip) {
   return h('div', { class: 'card card--soft' },
     h('a', { class: 'card-title', href: `#/trip/${trip.id}/use/destination` }, trip.name),

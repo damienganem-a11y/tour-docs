@@ -805,3 +805,19 @@ body { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto
 .sheet { position: relative; touch-action: pan-y; }
 .sheet::before { content: ""; position: absolute; top: 8px; left: 50%; width: 44px; height: 5px; margin-left: -22px; border-radius: 3px; background: #d9d2c0; }
 .sheet-head { padding-top: 6px; }
+
+/* v0.69.0: the Trips screen: one Add button, an account sheet, quiet folds */
+.head-tools { display: inline-flex; align-items: center; gap: 8px; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--brand); color: #fff; font: 800 18px Outfit, sans-serif; cursor: pointer; }
+.avatar:active { opacity: 0.8; }
+button.menu-row { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.menu-row:active { background: var(--brand-tint); }
+.fold-row { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 10px; padding: 14px 4px; border: 0; border-top: 1px solid var(--line); background: none; font: inherit; font-weight: 700; color: var(--muted); cursor: pointer; }
+.fold-count { min-width: 28px; padding: 2px 9px; border-radius: 999px; background: var(--track); font-size: 13px; text-align: center; }
+
+.trip-card { position: relative; padding: 0; }
+.trip-card-link { display: block; padding: 16px 64px 16px 20px; }
+.trip-card-link .card-title { display: block; }
+.trip-line { display: block; font-size: 15px; }
+.card-more { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--track); color: var(--brand); font: 800 18px Inter, sans-serif; letter-spacing: 1px; cursor: pointer; }
+.card-more:active { background: var(--brand-tint); }
