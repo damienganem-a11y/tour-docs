@@ -821,3 +821,10 @@ button.menu-row:active { background: var(--brand-tint); }
 .trip-line { display: block; font-size: 15px; }
 .card-more { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--track); color: var(--brand); font: 800 18px Inter, sans-serif; letter-spacing: 1px; cursor: pointer; }
 .card-more:active { background: var(--brand-tint); }
+
+/* v0.69.2: a bigger Settings button, and a compass button to come back to the trip */
+.cog { width: 52px; height: 52px; background: var(--card); box-shadow: var(--shadow); }
+.cog .icon svg { width: 30px; height: 30px; }
+.cog--home { background: var(--brand); color: #fff; }
+.cog--home:active { background: var(--brand); opacity: 0.85; }
+.top-bar .top-trip { padding-left: 4px; }

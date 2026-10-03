@@ -129,10 +129,11 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   // Settings: a way back to the trip. Changing trip lives in Settings (owner's request, 3 Oct 2026): once in a trip, you stay in it.
   const topBar = mode === 'settings'
     ? h('div', { class: 'top-bar' },
-        h('a', { class: 'back-link', href: `#/trip/${trip.id}/use` }, '‹ Back to the trip'),
+        h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup')),
+        h('span', { class: 'top-trip' }, 'Settings'),
         syncDot(ctx, { compact: true }))
     : h('div', { class: 'top-bar' },
-        h('span', { class: 'top-trip' }, trip.name),
+        h('span', { class: 'top-trip' }, trip.ref || trip.name),
         h('span', { class: 'top-side' },
           syncDot(ctx, { compact: true }),
           h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog'))));

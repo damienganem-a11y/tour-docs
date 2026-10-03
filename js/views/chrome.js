@@ -97,7 +97,8 @@ function syncDetailsSheet(ctx) {
   openSheet({ eyebrow: 'Sync', title: 'Sync details', body: box, cancelLabel: 'Close' });
   ctx.syncDetails().then((result) => {
     box.replaceChildren(
-      h('p', { class: `sync-details-headline${result.ok ? '' : ' is-problem'}` }, result.headline),
+      h('p', { class: `sync-details-headline${result.ok ? '' : ' is-problem'}` }, result.ok ? 'Online, and syncing' : result.headline),
+      ...(result.ok ? [h('p', { class: 'muted' }, result.headline)] : []),
       ...result.lines.map((line) => h('p', { class: 'muted' }, line)),
       ...(result.needsSignIn ? [h('button', { class: 'btn', type: 'button', onclick: () => openOnlineSignIn(ctx) }, 'Sign in online')] : []));
   });

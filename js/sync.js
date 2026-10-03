@@ -150,7 +150,8 @@ export function diagnoseSync({ online, probe, probeError, localCount, lastError,
       ],
     };
   }
-  lines.push(`Trips on this phone: ${localCount}. Trips on the server: ${probe.serverCount}.`);
+  // Everything fine: just say so (the owner does not want a list of trips here). Details only when something is off.
+  if (probe.serverCount !== localCount) lines.push(`Trips on this phone: ${localCount}. Trips on the server: ${probe.serverCount}.`);
   if (probe.serverCount < localCount) lines.push('Some trips on this phone have not reached the server yet. They push on their next change or when the app is reopened.');
   if (probe.serverCount > localCount) lines.push('The server has trips this phone does not have yet. Close the app completely and reopen it to pull them.');
   if (lastOkAt) lines.push(`Last successful sync: ${new Date(lastOkAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`);
