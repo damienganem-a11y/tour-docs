@@ -98,3 +98,6 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 .option-card:active { background: var(--bg); }
 .option-text { min-width: 0; }
 .thumb { width: 96px; height: 78px; object-fit: cover; border-radius: 14px; flex: none; background: #d9dee8; }
+
+/* the owner's preview bar */
+.preview-strip { position: sticky; top: 0; z-index: 50; display: block; text-align: center; background: #111827; color: #fff; font-weight: 800; font-size: 14px; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; text-decoration: none; }

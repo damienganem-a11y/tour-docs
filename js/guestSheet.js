@@ -79,6 +79,17 @@ export function buildGuestSheet(trip, guest, now) {
     }
     day.parts.push({ half: slot.half, ...partOf(trip, guest, slot, destination, tours) });
   }
+  // The sheet only carries the tours a guest can reach: the ones they are booked on and the other options of the same half-day. (Every tour of the
+  // trip would make each sheet several times bigger, for nothing.) The indices in the parts are renumbered to match.
+  const needed = new Set();
+  for (const part of days.flatMap((d) => d.parts)) {
+    if (part.tour >= 0) { needed.add(part.tour); for (const i of part.alt ?? []) needed.add(i); }
+  }
+  const order = [...needed].sort((a, b) => a - b);
+  const renumber = new Map(order.map((old, i) => [old, i]));
+  for (const part of days.flatMap((d) => d.parts)) {
+    if (part.tour >= 0) { part.tour = renumber.get(part.tour); if (part.alt) part.alt = part.alt.map((i) => renumber.get(i)); } else if ('tour' in part) part.tour = -1;
+  }
   return {
     v: SHEET_VERSION,
     trip: trip.name,
@@ -88,7 +99,7 @@ export function buildGuestSheet(trip, guest, now) {
     updatedAt: now,
     days,
     options: trip.guestOptions !== false,
-    tours: tours.map(({ _id, _slot, ...tour }) => tour),
+    tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };
 }
 

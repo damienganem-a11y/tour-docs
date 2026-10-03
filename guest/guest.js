@@ -312,7 +312,22 @@ function showProblem(title, text) {
 
 // ---------- running ----------
 let scrolledToToday = false;
+// Preview (owner, from the leader's app: Preview as Guest): the sheet was put on this phone by the leader's app, nothing is asked of the server and
+// nothing is kept. A bar at the top leads back to the leader's app.
+const PREVIEW = new URLSearchParams(window.location.search).has('preview');
+function showPreview() {
+  let sheet = null;
+  try { sheet = JSON.parse(store.get('tourdocs.guest.preview')); } catch { sheet = null; }
+  if (!sheet || sheet.v !== SUPPORTED_SHEET) { showProblem('No preview', 'Open the preview again from the leader\'s app: Settings, Preview as Guest.'); return; }
+  render(sheet);
+  if (!document.querySelector('.preview-strip')) {
+    const strip = h('a', { class: 'preview-strip', href: '../' }, `Preview as ${sheet.first} · back to Tour Docs`);
+    document.body.prepend(strip);
+  }
+}
+
 async function refresh() {
+  if (PREVIEW) { showPreview(); return; }
   const token = currentToken();
   if (!token) { showProblem('No link yet', 'Open the personal link your tour leader sent you. After that, this app opens straight on your programme.'); return; }
   const kept = (() => { try { return JSON.parse(store.get(SHEET_KEY)); } catch { return null; } })();

@@ -2732,7 +2732,9 @@ function readZip(bytes) {
   const withActivity = sheet.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity');
   check('An activity part has its name, local start time and meeting point', !withActivity || (typeof withActivity.name === 'string' && (withActivity.time === null || /^\d\d:\d\d$/.test(withActivity.time))));
 
-  check('The sheet lists the trip\'s tours with their information, never an internal ID', Array.isArray(sheet.tours) && sheet.tours.length > 30 && sheet.tours.every((t) => t.name && !('_id' in t) && !('id' in t)));
+  check('The sheet lists the trip\'s tours with their information, never an internal ID', Array.isArray(sheet.tours) && sheet.tours.length > 15 && sheet.tours.every((t) => t.name && !('_id' in t) && !('id' in t) && !('_slot' in t)));
+  const reachable = new Set(sheet.days.flatMap((d) => d.parts).flatMap((p) => (p.tour >= 0 ? [p.tour, ...(p.alt ?? [])] : [])));
+  check('The sheet carries only the tours a guest can reach (booked, or another option of the same half-day), not the whole trip', reachable.size === sheet.tours.length && sheet.tours.length < ctxG.state.activities.length);
   const hike = sheet.tours.find((t) => t.name.startsWith("Tiger's Nest hike"));
   check('A tour carries its duration, difficulty, details, description and photos', hike.info.duration === 'About 6 hours' && hike.info.difficulty === 'demanding' && /thin/.test(hike.info.difficultyNote) && hike.info.photos.length === 3);
   check('Dinners that are still activities are not listed as tours, and each programme activity points to its tour', !sheet.tours.some((t) => /^dinner/i.test(t.name))

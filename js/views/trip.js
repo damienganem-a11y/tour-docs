@@ -190,7 +190,7 @@ function settingsMenu(ctx, trip) {
         h('span', { class: 'tile-title' }, section.title),
         h('span', { class: 'tile-blurb' }, section.blurb));
     })),
-    role === 'owner' ? h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 18px;', onclick: () => openPreviewSheet(ctx) }, 'Preview as View only or Team') : null);
+    role === 'owner' ? h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 18px;', onclick: () => openPreviewSheet(ctx, trip) }, 'Preview as View only, Team or Guest') : null);
 }
 
 // One group of Settings: its entries as a list, with a way back to the four tiles.
