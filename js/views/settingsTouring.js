@@ -163,7 +163,7 @@ function editDestination(ctx, trip, destination) {
 }
 
 // The part of the activity form that is about what a GUEST reads (tourInfo.js): duration, what happens, how demanding it is, what to bring,
-// what is included. Folded away (a <details>) so the everyday form stays short. read() gives the info object for the change.
+// what to know and the accessibility. Folded away (a <details>) so the everyday form stays short. read() gives the info object for the change.
 function tourInfoFields(info) {
   const text = (label, value, max, placeholder) => h('input', { class: 'text-input', type: 'text', value: value ?? '', maxlength: String(max), placeholder, 'aria-label': label });
   const area = (label, value, max, placeholder) => h('textarea', { class: 'text-input', rows: '4', maxlength: String(max), placeholder, 'aria-label': label }, value ?? '');
@@ -173,15 +173,15 @@ function tourInfoFields(info) {
     DIFFICULTIES.map((d) => h('option', { value: d, selected: info?.difficulty === d ? 'selected' : null }, DIFFICULTY_LABEL[d])));
   const difficultyNote = area('Difficulty details', info?.difficultyNote, 600, 'Why this level: distance, climb, number of steps, heat, tight spaces, who should think twice...');
   const description = area('Description', info?.description, 1000, 'What happens, in a few lines');
-  const bring = text('What to bring', info?.bring, 200, 'What to bring (optional)');
-  const included = text('Included', info?.included, 200, 'What is included (optional)');
+  const bring = area('Good to know', info?.bring, 300, 'Good to know: dress (cover shoulders...), sun or rain, what is not allowed');
+  const accessibility = area('Accessibility', info?.accessibility, 400, 'Accessibility: steps, walking, wheelchairs, who should think twice');
   const node = h('details', { class: 'info-fields' },
-    h('summary', {}, 'Tour information for guests'), duration, difficulty, difficultyNote, description, bring, included);
+    h('summary', {}, 'Tour information for guests'), duration, difficulty, difficultyNote, description, bring, accessibility);
   return {
     node,
     read: () => ({
       duration: duration.value, difficulty: difficulty.value, difficultyNote: difficultyNote.value,
-      description: description.value, bring: bring.value, included: included.value,
+      description: description.value, bring: bring.value, accessibility: accessibility.value,
     }),
   };
 }

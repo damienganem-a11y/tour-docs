@@ -30,7 +30,7 @@ function toursOf(trip, guest, destinationOf) {
         time: activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : null, meeting: activity.meeting || null,
         info: info && {
           duration: info.duration || null, description: info.description || null, difficulty: info.difficulty || null, difficultyNote: info.difficultyNote || null,
-          bring: info.bring || null, included: info.included || null, photos: (info.photos ?? []).map((p) => ({ url: p.url, caption: p.caption || '' })),
+          bring: info.bring || null, accessibility: info.accessibility || null, photos: (info.photos ?? []).map((p) => ({ url: p.url, caption: p.caption || '' })),
         },
       });
     }
@@ -98,6 +98,11 @@ export function buildGuestSheet(trip, guest, now) {
     first: guest.first,
     updatedAt: now,
     days,
+    // For the passport: each destination with its time zone and the first and last date there (from its half-days), in trip order.
+    destinations: [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => {
+      const dates = trip.slots.filter((x) => x.destinationId === d.id).map((x) => x.date).sort();
+      return { name: d.name, country: d.country || '', photo: d.photo || '', tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null };
+    }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
     tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };

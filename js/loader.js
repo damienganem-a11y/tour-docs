@@ -13,7 +13,7 @@
 //   - Dietary info stays on the guest. It is never copied anywhere else (journal, exports).
 //
 // The trip we return looks like this (every `id` is a UUID):
-//   trip.destinations  [ { id, ref, order, name, country, timeZone, firstDay, lastDay } ]
+//   trip.destinations  [ { id, ref, order, name, country, timeZone, firstDay, lastDay, photo } ]   photo: an optional picture of the place (https address or demo/ path)
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled, short, info } ]   short: a one-word keyword for compact lists (optional); info: what a guest can read about the tour
 //                          (tourInfo.js: duration, description, difficulty, difficultyNote, bring, included, photos), or null
@@ -30,7 +30,7 @@
 import { newId } from './ids.js';
 import { isValidTimeZone, localToInstant } from './time.js';
 import { bySlotOrder, PARTS_OF_DAY } from './rules.js';
-import { tourInfoError, cleanTourInfo } from './tourInfo.js';
+import { tourInfoError, cleanTourInfo, goodUrl } from './tourInfo.js';
 
 const AT_LEISURE = 'at leisure'; // the words used in the file (compared in lower case)
 
@@ -74,6 +74,7 @@ export function buildTrip(raw) {
         id: newId(), ref: String(d.index ?? ''), order: d.index ?? 0,
         name: d.name, country: d.country ?? '', timeZone: d.timezone,
         firstDay: d.first_day ?? null, lastDay: d.last_day ?? null,
+        photo: goodUrl(d.photo) ? d.photo : '', // a picture of the place, shown to guests (optional)
       };
     })
     .sort((a, b) => a.order - b.order);
@@ -118,7 +119,7 @@ export function buildTrip(raw) {
       need(!seenActivityRefs.has(o.id), `The activity ${o.id} appears twice.`);
       seenActivityRefs.add(o.id);
       need(!o.start || /^\d{1,2}:\d{2}$/.test(o.start), `The start time of "${o.name}" must look like 15:00.`);
-      const infoProblem = tourInfoError({ duration: o.duration, description: o.description, difficulty: o.difficulty, difficultyNote: o.difficulty_note, bring: o.bring, included: o.included, photos: o.photos });
+      const infoProblem = tourInfoError({ duration: o.duration, description: o.description, difficulty: o.difficulty, difficultyNote: o.difficulty_note, bring: o.bring, included: o.included, accessibility: o.accessibility, photos: o.photos });
       need(!infoProblem, `${o.name}: ${infoProblem}`);
 
       const activity = {
@@ -128,7 +129,7 @@ export function buildTrip(raw) {
         capacity: o.cap === null || o.cap === undefined ? null : Number(o.cap), // no capacity = never full
         cancelled: false,
         short: typeof o.short === 'string' ? o.short.trim().slice(0, 16) : '',
-        info: cleanTourInfo({ duration: o.duration, description: o.description, difficulty: o.difficulty, difficultyNote: o.difficulty_note, bring: o.bring, included: o.included, photos: o.photos }),
+        info: cleanTourInfo({ duration: o.duration, description: o.description, difficulty: o.difficulty, difficultyNote: o.difficulty_note, bring: o.bring, included: o.included, accessibility: o.accessibility, photos: o.photos }),
       };
       activities.push(activity);
       activityByRefName.set(`${slot.ref}|${activity.name}`, activity);

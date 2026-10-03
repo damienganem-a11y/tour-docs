@@ -180,3 +180,37 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
 :root { --company: #23805f; }
 .hero, .tour-top { border-top: 6px solid var(--company); }
 .content--tour { margin-top: 22px; }
+
+
+/* the passport */
+.passport-row { display: flex; align-items: center; gap: 14px; width: 100%; margin: 0 0 18px; padding: 14px 16px; border: 0; border-radius: 22px; background: #fff; box-shadow: var(--shadow); font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
+.passport-row:active { background: var(--bg); }
+.passport-ic { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 2.5px dashed var(--accent); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 22px; transform: rotate(-12deg); }
+.passport-text { flex: 1; display: flex; flex-direction: column; }
+.passport-title { font: 700 18px Outfit, sans-serif; }
+.passport-sub { font-size: 13px; color: var(--muted); }
+.passport-new { background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; padding: 3px 9px; border-radius: 999px; }
+.stamp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.stamp-cell { background: #fff; border-radius: 22px; box-shadow: var(--shadow); padding: 14px 10px 12px; text-align: center; }
+.stamp-tile { width: 100%; aspect-ratio: 1; }
+.stamp-tile.is-new svg { animation: stamp-press 0.7s cubic-bezier(.2, 1.5, .4, 1) both; }
+@keyframes stamp-press { from { opacity: 0; transform: scale(2.2) rotate(-30deg); } to { opacity: 1; } }
+.stamp-tile.is-locked { display: flex; align-items: center; justify-content: center; }
+.stamp-ghost { width: 78%; aspect-ratio: 1; border-radius: 50%; border: 3px dashed #d9d2c0; color: #d9d2c0; display: flex; align-items: center; justify-content: center; font: 800 38px Outfit, sans-serif; }
+.stamp-name { margin-top: 6px; font: 700 15px Outfit, sans-serif; }
+.stamp-date { font-size: 12px; color: var(--muted); letter-spacing: 0.06em; }
+@media (prefers-reduced-motion: reduce) { .stamp-tile.is-new svg { animation: none; } }
+
+/* v0.71.0: the tour page at a glance: time, meeting place, duration and level as bubbles; "Good to know"; accessibility last */
+.chip--time { background: #e6efff; color: #24489a; }
+.chip--place { background: #f3e8ff; color: #5b2f8f; }
+.info-block--access { border-left: 5px solid #2d6cdf; }
+.info-block--access .block-title { color: #2d6cdf; }
+
+/* a picture of each destination on its bar, fading into the card */
+.dest-head { position: relative; overflow: hidden; min-height: 76px; }
+.dest-label { position: relative; z-index: 1; }
+.dest-chev { position: relative; z-index: 1; }
+.dest-photo { position: absolute; top: 0; right: 0; bottom: 0; width: 52%; height: 100%; object-fit: cover; z-index: 0; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 60%); mask-image: linear-gradient(to right, transparent 0, #000 60%); }
+.dest-photo.picture-missing { display: none; }
+.dest.is-open .dest-photo { opacity: 0.85; }

@@ -160,7 +160,7 @@ export function tripRawFromWorkbook(sheets, { name, code = '' }) {
     meeting: { heading: 'Meeting point', optional: true }, capacity: { heading: 'Capacity', optional: true },
     short: { heading: 'Short name', optional: true }, duration: { heading: 'Duration', optional: true }, difficulty: { heading: 'Difficulty', optional: true },
     difficultyNote: { heading: 'Difficulty details', optional: true }, description: { heading: 'Description', optional: true },
-    bring: { heading: 'What to bring', optional: true }, included: { heading: 'Included', optional: true },
+    bring: { heading: 'Good to know', optional: true }, accessibility: { heading: 'Accessibility', optional: true },
   });
   const destinationByName = new Map(destinations.map((d) => [d.name, d]));
   const slots = new Map();
@@ -179,7 +179,7 @@ export function tripRawFromWorkbook(sheets, { name, code = '' }) {
     if (difficulty && !['easy', 'moderate', 'demanding'].includes(difficulty)) throw new Error(`Activities, row ${r.row}: the Difficulty must be Easy, Moderate or Demanding (or empty).`);
     slot.options.push({
       id: `${slotId}-${slot.options.length + 1}`, name, start: toClock(r.start) ?? '', meeting: clean(r.meeting), cap: capacity, short: clean(r.short),
-      duration: clean(r.duration), difficulty, difficulty_note: clean(r.difficultyNote), description: clean(r.description), bring: clean(r.bring), included: clean(r.included),
+      duration: clean(r.duration), difficulty, difficulty_note: clean(r.difficultyNote), description: clean(r.description), bring: clean(r.bring), accessibility: clean(r.accessibility),
     });
     slots.set(slotId, slot);
   }

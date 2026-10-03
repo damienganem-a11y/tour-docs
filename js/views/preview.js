@@ -25,18 +25,22 @@ function openGuestPreview(ctx, trip) {
   const names = displayNames(trip.guests);
   const guests = trip.guests.filter((g) => !g.leftAt).sort(alphabetical(names));
   const select = h('select', { class: 'text-input', 'aria-label': 'Guest' }, guests.map((g) => h('option', { value: g.id }, names.get(g.id))));
+  // "Pretend today is...": to see the passport stamps and the TODAY marks on any day of the trip (the demo trips are in the future).
+  const today = new Date().toISOString().slice(0, 10);
+  const first = trip.slots.map((x) => x.date).sort()[0] ?? today;
+  const dateInput = h('input', { class: 'text-input', type: 'date', value: today, 'aria-label': 'Pretend today is' });
   const open = h('button', {
     class: 'btn', type: 'button',
     onclick: () => {
       const guest = guests.find((g) => g.id === select.value);
-      try { localStorage.setItem(GUEST_PREVIEW_KEY, JSON.stringify(buildGuestSheet(trip, guest, new Date().toISOString()))); } catch { showToast('Could not prepare the preview.', true); return; }
+      try { const sheet = buildGuestSheet(trip, guest, new Date().toISOString()); if (dateInput.value) sheet.previewDate = dateInput.value; localStorage.setItem(GUEST_PREVIEW_KEY, JSON.stringify(sheet)); } catch { showToast('Could not prepare the preview.', true); return; }
       location.href = new URL('guest/?preview=1', location.href).href;
     },
   }, 'Open the guest app as this guest');
   openSheet({
     eyebrow: 'Preview as a guest', title: trip.name,
     subtitle: 'The guest app, exactly as this guest sees it, from the trip as it is now. Nothing is sent anywhere.',
-    body: [select, open],
+    body: [select, h('label', { class: 'muted', style: 'display:block;margin:10px 4px 4px;' }, `Pretend today is (the trip starts ${first}):`), dateInput, open],
   });
 }
 

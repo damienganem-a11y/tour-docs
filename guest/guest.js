@@ -10,6 +10,7 @@
 // The app can read nothing else: no trip, no other guest. Read only.
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
+import { passportState, stampSvg } from './passport.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
 const SHEET_KEY = 'tourdocs.guest.sheet';
@@ -77,13 +78,14 @@ async function fetchSheet(token) {
 // ---------- showing ----------
 const MONTHS_DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const dayDate = (iso) => MONTHS_DAY.format(new Date(`${iso}T00:00:00Z`));
-const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+let simulatedDate = null; // owner's preview only: "pretend today is..." (set from the sheet's previewDate)
+const localToday = () => { if (simulatedDate) return simulatedDate; const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const updatedText = (iso) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
 
 // "Next up": the first thing still to come (an activity or a dinner), so the guest sees at once where to be next. The clock time of a
 // part is its start time, or a usual hour for its half-day; it is read in the phone's own clock (a guest on the trip is in the place).
 const USUAL_HOUR = { 'Full day': '08:00', Morning: '09:00', Afternoon: '14:00', Evening: '19:00' };
-function nextUp(sheet, now = new Date()) {
+function nextUp(sheet, now = simulatedDate ? new Date(`${simulatedDate}T07:00:00`) : new Date()) {
   for (const day of sheet.days) {
     for (const part of day.parts) {
       if (part.kind !== 'activity' && part.kind !== 'dinner') continue;
@@ -191,8 +193,10 @@ function programmeView(sheet) {
   const groups = destinationGroups(sheet);
   return groups.map((group) => {
     const open = openGroups.has(group.key);
+    const photo = sheet.destinations?.find((d) => d.name === group.destination)?.photo;
     const head = h('button', { class: 'dest-head', type: 'button', 'aria-expanded': String(open) },
-      h('div', {}, h('div', { class: 'dest-name' }, group.destination), h('div', { class: 'dest-sub' }, `${dayRange(group)} · ${dayDate(group.days[0].date)}${group.days.length > 1 ? ` – ${dayDate(group.days[group.days.length - 1].date)}` : ''}`)),
+      photo ? picture(photo, 'dest-photo', '') : null,
+      h('div', { class: 'dest-label' }, h('div', { class: 'dest-name' }, group.destination), h('div', { class: 'dest-sub' }, `${dayRange(group)} · ${dayDate(group.days[0].date)}${group.days.length > 1 ? ` – ${dayDate(group.days[group.days.length - 1].date)}` : ''}`)),
       h('span', { class: 'dest-chev' }, open ? '–' : '+'));
     head.addEventListener('click', () => { if (openGroups.has(group.key)) openGroups.delete(group.key); else openGroups.add(group.key); paint(); });
     return h('section', { class: `dest${open ? ' is-open' : ''}` }, head,
@@ -200,6 +204,46 @@ function programmeView(sheet) {
         h('div', { class: 'stub' }, h('i', {}, 'DAY'), String(day.day), day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null),
         h('div', { class: 'pass-body' }, h('div', { class: 'pass-date' }, dayDate(day.date)), day.parts.map((p) => partView(p, sheet))))) : null);
   });
+}
+
+// ---------- the passport ----------
+const STAMPS_SEEN_KEY = 'tourdocs.guest.stamps';
+const stampDate = (iso) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso}T00:00:00Z`)).toUpperCase();
+const seenStamps = () => { try { return JSON.parse(store.get(STAMPS_SEEN_KEY)) ?? []; } catch { return []; } };
+// The stamps of the trip: given when the first day in a place begins THERE (its own time zone), whatever the phone's clock zone says.
+const passportOf = (sheet) => passportState(sheet.destinations, simulatedDate ?? new Date());
+
+function passportRow(sheet) {
+  const state = passportOf(sheet);
+  if (state.length === 0) return null;
+  const given = state.filter((d) => d.given).length;
+  const fresh = state.filter((d) => d.given && !seenStamps().includes(d.name)).length;
+  const row = h('button', { class: 'passport-row', type: 'button' },
+    h('span', { class: 'passport-ic' }, '◎'),
+    h('span', { class: 'passport-text' }, h('span', { class: 'passport-title' }, 'My passport'), h('span', { class: 'passport-sub' }, `${given} of ${state.length} stamps`)),
+    fresh > 0 ? h('span', { class: 'passport-new' }, 'NEW') : null,
+    h('span', { class: 'dest-chev' }, '›'));
+  row.addEventListener('click', () => go({ passport: true }));
+  return row;
+}
+
+function passportView(sheet, offline) {
+  const state = passportOf(sheet);
+  const seen = seenStamps();
+  const tiles = state.map((d, i) => {
+    const fresh = d.given && !seen.includes(d.name);
+    const tile = h('div', { class: `stamp-tile${d.given ? '' : ' is-locked'}${fresh ? ' is-new' : ''}` });
+    if (d.given) { tile.innerHTML = stampSvg(d, stampDate(d.firstDate), `p${i}`); } // drawn by passport.js from the destination's own name, not typed text
+    else tile.append(h('div', { class: 'stamp-ghost' }, h('span', {}, '?')));
+    return h('div', { class: 'stamp-cell' }, tile, h('div', { class: 'stamp-name' }, d.given ? d.name : `Opens ${stampDate(d.firstDate).slice(0, -5)}`), d.given ? h('div', { class: 'stamp-date' }, stampDate(d.firstDate)) : null);
+  });
+  if (!simulatedDate) { const all = state.filter((d) => d.given).map((d) => d.name); store.set(STAMPS_SEEN_KEY, JSON.stringify([...new Set([...seen, ...all])])); }
+  return [
+    h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
+      h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, sheet.trip), h('h2', {}, 'My passport'))),
+    h('div', { class: 'content content--tour' }, offline, h('div', { class: 'stamp-grid' }, tiles),
+      h('p', { class: 'foot' }, 'A stamp arrives on the first day in each place, at the local time there.')),
+  ];
 }
 
 // ---------- the other options of one half-day ----------
@@ -246,12 +290,16 @@ function tourView(sheet, tour, offline) {
       offline,
       h('div', { class: 'line' }, `${dayDate(tour.date)} · ${tour.half} · ${tour.destination}`),
       h('h2', { class: 'tour-title' }, tour.name),
-      h('div', { class: 'chips big' }, info.duration ? chip(info.duration) : null, difficulty?.chip ?? null),
+      // At a glance (owner's request): when we leave, where we meet, how long, how demanding: small bubbles under the title.
+      h('div', { class: 'chips big' },
+        tour.time ? chip(`Leaves ${tour.time}`, 'chip--time') : null,
+        tour.meeting ? chip(tour.meeting, 'chip--place') : null,
+        info.duration ? chip(info.duration) : null,
+        difficulty?.chip ?? null),
       difficulty?.panel ?? null,
-      section('When and where', [tour.time ? `Starts ${tour.time}` : null, tour.meeting ? `Meet: ${tour.meeting}` : null].filter(Boolean).join(' · ')),
       section('What happens', info.description),
-      section('Included', info.included),
-      section('What to bring', info.bring)),
+      section('Good to know', info.bring),
+      info.accessibility ? h('div', { class: 'info-block info-block--access' }, h('div', { class: 'block-title' }, 'Accessibility'), h('div', { class: 'block-text' }, info.accessibility)) : null),
   ].filter(Boolean);
 }
 
@@ -283,6 +331,10 @@ function paint() {
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
   if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'programme' }; }
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
+  if (view.passport) {
+    app.replaceChildren(...passportView(sheet, offline));
+    return;
+  }
   if (view.options !== undefined) {
     app.replaceChildren(...optionsView(sheet, view.options, offline));
     return;
@@ -292,7 +344,11 @@ function paint() {
     return;
   }
   const next = nextUp(sheet);
-  const art = next && next.part.kind === 'activity' && next.part.tour >= 0 ? sheet.tours?.[next.part.tour]?.info?.photos?.[0] : null;
+  // The picture behind the header: the place where the guest is (or goes next); failing that, the next tour's picture, then the first destination's.
+  const placeOf = (name) => sheet.destinations?.find((d) => d.name === name);
+  const art = (next && placeOf(next.day.destination)?.photo ? { url: placeOf(next.day.destination).photo } : null)
+    ?? (next && next.part.kind === 'activity' && next.part.tour >= 0 ? sheet.tours?.[next.part.tour]?.info?.photos?.[0] : null)
+    ?? (sheet.destinations?.[0]?.photo ? { url: sheet.destinations[0].photo } : null);
   const hero = h('header', { class: `hero${art ? ' hero--art' : ''}` },
     art ? picture(art.url, 'hero-art', '') : null,
     next ? h('div', { class: 'stamp', 'aria-hidden': 'true' }, h('span', {}, next.day.destination.toUpperCase()), h('b', {}, dayDate(next.day.date).replace(/^[A-Za-z]+, /, '').toUpperCase()), h('span', {}, (next.day.country || '').toUpperCase())) : null,
@@ -300,7 +356,7 @@ function paint() {
       sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
       h('h1', {}, 'Hello ', h('em', {}, sheet.first)),
       h('p', { class: 'sub' }, sheet.trip)));
-  app.replaceChildren(hero, h('div', { class: 'content' }, nextCard(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
+  app.replaceChildren(hero, h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`)));
 }
 
 function render(sheet, { offline = false } = {}) {
@@ -333,9 +389,10 @@ function showPreview() {
   let sheet = null;
   try { sheet = JSON.parse(store.get('tourdocs.guest.preview')); } catch { sheet = null; }
   if (!sheet || sheet.v !== SUPPORTED_SHEET) { showProblem('No preview', 'Open the preview again from the leader\'s app: Settings, Preview as Guest.'); return; }
+  simulatedDate = /^\d{4}-\d{2}-\d{2}$/.test(sheet.previewDate ?? '') ? sheet.previewDate : null;
   render(sheet);
   if (!document.querySelector('.preview-strip')) {
-    const strip = h('a', { class: 'preview-strip', href: '../' }, `Preview as ${sheet.first} · back to Tour Docs`);
+    const strip = h('a', { class: 'preview-strip', href: '../' }, `Preview as ${sheet.first}${simulatedDate ? ` · pretending it is ${simulatedDate}` : ''} · back to Tour Docs`);
     document.body.prepend(strip);
   }
 }

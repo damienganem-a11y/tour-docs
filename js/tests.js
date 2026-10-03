@@ -25,6 +25,7 @@ import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.
 import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync.js';
 import { APP_VERSION } from './version.js';
 import { tourShort, PART_CODE } from './rules.js';
+import { passportState, dayIn, stampSvg } from '../guest/passport.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
@@ -2667,8 +2668,9 @@ function readZip(bytes) {
   const nest = ctxI.state.activities.find((a) => a.name.startsWith("Tiger's Nest hike"));
   check('The sample trip loads the tour information, with three photos and a difficulty on the Tiger\'s Nest hike',
     nest.info?.difficulty === 'demanding' && nest.info.photos.length === 3 && /thin/.test(nest.info.difficultyNote) && ctxI.state.activities.find((a) => a.name === 'Archery with local teams').info.photos.length === 3);
-  const plain = ctxI.state.activities.find((a) => a.name === 'Sintra palaces');
+  const plain = ctxI.state.activities.find((a) => a.name.startsWith('Dinner'));
   check('An activity with no information has none (null), and older trips without the field still work', plain.info === null);
+  check('Every tour of the sample trip has pictures, and every destination has its own', ctxI.state.activities.filter((a) => !a.name.startsWith('Dinner')).every((a) => (a.info?.photos?.length ?? 0) === 3) && ctxI.state.destinations.every((d) => /^demo\/city-[a-z-]+\.svg$/.test(d.photo)));
 
   const slot = ctxI.state.slots.find((x) => x.id === nest.slotId);
   const added = await applyChange(ctxI, trip.id, { type: 'add-activity', slotId: slot.id, name: 'Test walk', meeting: '', startTime: '', capacity: null, info: { duration: 'About 1 hour', difficulty: 'easy', difficultyNote: 'Flat.' } });
@@ -2767,7 +2769,9 @@ function readZip(bytes) {
 {
   const jetRaw = await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json();
   const jet = buildTrip(jetRaw);
-  check('The jet sample loads: 12 destinations, 25 days, 40 guests, every half-day with at least one tour', jet.destinations.length === 12 && jet.days === 25 && jet.guests.length === 40 && jet.slots.length > 25 && jet.slots.every((s) => jet.activities.some((a) => a.slotId === s.id)));
+  check('The jet sample loads: 12 destinations, 25 days, 40 guests, every half-day with at least one tour', jet.destinations.length === 12 && jet.days === 25 && jet.guests.length === 40 && jet.slots.length > 25 && jet.slots.every((s) => s.half === 'Evening' ? true : jet.activities.some((a) => a.slotId === s.id)));
+  const dineAround = jet.slots.find((x) => x.half === 'Evening' && jet.destinations.find((d) => d.id === x.destinationId)?.name === 'Port Douglas');
+  check('The jet sample has a dine-around evening in Port Douglas (no tour offered, everyone free for dinner)', dineAround && jet.activities.every((a) => a.slotId !== dineAround.id) && jet.guests.every((g) => jet.bookings[g.id][dineAround.id]?.kind === 'leisure'));
   const jetText = JSON.stringify(jetRaw);
   check('The jet sample holds no real brand or real people (fictional data only)', !/national geographic|nat geo|fernos|vazquez/i.test(jetText));
   const cusco = jet.slots.find((s) => s.day === 3 && s.half === 'Morning');
@@ -2809,6 +2813,22 @@ function readZip(bytes) {
   check('A short name longer than 16 letters is refused', !(await applyChange(ctxS, trip.id, { type: 'edit-activity', activityId: actS.id, name: actS.name, meeting: actS.meeting, startTime: '15:00', capacity: actS.capacity, short: 'x'.repeat(17) })).ok);
   const jetS = buildTrip(await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json());
   check('The jet sample gives every tour a keyword', jetS.activities.every((a) => a.short && a.short.length <= 16) && jetS.activities.find((a) => a.name.startsWith('Angkor')).short === 'Angkor');
+}
+
+// --- The virtual passport (guest app): stamps follow each destination's own time zone ---
+{
+  const moment = new Date('2027-08-28T23:30:00Z'); // still the 28th in Lima, already the 29th in Samoa
+  check('The day is worked out in the destination\'s own time zone', dayIn('America/Lima', moment) === '2027-08-28' && dayIn('Pacific/Apia', moment) === '2027-08-29' && dayIn('UTC', '2027-09-05') === '2027-09-05');
+  const dests = [{ name: 'Cusco', country: 'Peru', tz: 'America/Lima', firstDate: '2027-08-29', lastDate: '2027-08-31' }, { name: 'Apia', country: 'Samoa', tz: 'Pacific/Apia', firstDate: '2027-08-29', lastDate: '2027-08-30' }];
+  const state = passportState(dests, moment);
+  check('A stamp is given when the first day begins THERE: Apia yes, Cusco not yet, at the same moment', state[0].given === false && state[1].given === true);
+  check('Pretending a date works the same way, and nothing is given before the trip', passportState(dests, '2027-08-29').every((d) => d.given) && passportState(dests, '2027-08-20').every((d) => !d.given));
+  const svg = stampSvg({ name: 'Siem <Reap>', country: 'Cambodia' }, '8 SEP 2027', 'x');
+  check('A stamp is a picture with the name and country, and nothing typed can inject markup', /^<svg /.test(svg) && svg.includes('CAMBODIA') && !svg.includes('<Reap>') && svg.includes('SIEM &lt;REAP&gt;'));
+  const jetP = makeCtx();
+  const sheetP = buildGuestSheet(jetP.state, jetP.state.guests[0], 'x');
+  check('The sheet carries each destination with its time zone and its first and last date, in trip order', sheetP.destinations.length === jetP.state.destinations.length
+    && sheetP.destinations.every((d) => d.tz && d.firstDate && d.lastDate >= d.firstDate) && sheetP.destinations[0].name === [...jetP.state.destinations].sort((a, b) => a.order - b.order)[0].name);
 }
 
 // --- Preview as another role (owner only) ---
@@ -2889,8 +2909,8 @@ function readZip(bytes) {
   const ada = imported.guests.find((g) => g.first === 'Ada');
   check('Sign-ups carry over: a named activity, and "At leisure" as a status', imported.bookings[ada.id][imported.slots[0].id]?.kind === 'activity'
     && imported.bookings[imported.guests.find((g) => g.first === 'Cleo').id][imported.slots[0].id]?.kind === 'leisure');
-  check('Optional tour columns come through the Excel import (duration, difficulty, details, description, bring, included)',
-    imported.activities[0].info?.duration === 'About 2.5 hours' && imported.activities[0].info.difficulty === 'moderate' && /cobbled/.test(imported.activities[0].info.difficultyNote) && imported.activities[0].info.bring === 'Comfortable shoes' && imported.activities[1].info === null);
+  check('Optional tour columns come through the Excel import (duration, difficulty, details, description, good to know, accessibility)',
+    imported.activities[0].info?.duration === 'About 2.5 hours' && imported.activities[0].info.difficulty === 'moderate' && /cobbled/.test(imported.activities[0].info.difficultyNote) && imported.activities[0].info.bring === 'Comfortable shoes with grip' && /limited mobility/.test(imported.activities[0].info.accessibility) && imported.activities[1].info === null);
   const badDifficulty = structuredClone(sheets); badDifficulty.Activities[1][badDifficulty.Activities[0].indexOf('Difficulty')] = 'Brutal';
   check('A wrong difficulty in the Excel file is refused with its row', (() => { try { tripRawFromWorkbook(badDifficulty, { name: 'x' }); return ''; } catch (e) { return e.message; } })().includes('Activities, row 2'));
   check('Capacity and the dietary note come through; the import reports what it found', imported.activities[0].capacity === 20 && imported.guests.find((g) => g.first === 'Ben').dietary === 'Peanut allergy' && found.summary.guests === 3 && found.summary.signups === 3);

@@ -74,12 +74,12 @@ export function tripsView(ctx) {
   // fictional restaurants onto Lisbon's evening, through the ordinary add-restaurant change — owner's
   // call, 24 Sep 2026, mirroring a real restaurant-booking spreadsheet they shared — exactly as if
   // freshly typed in: journaled, undoable, editable like any other restaurant.
-  async function seedSampleDining(trip) {
-    const lisbon = trip.destinations.find((d) => d.name === 'Lisbon');
-    if (!lisbon) return;
+  async function seedSampleDining(trip, destinationName) {
+    const destination = trip.destinations.find((d) => d.name === destinationName);
+    if (!destination) return;
     for (const name of ['Salsa', 'Melaleuca', 'La Cucina', 'Zinc', 'Wrasse & Roe']) {
       await applyChange(ctx, trip.id, {
-        type: 'add-restaurant', destinationId: lisbon.id, name,
+        type: 'add-restaurant', destinationId: destination.id, name,
         seatings: ['18:45', '19:15'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4],
       });
     }
@@ -91,7 +91,7 @@ export function tripsView(ctx) {
       const response = await fetch(SAMPLE_URL);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const trip = await useTrip(await response.text());
-      if (trip) await seedSampleDining(trip);
+      if (trip) await seedSampleDining(trip, 'Lisbon');
     } catch (error) {
       showError(`Could not load the sample trip (${error.message}).`);
     }
@@ -101,7 +101,8 @@ export function tripsView(ctx) {
     try {
       const response = await fetch(JET_SAMPLE_URL);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      await useTrip(await response.text());
+      const trip = await useTrip(await response.text());
+      if (trip) await seedSampleDining(trip, 'Port Douglas'); // the dine-around: five restaurants in Australia
     } catch (error) {
       showError(`Could not load the jet sample trip (${error.message}).`);
     }

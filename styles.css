@@ -840,3 +840,7 @@ button.menu-row:active { background: var(--brand-tint); }
 .seat-what { font-weight: 700; }
 .seat-line--leisure { background: var(--soft); color: var(--muted); }
 .seat-line--bad { background: var(--warn-bg); color: var(--warn-ink); }
+
+/* v0.71.0: the Settings button and the compass are the same button in the same place (right); crisp icons */
+.cog .icon svg, .tile-icon .icon svg { shape-rendering: geometricPrecision; }
+.cog--home .icon svg circle[fill='#fff'] { fill: var(--brand); }

@@ -3,7 +3,7 @@
 
 const PATHS = {
   // a compass: set up the trip
-  setup: '<circle cx="12" cy="12" r="9"/><polygon points="15.5,8.5 13.5,13.5 8.5,15.5 10.5,10.5" fill="currentColor" stroke="none" opacity=".9"/>',
+  setup: '<circle cx="12" cy="12" r="9.5"/><path d="M16 8l-2.2 5.8L8 16l2.2-5.8z" fill="currentColor"/><circle cx="12" cy="12" r="1.1" fill="#fff" stroke="none"/>',
   // two people: who has access
   people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 13.6c2.6.1 4.5 1.8 4.5 4.4"/>',
   // a page with lines: documents and look
@@ -18,6 +18,6 @@ export function icon(name) {
   const span = document.createElement('span');
   span.className = 'icon';
   span.setAttribute('aria-hidden', 'true');
-  span.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${PATHS[name] ?? ''}</svg>`;
+  span.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" shape-rendering="geometricPrecision">${PATHS[name] ?? ''}</svg>`;
   return span;
 }
