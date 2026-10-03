@@ -125,12 +125,6 @@
   "source": "https://commons.wikimedia.org/wiki/File:Taj_Mahal_Tomb_at_sunrise.JPG",
   "title": "Taj Mahal Tomb at sunrise.JPG"
  },
- "tours/welcome-kava-ceremony": {
-  "author": "Scan by NYPL",
-  "license": "Public domain",
-  "source": "https://commons.wikimedia.org/wiki/File:Aumaga_seated_around_tanoa_bowl,_%27Ava_(or_kava)_ceremony,_Samoa_(NYPL_Hades-2359611-4044375).tiff",
-  "title": "Aumaga seated around tanoa bowl, 'Ava (or kava) ceremony, Samoa (NYPL Hades-2359611-4044375).tiff"
- },
  "tours/vailima": {
   "author": "amanderson2",
   "license": "CC BY 2.0",
@@ -227,12 +221,6 @@
   "source": "https://commons.wikimedia.org/wiki/File:Rapa_Nui,_Rano_Raraku.JPG",
   "title": "Rapa Nui, Rano Raraku.JPG"
  },
- "tours/anakena-beach-and-ahu-nau-nau": {
-  "author": "Joe Ross",
-  "license": "CC BY-SA 2.0",
-  "source": "https://commons.wikimedia.org/wiki/File:Anakena_Moai_-_Rapa_Nui_-_Easter_Island_-_Isla_de_Pasqua.jpg",
-  "title": "Anakena Moai - Rapa Nui - Easter Island - Isla de Pasqua.jpg"
- },
  "tours/orongo-ceremonial-village": {
   "author": "Ik T from Kanagawa, Japan",
   "license": "CC BY 2.0",
@@ -244,18 +232,6 @@
   "license": "CC BY-SA 3.0",
   "source": "https://commons.wikimedia.org/wiki/File:Sultanahmet_ferry_on_the_Bosphorus_in_Istanbul,_Turkey_001.jpg",
   "title": "Sultanahmet ferry on the Bosphorus in Istanbul, Turkey 001.jpg"
- },
- "tours/old-city-walk": {
-  "author": "Matti Blume",
-  "license": "CC BY-SA 4.0",
-  "source": "https://commons.wikimedia.org/wiki/File:Sultanahmet,_Istanbul_(P1100256).jpg",
-  "title": "Sultanahmet, Istanbul (P1100256).jpg"
- },
- "tours/topkapi-palace-and-hagia-sophia": {
-  "author": "Phyrexian",
-  "license": "CC BY-SA 4.0",
-  "source": "https://commons.wikimedia.org/wiki/File:%C4%B0stanbul_-_Topkap%C4%B1_Saray%C4%B1_1291.jpg",
-  "title": "İstanbul - Topkapı Sarayı 1291.jpg"
  },
  "tours/spice-market-food-walk": {
   "author": "Miomir Magdevski",
@@ -292,5 +268,455 @@
   "license": "CC BY-SA 4.0",
   "source": "https://commons.wikimedia.org/wiki/File:Mountain_gorilla_(Gorilla_beringei_beringei)_10_month_baby.jpg",
   "title": "Mountain gorilla (Gorilla beringei beringei) 10 month baby.jpg"
+ },
+ "tours/golden-monkey-trek": {
+  "author": "Charles J. Sharp",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Golden_monkey_(Cercopithecus_kandti)_eating.jpg",
+  "title": "Golden monkey (Cercopithecus kandti) eating.jpg"
+ },
+ "tours/kigali-city-and-markets": {
+  "author": "Hanay",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:%D7%94%D7%A9%D7%95%D7%A7_%D7%94%D7%9E%D7%A8%D7%9B%D7%96%D7%99_%D7%A7%D7%99%D7%9E%D7%99%D7%A8%D7%95%D7%A0%D7%A7%D7%95_%D7%91%D7%A7%D7%99%D7%92%D7%90%D7%9C%D7%99_%D7%91%D7%99%D7%A8%D7%AA_%D7%A8%D7%95%D7%90%D7%A0%D7%93%D7%94_(15).jpg",
+  "title": "השוק המרכזי קימירונקו בקיגאלי בירת רואנדה (15).jpg"
+ },
+ "tours/imigongo-art-cooperative": {
+  "author": "Ji-Elle",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Fresque_Imigongo-Festival_international_de_g%C3%A9ographie_2011_(2).jpg",
+  "title": "Fresque Imigongo-Festival international de géographie 2011 (2).jpg"
+ },
+ "tours/tea-ceremony": {
+  "author": "KuboBella",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Japanese_Tea_Ceremony_Serving_Tea.jpg",
+  "title": "Japanese Tea Ceremony Serving Tea.jpg"
+ },
+ "tours/fushimi-inari-early-walk": {
+  "author": "Basile Morin",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Torii_path_with_lantern_at_Fushimi_Inari_Taisha_Shrine,_Kyoto,_Japan.jpg",
+  "title": "Torii path with lantern at Fushimi Inari Taisha Shrine, Kyoto, Japan.jpg"
+ },
+ "tours/arashiyama-bamboo-grove": {
+  "author": "Basile Morin",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Bamboo_Forest,_Arashiyama,_Kyoto,_Japan.jpg",
+  "title": "Bamboo Forest, Arashiyama, Kyoto, Japan.jpg"
+ },
+ "tours/kinkaku-ji-and-zen-garden": {
+  "author": "Basile Morin",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Water_reflection_of_Kinkaku-ji_Temple_a_sunny_day,_Kyoto,_Japan.jpg",
+  "title": "Water reflection of Kinkaku-ji Temple a sunny day, Kyoto, Japan.jpg"
+ },
+ "tours/sake-brewery-visit": {
+  "author": "Celuici",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Sake_barrels_outside_brewery_in_Takayama,_May_2017.jpg",
+  "title": "Sake barrels outside brewery in Takayama, May 2017.jpg"
+ },
+ "tours/tram-28-and-viewpoints": {
+  "author": "Ввласенко",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Tram_28_Lisbon_Portuguese.jpg",
+  "title": "Tram 28 Lisbon Portuguese.jpg"
+ },
+ "tours/sintra-palaces": {
+  "author": "CEphoto, Uwe Aranas",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Sintra_Portugal_Pal%C3%A1cio_da_Pena-01.jpg",
+  "title": "Sintra Portugal Palácio da Pena-01.jpg"
+ },
+ "tours/bel-m-and-pastel-de-nata-tasting": {
+  "author": "Kim Kash",
+  "license": "CC BY-SA 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Pasteis_de_nata_from_Belem_(22023386232).jpg",
+  "title": "Pasteis de nata from Belem (22023386232).jpg"
+ },
+ "tours/tagus-sunset-sail": {
+  "author": "Sonse",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Sunset_Sailing_on_Tagus_River_(50657005681).jpg",
+  "title": "Sunset Sailing on Tagus River (50657005681).jpg"
+ },
+ "tours/welcome-beach-session": {
+  "author": "Martin Falbisoner",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Diamonds_Thudufushi_Beach_and_Water_Villas,_May_2017_-09.jpg",
+  "title": "Diamonds Thudufushi Beach and Water Villas, May 2017 -09.jpg"
+ },
+ "tours/snorkel-with-marine-biologist": {
+  "author": "Rudolph.A.furtado",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Snorkeling_in_the_Indian_Ocean_in_the_Maldives..JPG",
+  "title": "Snorkeling in the Indian Ocean in the Maldives..JPG"
+ },
+ "tours/scuba-discovery-dive": {
+  "author": "This illustration was made by (User:Royonx) and released und",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Banana_Reef.jpg",
+  "title": "Banana Reef.jpg"
+ },
+ "tours/sandbank-picnic": {
+  "author": "georama",
+  "license": "CC BY 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Sandbank_Kuramathi,_Maldives_-_panoramio.jpg",
+  "title": "Sandbank Kuramathi, Maldives - panoramio.jpg"
+ },
+ "tours/marrakech-city-tour": {
+  "author": "Baca12",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Mosqu%C3%A9e_de_la_Koutoubia_-_marakesh.jpg",
+  "title": "Mosquée de la Koutoubia - marakesh.jpg"
+ },
+ "tours/atlas-mountains-hike": {
+  "author": "William Whyte from Dublin, Ireland",
+  "license": "CC BY-SA 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Imlil-the_police,_descending-wwhyte.jpg",
+  "title": "Imlil-the police, descending-wwhyte.jpg"
+ },
+ "tours/moroccan-culinary-tour": {
+  "author": "Jafri Ali",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Tajines_in_a_pottery_shop_in_Morocco.jpg",
+  "title": "Tajines in a pottery shop in Morocco.jpg"
+ },
+ "tours/farewell-brunch": {
+  "author": "Flavio Ferrari",
+  "license": "CC BY-SA 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Riad_Ariha_breakfast.jpg",
+  "title": "Riad Ariha breakfast.jpg"
+ },
+ "tours/medina-orientation-walk": {
+  "author": "Ymblanter",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Marrakesh_Medina_around_Bab-Doukkala_2.jpg",
+  "title": "Marrakesh Medina around Bab-Doukkala 2.jpg"
+ },
+ "tours/hammam-and-spa": {
+  "author": "R Prazeres",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Hammam_Saffarin_DSCF6564.jpg",
+  "title": "Hammam Saffarin DSCF6564.jpg"
+ },
+ "tours/atlas-mountains-village-visit": {
+  "author": "DavidDennis / David Dennis from Pozuelo de Alarcón, Madrid, ",
+  "license": "CC BY-SA 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Berber_village_Atlas.jpg",
+  "title": "Berber village Atlas.jpg"
+ },
+ "tours/majorelle-garden": {
+  "author": "Viault",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Le_jardin_des_majorelle_16.JPG",
+  "title": "Le jardin des majorelle 16.JPG"
+ },
+ "tours/souk-treasure-hunt-with-a-guide": {
+  "author": "Petar Milošević",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Oriental_hanging_lanterns._Souk_Haddadine,_Marrakech_Medina_(%D8%B3%D9%88%D9%82_%D8%A7%D9%84%D8%AD%D8%AF%D8%A7%D8%AF%D9%8A%D9%86_%D9%85%D8%B1%D8%A7%D9%83%D8%B4).jpg",
+  "title": "Oriental hanging lanterns. Souk Haddadine, Marrakech Medina (سوق الحدادين مراكش).jpg"
+ },
+ "tours/farewell-brunch-in-the-palm-grove": {
+  "author": "Viault",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:La_Palmeraie_de_Marrakech_709.JPG",
+  "title": "La Palmeraie de Marrakech 709.JPG"
+ },
+ "tours/final-shopping-with-a-guide": {
+  "author": "Mustang Joe",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Marrakech_souk_fruit_vendor.jpg",
+  "title": "Marrakech souk fruit vendor.jpg"
+ },
+ "tours/thimphu": {
+  "author": "Bernard Gagnon",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Tashichho_Dzong,_Bhutan_03.jpg",
+  "title": "Tashichho Dzong, Bhutan 03.jpg"
+ },
+ "tours/paro-town-and-dzong": {
+  "author": "Christopher Fynn",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Rinpung_Dzong_Paro_2007-11-11_CJF.JPG",
+  "title": "Rinpung Dzong Paro 2007-11-11 CJF.JPG"
+ },
+ "tours/tiger-s-nest-hike-challenging": {
+  "author": "Original:  Nina R from Africa\n\nDerivative work:  Unpetitprol",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Paro_Taktsang,_Bhutan_(edited).jpg",
+  "title": "Paro Taktsang, Bhutan (edited).jpg"
+ },
+ "tours/archery-with-local-teams": {
+  "author": "Footlooseinme",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Archery_in_Bhutan.jpg",
+  "title": "Archery in Bhutan.jpg"
+ },
+ "tours/farmhouse-lunch-and-butter-tea": {
+  "author": "Christopher J. Fynn",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Bhutanese_Farmhouse_Soe_Yaksa.jpg",
+  "title": "Bhutanese Farmhouse Soe Yaksa.jpg"
+ },
+ "tours/meditation-with-a-monk": {
+  "author": "Shaantanu Kulkarni",
+  "license": "CC BY 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Om_Mani_Pedme_Hum_(136352913).jpeg",
+  "title": "Om Mani Pedme Hum (136352913).jpeg"
+ },
+ "tours/little-petra": {
+  "author": "hikinginjordan",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:05_Little_Petra_Canyon_Trail_-_The_Trail_Starts_at_the_End_of_Little_Petra_-_panoramio.jpg",
+  "title": "05 Little Petra Canyon Trail - The Trail Starts at the End of Little Petra - panoramio.jpg"
+ },
+ "tours/petra-by-night": {
+  "author": "Mustafa Waad Saeed",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Petra_Al-Kaznah_by_Night.jpg",
+  "title": "Petra Al-Kaznah by Night.jpg"
+ },
+ "tours/petra-siq-and-treasury": {
+  "author": "Esin Üstün from Istanbul, Turkey",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Treasury_from_Siq,_Petra,_Jordan_(16044613195).jpg",
+  "title": "Treasury from Siq, Petra, Jordan (16044613195).jpg"
+ },
+ "tours/high-place-of-sacrifice": {
+  "author": "Dosseman",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Petra_High_Place_of_Sacrifice_1954.jpg",
+  "title": "Petra High Place of Sacrifice 1954.jpg"
+ },
+ "tours/monastery-hike-challenging": {
+  "author": "Diego Delso",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:The_Monastery,_Petra,_Jordan8.jpg",
+  "title": "The Monastery, Petra, Jordan8.jpg"
+ },
+ "tours/petra-by-horse-cart": {
+  "author": "Berthold Werner",
+  "license": "CC BY 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Petra_Jordan_BW_11.JPG",
+  "title": "Petra Jordan BW 11.JPG"
+ },
+ "tours/wadi-rum-jeep-safari": {
+  "author": "Daniel Case",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Jeep_heading_out_into_Wadi_Rum.jpg",
+  "title": "Jeep heading out into Wadi Rum.jpg"
+ },
+ "tours/little-petra-walk": {
+  "author": "hikinginjordan",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:05_Little_Petra_Canyon_Trail_-_The_Trail_Starts_at_the_End_of_Little_Petra_-_panoramio.jpg",
+  "title": "05 Little Petra Canyon Trail - The Trail Starts at the End of Little Petra - panoramio.jpg"
+ },
+ "tours/great-barrier-reef": {
+  "author": "Gökhan Tolun",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Great_Barrier_Reef_Corals.jpg",
+  "title": "Great Barrier Reef Corals.jpg"
+ },
+ "tours/daintree-rainforest": {
+  "author": "Charles J. Sharp",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Common_tree_snake_(Dendrelaphis_punctulatus)_Daintree_4.jpg",
+  "title": "Common tree snake (Dendrelaphis punctulatus) Daintree 4.jpg"
+ },
+ "tours/first-game-drive": {
+  "author": "Güldem Üstün from Istanbul, TURKEY",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Tanzania_(Serengeti_National_Park)_Safari_vehicle_(21113135729).jpg",
+  "title": "Tanzania (Serengeti National Park) Safari vehicle (21113135729).jpg"
+ },
+ "tours/serengeti-game-drive": {
+  "author": "Anita Ritenour from Santa Maria, CA, USA",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Serengeti_Morning_(6134800197).jpg",
+  "title": "Serengeti Morning (6134800197).jpg"
+ },
+ "tours/ngorongoro-crater-safari": {
+  "author": "Giles Laurent",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:013_Black-backed_jackal_in_the_Ngorongoro_Crater_Photo_by_Giles_Laurent.jpg",
+  "title": "013 Black-backed jackal in the Ngorongoro Crater Photo by Giles Laurent.jpg"
+ },
+ "tours/olduvai-gorge": {
+  "author": "Kufundisha",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Viewing_platform_at_Olduvai_Gorge_Museum.jpg",
+  "title": "Viewing platform at Olduvai Gorge Museum.jpg"
+ },
+ "tours/sunrise-game-drive": {
+  "author": "Eric Kilby from Somerville, MA, USA",
+  "license": "CC BY-SA 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Serengeti_Sunrise_-_Flickr_-_Eric_Kilby.jpg",
+  "title": "Serengeti Sunrise - Flickr - Eric Kilby.jpg"
+ },
+ "tours/beach-and-welcome-drinks": {
+  "author": "NorbertNagel",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Sunrise_on_the_coast_of_Anse_Royale_-_Mahe_-_Seychelles_-_2025_-_03.jpg",
+  "title": "Sunrise on the coast of Anse Royale - Mahe - Seychelles - 2025 - 03.jpg"
+ },
+ "tours/vall-e-de-mai-palm-forest": {
+  "author": "Remi Jouan",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Vallee_de_Mai_-_Coco_de_mer_(2).JPG",
+  "title": "Vallee de Mai - Coco de mer (2).JPG"
+ },
+ "tours/island-hopping-by-boat": {
+  "author": "Didier Baertschiger",
+  "license": "CC BY-SA 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Seychelles_-_Praslin_-_Boat.jpg",
+  "title": "Seychelles - Praslin - Boat.jpg"
+ },
+ "tours/snorkel-at-anse-lazio": {
+  "author": "Radosław Botev",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Anse_Lazio_Praslin_Seychelles_1.jpg",
+  "title": "Anse Lazio Praslin Seychelles 1.jpg"
+ },
+ "tours/old-market-and-apsara-dance": {
+  "author": "Dan Koehl",
+  "license": "CC BY 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:DKoehl_Siem_Reap_Angkor_Village_Apsara_Theatre_2023.jpg",
+  "title": "DKoehl Siem Reap Angkor Village Apsara Theatre 2023.jpg"
+ },
+ "tours/angkor-wat-ta-prohm-and-angkor-thom": {
+  "author": "Marcin Konsek",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:2016_Angkor,_Angkor_Thom,_Bajon_(47).jpg",
+  "title": "2016 Angkor, Angkor Thom, Bajon (47).jpg"
+ },
+ "tours/beng-mealea": {
+  "author": "Gary Todd",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Ancient_Khmer_Temple_of_Beng_Mealea_-_l.jpg",
+  "title": "Ancient Khmer Temple of Beng Mealea - l.jpg"
+ },
+ "tours/roluos-temple-complex": {
+  "author": "Photo Dharma from Penang, Malaysia",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Roulos_Group_-_005_Bakong_(8587796725).jpg",
+  "title": "Roulos Group - 005 Bakong (8587796725).jpg"
+ },
+ "tours/apopo-herorats-visitor-center": {
+  "author": "Mx. Granger",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Bosco_the_rat_at_APOPO.jpg",
+  "title": "Bosco the rat at APOPO.jpg"
+ },
+ "tours/angkor-wat-sunset": {
+  "author": "Christoph Jackel (WMDE)",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Sunset_Angkor_Wat.jpg",
+  "title": "Sunset Angkor Wat.jpg"
+ },
+ "tours/ta-prohm-by-tuk-tuk": {
+  "author": "lumoplank",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Ta_Prohm_-_TaProhm1265.jpg",
+  "title": "Ta Prohm - TaProhm1265.jpg"
+ },
+ "tours/floating-village-boat-trip": {
+  "author": "lumoplank",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Kampong_Phluk_-_Phluk1103.jpg",
+  "title": "Kampong Phluk - Phluk1103.jpg"
+ },
+ "tours/artisans-workshop-visit": {
+  "author": "Gerd Eichmann",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Artisans_Angkor-14-Wood_carving-2007-gje.jpg",
+  "title": "Artisans Angkor-14-Wood carving-2007-gje.jpg"
+ },
+ "tours/marble-inlay-workshop": {
+  "author": "Biswarup Ganguly",
+  "license": "CC BY 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Marble_Inlay_Demonstration_-_U_P_Handicrafts_Complex_-_Fatehabad_Road_-_Agra_2014-05-14_4221.JPG",
+  "title": "Marble Inlay Demonstration - U P Handicrafts Complex - Fatehabad Road - Agra 2014-05-14 4221.JPG"
+ },
+ "tours/women-s-committee": {
+  "author": "Teinesavaii",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Samoan_fale,_Lelepa_village,_Savaii,_Samoa_2009.JPG",
+  "title": "Samoan fale, Lelepa village, Savaii, Samoa 2009.JPG"
+ },
+ "tours/hammam": {
+  "author": "Jebulon",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Bench_hammam,_Alhambra,_Granada,_Spain.jpg",
+  "title": "Bench hammam, Alhambra, Granada, Spain.jpg"
+ },
+ "tours/coffee-farm-visit": {
+  "author": "PilotChicago",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Freshly_harvested_coffee_cherries.jpg",
+  "title": "Freshly harvested coffee cherries.jpg"
+ },
+ "tours/gion-evening-walk": {
+  "author": "Basile Morin",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Wooden_and_bamboo_facades_of_dwellings_with_sudare_in_a_cobbled_street_of_Gion,_perspective_effect_with_vanishing_point,_Kyoto,_Japan.jpg",
+  "title": "Wooden and bamboo facades of dwellings with sudare in a cobbled street of Gion, perspective effect with vanishing point, Kyoto, Japan.jpg"
+ },
+ "tours/sunset-dolphin-cruise": {
+  "author": "Asurnipal",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Madeira-Atlantic-Margarita_Sunset-Whale_and_Dolphin_Watching_Tours-02ASD.jpg",
+  "title": "Madeira-Atlantic-Margarita Sunset-Whale and Dolphin Watching Tours-02ASD.jpg"
+ },
+ "tours/spa-afternoon": {
+  "author": "Basile Morin",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Spa_massage_parlor_in_Amantaka_luxury_Resort_%26_Hotel_in_Luang_Prabang_Laos.jpg",
+  "title": "Spa massage parlor in Amantaka luxury Resort & Hotel in Luang Prabang Laos.jpg"
+ },
+ "tours/moroccan-cooking-class": {
+  "author": "Kyle Simourd",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Moroccan_spices.jpg",
+  "title": "Moroccan spices.jpg"
+ },
+ "tours/farewell-gala-dinner": {
+  "author": "Arnaud 25",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Riad_Maroc_034.JPG",
+  "title": "Riad Maroc 034.JPG"
+ },
+ "tours/petra-main-trail-to-the-treasury": {
+  "author": "Bernard Gagnon",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Near_Al-Siq,_Petra.jpg",
+  "title": "Near Al-Siq, Petra.jpg"
+ },
+ "tours/creole-cooking-class": {
+  "author": "flowcomm",
+  "license": "CC BY 2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Avocados_in_Seychelles.jpg",
+  "title": "Avocados in Seychelles.jpg"
+ },
+ "tours/private-cooking-lesson": {
+  "author": "Saphabodi",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Neary_Khmer,_2018-01-02_(002).jpg",
+  "title": "Neary Khmer, 2018-01-02 (002).jpg"
+ },
+ "tours/tiger-s-nest-hike": {
+  "author": "Bernard Gagnon",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Paro_Taktsang_trail_04.jpg",
+  "title": "Paro Taktsang trail 04.jpg"
+ },
+ "tours/angkor-wat-sunrise-and-bayon": {
+  "author": "Marcin Konsek",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:2016_Angkor,_Angkor_Thom,_Bajon_(14).jpg",
+  "title": "2016 Angkor, Angkor Thom, Bajon (14).jpg"
  }
 }

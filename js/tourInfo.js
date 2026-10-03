@@ -20,7 +20,7 @@ const LIMITS = { duration: 40, description: 1000, difficultyNote: 600, bring: 30
 const MAX_PHOTOS = 6;
 
 // A photo address: a full https address, or a path inside the app (demo drawings, photos/ photographs). Nothing else (no scripts, no data pictures).
-export const goodUrl = (url) => typeof url === 'string' && url.length <= 300 && (/^https:\/\/[^\s]+$/.test(url) || /^(demo|photos)\/[A-Za-z0-9._-]+$/.test(url));
+export const goodUrl = (url) => typeof url === 'string' && url.length <= 300 && (/^https:\/\/[^\s]+$/.test(url) || /^(demo|photos|photos\/tours)\/[A-Za-z0-9._-]+$/.test(url));
 
 // Returns an error sentence, or null when `raw` (the fields as typed) is acceptable. Missing fields are fine.
 export function tourInfoError(raw) {

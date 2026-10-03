@@ -668,7 +668,7 @@ function render(sheet, { offline = false } = {}) {
   for (const part of sheet.days.flatMap((d) => d.parts)) {
     if (part.tour === undefined || part.tour < 0) continue;
     for (const p of sheet.tours?.[part.tour]?.info?.photos ?? []) wanted.add(p.url);
-    for (const i of part.alt ?? []) { const first = sheet.tours?.[i]?.info?.photos?.[0]; if (first) wanted.add(first.url); }
+    // (the other options are NOT fetched ahead: their pictures are kept the first time the guest looks at them, so the phone's data is spared)
   }
   for (const r of sheet.restaurants ?? []) for (const p of r.card.photos ?? []) wanted.add(p.url);
   for (const d of sheet.destinations ?? []) if (d.photo) wanted.add(d.photo);
