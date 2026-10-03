@@ -1,7 +1,7 @@
 /* The guest app look: deliberately different from the leader's app (cream and teal): cool light background, a big coloured header in the
-   company's own colour, white rounded cards with soft shadows. --brand and --on-brand are set by guest.js from the company colour. */
+   company's own colour only as a thin stripe, white rounded cards with soft shadows. The look is fixed so any company colour stays readable. */
 :root {
-  --brand: #1d5c57; --on-brand: #fff;
+  --primary: #1d3a63; --on-primary: #fff; --accent: #1d5c57; --label: #475569;
   --ink: #111827; --muted: #5b6475; --bg: #f2f4f8; --card: #fff; --line: #e4e8f0;
   --good: #1b7a43; --good-bg: #dff3e6; --mid: #9a5b00; --mid-bg: #fdecc8; --bad: #a3281a; --bad-bg: #fadad4;
   --radius: 22px; --shadow: 0 6px 20px rgba(17, 24, 39, .08);
@@ -13,8 +13,8 @@ main { max-width: 600px; margin: 0 auto; min-height: 100vh; background: var(--bg
 .center { text-align: center; margin-top: 30vh; }
 
 /* header */
-.hero { background: linear-gradient(155deg, var(--brand) 0%, color-mix(in srgb, var(--brand) 45%, #0b1226) 100%); color: var(--on-brand); padding: calc(env(safe-area-inset-top) + 26px) 22px 64px; border-radius: 0 0 34px 34px; }
-.company { font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; opacity: .85; }
+.hero { background: linear-gradient(155deg, #1d3a63 0%, #0f1f3a 100%); color: #fff; border-top: 6px solid var(--accent); padding: calc(env(safe-area-inset-top) + 26px) 22px 64px; border-radius: 0 0 34px 34px; }
+.company { font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; opacity: .9; }
 .hero h1 { font-size: 36px; line-height: 1.05; font-weight: 800; letter-spacing: -.02em; margin: 8px 0 4px; }
 .sub { margin: 0; opacity: .85; font-size: 16px; }
 .next { margin-top: 20px; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .28); border-radius: 18px; padding: 14px 16px; backdrop-filter: blur(6px); }
@@ -26,26 +26,26 @@ main { max-width: 600px; margin: 0 auto; min-height: 100vh; background: var(--bg
 .content { padding: 0 16px calc(env(safe-area-inset-bottom) + 40px); margin-top: -30px; }
 .tabs { display: flex; gap: 4px; background: var(--card); border-radius: 999px; padding: 5px; box-shadow: var(--shadow); margin: 0 0 18px; }
 .tab { flex: 1; border: 0; background: none; font: inherit; font-weight: 750; padding: 11px 8px; border-radius: 999px; color: var(--muted); }
-.tab.is-on { background: var(--brand); color: var(--on-brand); }
+.tab.is-on { background: var(--primary); color: var(--on-primary); }
 .banner { background: var(--mid-bg); color: var(--mid); border-radius: 14px; padding: 11px 14px; margin: 0 0 14px; font-size: 15px; font-weight: 600; }
 .foot { text-align: center; color: var(--muted); font-size: 13px; margin: 24px 0 0; }
 button.link { background: none; border: 0; color: inherit; font: inherit; font-weight: 800; text-decoration: underline; padding: 0 0 0 6px; }
 
 /* days */
 .day { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); margin: 0 0 16px; overflow: hidden; }
-.day.today { outline: 3px solid var(--brand); }
+.day.today { outline: 3px solid var(--primary); }
 .day-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px 10px; }
-.day-num { flex: none; width: 54px; height: 54px; border-radius: 16px; background: var(--brand); color: var(--on-brand); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; line-height: 1; }
+.day-num { flex: none; width: 54px; height: 54px; border-radius: 16px; background: var(--primary); color: var(--on-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; line-height: 1; }
 .day-num span { font-size: 9px; letter-spacing: .14em; font-weight: 800; opacity: .8; margin-bottom: 2px; }
 .day-title { font-size: 21px; font-weight: 800; letter-spacing: -.01em; line-height: 1.15; }
 .day-date { color: var(--muted); font-size: 14px; font-weight: 600; margin-top: 2px; letter-spacing: 0; }
-.today-tag { margin-left: 8px; background: var(--brand); color: var(--on-brand); font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; vertical-align: middle; }
+.today-tag { margin-left: 8px; background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; vertical-align: middle; }
 .part { padding: 12px 18px 14px; border-top: 1px solid var(--line); }
-.half { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--brand); font-weight: 800; }
+.half { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 800; }
 .what { font-size: 19px; font-weight: 750; line-height: 1.25; margin: 2px 0; }
 .line { color: var(--muted); font-size: 15px; }
 .leisure .what { font-weight: 600; color: var(--muted); }
-.more { color: var(--brand); font-weight: 800; font-size: 14px; margin-top: 6px; }
+.more { color: var(--primary); font-weight: 800; font-size: 14px; margin-top: 6px; }
 .part--tap { cursor: pointer; }
 .part--tap:active { background: var(--bg); }
 .tag { display: inline-block; font-size: 13px; font-weight: 800; padding: 3px 11px; border-radius: 999px; background: var(--good-bg); color: var(--good); margin-top: 6px; }
@@ -55,12 +55,11 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chips.big { margin: 12px 0 6px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; padding: 4px 11px; border-radius: 999px; background: #e8ebf2; color: #2b3445; }
-.chip--easy, .chip--available { background: var(--good-bg); color: var(--good); }
-.chip--moderate, .chip--limited { background: var(--mid-bg); color: var(--mid); }
-.chip--demanding, .chip--waitlist { background: var(--bad-bg); color: var(--bad); }
-.chip--mine { background: var(--brand); color: var(--on-brand); }
+.chip--easy { background: var(--good-bg); color: var(--good); }
+.chip--moderate { background: var(--mid-bg); color: var(--mid); }
+.chip--demanding { background: var(--bad-bg); color: var(--bad); }
 .info-btn { width: 20px; height: 20px; border-radius: 50%; border: 2px solid currentColor; background: none; color: inherit; font: italic 800 13px Georgia, serif; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-.diff-panel { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); border-left: 5px solid var(--brand); padding: 14px 16px; margin: 10px 0 6px; font-size: 15px; }
+.diff-panel { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); border-left: 5px solid var(--primary); padding: 14px 16px; margin: 10px 0 6px; font-size: 15px; }
 .diff-help { font-weight: 800; margin-bottom: 6px; }
 
 /* tours list */
@@ -73,20 +72,29 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 .thumb { width: 92px; height: 74px; object-fit: cover; border-radius: 14px; flex: none; background: #d9dee8; }
 
 /* one tour */
-.tour-top { position: relative; background: linear-gradient(155deg, var(--brand), color-mix(in srgb, var(--brand) 45%, #0b1226)); padding: calc(env(safe-area-inset-top) + 12px) 0 34px; border-radius: 0 0 34px 34px; }
-.back { margin: 0 0 10px 14px; border: 0; background: rgba(255, 255, 255, .2); color: var(--on-brand); font: inherit; font-weight: 800; padding: 8px 16px; border-radius: 999px; }
+.tour-top { position: relative; background: linear-gradient(155deg, #1d3a63 0%, #0f1f3a 100%); border-top: 6px solid var(--accent); padding: calc(env(safe-area-inset-top) + 12px) 0 34px; border-radius: 0 0 34px 34px; }
+.back { margin: 0 0 10px 14px; border: 0; background: rgba(255, 255, 255, .2); color: #fff; font: inherit; font-weight: 800; padding: 8px 16px; border-radius: 999px; }
 .gallery { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 16px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .gallery::-webkit-scrollbar { display: none; }
 .gallery--none { display: none; }
 .shot { flex: 0 0 88%; margin: 0; scroll-snap-align: center; }
 .shot img { width: 100%; height: 220px; object-fit: cover; border-radius: 20px; background: #d9dee8; display: block; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
-.shot figcaption { font-size: 13px; color: var(--on-brand); opacity: .9; margin: 8px 6px 0; }
+.shot figcaption { font-size: 13px; color: #fff; opacity: .9; margin: 8px 6px 0; }
 .content--tour { margin-top: 20px; }
 .tour-title { font-size: 30px; line-height: 1.1; font-weight: 800; letter-spacing: -.02em; margin: 4px 0 0; }
 .info-block { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 14px 16px; margin: 14px 0; }
-.block-title { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--brand); font-weight: 800; margin-bottom: 4px; }
+.block-title { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--label); font-weight: 800; margin-bottom: 4px; }
 .block-text { font-size: 16.5px; }
 
 /* messages */
 .problem { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 26px 20px; margin: 18vh 16px 0; text-align: center; }
 .problem h1 { font-size: 26px; margin: 0 0 8px; }
+
+/* destinations folded like a list */
+.dest { margin: 0 0 14px; }
+.dest-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; border: 0; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; font: inherit; color: var(--ink); }
+.dest.is-open .dest-head { background: var(--primary); color: var(--on-primary); }
+.dest-name { font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+.dest-sub { font-size: 14px; font-weight: 600; opacity: .75; margin-top: 1px; }
+.dest-chev { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; background: color-mix(in srgb, currentColor 14%, transparent); }
+.dest .day { margin: 12px 0 0; }

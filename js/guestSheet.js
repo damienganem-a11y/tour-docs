@@ -11,20 +11,11 @@
 //
 // Times are exact moments in the trip, shown here as clock times in the destination's own time zone (CLAUDE.md rule).
 
-import { guestPlace, samePlace, bySlotOrder, countIn } from './rules.js';
+import { guestPlace, samePlace, bySlotOrder } from './rules.js';
 import { formatTime } from './time.js';
 
 // The sheet's own format number: the guest app refuses a sheet it does not understand instead of showing it wrongly.
 export const SHEET_VERSION = 1;
-
-// How full a tour is, in the three words a guest sees: available, limited (little room left) or waitlist (full: a request would join the waiting list).
-// No capacity = never full. "Little room" = 2 places or fewer, or a fifth of the tour or less.
-export function availabilityOf(trip, activity) {
-  if (activity.capacity === null || activity.capacity === undefined) return 'available';
-  const left = activity.capacity - countIn(trip, activity);
-  if (left <= 0) return 'waitlist';
-  return left <= Math.max(2, Math.ceil(activity.capacity / 5)) ? 'limited' : 'available';
-}
 
 // The tours of the trip the guest can read about (the "Tours" tab). Dinners that still exist as activities ("Dinner: ...") are left out: dinners
 // have their own place in the programme. A cancelled tour is left out. Never any guest name or any internal ID.
@@ -37,8 +28,6 @@ function toursOf(trip, guest, destinationOf) {
       list.push({
         _id: activity.id, day: slot.day, date: slot.date, half: slot.half, destination: destination.name, name: activity.name,
         time: activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : null, meeting: activity.meeting || null,
-        mine: guestPlace(trip, guest, slot).kind === 'activity' && guestPlace(trip, guest, slot).activity.id === activity.id,
-        availability: availabilityOf(trip, activity),
         info: info && {
           duration: info.duration || null, description: info.description || null, difficulty: info.difficulty || null, difficultyNote: info.difficultyNote || null,
           bring: info.bring || null, included: info.included || null, photos: (info.photos ?? []).map((p) => ({ url: p.url, caption: p.caption || '' })),

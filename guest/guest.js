@@ -99,10 +99,8 @@ const DIFFICULTY = {
   moderate: { label: 'Moderate', help: 'Some walking, stairs or uneven ground. A normal level of fitness is enough.' },
   demanding: { label: 'Demanding', help: 'A real effort: long distance, steep climbs or demanding conditions. Good fitness is needed.' },
 };
-const AVAILABILITY = { available: 'Available', limited: 'Limited availability', waitlist: 'Waitlist' };
 
 const chip = (text, cls = '') => h('span', { class: `chip ${cls}`.trim() }, text);
-const availabilityChip = (tour) => (tour.mine ? chip('You are booked', 'chip--mine') : chip(AVAILABILITY[tour.availability] ?? '', `chip--${tour.availability}`));
 
 // The difficulty chip with its small "i" button: tapping it opens a short text (what the level means, then the leader's own details).
 function difficultyBlock(info) {
@@ -154,13 +152,44 @@ function nextCard(sheet) {
   return h('div', { class: 'next' }, h('div', { class: 'next-label' }, `Next up · ${dayDate(next.day.date)} · ${next.part.half}`), h('div', { class: 'next-what' }, what), detail ? h('div', { class: 'next-line' }, detail) : null);
 }
 
+// The programme is folded by destination: tap Lisbon to open its days. Consecutive days in the same place form one group. The group
+// holding today (or, failing that, the next thing to come) starts open; the others start closed. What the guest opens stays open.
+const openGroups = new Set();
+function destinationGroups(sheet) {
+  const groups = [];
+  for (const day of sheet.days) {
+    const last = groups[groups.length - 1];
+    if (last && last.destination === day.destination) last.days.push(day);
+    else groups.push({ destination: day.destination, days: [day], key: `${groups.length}|${day.destination}` });
+  }
+  return groups;
+}
+function dayRange(group) {
+  const first = group.days[0]; const last = group.days[group.days.length - 1];
+  return first.day === last.day ? `Day ${first.day}` : `Day ${first.day}–${last.day}`;
+}
+
 function programmeView(sheet) {
   const today = localToday();
-  return sheet.days.map((day) => h('section', { class: `day${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
-    h('div', { class: 'day-head' },
-      h('div', { class: 'day-num' }, h('span', {}, 'DAY'), String(day.day)),
-      h('div', { class: 'day-title' }, day.destination, day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null, h('div', { class: 'day-date' }, dayDate(day.date)))),
-    day.parts.map((p) => partView(p, sheet))));
+  const groups = destinationGroups(sheet);
+  if (openGroups.size === 0) {
+    const next = nextUp(sheet);
+    const here = groups.find((g) => g.days.some((d) => d.date === today)) ?? groups.find((g) => next && g.days.includes(next.day)) ?? groups[0];
+    if (here) openGroups.add(here.key);
+  }
+  return groups.map((group) => {
+    const open = openGroups.has(group.key);
+    const head = h('button', { class: 'dest-head', type: 'button', 'aria-expanded': String(open) },
+      h('div', {}, h('div', { class: 'dest-name' }, group.destination), h('div', { class: 'dest-sub' }, `${dayRange(group)} · ${dayDate(group.days[0].date)}${group.days.length > 1 ? ` – ${dayDate(group.days[group.days.length - 1].date)}` : ''}`)),
+      h('span', { class: 'dest-chev' }, open ? '–' : '+'));
+    head.addEventListener('click', () => { if (openGroups.has(group.key)) openGroups.delete(group.key); else openGroups.add(group.key); paint(); });
+    return h('section', { class: `dest${open ? ' is-open' : ''}` }, head,
+      open ? group.days.map((day) => h('div', { class: `day${day.date === today ? ' today' : ''}`, id: `d-${day.date}` },
+        h('div', { class: 'day-head' },
+          h('div', { class: 'day-num' }, h('span', {}, 'DAY'), String(day.day)),
+          h('div', { class: 'day-title' }, dayDate(day.date), day.date === today ? h('span', { class: 'today-tag' }, 'TODAY') : null)),
+        day.parts.map((p) => partView(p, sheet)))) : null);
+  });
 }
 
 // ---------- the Tours tab ----------
@@ -181,7 +210,7 @@ function toursView(sheet) {
       const card = h('div', { class: 'tour-card', role: 'button', tabindex: '0' },
         h('div', { class: 'tour-card-text' },
           h('div', { class: 'what' }, tour.name),
-          h('div', { class: 'chips' }, tour.info?.duration ? chip(tour.info.duration) : null, tour.info?.difficulty ? chip(DIFFICULTY[tour.info.difficulty].label, `chip--${tour.info.difficulty}`) : null, availabilityChip(tour))),
+          h('div', { class: 'chips' }, tour.info?.duration ? chip(tour.info.duration) : null, tour.info?.difficulty ? chip(DIFFICULTY[tour.info.difficulty].label, `chip--${tour.info.difficulty}`) : null)),
         photo ? h('img', { class: 'thumb', src: photo.url, alt: '', loading: 'lazy' }) : null);
       card.addEventListener('click', () => openTour(index));
       return card;
@@ -203,7 +232,7 @@ function tourView(sheet, tour, offline) {
       offline,
       h('div', { class: 'line' }, `${dayDate(tour.date)} · ${tour.half} · ${tour.destination}`),
       h('h2', { class: 'tour-title' }, tour.name),
-      h('div', { class: 'chips big' }, info.duration ? chip(info.duration) : null, difficulty?.chip ?? null, availabilityChip(tour)),
+      h('div', { class: 'chips big' }, info.duration ? chip(info.duration) : null, difficulty?.chip ?? null),
       difficulty?.panel ?? null,
       section('When and where', [tour.time ? `Starts ${tour.time}` : null, tour.meeting ? `Meet: ${tour.meeting}` : null].filter(Boolean).join(' · ')),
       section('What happens', info.description),
@@ -227,17 +256,13 @@ function tabs() {
   return h('nav', { class: 'tabs' }, tab('programme', 'My programme'), tab('tours', 'Tours'));
 }
 
-// Sets the company colour and a readable text colour to put on it (white on a dark colour, near-black on a light one).
+// The company colour is kept for small touches only (a stripe at the top): the rest of the look is fixed, so a light or unusual company colour
+// can never make the app hard to read. Falls back to a calm green when the colour is missing or odd.
 function applyAccent(accent) {
   const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#1d5c57';
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  const root = document.documentElement.style;
-  root.setProperty('--brand', hex);
-  root.setProperty('--on-brand', luminance > 0.62 ? '#111827' : '#ffffff');
-  root.setProperty('--theme', hex);
+  document.documentElement.style.setProperty('--accent', hex);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.setAttribute('content', hex);
+  if (meta) meta.setAttribute('content', '#1d3a63');
 }
 
 function paint() {
@@ -298,7 +323,8 @@ async function refresh() {
   }
   if (!scrolledToToday) {
     const today = document.getElementById(`d-${localToday()}`);
-    if (today) { today.scrollIntoView(); scrolledToToday = true; }
+    const group = today?.closest('.dest');
+    if (group && group !== document.querySelector('.dest')) { group.scrollIntoView(); scrolledToToday = true; } // the first group is already at the top
   }
 }
 
