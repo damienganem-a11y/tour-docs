@@ -19,6 +19,18 @@ const REFRESH_EVERY = 60000;    // while the app is open and visible, look for n
 const app = document.getElementById('app');
 
 // ---------- small helpers ----------
+// A picture that can fail to load (an old sheet pointing at a picture that has since moved, no connection and never cached): instead of the
+// browser's broken-picture symbol, a soft empty block of the same size.
+function picture(url, className, alt) {
+  const img = document.createElement('img');
+  if (className) img.className = className;
+  img.alt = alt ?? '';
+  img.loading = 'lazy';
+  img.addEventListener('error', () => { const block = document.createElement('div'); block.className = `${className ?? ''} picture-missing`.trim(); img.replaceWith(block); });
+  img.src = url;
+  return img;
+}
+
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs ?? {})) {
@@ -202,7 +214,7 @@ function optionsView(sheet, tourIndex, offline) {
     const tour = sheet.tours[index];
     const photo = tour.info?.photos?.[0];
     const card = h('div', { class: 'option-card', role: 'button', tabindex: '0' },
-      photo ? h('img', { class: 'thumb', src: photo.url, alt: '', loading: 'lazy' }) : null,
+      photo ? picture(photo.url, 'thumb', '') : null,
       h('div', { class: 'option-text' },
         h('div', { class: 'what' }, tour.name),
         h('div', { class: 'line' }, [tour.time ? `Starts ${tour.time}` : null, tour.info?.duration].filter(Boolean).join(' · ')),
@@ -227,7 +239,7 @@ function tourView(sheet, tour, offline) {
   const difficulty = difficultyBlock(info);
   const photos = info.photos ?? [];
   const gallery = photos.length
-    ? h('div', { class: 'gallery' }, photos.map((p) => h('figure', { class: 'shot' }, h('img', { src: p.url, alt: p.caption || tour.name, loading: 'lazy' }), p.caption ? h('figcaption', {}, p.caption) : null)))
+    ? h('div', { class: 'gallery' }, photos.map((p) => h('figure', { class: 'shot' }, picture(p.url, '', p.caption || tour.name), p.caption ? h('figcaption', {}, p.caption) : null)))
     : h('div', { class: 'gallery gallery--none' });
   const section = (title, text) => (text ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, title), h('div', { class: 'block-text' }, text)) : null);
   return [

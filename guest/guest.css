@@ -101,3 +101,7 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 
 /* the owner's preview bar */
 .preview-strip { position: sticky; top: 0; z-index: 50; display: block; text-align: center; background: #111827; color: #fff; font-weight: 800; font-size: 14px; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; text-decoration: none; }
+
+/* a picture that could not be loaded */
+.picture-missing { background: linear-gradient(135deg, #dfe6f0, #c9d3e3); border-radius: 14px; }
+.shot .picture-missing { width: 100%; height: 220px; border-radius: 20px; }

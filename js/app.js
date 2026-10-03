@@ -22,7 +22,7 @@ import { newId } from './ids.js';
 import { guestSheetRows } from './guestSheet.js';
 import { defaultBranding, brandingFromLook } from './loader.js';
 import { makeOwner } from './users.js';
-import { closeSheet, showToast } from './ui.js';
+import { closeSheet, showToast, onSheetClosed } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
@@ -79,13 +79,13 @@ function trackPush(promise) {
   // Render right away so "pending" (orange) shows the instant a push starts, not only when the
   // owner happens to navigate while one is in flight — the light must update on its own, not just
   // as a side effect of some other redraw.
-  if (state.owner) render({ keepScroll: true });
+  if (state.owner) renderQuiet();
   // .finally() returns its OWN promise, separate from the one below that callers .catch() — and
   // .finally() re-throws after running its callback, so without this .catch() here too, a failed
   // push (e.g. offline) becomes an unhandled rejection even though the caller's .catch() runs fine.
   promise.finally(() => {
     pendingPushes--;
-    if (state.owner) render({ keepScroll: true }); // reactive: clears back to "synced" without waiting for a navigation
+    if (state.owner) renderQuiet(); // reactive: clears back to "synced" without waiting for a navigation
   }).catch(() => {});
   return promise;
 }
@@ -100,7 +100,7 @@ async function checkSession() {
   const result = await hasLiveSession();
   if (result === null || result === hasSession) return;
   hasSession = result;
-  if (state.owner) render({ keepScroll: true });
+  if (state.owner) renderQuiet();
 }
 
 // Pushes a trip (and, once accepted, its journal entries) and records how far this push actually
@@ -383,8 +383,18 @@ const ctx = {
   refresh() { render({ keepScroll: true }); },
 };
 
+// A redraw that nobody asked for (the sync light changing, the connection coming back...) must never close a sheet the person is using: it waits
+// until the sheet is closed. (Seen by the owner: a QR code appeared for half a second and vanished, because a background sync redrew the screen.)
+let renderWaiting = false;
+function renderQuiet() {
+  if (document.body.classList.contains('sheet-open')) { renderWaiting = true; return; }
+  render({ keepScroll: true });
+}
+onSheetClosed(() => { if (renderWaiting) { renderWaiting = false; render({ keepScroll: true }); } });
+
 function render({ keepScroll = false } = {}) {
   const app = document.getElementById('app');
+  renderWaiting = false;
   closeSheet(); // a pick-list left open would be pointing at an old screen
 
   // Locked: nothing else is shown until the access code is entered.
@@ -478,10 +488,10 @@ async function start() {
   // (Phase 2, step 2b) — not just re-render.
   window.addEventListener('online', () => {
     if (!state.owner) return;
-    render({ keepScroll: true });
+    renderQuiet();
     trackPush(pullSync()).catch(() => {});
   });
-  window.addEventListener('offline', () => { if (state.owner) render({ keepScroll: true }); });
+  window.addEventListener('offline', () => { if (state.owner) renderQuiet(); });
   setInterval(() => refreshFromServer(), REFRESH_EVERY_MS);
   enablePullToRefresh(refreshByHand);
   setInterval(enforceDietaryExpiry, 60000); // erasing allergy information after the last dinner works offline too

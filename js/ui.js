@@ -9,6 +9,9 @@ import { h } from './dom.js';
 
 let openBackdrop = null;   // the sheet currently on screen, if any
 let removeKeyHandler = null;
+let whenClosed = null;     // app.js asks to be told when a sheet closes (to draw what it held back meanwhile)
+
+export function onSheetClosed(fn) { whenClosed = fn; }
 
 export function closeSheet() {
   if (!openBackdrop) return;
@@ -16,6 +19,7 @@ export function closeSheet() {
   document.body.classList.remove('sheet-open');
   document.removeEventListener('keydown', removeKeyHandler);
   openBackdrop = null;
+  whenClosed?.();
 }
 
 // eyebrow: small label above the title. title/subtitle: text at the top. body: elements to show inside.
