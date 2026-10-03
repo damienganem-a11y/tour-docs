@@ -117,14 +117,6 @@ const DIFFICULTY = {
 const chip = (text, cls = '') => h('span', { class: `chip ${cls}`.trim() }, text);
 
 // The difficulty chip with its small "i" button: tapping it opens a short text (what the level means, then the leader's own details).
-function difficultyBlock(info) {
-  if (!info?.difficulty) return null;
-  const level = DIFFICULTY[info.difficulty];
-  const panel = h('div', { class: 'diff-panel', hidden: '' }, h('div', { class: 'diff-help' }, level.help), info.difficultyNote ? h('div', {}, info.difficultyNote) : null);
-  const button = h('button', { class: 'info-btn', type: 'button', 'aria-label': `About the ${level.label} level`, 'aria-expanded': 'false' }, 'i');
-  button.addEventListener('click', () => { const open = panel.hasAttribute('hidden'); panel.toggleAttribute('hidden', !open); button.setAttribute('aria-expanded', String(open)); });
-  return { chip: h('span', { class: `chip chip--${info.difficulty}` }, level.label, button), panel };
-}
 
 // ---------- the programme ----------
 function partView(part, sheet) {
@@ -358,10 +350,21 @@ function creditsView(sheet, offline) {
   return [h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'), h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, sheet.trip), h('h2', {}, 'Photo credits'))), list];
 }
 
+// The activity level, written out in the body of the tour page (owner's request): the level in words, what it means, then the leader's own details
+// (distance, climb, steps, heat, tight spaces...). Not hidden behind a bubble or an "i".
+function levelBlock(info) {
+  if (!info?.difficulty) return null;
+  const level = DIFFICULTY[info.difficulty];
+  return h('div', { class: `info-block info-block--level level--${info.difficulty}` },
+    h('div', { class: 'block-title' }, 'Activity level'),
+    h('div', { class: 'level-name' }, level.label),
+    h('div', { class: 'block-text' }, level.help),
+    info.difficultyNote ? h('div', { class: 'block-text level-note' }, info.difficultyNote) : null);
+}
+
 // ---------- one tour ----------
 function tourView(sheet, tour, offline) {
   const info = tour.info ?? {};
-  const difficulty = difficultyBlock(info);
   const photos = info.photos ?? [];
   const gallery = photos.length
     ? h('div', { class: 'gallery' }, photos.map((p) => h('figure', { class: 'shot' }, picture(p.url, '', p.caption || tour.name), p.caption ? h('figcaption', {}, p.caption) : null)))
@@ -377,9 +380,8 @@ function tourView(sheet, tour, offline) {
       h('div', { class: 'chips big' },
         tour.time ? chip(`Leaves ${tour.time}`, 'chip--time') : null,
         tour.meeting ? chip(tour.meeting, 'chip--place') : null,
-        info.duration ? chip(info.duration) : null,
-        difficulty?.chip ?? null),
-      difficulty?.panel ?? null,
+        info.duration ? chip(info.duration) : null),
+      levelBlock(info),
       section('What happens', info.description),
       section('Good to know', info.bring),
       info.accessibility ? h('div', { class: 'info-block info-block--access' }, h('div', { class: 'block-title' }, 'Accessibility'), h('div', { class: 'block-text' }, info.accessibility)) : null),

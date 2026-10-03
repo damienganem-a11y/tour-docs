@@ -401,3 +401,10 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .menu-title { background: none; color: #000; padding: 6px 0; border-bottom: 2px solid #000; margin: 14px 0 2px; }
 .tag.warn { background: #fff; color: #000; border: 1px solid #000; }
 .preview-strip { background: #fff; color: #000; border-bottom: 1px solid #000; }
+
+/* v0.78.1: the activity level is a readable block in the page, not a bubble */
+.level-name { font: 800 22px Outfit, sans-serif; margin: 2px 0 4px; display: flex; align-items: center; gap: 10px; }
+.level-name::before { content: ""; width: 12px; height: 12px; background: var(--yellow); border: 1px solid #000; }
+.level--moderate .level-name::before { background: #ff9d00; }
+.level--demanding .level-name::before { background: #d6361f; }
+.level-note { margin-top: 6px; color: #000; font-weight: 500; }
