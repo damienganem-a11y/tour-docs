@@ -8,20 +8,18 @@
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
-import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn } from '../rules.js';
+import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn, slotLabel } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo, proposePromotion } from './move.js';
 import { undoButton } from './undo.js';
 import { forcedPlacements, waitlistOrder, USE_UNDO_SCOPE } from '../journal.js';
 import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
-import { showToast } from '../ui.js';
+import { showToast, openSheet } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
 
-const PREVIEW = 4; // names shown on a closed card
 
 // Cards the owner has opened. Kept here so a card stays open after a change redraws the screen.
-const openCards = new Set();
 
 // destinationId and slotId come from the address; if they are missing or wrong we start at the first ones.
 export function destinationPage(ctx, trip, destinationId, slotId) {
@@ -138,35 +136,28 @@ function strip(items, small = false) {
   return node;
 }
 
-// A card with a title, a count and the guests as name pills.
-// Tapping the top of the card opens it (all names, plus the actions); tapping a name moves that guest.
+// A card with a title, the time and place, and how full it is. Tapping it opens a sheet with the guests as name pills (tap a name to move that
+// guest), the waiting list and the actions (roll call, add a guest, cancel).
 // waitlist (optional): { activity, waiting } — who is waiting for a seat on THIS tour. Shown inside
 // this same card, set off by a divider, never as a card of its own: it is this tour's own queue, not
 // a second tour, and a separate card next to it reads as exactly that at a glance (the owner's own
 // feedback, 25 Sep 2026).
 function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist }) {
-  // Alphabetical. Guests who are here by force (orange) come first as a group, so they are seen even on a closed card.
+  // Alphabetical. Guests who are here by force (orange) come first as a group, so they are seen first in the list.
   const isForced = (g) => Boolean(forcedOf?.(g));
   const inOrder = alphabetical(names);
   const sorted = [...guests].sort((a, b) => Number(isForced(b)) - Number(isForced(a)) || inOrder(a, b));
-  const body = h('div', {});
 
-  // Open or close the card (the "+4" pill does the same as tapping the top of the card).
-  const toggle = () => {
-    if (openCards.has(key)) openCards.delete(key); else openCards.add(key);
-    head.setAttribute('aria-expanded', String(openCards.has(key)));
-    fill();
-  };
-
-  const fill = () => {
-    const open = openCards.has(key);
-    const shown = open ? sorted : sorted.slice(0, PREVIEW);
-
-    body.replaceChildren(
-      ...(sorted.length === 0
-        ? (cancelled ? [] : [h('p', { class: 'muted nobody' }, 'Nobody')])
-        : [h('div', { class: 'chips' },
-            ...shown.map((g) => {
+  // What opens when the card is tapped (owner's request, 3 Oct 2026: the card itself only says name, time, place and how full it is):
+  // everybody on the tour, the waiting list, and the actions (add a guest, roll call, cancel).
+  const openDetails = () => {
+    const count = h('div', { class: `count${bad ? ' count--bad' : ''}` }, countText);
+    openSheet({
+      eyebrow: slotLabel(trip, slot), title, subtitle: detail || null, titleBadge: count, cancelLabel: 'Close',
+      body: [
+        sorted.length === 0
+          ? (cancelled ? null : h('p', { class: 'muted nobody' }, 'Nobody'))
+          : h('div', { class: 'chips' }, sorted.map((g) => {
               const entry = forcedOf?.(g);
               return h('button', {
                 class: `chip${entry ? ' chip--forced' : ''}`, type: 'button',
@@ -174,23 +165,24 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
                 'aria-label': entry ? `${names.get(g.id)}, forced into this tour. Tap to see who approved it.` : null,
                 onclick: () => (entry ? showForcedInfo(ctx, trip, g, slot, entry) : startMove(ctx, trip, g, slot)),
               }, names.get(g.id));
-            }),
-            !open && sorted.length > PREVIEW ? h('button', { class: 'chip chip--more', type: 'button', onclick: toggle }, `+${sorted.length - PREVIEW}`) : null)]),
-      ...(open && actions.length > 0
-        ? [h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: `btn btn--small${a.primary ? '' : ' btn--plain'}`, type: 'button', onclick: a.run }, a.label)))]
-        : []),
-      ...(waitlist && waitlist.waiting.length > 0 ? [waitlistSection(ctx, trip, slot, waitlist, names)] : [])
-    );
+            })),
+        waitlist && waitlist.waiting.length > 0 ? waitlistSection(ctx, trip, slot, waitlist, names) : null,
+        actions.length > 0
+          ? h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: `btn btn--small${a.primary ? '' : ' btn--plain'}`, type: 'button', onclick: a.run }, a.label)))
+          : null,
+      ],
+    });
   };
 
-  const head = h('button', { class: 'card-head', type: 'button', 'aria-expanded': String(openCards.has(key)), onclick: toggle },
+  const head = h('button', { class: 'card-head', type: 'button', onclick: openDetails },
     h('div', { class: 'card-row' },
       h('div', { class: 'act-name' }, title),
       h('div', { class: `count${bad ? ' count--bad' : ''}` }, countText)),
-    detail ? h('div', { class: 'muted' }, detail) : null);
+    detail ? h('div', { class: 'muted' }, detail) : null,
+    // A tour with someone in it by force says so on the closed card, so it is not missed.
+    sorted.some(isForced) ? h('div', { class: 'forced-note' }, 'Someone is here by force') : null);
 
-  fill();
-  return h('div', { class: `card${soft ? ' card--soft' : ''}${cancelled ? ' card--cancelled' : ''}` }, head, body);
+  return h('div', { class: `card${soft ? ' card--soft' : ''}${cancelled ? ' card--cancelled' : ''}` }, head);
 }
 
 // Who is waiting for a full tour, in the order they joined, rendered INSIDE that tour's own card
