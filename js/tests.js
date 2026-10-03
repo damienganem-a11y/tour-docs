@@ -2752,6 +2752,21 @@ function readZip(bytes) {
   check('The QR picture is an SVG that holds no script', /^<svg /.test(qrSvg('hello')) && !/<script|onload/i.test(qrSvg('hello')));
 }
 
+// --- The fictional 25-day jet trip (second sample) ---
+{
+  const jetRaw = await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json();
+  const jet = buildTrip(jetRaw);
+  check('The jet sample loads: 12 destinations, 25 days, 40 guests, every half-day with at least one tour', jet.destinations.length === 12 && jet.days === 25 && jet.guests.length === 40 && jet.slots.length > 25 && jet.slots.every((s) => jet.activities.some((a) => a.slotId === s.id)));
+  const jetText = JSON.stringify(jetRaw);
+  check('The jet sample holds no real brand or real people (fictional data only)', !/national geographic|nat geo|fernos|vazquez/i.test(jetText));
+  const cusco = jet.slots.find((s) => s.day === 3 && s.half === 'Morning');
+  check('A choice day offers several tours; Cusco morning has the two Sacred Valley tours with three pictures each',
+    jet.activities.filter((a) => a.slotId === cusco.id).length === 2 && jet.activities.filter((a) => a.slotId === cusco.id).every((a) => a.info.photos.length === 3));
+  check('No tour is over capacity in the sample, and every guest has a booking for every half-day', jet.activities.every((a) => a.capacity === null || countIn(jet, a) <= a.capacity)
+    && jet.guests.every((g) => jet.slots.every((s) => jet.bookings[g.id]?.[s.id])));
+  check('Tour information is there for most tours (duration and difficulty)', jet.activities.filter((a) => a.info?.duration && a.info.difficulty).length >= jet.activities.length - 2);
+}
+
 // --- Preview as another role (owner only) ---
 {
   const ctxP = makeCtx();

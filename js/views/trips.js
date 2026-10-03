@@ -16,6 +16,7 @@ import { openPreviewSheet } from './preview.js';
 import { pageHead, exportFormatSheet, syncDot } from './chrome.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
+const JET_SAMPLE_URL = './data/tour_docs_sample_trip_JET-01.json'; // a fictional 25-day private-jet trip (tools/make_jet_sample.py)
 const PURGE_AFTER_DAYS = 30; // kept equal to app.js's own purgeExpiredTrips, just for the wording shown here
 
 // Whether the Archived / Recently deleted sections are unfolded (like the "guests who left" fold in
@@ -96,6 +97,16 @@ export function tripsView(ctx) {
     }
   }
 
+  async function loadJetSample() {
+    try {
+      const response = await fetch(JET_SAMPLE_URL);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await useTrip(await response.text());
+    } catch (error) {
+      showError(`Could not load the jet sample trip (${error.message}).`);
+    }
+  }
+
   // Excel import: read the file, show what was found (and anything odd) in plain words, then create the trip on a tap.
   const excelInput = h('input', {
     class: 'file-input', type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -162,6 +173,7 @@ export function tripsView(ctx) {
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => excelInput.click() }, 'Import a trip from Excel (.xlsx)'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => shareOrDownloadFile(buildTemplateXlsx(), 'tour-docs-trip-template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') }, 'Excel template to fill in'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: loadSample }, 'Load the sample trip'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: loadJetSample }, 'Load the 25-day jet trip (sample)'),
       fileInput,
       excelInput,
       message,
