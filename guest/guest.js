@@ -124,6 +124,11 @@ function partView(part, sheet) {
     if (tour?.info?.duration) lines.push(h('div', { class: 'line' }, tour.info.duration));
     if (part.cancelled) lines.push(h('span', { class: 'tag warn' }, 'Cancelled: your leader will tell you what happens instead'));
     if (tour) { cls += ' part--tap'; lines.push(h('div', { class: 'more' }, 'Details ›')); }
+    if (part.alt?.length) {
+      const other = h('button', { class: 'other-btn', type: 'button' }, `Other options (${part.alt.length})`);
+      other.addEventListener('click', (event) => { event.stopPropagation(); openOptions(part.tour); });
+      lines.push(other);
+    }
   } else if (part.kind === 'leisure') {
     cls += ' leisure';
     lines.push(h('div', { class: 'what' }, 'At leisure'));
@@ -187,6 +192,35 @@ function programmeView(sheet) {
   });
 }
 
+// ---------- the other options of one half-day ----------
+// Shown from the "Other options" button under a tour the guest is booked on: the other tours offered at the same time, read only. Asking for a
+// change comes later (it needs the team's answer); until then the guest is told to speak to their guide.
+function optionsView(sheet, tourIndex, offline) {
+  const mine = sheet.tours[tourIndex];
+  const part = sheet.days.flatMap((d) => d.parts).find((p) => p.tour === tourIndex);
+  const cards = (part?.alt ?? []).map((index) => {
+    const tour = sheet.tours[index];
+    const photo = tour.info?.photos?.[0];
+    const card = h('div', { class: 'option-card', role: 'button', tabindex: '0' },
+      photo ? h('img', { class: 'thumb', src: photo.url, alt: '', loading: 'lazy' }) : null,
+      h('div', { class: 'option-text' },
+        h('div', { class: 'what' }, tour.name),
+        h('div', { class: 'line' }, [tour.time ? `Starts ${tour.time}` : null, tour.info?.duration].filter(Boolean).join(' · ')),
+        h('div', { class: 'chips' }, tour.info?.difficulty ? chip(DIFFICULTY[tour.info.difficulty].label, `chip--${tour.info.difficulty}`) : null)));
+    card.addEventListener('click', () => openTour(index));
+    return card;
+  });
+  return [
+    h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
+      h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, `${dayDate(mine.date)} · ${mine.half} · ${mine.destination}`), h('h2', {}, 'Other options'))),
+    h('div', { class: 'content content--tour' },
+      offline,
+      h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'You are booked on'), h('div', { class: 'block-text' }, mine.name)),
+      ...cards,
+      h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Want to change?'), h('div', { class: 'block-text' }, 'Please speak to your guide. Soon you will be able to ask for a change here.'))),
+  ];
+}
+
 // ---------- one tour ----------
 function tourView(sheet, tour, offline) {
   const info = tour.info ?? {};
@@ -217,8 +251,10 @@ let view = { tab: 'programme' }; // the programme, or { tour: index } for one to
 let currentSheet = null;
 let currentOffline = false;
 
-function openTour(index) { history.pushState({ tour: index }, ''); view = { tour: index }; paint(); window.scrollTo(0, 0); }
-window.addEventListener('popstate', (event) => { view = event.state?.tour !== undefined ? { tour: event.state.tour } : { tab: 'programme' }; if (currentSheet) paint(); });
+function go(next) { history.pushState({ view: next }, ''); view = next; paint(); window.scrollTo(0, 0); }
+function openTour(index) { go({ tour: index }); }
+function openOptions(index) { go({ options: index }); }
+window.addEventListener('popstate', (event) => { view = event.state?.view ?? { tab: 'programme' }; if (currentSheet) paint(); });
 
 // The company colour is kept for small touches only (a stripe at the top): the rest of the look is fixed, so a light or unusual company colour
 // can never make the app hard to read. Falls back to a calm green when the colour is missing or odd.
@@ -235,8 +271,12 @@ function paint() {
   applyAccent(sheet.accent);
   document.title = sheet.trip;
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
-  if (view.tour !== undefined && !tour) { view = { tab: 'programme' }; }
+  if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'programme' }; }
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
+  if (view.options !== undefined) {
+    app.replaceChildren(...optionsView(sheet, view.options, offline));
+    return;
+  }
   if (tour) {
     app.replaceChildren(...tourView(sheet, tour, offline));
     return;
@@ -254,8 +294,15 @@ function render(sheet, { offline = false } = {}) {
   currentSheet = sheet;
   currentOffline = offline;
   paint();
-  // Keep the pictures for offline use: asking for them once lets the service worker keep them.
-  for (const tour of (sheet.tours ?? []).slice(0, 40)) for (const p of tour.info?.photos ?? []) fetch(p.url).catch(() => {});
+  // Keep the pictures for offline use: asking for them once lets the service worker keep them. The tours the guest is booked on get all their
+  // photos, their other options only the first one.
+  const wanted = new Set();
+  for (const part of sheet.days.flatMap((d) => d.parts)) {
+    if (part.tour === undefined || part.tour < 0) continue;
+    for (const p of sheet.tours?.[part.tour]?.info?.photos ?? []) wanted.add(p.url);
+    for (const i of part.alt ?? []) { const first = sheet.tours?.[i]?.info?.photos?.[0]; if (first) wanted.add(first.url); }
+  }
+  for (const url of [...wanted].slice(0, 120)) fetch(url).catch(() => {});
 }
 
 function showProblem(title, text) {

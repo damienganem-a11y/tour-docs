@@ -100,12 +100,19 @@ export function guestLinksSettingsPage(ctx, trip) {
     ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => { const s = await ctx.resendGuestSheets(trip.id); ctx.refresh(); showToast(s.error ? 'Could not send. Are you online?' : 'Programmes sent', Boolean(s.error)); } }, 'Send programmes now')
     : null;
 
+  // Whether guests see, next to each tour they are booked on, the other tours offered in the same half-day (read only: asking for a change comes later).
+  const optionsOn = trip.guestOptions !== false;
+  const optionsCard = h('div', { class: 'card team-member' },
+    h('div', { class: 'act-name' }, 'Show guests their other options'),
+    h('div', { class: 'muted' }, optionsOn ? 'On: a guest sees a button "Other options" under each tour they are booked on.' : 'Off: a guest sees only what they are booked on.'),
+    h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => run({ type: 'guest-links', action: optionsOn ? 'options-off' : 'options-on' }, optionsOn ? 'Other options hidden' : 'Other options shown') }, optionsOn ? 'Switch off' : 'Switch on')));
+
   return h('div', {}, head,
     notice('A guest sees only their own programme: their activities and times, At leisure, and their dinners with their own travel party. Never allergies, notes or other guests.'),
     without.length > 0
       ? h('button', { class: 'btn', type: 'button', onclick: () => run({ type: 'guest-links', action: 'create', guestIds: without.map((g) => g.id) }, `${plural(without.length, 'link')} created`) },
         without.length === guests.length ? 'Create links for everyone' : `Create links for the ${without.length} without one`)
       : null,
-    statusLine, sendNow,
+    optionsCard, statusLine, sendNow,
     h('div', {}, ...guests.map(guestCard)));
 }

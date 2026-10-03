@@ -2738,6 +2738,14 @@ function readZip(bytes) {
   check('Dinners that are still activities are not listed as tours, and each programme activity points to its tour', !sheet.tours.some((t) => /^dinner/i.test(t.name))
     && sheet.days.flatMap((d) => d.parts).filter((p) => p.kind === 'activity' && !/^dinner/i.test(p.name)).every((p) => p.tour >= 0 && sheet.tours[p.tour].name === p.name));
   check('A guest\'s sheet says nothing about how full any tour is (guests see availability only when they can ask for a change, later)', !JSON.stringify(sheet.tours).match(/availability|waitlist|"mine"|capacity/));
+  const withTwo = sheet.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity' && p.tour >= 0 && p.alt?.length > 0);
+  check('Each tour a guest is booked on lists the OTHER tours of the same half-day (never itself)', sheet.options === true && withTwo && withTwo.alt.every((i) => i !== withTwo.tour && sheet.tours[i].day === sheet.tours[withTwo.tour].day && sheet.tours[i].half === sheet.tours[withTwo.tour].half));
+  const optsOff = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'options-off' });
+  const sheetOff = buildGuestSheet(ctxG.state, guest, 'x');
+  check('Switching "other options" off removes them from every sheet, and the Journal says so', optsOff.ok && sheetOff.options === false && sheetOff.days.flatMap((d) => d.parts).every((p) => !('alt' in p))
+    && groupBatches(ctxG.entries).map(summarize).some((t) => /no longer see the other options/.test(t)));
+  await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'options-on' });
+  check('Switching it on again brings them back', buildGuestSheet(ctxG.state, guest, 'x').days.flatMap((d) => d.parts).some((p) => p.alt?.length > 0));
   const rows = guestSheetRows(ctxG.state, 'x');
   const offRow = rows.find((r) => r.guestId === guest.id);
   check('A switched-off link has no content; the others have a sheet', offRow.active === false && offRow.sheet === null && rows.filter((r) => r.active).every((r) => r.sheet && r.sheet.first));

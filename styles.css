@@ -697,3 +697,11 @@ textarea.text-input { resize: vertical; min-height: 96px; font: inherit; }
 /* Preview of another role (v0.59.0): the bar kept at the top of every screen while it is on */
 .preview-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #1f2a44; color: #fff; padding: calc(env(safe-area-inset-top) + 8px) 16px 8px; font-size: 15px; font-weight: 600; }
 .preview-bar button { border: 0; border-radius: 999px; background: #fff; color: #1f2a44; font: inherit; font-weight: 800; padding: 6px 14px; }
+
+/* Settings home: four big tiles */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
+.tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 168px; padding: 18px 16px; border-radius: 22px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(31, 42, 42, .07); color: var(--ink); text-decoration: none; }
+.tile:active { background: var(--brand-tint); }
+.tile-icon { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 18px; background: var(--brand); color: var(--brand-ink); margin-bottom: 10px; }
+.tile-title { font-size: 20px; font-weight: 800; line-height: 1.15; }
+.tile-blurb { font-size: 14px; color: var(--muted); line-height: 1.3; }

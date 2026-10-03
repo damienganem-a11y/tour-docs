@@ -216,6 +216,7 @@ export function summarize(batch) {
   }
   if (batch.kind === 'guest-links') {
     const { action, count, guestName } = batch.entries[0];
+    if (action === 'options-on' || action === 'options-off') return action === 'options-on' ? 'Guests can now see the other options of their tours' : 'Guests can no longer see the other options of their tours';
     const who = guestName ?? plural(count, 'guest');
     return action === 'create' ? `Created guest links for ${who}`
       : action === 'renew' ? `Made a new guest link for ${who} (the old one stopped working)`

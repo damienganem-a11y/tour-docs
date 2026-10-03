@@ -31,26 +31,27 @@ import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
 import { openPreviewSheet } from './preview.js';
+import { icon } from './icons.js';
 
 // The Settings menu, in four groups so it reads at a glance. `hint` is the one line under each name. `page` is the screen it opens.
 const SETTINGS_SECTIONS = [
-  { title: 'Trip set-up', items: [
+  { key: 'setup', icon: 'setup', title: 'Trip set-up', blurb: 'Tours, dining, guests and groups', items: [
     { label: 'Touring', page: 'touring', hint: 'Destinations, tours, times, meeting points, guest information' },
     { label: 'Dining', page: 'dining', hint: 'Restaurants, seatings and tables' },
     { label: 'Guests', page: 'guests', hint: 'Names, travel parties, who left the trip' },
     { label: 'Travel parties', page: 'parties', hint: 'Who travels together' },
     { label: 'Groups', page: 'groups', hint: 'Bus groups, boats, guided tours' },
   ] },
-  { title: 'People and access', items: [
+  { key: 'access', icon: 'people', title: 'People and access', blurb: 'Team, requests and guest links', items: [
     { label: 'Team', page: 'team', ownerOnly: true, hint: 'Colleagues, their role, test access' },
     { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
   ] },
-  { title: 'Documents and look', items: [
+  { key: 'documents', icon: 'documents', title: 'Documents and look', blurb: 'Exports and brand', items: [
     { label: 'Exports archive', page: 'exports', hint: 'Every list, card and sheet already made' },
     { label: 'Brand', page: 'brand', hint: 'Company name, logo and colour on documents' },
   ] },
-  { title: 'Control', items: [
+  { key: 'control', icon: 'control', title: 'Control', blurb: 'Warnings, journal and backup', items: [
     { label: 'Warnings', page: 'warnings', hint: 'Anything that needs your attention' },
     { label: 'Journal', page: 'journal', ownerOnly: true, hint: 'Every change, with who and when' },
     { label: 'Backup', page: 'backup', hint: 'Save or restore the whole trip' },
@@ -114,6 +115,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   if (mode === 'settings' && page === 'team') {
     return { node: h('div', { class: 'screen' }, teamSettingsPage(ctx, trip)) };
   }
+  if (mode === 'settings' && page === 'section') {
+    return { node: h('div', { class: 'screen' }, settingsSection(ctx, trip, first)) };
+  }
   if (mode === 'settings' && page === 'guestlinks') {
     return { node: h('div', { class: 'screen' }, guestLinksSettingsPage(ctx, trip)) };
   }
@@ -167,19 +171,35 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   return { node: h('div', { class: 'screen' }, topBar, readOnlyNotice, content, tabs) };
 }
 
-function settingsMenu(ctx, trip) {
+// Which Settings entries this person may open (owner-only ones are hidden from everybody else).
+function visibleItems(ctx, trip, section) {
   const role = ctx.roleFor(trip.id);
   const visible = (item) => ((item.page === 'team' || item.page === 'guestlinks') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
+  return section.items.filter(visible);
+}
+
+// The Settings home: four big tiles (a picture and a word each); a tap opens that group's list.
+function settingsMenu(ctx, trip) {
+  const role = ctx.roleFor(trip.id);
   return h('div', {},
-    SETTINGS_SECTIONS.map((section) => {
-      const items = section.items.filter(visible);
+    h('div', { class: 'tiles' }, SETTINGS_SECTIONS.map((section) => {
+      const items = visibleItems(ctx, trip, section);
       if (items.length === 0) return null;
-      return h('section', { class: 'menu-section' },
-        h('div', { class: 'section-title' }, section.title),
-        h('div', { class: 'menu' }, items.map((item) =>
-          h('a', { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
-            h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, item.label), item.hint ? h('span', { class: 'menu-hint' }, item.hint) : null),
-            h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null, h('span', { class: 'row-chev' }, '›'))))));
-    }),
+      return h('a', { class: 'tile', href: `#/trip/${trip.id}/settings/section/${section.key}` },
+        h('span', { class: 'tile-icon' }, icon(section.icon)),
+        h('span', { class: 'tile-title' }, section.title),
+        h('span', { class: 'tile-blurb' }, section.blurb));
+    })),
     role === 'owner' ? h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 18px;', onclick: () => openPreviewSheet(ctx) }, 'Preview as View only or Team') : null);
+}
+
+// One group of Settings: its entries as a list, with a way back to the four tiles.
+function settingsSection(ctx, trip, key) {
+  const section = SETTINGS_SECTIONS.find((x) => x.key === key) ?? SETTINGS_SECTIONS[0];
+  return h('div', {},
+    pageHead({ back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Settings', title: section.title, subtitle: section.blurb }),
+    h('div', { class: 'menu' }, visibleItems(ctx, trip, section).map((item) =>
+      h('a', { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
+        h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, item.label), item.hint ? h('span', { class: 'menu-hint' }, item.hint) : null),
+        h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null, h('span', { class: 'row-chev' }, '›'))))));
 }

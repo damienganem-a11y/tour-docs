@@ -100,7 +100,7 @@
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'guest-links', action, guestIds: [id, ...] }      the personal links of the guest app (Settings > Guest links), owner only.
 //       action: 'create' (a guest who has none gets one), 'renew' (a new secret: the old link stops working),
-//       'switch-off' or 'switch-on'. Never undoable (a renewed link must not come back), and the journal never holds the secret.
+//       'switch-off' or 'switch-on'; or, with no guestIds, 'options-on' / 'options-off': whether guests see the other options of their tours. Never undoable (a renewed link must not come back), and the journal never holds the secret.
 //   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
@@ -583,7 +583,8 @@ function validateRenameTrip(change) {
 // The card branding: a short name, a #rrggbb colour, a short note, and a small JPEG logo (or none). The
 // size limits keep the trip (and every journal line that carries it) small enough to sync comfortably.
 function validateGuestLinks(trip, change) {
-  if (!['create', 'renew', 'switch-off', 'switch-on'].includes(change.action)) return fail('Unknown action for guest links.');
+  if (!['create', 'renew', 'switch-off', 'switch-on', 'options-on', 'options-off'].includes(change.action)) return fail('Unknown action for guest links.');
+  if (change.action === 'options-on' || change.action === 'options-off') return { ok: true };
   if (!Array.isArray(change.guestIds) || change.guestIds.length === 0) return fail('Choose at least one guest.');
   if (new Set(change.guestIds).size !== change.guestIds.length) return fail('The same guest appears twice in the same change.');
   for (const id of change.guestIds) {
@@ -1252,6 +1253,11 @@ async function doApply(ctx, tripId, changes, opts = {}) {
   // Personal links for the guest app. The secret lives only on the trip (and in the guest's link): the journal records just who and how many.
   if (GUEST_LINK_TYPES.has(changes[0].type)) {
     const c = changes[0];
+    if (c.action === 'options-on' || c.action === 'options-off') {
+      next.guestOptions = c.action === 'options-on';
+      entries.push({ ...base(), type: 'guest-links', ...guestWhere, action: c.action, count: 0, guestName: null });
+      return save(ctx, next, entries, {});
+    }
     next.guestLinks ??= {};
     let count = 0;
     for (const guestId of c.guestIds) {

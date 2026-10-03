@@ -86,3 +86,15 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 .dest-sub { font-size: 14px; font-weight: 600; opacity: .75; margin-top: 1px; }
 .dest-chev { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; background: color-mix(in srgb, currentColor 14%, transparent); }
 .dest .day { margin: 12px 0 0; }
+
+/* other options */
+.other-btn { margin: 10px 0 0; border: 2px solid var(--primary); background: none; color: var(--primary); font: inherit; font-weight: 800; font-size: 14px; padding: 8px 16px; border-radius: 999px; }
+.other-btn:active { background: var(--primary); color: var(--on-primary); }
+.tour-top--plain { padding-bottom: 22px; }
+.options-head { padding: 4px 22px 0; color: #fff; }
+.options-label { font-size: 13px; opacity: .85; font-weight: 600; }
+.options-head h2 { margin: 4px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+.option-card { display: flex; gap: 14px; align-items: center; background: var(--card); border-radius: 20px; box-shadow: var(--shadow); padding: 12px; margin: 14px 0; cursor: pointer; }
+.option-card:active { background: var(--bg); }
+.option-text { min-width: 0; }
+.thumb { width: 96px; height: 78px; object-fit: cover; border-radius: 14px; flex: none; background: #d9dee8; }

@@ -26,7 +26,7 @@ function toursOf(trip, guest, destinationOf) {
     for (const activity of trip.activities.filter((a) => a.slotId === slot.id && !a.cancelled && !/^dinner/i.test(a.name))) {
       const info = activity.info ?? null;
       list.push({
-        _id: activity.id, day: slot.day, date: slot.date, half: slot.half, destination: destination.name, name: activity.name,
+        _id: activity.id, _slot: slot.id, day: slot.day, date: slot.date, half: slot.half, destination: destination.name, name: activity.name,
         time: activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : null, meeting: activity.meeting || null,
         info: info && {
           duration: info.duration || null, description: info.description || null, difficulty: info.difficulty || null, difficultyNote: info.difficultyNote || null,
@@ -47,6 +47,8 @@ function partOf(trip, guest, slot, destination, tours) {
       kind: 'activity', name: a.name, cancelled: a.cancelled === true,
       time: a.startsAt ? formatTime(a.startsAt, destination.timeZone) : null, meeting: a.meeting || null,
       tour: tours.findIndex((t) => t._id === a.id), // which entry of the sheet's tours opens when the guest taps it (-1: none)
+      // The other tours offered in the same half-day, for the guest's "Other options" button (the operator can switch this off for the trip).
+      ...(trip.guestOptions !== false ? { alt: tours.map((t, i) => (t._slot === slot.id && t._id !== a.id ? i : -1)).filter((i) => i >= 0) } : {}),
     };
   }
   if (place.kind === 'leisure') return { kind: 'leisure' };
@@ -85,7 +87,8 @@ export function buildGuestSheet(trip, guest, now) {
     first: guest.first,
     updatedAt: now,
     days,
-    tours: tours.map(({ _id, ...tour }) => tour),
+    options: trip.guestOptions !== false,
+    tours: tours.map(({ _id, _slot, ...tour }) => tour),
   };
 }
 
