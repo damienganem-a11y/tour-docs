@@ -12,6 +12,7 @@ import { exportFinalTrip } from '../export.js';
 import { readXlsx, tripRawFromWorkbook } from '../xlsxImport.js';
 import { buildTemplateXlsx } from '../xlsx.js';
 import { shareOrDownloadFile } from '../ui.js';
+import { openPreviewSheet } from './preview.js';
 import { pageHead, exportFormatSheet, syncDot } from './chrome.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
@@ -169,6 +170,7 @@ export function tripsView(ctx) {
       h('button', { class: 'btn btn--plain', type: 'button', style: 'margin-top: 12px;', onclick: () => openCompanyLookSheet(ctx) },
         ctx.companyLook?.companyName ? `My company: ${ctx.companyLook.companyName}` : 'My company: logo and colour'),
       faceIdSection(ctx),
+      ctx.previewRole ? null : h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;', onclick: () => openPreviewSheet(ctx) }, 'Preview as View only or Team'),
       h('button', {
         class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 12px;',
         onclick: () => ctx.signOut(),

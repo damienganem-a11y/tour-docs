@@ -30,22 +30,31 @@ import { teamSettingsPage } from './settingsTeam.js';
 import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
+import { openPreviewSheet } from './preview.js';
 
-// The Settings menu. `step` is the build step where each one arrives; `page` is the screen once it exists.
-const SETTINGS_MENU = [
-  { label: 'Touring', page: 'touring' },
-  { label: 'Dining', page: 'dining' },
-  { label: 'Travel parties', page: 'parties' },
-  { label: 'Guests', page: 'guests' },
-  { label: 'Groups', page: 'groups' },
-  { label: 'Brand', page: 'brand' },
-  { label: 'Team', page: 'team', ownerOnly: true },
-  { label: 'Guest links', page: 'guestlinks', ownerOnly: true },
-  { label: 'Requests', page: 'requests' },
-  { label: 'Journal', page: 'journal', ownerOnly: true },
-  { label: 'Exports archive', page: 'exports' },
-  { label: 'Warnings', page: 'warnings' },
-  { label: 'Backup', page: 'backup' },
+// The Settings menu, in four groups so it reads at a glance. `hint` is the one line under each name. `page` is the screen it opens.
+const SETTINGS_SECTIONS = [
+  { title: 'Trip set-up', items: [
+    { label: 'Touring', page: 'touring', hint: 'Destinations, tours, times, meeting points, guest information' },
+    { label: 'Dining', page: 'dining', hint: 'Restaurants, seatings and tables' },
+    { label: 'Guests', page: 'guests', hint: 'Names, travel parties, who left the trip' },
+    { label: 'Travel parties', page: 'parties', hint: 'Who travels together' },
+    { label: 'Groups', page: 'groups', hint: 'Bus groups, boats, guided tours' },
+  ] },
+  { title: 'People and access', items: [
+    { label: 'Team', page: 'team', ownerOnly: true, hint: 'Colleagues, their role, test access' },
+    { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
+    { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
+  ] },
+  { title: 'Documents and look', items: [
+    { label: 'Exports archive', page: 'exports', hint: 'Every list, card and sheet already made' },
+    { label: 'Brand', page: 'brand', hint: 'Company name, logo and colour on documents' },
+  ] },
+  { title: 'Control', items: [
+    { label: 'Warnings', page: 'warnings', hint: 'Anything that needs your attention' },
+    { label: 'Journal', page: 'journal', ownerOnly: true, hint: 'Every change, with who and when' },
+    { label: 'Backup', page: 'backup', hint: 'Save or restore the whole trip' },
+  ] },
 ];
 
 const USE_TABS = [
@@ -161,16 +170,16 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
 function settingsMenu(ctx, trip) {
   const role = ctx.roleFor(trip.id);
   const visible = (item) => ((item.page === 'team' || item.page === 'guestlinks') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
-  return h('div', { class: 'menu' },
-    SETTINGS_MENU.filter(visible).map((item) => {
-      // A screen that exists is a link; one that does not exist yet says in which step it arrives.
-      if (item.page) {
-        return h('a', { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
-          h('span', {}, item.label),
-          h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null, h('span', { class: 'row-chev' }, '›')));
-      }
-      return h('div', { class: 'menu-row is-soon' },
-        h('span', {}, item.label),
-        h('span', { class: 'menu-side' }, h('span', { class: 'pill' }, `Step ${item.step}`)));
-    }));
+  return h('div', {},
+    SETTINGS_SECTIONS.map((section) => {
+      const items = section.items.filter(visible);
+      if (items.length === 0) return null;
+      return h('section', { class: 'menu-section' },
+        h('div', { class: 'section-title' }, section.title),
+        h('div', { class: 'menu' }, items.map((item) =>
+          h('a', { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
+            h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, item.label), item.hint ? h('span', { class: 'menu-hint' }, item.hint) : null),
+            h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null, h('span', { class: 'row-chev' }, '›'))))));
+    }),
+    role === 'owner' ? h('button', { class: 'btn btn--plain btn--small', type: 'button', style: 'margin-top: 18px;', onclick: () => openPreviewSheet(ctx) }, 'Preview as View only or Team') : null);
 }

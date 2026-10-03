@@ -2759,6 +2759,16 @@ function readZip(bytes) {
   check('The QR picture is an SVG that holds no script', /^<svg /.test(qrSvg('hello')) && !/<script|onload/i.test(qrSvg('hello')));
 }
 
+// --- Preview as another role (owner only) ---
+{
+  const ctxP = makeCtx();
+  ctxP.previewRole = 'viewer';
+  const refused = await applyChange(ctxP, trip.id, { type: 'rename-trip', name: 'Should not happen' });
+  check('While previewing another role nothing can be changed, and the reason says so', !refused.ok && /previewing/i.test(refused.error) && ctxP.state.name !== 'Should not happen');
+  ctxP.previewRole = null;
+  check('Once the preview is over the owner changes things again', (await applyChange(ctxP, trip.id, { type: 'rename-trip', name: 'Back to normal' })).ok);
+}
+
 // --- Test-access QR codes (Settings > Team) ---
 {
   const address = new URL(signInAddress('mr.porter@example.com', 'mr.porter'));

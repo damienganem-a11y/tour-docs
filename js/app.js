@@ -37,6 +37,7 @@ import { enablePullToRefresh } from './pullRefresh.js';
 import { sameDocument } from './export.js';
 import { dietaryErasureDue, dietaryExpiry } from './rules.js';
 import { passcodeView } from './views/passcode.js';
+import { previewBar } from './views/preview.js';
 import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
 import { tripView } from './views/trip.js';
@@ -49,6 +50,10 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // The person's role on each trip that is shared with them: 'owner', 'team' or 'viewer' (SPEC.md, Team). A trip that is not in
 // this list is the person's own (a local trip, or one created here), so they are its owner. Kept on the device so it works offline.
 const tripRoles = new Map();
+
+// Owner only: "Preview as View only / Team" (views/preview.js). While it is on, every screen is drawn as that role would see it, and nothing
+// can be changed or sent. Kept per browser tab (sessionStorage), so closing the app always ends it.
+let previewRole = (() => { try { const r = sessionStorage.getItem('tourdocs.preview'); return r === 'viewer' || r === 'team' ? r : null; } catch { return null; } })();
 // Requests (SPEC.md, Team step B): what the server last said about them, and the ones made here that are not sent yet (kept on the device).
 let requestRows = [];
 let outbox = [];
@@ -197,7 +202,13 @@ const ctx = {
   journal: (tripId) => state.journal.get(tripId) ?? [],
   documentsInfo: () => documentsInfo,
   // The role on this trip, and the person with that role: what the one change function checks (a viewer cannot change anything).
-  roleFor: (tripId) => tripRoles.get(tripId) ?? 'owner',
+  roleFor: (tripId) => previewRole ?? tripRoles.get(tripId) ?? 'owner',
+  get previewRole() { return previewRole; },
+  setPreview(role) {
+    previewRole = role === 'viewer' || role === 'team' ? role : null;
+    try { if (previewRole) sessionStorage.setItem('tourdocs.preview', previewRole); else sessionStorage.removeItem('tourdocs.preview'); } catch { /* works without */ }
+    render();
+  },
   // Settings > Guest links: how the last sending of the guests' sheets went, and a way to send them again right now.
   guestSheetStatus: () => ({ lastOkAt: guestSheetInfo.lastOkAt, error: guestSheetInfo.error }),
   async resendGuestSheets(tripId) {
@@ -395,7 +406,7 @@ function render({ keepScroll = false } = {}) {
 
   const scrollY = window.scrollY; // remembered so refresh() can put the page back where it was
   const params = (location.hash.match(route.pattern) || []).slice(1).map((p) => p && decodeURIComponent(p));
-  app.replaceChildren(route.view(ctx, ...params).node);
+  app.replaceChildren(...[previewBar(ctx), route.view(ctx, ...params).node].filter(Boolean));
   window.scrollTo(0, keepScroll ? scrollY : 0);
 }
 
