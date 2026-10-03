@@ -30,7 +30,7 @@ import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, p
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
-import { buildGuestSheet, guestSheetRows, SHEET_VERSION, guestLinkExpiry, GUEST_LINK_GRACE_DAYS } from './guestSheet.js';
+import { buildGuestSheet, guestSheetRows, SHEET_VERSION, guestLinkExpiry, GUEST_LINK_GRACE_DAYS, farewellOf, DEFAULT_FAREWELL } from './guestSheet.js';
 import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
@@ -2787,13 +2787,21 @@ function readZip(bytes) {
     && groupBatches(ctxG.entries).map(summarize).some((t) => /no longer see the other options/.test(t)));
   await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'options-on' });
   check('Switching it on again brings them back', buildGuestSheet(ctxG.state, guest, 'x').days.flatMap((d) => d.parts).some((p) => p.alt?.length > 0));
+  // v0.80.0: the message guests read after the trip
+  check('Without a message of its own, the farewell is the default one (no web address)', farewellOf(ctxG.state).text === DEFAULT_FAREWELL && farewellOf(ctxG.state).website === '' && /traveling with us/.test(DEFAULT_FAREWELL));
+  const farewellSet = await applyChange(ctxG, ctxG.state.id, { type: 'guest-links', action: 'farewell', text: 'Thanks, all!', website: 'example-expeditions.com' });
+  check('The owner can write the farewell message and a web address; it goes into every sheet', farewellSet.ok && farewellOf(ctxG.state).text === 'Thanks, all!' && buildGuestSheet(ctxG.state, ctxG.state.guests[0], 'x').farewell.website === 'example-expeditions.com');
+  check('Refused: a web address with spaces or a script, and a message that is too long',
+    !(await applyChange(ctxG, ctxG.state.id, { type: 'guest-links', action: 'farewell', text: 'x', website: 'my site.com' })).ok
+    && !(await applyChange(ctxG, ctxG.state.id, { type: 'guest-links', action: 'farewell', text: 'x', website: 'javascript:alert(1)' })).ok
+    && !(await applyChange(ctxG, ctxG.state.id, { type: 'guest-links', action: 'farewell', text: 'x'.repeat(501), website: '' })).ok);
   // v0.79.0: links expire by themselves, and a wall-clock time in a place is turned into the right moment
   const expiryDay = guestLinkExpiry(ctxG.state);
   const dayAfter = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   const rowsBefore = guestSheetRows(ctxG.state, 'x', dayAfter(expiryDay, 0));
   const rowsAfter = guestSheetRows(ctxG.state, 'x', dayAfter(expiryDay, 1));
-  check('A guest link works until the last day plus the grace days, then it switches itself off and the server keeps no sheet',
-    rowsBefore.some((r) => r.active && r.sheet) && rowsAfter.length > 0 && rowsAfter.every((r) => !r.active && r.sheet === null) && GUEST_LINK_GRACE_DAYS === 7);
+  check('A guest link works until the last day plus the grace days, then the server keeps only the farewell message: no programme, no name',
+    rowsBefore.some((r) => r.active && r.sheet) && rowsAfter.some((r) => r.active) && rowsAfter.filter((r) => r.active).every((r) => r.sheet?.ended === true && r.sheet.days.length === 0 && r.sheet.first === '' && r.sheet.farewell.text.length > 5) && GUEST_LINK_GRACE_DAYS === 7);
   check('The sheet carries its expiry day, so the guest app also stops showing it with no connection', buildGuestSheet(ctxG.state, ctxG.state.guests[0], 'x').expiresOn === expiryDay);
   check('A wall-clock time in a place becomes the exact moment: 07:30 in Siem Reap is 00:30 UTC; 07:30 in New York in September is 11:30 UTC',
     wallToInstant('2027-09-08', '07:30', 'Asia/Phnom_Penh').toISOString() === '2027-09-08T00:30:00.000Z' && wallToInstant('2027-09-08', '07:30', 'America/New_York').toISOString() === '2027-09-08T11:30:00.000Z');

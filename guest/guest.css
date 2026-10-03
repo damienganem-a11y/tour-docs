@@ -401,3 +401,14 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .dest-head, .passport-row, .eat-row, .option-card, .part--tap, .other-btn, .back, .link-btn, .more { min-height: 44px; }
 .bar small, .next-label, .tag, .menu-title, .stub, .half { font-size: 12px; }
 .chip--tag { font-size: 11px; }
+
+
+/* v0.80.0: the "Updated" line with a Refresh button, the pull-down label, and the farewell page */
+.updated-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.updated-row .link-btn { text-decoration: none; font: 800 12px Outfit, sans-serif; letter-spacing: .12em; text-transform: uppercase; border: 1px solid #000; padding: 8px 12px; min-height: 36px; }
+.updated-row .link-btn[disabled] { opacity: .5; }
+.pull { position: fixed; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translate(-50%, -44px); opacity: 0; z-index: 60; pointer-events: none; background: #fff; border: 1px solid #000; padding: 8px 14px; font: 800 12px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.pull.is-ready { background: var(--yellow); }
+.farewell { padding-top: 28px; }
+.farewell-text { font-size: 19px; line-height: 1.5; margin: 0 0 16px; color: #111; }
+.btn-link { display: block; background: var(--yellow); color: #000; text-align: center; font: 800 14px Outfit, sans-serif; letter-spacing: .12em; padding: 16px; text-decoration: none; word-break: break-all; }

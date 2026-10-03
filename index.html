@@ -2,8 +2,8 @@
 <html lang="en" style="background: #ffffff">
 <head>
   <meta charset="utf-8">
-  <!-- viewport-fit=cover lets the app use the whole iPhone screen; the CSS keeps content clear of the notch -->
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- No viewport-fit=cover (owner, 3 Oct 2026): the page stays below the iPhone status bar, so nothing scrolls under it and the phone never blurs the top of the app. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Tour Docs has no dark theme: without this, a phone set to Dark Mode paints its own default dark
        background for the instant before styles.css has loaded, which looks like a flash of black. -->
   <meta name="color-scheme" content="light">

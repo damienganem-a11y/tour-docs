@@ -22,6 +22,12 @@ export const SHEET_VERSION = 1;
 // a guest's first name and programme must not stay readable for ever. The owner can change this per trip later; this is the default.
 export const GUEST_LINK_GRACE_DAYS = 7;
 const addDays = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+// What a guest reads once their link has expired (the owner can write their own message and web address in Settings > Guest links).
+export const DEFAULT_FAREWELL = 'Thank you so much for traveling with us. We hope you got home with memories of a lifetime and cannot wait to be traveling with you again.';
+export function farewellOf(trip) {
+  const f = trip.guestFarewell ?? {};
+  return { text: (f.text || '').trim() || DEFAULT_FAREWELL, website: (f.website || '').trim() };
+}
 // The last day on which the guest's link still works: the trip's last half-day date + the grace days (null for a trip with no days).
 export function guestLinkExpiry(trip) {
   const dates = trip.slots.map((s) => s.date).sort();
@@ -121,6 +127,7 @@ export function buildGuestSheet(trip, guest, now) {
     }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
     expiresOn: guestLinkExpiry(trip), // the guest app also stops showing the programme after this day, even with no connection
+    farewell: farewellOf(trip),
     restaurants: restaurants.map(({ _id, ...restaurant }) => restaurant),
     tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };
@@ -132,11 +139,14 @@ export function guestSheetRows(trip, now, today = new Date().toISOString().slice
   const rows = [];
   // An archived trip, or one past its link expiry, has every link switched off: the server keeps no sheet for it.
   const expiry = guestLinkExpiry(trip);
-  const over = Boolean(trip.archivedAt) || (expiry !== null && today > expiry);
+  const expired = expiry !== null && today > expiry;
+  const archivedEarly = Boolean(trip.archivedAt) && !expired;
+  // After the expiry the server keeps NO programme, only the farewell message (no name, no days): the guest still gets a kind goodbye.
+  const farewell = (guest) => ({ v: SHEET_VERSION, trip: trip.name, company: trip.branding?.companyName || '', accent: trip.branding?.accent || '#1d5c57', first: '', updatedAt: now, days: [], destinations: [], tours: [], restaurants: [], options: false, expiresOn: expiry, ended: true, farewell: farewellOf(trip) });
   for (const [guestId, link] of Object.entries(trip.guestLinks ?? {})) {
     const guest = trip.guests.find((g) => g.id === guestId);
     if (!guest) continue;
-    rows.push({ token: link.token, guestId, active: link.active === true && !guest.leftAt && !over, sheet: link.active && !guest.leftAt && !over ? buildGuestSheet(trip, guest, now) : null });
+    rows.push({ token: link.token, guestId, active: link.active === true && !guest.leftAt && !archivedEarly, sheet: link.active && !guest.leftAt && !archivedEarly ? (expired ? farewell(guest) : buildGuestSheet(trip, guest, now)) : null });
   }
   return rows;
 }

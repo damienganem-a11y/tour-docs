@@ -422,6 +422,53 @@ function applyAccent(accent) {
   if (meta) meta.setAttribute('content', '#000000');
 }
 
+// ---------- keeping the programme fresh ----------
+// The app looks for news by itself every minute while it is open. The guest can also ask at once: the "Refresh" button, or pulling the page down.
+// The "Updated" line says when the leader's phone last sent this programme, and when this phone last asked the server.
+let lastChecked = null;
+let refreshNote = null; // a short word shown for a moment after a manual refresh
+let refreshing = false;
+async function manualRefresh() {
+  if (refreshing) return;
+  refreshing = true; refreshNote = 'Refreshing…'; if (currentSheet) paint();
+  const status = await refresh();
+  refreshing = false;
+  refreshNote = status === 'ok' || status === 'preview' ? 'Up to date' : 'No connection: showing the last programme received';
+  if (currentSheet && !currentSheet.ended) paint();
+  setTimeout(() => { refreshNote = null; if (currentSheet && !currentSheet.ended) paint(); }, 3000);
+}
+const clockOf = (d) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
+function updatedRow(sheet) {
+  const when = sheet.updatedAt ? `Updated ${updatedText(sheet.updatedAt)}` : '';
+  const checked = lastChecked ? ` · checked ${clockOf(lastChecked)}` : '';
+  return h('div', { class: 'updated-row' },
+    h('span', { class: 'updated-text' }, refreshNote ?? `${when}${checked}`),
+    h('button', { class: 'link-btn', type: 'button', onclick: manualRefresh, disabled: refreshing ? '' : null }, '↻ Refresh'));
+}
+
+// Pull the page down from the very top to refresh, like in any phone app: a small label follows the finger; letting go past the line refreshes.
+(() => {
+  const pull = h('div', { class: 'pull', 'aria-hidden': 'true' }, 'Pull to refresh');
+  document.body.append(pull);
+  let startY = null; let distance = 0;
+  const THRESHOLD = 80;
+  addEventListener('touchstart', (e) => { startY = window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; distance = 0; }, { passive: true });
+  addEventListener('touchmove', (e) => {
+    if (startY === null) return;
+    distance = Math.max(0, e.touches[0].clientY - startY);
+    pull.style.transform = `translate(-50%, ${Math.min(distance, 110) - 44}px)`;
+    pull.style.opacity = String(Math.min(1, distance / 50));
+    pull.textContent = distance > THRESHOLD ? 'Release to refresh' : 'Pull to refresh';
+    pull.classList.toggle('is-ready', distance > THRESHOLD);
+  }, { passive: true });
+  const end = () => {
+    if (startY !== null && distance > THRESHOLD) manualRefresh();
+    startY = null; distance = 0; pull.style.opacity = '0'; pull.style.transform = 'translate(-50%, -44px)';
+  };
+  addEventListener('touchend', end, { passive: true });
+  addEventListener('touchcancel', end, { passive: true });
+})();
+
 function paint() {
   const sheet = currentSheet;
   if (!sheet) return;
@@ -458,7 +505,27 @@ function paint() {
       sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
       h('p', { class: 'sub' }, 'Hello ', h('b', {}, sheet.first), ','),
       h('h1', {}, sheet.trip)));
-  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, nextCard(sheet), passportRow(sheet), installHint(), offline, staleNotice(sheet), ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
+  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, updatedRow(sheet), nextCard(sheet), passportRow(sheet), installHint(), offline, staleNotice(sheet), ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
+}
+
+// The goodbye shown once the link has expired: the trip owner's own message (or the default one) and, if given, a link to the next trips.
+const FAREWELL_DEFAULT = 'Thank you so much for traveling with us. We hope you got home with memories of a lifetime and cannot wait to be traveling with you again.';
+function farewellView(sheet) {
+  const f = sheet.farewell ?? {};
+  const site = String(f.website ?? '').trim();
+  const href = /^https?:\/\//i.test(site) ? site : `https://${site}`;
+  const shown = site.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  document.title = sheet.trip;
+  return [
+    h('header', { class: 'hero' }, h('div', { class: 'hero-text' },
+      sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
+      h('p', { class: 'sub' }, sheet.trip),
+      h('h1', {}, 'Thank you'))),
+    h('div', { class: 'content farewell' },
+      h('p', { class: 'farewell-text' }, f.text || FAREWELL_DEFAULT),
+      site ? h('p', { class: 'farewell-text' }, 'Find your next trip at') : null,
+      site ? h('a', { class: 'btn-link', href, target: '_blank', rel: 'noopener' }, shown) : null),
+  ];
 }
 
 // After the link's last day the programme is no longer shown and the kept copy is erased (the server has already forgotten it).
@@ -470,11 +537,18 @@ function staleNotice(sheet) {
   const first = sheet.days[0]; const last = sheet.days[sheet.days.length - 1];
   if (!first || todayAt(sheet, first.destination) < first.date || todayAt(sheet, last.destination) > last.date) return null;
   if (Date.now() - Date.parse(sheet.updatedAt) < 48 * 3600000) return null;
-  return h('div', { class: 'banner' }, `This programme was last updated on ${updatedText(sheet.updatedAt)}. If something may have changed, please ask your tour leader.`);
+  return h('div', { class: 'banner' }, 'This programme may be out of date. If something has changed, please ask your tour leader.');
 }
 
 function render(sheet, { offline = false } = {}) {
-  if (expired(sheet)) { store.remove(SHEET_KEY); showProblem('This trip is over', 'Your link has expired. Thank you for travelling with us.'); return; }
+  if (sheet.ended || expired(sheet)) {
+    // The programme is erased from this phone; only the farewell stays (small, no names, no days).
+    const keep = { v: SUPPORTED_SHEET, trip: sheet.trip, company: sheet.company, accent: sheet.accent, first: '', updatedAt: sheet.updatedAt, days: [], destinations: [], tours: [], restaurants: [], options: false, expiresOn: sheet.expiresOn, ended: true, farewell: sheet.farewell };
+    if (!simulatedDate) store.set(SHEET_KEY, JSON.stringify(keep));
+    currentSheet = keep; currentOffline = false;
+    app.replaceChildren(...farewellView(keep));
+    return;
+  }
   if (currentSheet && offline === currentOffline && JSON.stringify(sheet) === JSON.stringify(currentSheet) && app.children.length > 0 && !app.querySelector('.problem')) return; // nothing new: do not redraw (it would close an open panel)
   currentSheet = sheet;
   currentOffline = offline;
@@ -516,23 +590,32 @@ function showPreview() {
 }
 
 async function refresh() {
-  if (PREVIEW) { showPreview(); return; }
+  let status = 'none';
+  if (PREVIEW) { showPreview(); return 'preview'; }
   const token = currentToken();
-  if (!token) { showProblem('No link yet', 'Open the personal link your tour leader sent you. After that, this app opens straight on your programme.'); return; }
+  if (!token) { showProblem('No link yet', 'Open the personal link your tour leader sent you. After that, this app opens straight on your programme.'); return 'none'; }
   const kept = (() => { try { return JSON.parse(store.get(SHEET_KEY)); } catch { return null; } })();
-  if (kept && kept.v === SUPPORTED_SHEET && !app.querySelector('.day')) render(kept, { offline: !navigator.onLine });
+  if (kept && kept.v === SUPPORTED_SHEET && !app.querySelector('.pass, .dest')) render(kept, { offline: !navigator.onLine });
   const result = await fetchSheet(token);
   if (result.sheet) {
+    lastChecked = new Date();
+    status = 'ok';
+    const label = document.querySelector('.updated-text'); // the "checked" time moves on without redrawing the page
+    if (label && !refreshNote && currentSheet?.updatedAt) label.textContent = `Updated ${updatedText(currentSheet.updatedAt)} · checked ${clockOf(lastChecked)}`;
     store.set(SHEET_KEY, JSON.stringify(result.sheet));
     render(result.sheet);
   } else if (result.off) {
+    status = 'off';
     store.remove(SHEET_KEY);
     showProblem('This link is not active', 'Ask your tour leader for a new link.');
   } else if (result.tooNew) {
+    status = 'tooNew';
     showProblem('Please update', 'Close this app and open it again with internet to get the latest version.');
   } else if (kept && kept.v === SUPPORTED_SHEET) {
+    status = 'offline';
     render(kept, { offline: true });
   } else {
+    status = 'offline';
     showProblem('No connection', 'Connect to the internet once to receive your programme. After that it works without.');
   }
   if (!scrolledToToday) {
@@ -541,6 +624,7 @@ async function refresh() {
     const group = today?.closest('.dest');
     if (group && group !== document.querySelector('.dest')) { group.scrollIntoView(); scrolledToToday = true; } // the first group is already at the top
   }
+  return status;
 }
 
 refresh();

@@ -15,6 +15,7 @@ import { formatFullMoment } from '../time.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { qrSvg } from '../qr.js';
+import { farewellOf, GUEST_LINK_GRACE_DAYS, guestLinkExpiry } from '../guestSheet.js';
 
 // Where the guest app lives: the "guest" folder next to this app. The secret goes after the "#", which a browser never sends to
 // the web server, so it does not appear in any server log.
@@ -107,12 +108,25 @@ export function guestLinksSettingsPage(ctx, trip) {
     h('div', { class: 'muted' }, optionsOn ? 'On: a guest sees a button "Other options" under each tour they are booked on.' : 'Off: a guest sees only what they are booked on.'),
     h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => run({ type: 'guest-links', action: optionsOn ? 'options-off' : 'options-on' }, optionsOn ? 'Other options hidden' : 'Other options shown') }, optionsOn ? 'Switch off' : 'Switch on')));
 
+  // The message guests read once their link has expired (7 days after the trip's last day): a few sentences and, if wanted, a web address.
+  const farewell = farewellOf(trip);
+  const expiry = guestLinkExpiry(trip);
+  const farewellCard = (() => {
+    const text = h('textarea', { class: 'text-input', rows: '5', maxlength: '500', 'aria-label': 'Message after the trip' }, farewell.text);
+    const website = h('input', { class: 'text-input', type: 'text', value: farewell.website, placeholder: 'Web address, e.g. example-expeditions.com', 'aria-label': 'Web address', maxlength: '100', autocapitalize: 'none', autocorrect: 'off' });
+    return h('div', { class: 'card team-member' },
+      h('div', { class: 'act-name' }, 'Message after the trip'),
+      h('div', { class: 'muted' }, `Guests read it once their link has expired${expiry ? ` (after ${expiry}, ${GUEST_LINK_GRACE_DAYS} days after the last day)` : ''}. Their programme is then removed from the server.`),
+      text, website,
+      h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: () => run({ type: 'guest-links', action: 'farewell', text: text.value, website: website.value }, 'Message saved') }, 'Save the message')));
+  })();
+
   return h('div', {}, head,
     notice('A guest sees only their own programme: their activities and times, At leisure, and their dinners with their own travel party. Never allergies, notes or other guests.'),
     without.length > 0
       ? h('button', { class: 'btn', type: 'button', onclick: () => run({ type: 'guest-links', action: 'create', guestIds: without.map((g) => g.id) }, `${plural(without.length, 'link')} created`) },
         without.length === guests.length ? 'Create links for everyone' : `Create links for the ${without.length} without one`)
       : null,
-    optionsCard, statusLine, sendNow,
+    optionsCard, farewellCard, statusLine, sendNow,
     h('div', {}, ...guests.map(guestCard)));
 }
