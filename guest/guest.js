@@ -270,9 +270,9 @@ window.addEventListener('popstate', (event) => { view = event.state?.view ?? { t
 // can never make the app hard to read. Falls back to a calm green when the colour is missing or odd.
 function applyAccent(accent) {
   const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#1d5c57';
-  document.documentElement.style.setProperty('--accent', hex);
+  document.documentElement.style.setProperty('--company', hex);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.setAttribute('content', '#12372f');
+  if (meta) meta.setAttribute('content', '#23805f');
 }
 
 function paint() {

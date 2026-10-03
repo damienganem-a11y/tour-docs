@@ -1,7 +1,7 @@
 /* The guest app look: deliberately different from the leader's app (cream and teal): cool light background, a big coloured header in the
    company's own colour only as a thin stripe, white rounded cards with soft shadows. The look is fixed so any company colour stays readable. */
 :root {
-  --primary: #12372f; --on-primary: #fff; --accent: #e4572e; --label: #e4572e;
+  --primary: #23805f; --on-primary: #fff; --accent: #e4572e; --label: #e4572e;
   --ink: #111827; --muted: #5b6475; --bg: #f2f4f8; --card: #fff; --line: #e4e8f0;
   --good: #1b7a43; --good-bg: #dff3e6; --mid: #9a5b00; --mid-bg: #fdecc8; --bad: #a3281a; --bad-bg: #fadad4;
   --radius: 22px; --shadow: 0 6px 20px rgba(17, 24, 39, .08);
@@ -116,15 +116,15 @@ button.link { background: none; border: 0; color: inherit; font: inherit; font-w
 @font-face { font-family: Inter; src: url(../fonts/inter-latin-wght-normal.woff2) format('woff2'); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: Fraunces; src: url(../fonts/fraunces-latin-wght-italic.woff2) format('woff2'); font-weight: 100 900; font-style: italic; font-display: swap; }
 
-:root { --primary: #12372f; --on-primary: #fff; --accent: #e4572e; --teal: #1f8a8a; --bg: #f8f5ef; --ink: #14201c; --muted: #66716c; --line: #e6dfcf; --label: #e4572e; --shadow: 0 8px 22px rgba(18, 55, 47, 0.09); }
+:root { --primary: #23805f; --on-primary: #fff; --accent: #e4572e; --teal: #1f8a8a; --bg: #f8f5ef; --ink: #14201c; --muted: #66716c; --line: #e6dfcf; --label: #e4572e; --shadow: 0 8px 22px rgba(27, 106, 77, 0.09); }
 html, body { background: var(--bg); font-family: Inter, -apple-system, system-ui, sans-serif; }
 main { background: var(--bg); }
 h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub { font-family: Outfit, -apple-system, sans-serif; letter-spacing: -0.015em; }
 em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600; }
 
 /* header: forest, with the next tour's picture behind, and a passport stamp */
-.hero { position: relative; overflow: hidden; border-top: 0; background: linear-gradient(160deg, #1c4d42 0%, #0c2a24 100%); padding: calc(env(safe-area-inset-top) + 20px) 22px 78px; border-radius: 0 0 36px 36px; min-height: 250px; display: flex; align-items: flex-end; }
-.hero--art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12, 42, 36, 0.05) 20%, rgba(12, 42, 36, 0.86) 100%); }
+.hero { position: relative; overflow: hidden; border-top: 0; background: linear-gradient(160deg, #2f9a73 0%, #1b6a4d 100%); padding: calc(env(safe-area-inset-top) + 20px) 22px 78px; border-radius: 0 0 36px 36px; min-height: 250px; display: flex; align-items: flex-end; }
+.hero--art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(27, 106, 77, 0.05) 20%, rgba(27, 106, 77, 0.86) 100%); }
 .hero-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.95; }
 .hero-art.picture-missing { background: none; }
 .hero-text { position: relative; z-index: 2; width: 100%; }
@@ -137,7 +137,7 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
 @media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
 
 /* Next up: a white card floating over the header's edge */
-.next { background: #fff; color: var(--ink); border: 0; border-radius: 22px; box-shadow: 0 12px 28px rgba(18, 55, 47, 0.16); margin: 0 0 18px; backdrop-filter: none; }
+.next { background: #fff; color: var(--ink); border: 0; border-radius: 22px; box-shadow: 0 12px 28px rgba(27, 106, 77, 0.16); margin: 0 0 18px; backdrop-filter: none; }
 .next-label { color: var(--accent); opacity: 1; }
 .next-what { font-size: 21px; }
 .next-line { color: var(--muted); opacity: 1; }
@@ -170,7 +170,13 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
 .other-btn:active { background: var(--primary); color: #fff; }
 
 /* tour pages */
-.tour-top { background: linear-gradient(160deg, #1c4d42, #0c2a24); border-top: 0; }
+.tour-top { background: linear-gradient(160deg, #2f9a73, #1b6a4d); border-top: 0; }
 .diff-panel { border-left-color: var(--accent); }
 .block-title { color: var(--accent); }
 .back { background: rgba(255, 255, 255, 0.2); }
+
+
+/* v0.69.1: the company colour is only a thin stripe at the very top (--company); coral (--accent) is never replaced by it; the tour page's text block keeps its gap under the header */
+:root { --company: #23805f; }
+.hero, .tour-top { border-top: 6px solid var(--company); }
+.content--tour { margin-top: 22px; }
