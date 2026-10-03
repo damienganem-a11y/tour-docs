@@ -947,3 +947,37 @@ body { background: #fff; }
 .undo-btn { border-radius: 0; background: #000; color: #fff; text-transform: uppercase; letter-spacing: 0.06em; font-family: Outfit, sans-serif; }
 .undo-btn:disabled { background: var(--soft); color: var(--muted); }
 .undo-label { font-weight: 800; }
+
+
+/* v0.78.0: lighter, more refined (owner's feedback): no big black blocks. White bands with thin black lines; yellow marks what is active or open. */
+.dest-menu { background: #fff; color: #000; border: 1px solid #000; }
+.dest-menu:active { background: var(--soft); }
+.dest-menu-sub { color: var(--muted); }
+.dest-menu-chev { color: #000; }
+.bottom-tabs { background: #fff; border-top: 1px solid #000; }
+.bottom-tab { color: #555; }
+.bottom-tab.is-active { background: var(--yellow); color: #000; }
+.switch-item.is-active { background: var(--yellow); color: #000; }
+.strip-item.is-active { background: var(--yellow); border-color: #000; color: #000; }
+button.strip-item.is-active { color: #000; }
+.count { background: #fff; color: #000; border: 1px solid #000; }
+.count--bad { background: var(--yellow); border-color: #000; }
+.card--soft .count { background: #fff; border-color: #bbb; color: #555; }
+.undo-btn { background: #fff; color: #000; border: 1px solid #000; }
+.undo-btn:disabled { background: var(--soft); border-color: var(--soft); color: var(--muted); }
+.tile-icon, .tile--access .tile-icon, .tile--documents .tile-icon, .tile--control .tile-icon { background: var(--yellow); color: #000; }
+.cog--home { background: var(--yellow); color: #000; border-color: #000; }
+.cog--home .icon svg circle[fill='#fff'] { fill: var(--yellow); }
+.avatar { background: var(--yellow); color: #000; border: 1px solid #000; }
+.dest-menu-pin { background: var(--yellow); color: #000; }
+
+/* v0.78.0: messages ("Up to date", "saved", errors) sit at the BOTTOM, just above the Touring / Dining / By guest tabs, in the theme: a white
+   frame with a yellow edge (no orange). An error has a dark-red edge and bold text. */
+.toast { top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; right: 16px; border-radius: 0; background: #fff; color: #000; border: 1px solid #000; border-left: 6px solid var(--yellow); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); font-family: Outfit, sans-serif; font-weight: 700; letter-spacing: 0.02em; }
+body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
+.toast--error { background: #fff; color: #000; border-left-color: #b3261e; }
+.toast--error::before { content: "! "; color: #b3261e; font-weight: 800; }
+.pull-indicator { border-radius: 0; background: #fff; border: 1px solid #000; color: #000; font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; }
+.pull-indicator--ready { background: var(--yellow); color: #000; }
+/* "needs attention" is now yellow, not orange (the same family as the rest of the look) */
+:root { --warn-bg: #fff6cc; --warn-line: #e0b000; --warn-ink: #4a3900; }

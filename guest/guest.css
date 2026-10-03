@@ -372,3 +372,32 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 /* the list of other restaurants inside a restaurant page: quiet grey rows (the yellow bar is only for the one main action) */
 .info-block .eat-row { background: var(--grey); justify-content: space-between; text-align: left; margin: 4px 0; font-size: 12px; }
 .info-block .eat-row .eat-count { display: inline; font: 500 12px Inter, sans-serif; letter-spacing: 0; text-transform: none; }
+
+
+/* v0.78.0: lighter, more refined (owner's feedback): no dark veil at the top of photos, and no big black blocks: white bands with thin black
+   lines, yellow for what is open or active. The photo keeps only a soft shade at the bottom, behind the title. */
+.hero--art::after { background: linear-gradient(180deg, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, .72) 100%); }
+.company { text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
+/* a header with no photo: vivid yellow with fine contour lines, black text */
+.hero:not(.hero--art) { background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='260' viewBox='0 0 420 260' fill='none' stroke='black' stroke-opacity='.12' stroke-width='1.6'><ellipse cx='320' cy='70' rx='40' ry='22'/><ellipse cx='320' cy='70' rx='80' ry='46'/><ellipse cx='320' cy='70' rx='125' ry='72'/><ellipse cx='320' cy='70' rx='175' ry='100'/><ellipse cx='320' cy='70' rx='230' ry='130'/><ellipse cx='60' cy='250' rx='60' ry='34'/><ellipse cx='60' cy='250' rx='115' ry='64'/></svg>") right top / cover no-repeat, var(--yellow); color: #000; }
+.hero:not(.hero--art) .company { color: #000; text-shadow: none; }
+/* the info bar: white, between two thin black lines */
+.bar { background: #fff; color: #000; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+.bar div { border-left: 1px solid var(--line); }
+.bar small { color: var(--muted); }
+/* destinations: open = a yellow edge, not a black block */
+.dest.is-open .dest-head { background: var(--grey); color: #000; box-shadow: inset 5px 0 0 var(--yellow); }
+.dest.is-open .dest-photo { opacity: .8; }
+.dest.is-open .dest-chev { background: var(--yellow); }
+/* detail pages: white top with a quiet back link, the photo below it */
+.tour-top { background: #fff; border-top: 6px solid var(--company); }
+.back { color: #000; }
+.shot figcaption { background: #fff; color: var(--muted); }
+.tour-top--plain { padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.options-head, .options-label { color: #000; }
+.options-head h2 { color: #000; }
+/* menu: section titles underlined, not blocks */
+.menu-title { background: none; color: #000; padding: 6px 0; border-bottom: 2px solid #000; margin: 14px 0 2px; }
+.tag.warn { background: #fff; color: #000; border: 1px solid #000; }
+.preview-strip { background: #fff; color: #000; border-bottom: 1px solid #000; }
