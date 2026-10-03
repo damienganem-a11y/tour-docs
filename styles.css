@@ -848,3 +848,102 @@ button.menu-row:active { background: var(--brand-tint); }
 /* v0.73.0: a tick box with its words beside it (restaurant menu: show prices) */
 .check-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 15px; }
 .check-row input { width: 22px; height: 22px; }
+
+
+/* =====================================================================================================================================
+   v0.77.0: "Expedition" look for the leader's app too (owner's go, 3 Oct 2026): the same language as the guest app. White pages, pure black bands,
+   one vivid yellow for actions and tags, bold wide-spaced capitals for small titles, square corners. Inspired by an expedition-magazine
+   website; no logo and no brand mark. Everything above this block is the previous look: this block only overrides it.
+   ===================================================================================================================================== */
+:root {
+  --brand: #000; --brand-ink: #fff; --brand-tint: #f2f2f0;
+  --accent: #ffcc00; --teal: #000; --teal-tint: #f2f2f0;
+  --ink: #111; --muted: #6b6b68;
+  --bg: #fff; --card: #fff; --soft: #f2f2f0; --track: #e8e8e5; --line: #d9d9d6;
+  --undo: #111; --shadow: none; --yellow: #ffcc00;
+}
+body { background: #fff; }
+.title { font-weight: 800; letter-spacing: -0.005em; }
+.title em { font-family: inherit; font-style: normal; color: inherit; font-weight: 800; }
+.eyebrow { color: #000; text-transform: uppercase; letter-spacing: 0.22em; font-family: Outfit, sans-serif; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 8px; }
+.eyebrow::before { content: ""; width: 2px; height: 13px; background: var(--yellow); }
+.eyebrow--grey { color: var(--muted); }
+.back-link { color: #000; font-family: Outfit, sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; }
+
+/* cards: a thin grey frame, no shadow, a yellow edge on a tour card */
+.card { border: 1px solid var(--line); border-radius: 0; box-shadow: none; }
+.card--soft { background: var(--soft); border-color: var(--soft); }
+.card--cancelled { background: var(--soft); border: 1px dashed #999; }
+.card--warn { border: 2px solid #000; }
+.card:has(> .card-head)::before { background: var(--yellow); width: 5px; }
+.card--soft:has(> .card-head)::before, .card--cancelled:has(> .card-head)::before { background: #bbb; }
+.act-name, .card-title { font-family: Outfit, sans-serif; font-weight: 800; letter-spacing: 0; }
+.count { border-radius: 0; background: #000; color: #fff; font-family: Outfit, sans-serif; letter-spacing: 0.06em; }
+.count--bad { background: var(--yellow); color: #000; }
+.card--soft .count { background: #ccc; color: #111; }
+.chip { border-radius: 0; border: 1px solid #000; background: #fff; font-size: 15px; }
+.chip--more { background: transparent; }
+
+/* buttons and fields */
+.btn { border-radius: 0; background: var(--yellow); border: 2px solid var(--yellow); color: #000; font-family: Outfit, sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; font-size: 14px; }
+.btn:active { filter: brightness(0.93); }
+.btn--plain { background: transparent; border: 2px solid #000; color: #000; }
+.btn--danger { border-color: var(--bad-line); background: var(--bad-line); color: #fff; }
+.btn[disabled], .btn--plain[disabled] { opacity: 0.4; }
+.text-input { border-radius: 0; border: 1px solid #999; }
+.text-input:focus { border-color: #000; outline: 2px solid var(--yellow); }
+.pill { border-radius: 0; background: var(--track); }
+
+/* switches, strips, dock */
+.switch { background: var(--soft); border-radius: 0; }
+.switch-item { border-radius: 0; font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-size: 13px; font-weight: 800; }
+.switch-item.is-active { background: #000; color: #fff; box-shadow: none; }
+.strip-item { border-radius: 0; border: 1px solid var(--line); font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.12em; font-size: 12px; font-weight: 700; }
+.strip-item.is-active { background: #000; border-color: #000; color: #fff; }
+.bottom-tabs { left: 0; right: 0; bottom: 0; margin: 0 auto; max-width: none; padding: 0 0 env(safe-area-inset-bottom); gap: 0; border-radius: 0; background: #000; box-shadow: none; }
+.bottom-tab { min-height: 56px; border-radius: 0; color: #bbb; font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; font-weight: 700; }
+.bottom-tab.is-active { background: var(--yellow); color: #000; font-weight: 800; }
+
+/* sheets */
+.sheet { border-radius: 0; }
+.sheet::before { background: #bbb; border-radius: 0; height: 4px; }
+.sheet-head h2 { font-weight: 800; }
+
+/* Settings tiles: grey squares, a black icon block with a yellow icon */
+.tile { border: 1px solid var(--line); border-radius: 0; box-shadow: none; background: #fff; }
+.tile-icon, .tile--access .tile-icon, .tile--documents .tile-icon, .tile--control .tile-icon { border-radius: 0; background: #000; color: var(--yellow); }
+.tile-title { font-family: Outfit, sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; font-size: 15px; }
+.tile:active { background: var(--soft); }
+
+/* top bar, destination chooser */
+.top-trip { color: #000; text-transform: uppercase; letter-spacing: 0.18em; font-size: 12px; font-weight: 800; }
+.cog { border-radius: 0; background: #fff; border: 1px solid var(--line); box-shadow: none; color: #000; }
+.cog--home { background: #000; color: var(--yellow); border-color: #000; }
+.cog--home .icon svg circle[fill='#fff'] { fill: #000; }
+.dest-menu { background: #000; color: #fff; border-radius: 0; box-shadow: none; padding: 12px 14px; }
+.dest-menu:active { background: #222; }
+.dest-menu-pin { background: var(--yellow); color: #000; border-radius: 0; }
+.dest-menu-name { font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; font-size: 17px; }
+.dest-menu-sub { color: #bbb; }
+.dest-menu-chev { color: #fff; }
+.menu-row.is-current { background: var(--soft); border-radius: 0; }
+.here-tick { color: #000; }
+
+/* trips screen */
+.avatar { border-radius: 0; background: #000; color: var(--yellow); }
+.card-more { border-radius: 0; background: var(--soft); color: #000; }
+.fold-row { text-transform: uppercase; letter-spacing: 0.14em; font-family: Outfit, sans-serif; font-size: 12px; color: #000; }
+.fold-count { border-radius: 0; background: var(--yellow); color: #000; }
+
+/* by guest by seat */
+.seat-card { border-radius: 0; box-shadow: none; border: 1px solid var(--line); }
+.seat-title { font-weight: 800; }
+.seat-line { border-radius: 0; background: var(--soft); color: #111; }
+.seat-line:active { background: var(--yellow); }
+.seat-line--leisure { background: #fff; border: 1px solid var(--line); color: var(--muted); }
+.seat-line--bad { background: var(--yellow); color: #000; }
+.switch--compact .switch-item, .switch .switch-item { border-radius: 0; }
+.switch--compact { border-radius: 0; }
+.undo-btn { border-radius: 0; background: #000; color: #fff; text-transform: uppercase; letter-spacing: 0.06em; font-family: Outfit, sans-serif; }
+.undo-btn:disabled { background: var(--soft); color: var(--muted); }
+.undo-label { font-weight: 800; }
