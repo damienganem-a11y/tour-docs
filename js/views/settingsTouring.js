@@ -172,7 +172,7 @@ function tourInfoFields(info) {
     h('option', { value: '' }, 'Difficulty: not shown'),
     DIFFICULTIES.map((d) => h('option', { value: d, selected: info?.difficulty === d ? 'selected' : null }, DIFFICULTY_LABEL[d])));
   const difficultyNote = area('Difficulty details', info?.difficultyNote, 600, 'Why this level: distance, climb, number of steps, heat, tight spaces, who should think twice...');
-  const description = area('Description', info?.description, 1000, 'What happens, in a few lines');
+  const description = area('What happens', info?.description, 1000, 'Tell the story, so guests think "yes, I want that": start with "Today, we..."');
   const bring = area('Good to know', info?.bring, 300, 'Good to know: dress (cover shoulders...), sun or rain, what is not allowed');
   const accessibility = area('Accessibility', info?.accessibility, 400, 'Accessibility: steps, walking, wheelchairs, who should think twice');
   const node = h('details', { class: 'info-fields' },

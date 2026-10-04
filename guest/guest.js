@@ -542,39 +542,45 @@ function creditsView(sheet, offline) {
 
 // The activity level, written out in the body of the tour page (owner's request): the level in words, what it means, then the leader's own details
 // (distance, climb, steps, heat, tight spaces...). Not hidden behind a bubble or an "i".
+// One block at the end of a tour page: how demanding it is AND what a guest with reduced mobility needs to know (owner's request, 4 Oct 2026).
+// The level in words, then the leader's own factual details (distance, steps, lifts, floors), so the guest can decide or come and talk to the leader.
 function levelBlock(info) {
-  if (!info?.difficulty) return null;
-  const level = DIFFICULTY[info.difficulty];
-  return h('div', { class: `info-block info-block--level level--${info.difficulty}` },
-    h('div', { class: 'block-title' }, 'Activity level'),
-    h('div', { class: 'level-name' }, level.label),
-    h('div', { class: 'block-text' }, level.help),
-    info.difficultyNote ? h('div', { class: 'block-text level-note' }, info.difficultyNote) : null);
+  const level = info?.difficulty ? DIFFICULTY[info.difficulty] : null;
+  if (!level && !info?.accessibility && !info?.difficultyNote) return null;
+  const facts = [info.difficultyNote, info.accessibility].filter(Boolean);
+  return h('section', { class: `atl-section atl-level${level ? ` level--${info.difficulty}` : ''}` },
+    h('div', { class: 'atl-label' }, level ? 'Activity level and accessibility' : 'Accessibility'),
+    level ? h('div', { class: 'atl-level-name' }, h('i', { class: 'atl-level-dot' }), level.label) : null,
+    level ? h('p', { class: 'atl-text' }, level.help) : null,
+    ...facts.map((text) => h('p', { class: 'atl-text atl-fact' }, text)),
+    h('p', { class: 'atl-ask' }, 'Not sure this is right for you? Talk to your tour leader before you choose.'));
 }
 
 // ---------- one tour ----------
+// The page reads in this order: the photos, what happens (the story), good to know, then the level and accessibility together at the end.
 function tourView(sheet, tour, offline) {
   const info = tour.info ?? {};
   const photos = info.photos ?? [];
   const gallery = photos.length
-    ? h('div', { class: 'gallery' }, photos.map((p) => h('figure', { class: 'shot' }, picture(p.url, '', p.caption || tour.name), p.caption ? h('figcaption', {}, p.caption) : null)))
-    : h('div', { class: 'gallery gallery--none' });
-  const section = (title, text) => (text ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, title), h('div', { class: 'block-text' }, text)) : null);
+    ? h('div', { class: 'atl-gallery' }, photos.map((p) => h('figure', { class: 'atl-shot' }, picture(p.url, '', p.caption || tour.name))))
+    : null;
+  const section = (title, text, cls = '') => (text ? h('section', { class: `atl-section ${cls}`.trim() }, h('div', { class: 'atl-label' }, title), h('p', { class: `atl-text ${cls ? `${cls}-text` : ''}`.trim() }, text)) : null);
   return [
-    h('div', { class: 'tour-top' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'), gallery),
-    h('div', { class: 'content content--tour' },
-      offline,
-      h('div', { class: 'line' }, `${dayDate(tour.date)} · ${tour.half} · ${tour.destination}`),
-      h('h2', { class: 'tour-title' }, tour.name),
-      // At a glance (owner's request): when we leave, where we meet, how long, how demanding: small bubbles under the title.
-      h('div', { class: 'chips big' },
+    h('div', { class: `atl-tourtop${gallery ? '' : ' atl-tourtop--plain'}` }, gallery, h('button', { class: 'atl-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '‹')),
+    h('div', { class: 'atl-tourhead' },
+      h('span', { class: 'atl-pill' }, `${dayDate(tour.date)} · ${tour.half}`),
+      h('h1', {}, tour.name),
+      h('p', {}, tour.destination),
+      // At a glance: when we leave, where we meet, how long.
+      h('div', { class: 'chips atl-chips' },
         tour.time ? chip(`Leaves ${tour.time}`, 'chip--time') : null,
         tour.meeting ? chip(tour.meeting, 'chip--place') : null,
-        info.duration ? chip(info.duration) : null),
-      levelBlock(info),
-      section('What happens', info.description),
+        info.duration ? chip(info.duration) : null)),
+    h('div', { class: 'atl-body atl-body--tour' },
+      offline,
+      section('What happens', info.description, 'atl-story'),
       section('Good to know', info.bring),
-      info.accessibility ? h('div', { class: 'info-block info-block--access' }, h('div', { class: 'block-title' }, 'Accessibility'), h('div', { class: 'block-text' }, info.accessibility)) : null),
+      levelBlock(info)),
   ].filter(Boolean);
 }
 
