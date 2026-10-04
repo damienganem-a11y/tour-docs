@@ -27,7 +27,7 @@ export function isValidTimeZone(timeZone) {
 }
 
 // How far ahead of UTC a time zone is at a given moment, in minutes. Tokyo is +540, Lisbon in winter is 0.
-function offsetMinutes(timeZone, instantMs) {
+export function offsetMinutes(timeZone, instantMs) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone, hourCycle: 'h23',
     year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',

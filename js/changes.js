@@ -101,7 +101,7 @@
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'guest-links', action, guestIds: [id, ...] }      the personal links of the guest app (Settings > Guest links), owner only.
 //       action: 'create' (a guest who has none gets one), 'renew' (a new secret: the old link stops working),
-//       'switch-off' or 'switch-on'; or { action: 'notify-settings', settings: { moved: false, ... } }: which kinds of notification guests get (trip.guestNotify, all on by default); or { action: 'farewell', text, website }: the message guests read after the trip (trip.guestFarewell); or, with no guestIds, 'options-on' / 'options-off': whether guests see the other options of their tours. Never undoable (a renewed link must not come back), and the journal never holds the secret.
+//       'switch-off' or 'switch-on'; or { action: 'notify-settings', settings: { moved: false, ... } }: which kinds of notification guests get (trip.guestNotify, all on by default); or { action: 'auto-settings', settings: { eveningBefore: false, ... } }: which automatic messages are sent (trip.autoNotify, all on by default); or { action: 'farewell', text, website }: the message guests read after the trip (trip.guestFarewell); or, with no guestIds, 'options-on' / 'options-off': whether guests see the other options of their tours. Never undoable (a renewed link must not come back), and the journal never holds the secret.
 //   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
@@ -116,6 +116,7 @@ import { isValidTimeZone, localToInstant } from './time.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
 import { menuCardError, cleanMenuCard } from './menuCard.js';
 import { notifySettingsError } from './notifyRules.js';
+import { autoNotifyError } from './scheduledMessages.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 
@@ -600,7 +601,8 @@ function validateRenameTrip(change) {
 // The card branding: a short name, a #rrggbb colour, a short note, and a small JPEG logo (or none). The
 // size limits keep the trip (and every journal line that carries it) small enough to sync comfortably.
 function validateGuestLinks(trip, change) {
-  if (!['create', 'renew', 'switch-off', 'switch-on', 'options-on', 'options-off', 'farewell', 'notify-settings'].includes(change.action)) return fail('Unknown action for guest links.');
+  if (!['create', 'renew', 'switch-off', 'switch-on', 'options-on', 'options-off', 'farewell', 'notify-settings', 'auto-settings'].includes(change.action)) return fail('Unknown action for guest links.');
+  if (change.action === 'auto-settings') { const problem = autoNotifyError(change.settings); return problem ? fail(problem) : { ok: true }; }
   if (change.action === 'notify-settings') { const problem = notifySettingsError(change.settings); return problem ? fail(problem) : { ok: true }; }
   if (change.action === 'farewell') {
     // The message guests see once their link has expired: a few sentences and, if wanted, a web address (typed without spaces).
@@ -1292,6 +1294,11 @@ async function doApply(ctx, tripId, changes, opts = {}) {
   // Personal links for the guest app. The secret lives only on the trip (and in the guest's link): the journal records just who and how many.
   if (GUEST_LINK_TYPES.has(changes[0].type)) {
     const c = changes[0];
+    if (c.action === 'auto-settings') {
+      next.autoNotify = { ...(next.autoNotify ?? {}), ...c.settings };
+      entries.push({ ...base(), type: 'guest-links', ...guestWhere, action: c.action, count: 0, guestName: null });
+      return save(ctx, next, entries, {});
+    }
     if (c.action === 'notify-settings') {
       next.guestNotify = { ...(next.guestNotify ?? {}), ...c.settings };
       entries.push({ ...base(), type: 'guest-links', ...guestWhere, action: c.action, count: 0, guestName: null });

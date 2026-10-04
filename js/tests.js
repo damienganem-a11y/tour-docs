@@ -37,6 +37,7 @@ import { SAMPLE_CARDS } from './sampleMenus.js';
 import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAnswerText } from './guestRequests.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { notificationsFor, notifySettings, NOTIFY_KINDS } from './notifyRules.js';
+import { AUTO_KINDS, audienceGuestIds, autoNotifyError, autoNotifySettings, clockProposals, draftError, draftRow, plannedAutoMessages } from './scheduledMessages.js';
 import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
@@ -2872,6 +2873,36 @@ function readZip(bytes) {
   const rows = guestSheetRows(ctxG.state, 'x');
   const offRow = rows.find((r) => r.guestId === guest.id);
   check('A switched-off link has no content; the others have a sheet', offRow.active === false && offRow.sheet === null && rows.filter((r) => r.active).every((r) => r.sheet && r.sheet.first));
+}
+
+// --- Scheduled messages and automatic reminders (notification batches 2 and 3) ---
+{
+  const ctxS = makeCtx();
+  const t = ctxS.state;
+  const before = new Date('2027-01-11T10:00:00Z'); // the day before the sample trip's first day (Lisbon, winter: same clock as UTC)
+  check('Every automatic reminder and alert is on by default, and a wrong setting is refused', AUTO_KINDS.every((k) => autoNotifySettings(t)[k.key] === true) && autoNotifyError({ nonsense: true }) !== null && autoNotifyError({ eveningBefore: 'yes' }) !== null && autoNotifyError({ eveningBefore: false }) === null);
+  const rows = plannedAutoMessages(t, before);
+  const eve = rows.filter((r) => r.auto_key.startsWith('eve|'));
+  const alfama = eve.find((r) => r.title === 'Tomorrow: Alfama walking tour');
+  check('The evening before a tour, its guests are told what, when and where (19:00 in the destination)', Boolean(alfama) && alfama.send_at === '2027-01-11T19:00:00.000Z' && /15:00/.test(alfama.body) && /Hotel lobby/.test(alfama.body) && alfama.audience === 'guests' && alfama.guest_ids.length > 0 && alfama.category === 'reminders');
+  check('An hour before a tour that starts after 07:30, they are told again', rows.some((r) => r.title === 'In one hour: Alfama walking tour' && r.send_at === '2027-01-12T14:00:00.000Z'));
+  const roll = rows.find((r) => r.auto_key.startsWith('roll|'));
+  check('The leader is alerted 15 minutes after a tour leaves if its roll call is still open (to the leader, not to guests)', Boolean(roll) && roll.audience === 'owner' && roll.guest_ids === null && /Roll call not finished/.test(roll.title));
+  check('Nothing is planned for the past or beyond 10 days', plannedAutoMessages(t, new Date('2030-01-01T00:00:00Z')).length === 0 && rows.every((r) => Date.parse(r.send_at) < before.getTime() + 10 * 86400000));
+  check('Switching a kind off removes its messages', !plannedAutoMessages(t, before, { ...autoNotifySettings(t), eveningBefore: false }).some((r) => r.auto_key.startsWith('eve|')) && plannedAutoMessages(t, before, { ...autoNotifySettings(t), rollCallAlert: false }).every((r) => !r.auto_key.startsWith('roll|')));
+  const tourId = t.activities.find((a) => a.name === 'Alfama walking tour').id;
+  const party = t.parties[0];
+  const tourGuests = audienceGuestIds(t, { type: 'tour', activityId: tourId });
+  check('An audience is worked out from the trip: everyone is null (all guests with notifications), a party, one tour', audienceGuestIds(t, { type: 'everyone' }) === null && audienceGuestIds(t, { type: 'party', id: party.id }).length === t.guests.filter((g) => g.partyId === party.id).length && tourGuests.length > 0 && tourGuests.every((id) => t.bookings[id][t.activities.find((a) => a.id === tourId).slotId].activityId === tourId));
+  const draft = { title: 'Clocks change tonight', body: 'Move your watch.', date: '2027-01-11', time: '19:00', timeZone: 'Europe/Lisbon', important: true, guestIds: null };
+  check('A written message needs a title, a text, a future moment and someone to receive it', draftError(draft, before) === null && draftError({ ...draft, title: '' }, before) !== null && draftError({ ...draft, body: 'x'.repeat(201) }, before) !== null && draftError({ ...draft, date: '2027-01-10' }, before) !== null && draftError({ ...draft, guestIds: [] }, before) !== null);
+  const row = draftRow(draft);
+  check('A typed day and time becomes the exact moment in that clock (19:00 in Tokyo is 10:00 UTC)', row.send_at === '2027-01-11T19:00:00.000Z' && row.priority === 'important' && draftRow({ ...draft, timeZone: 'Asia/Tokyo' }).send_at === '2027-01-11T10:00:00.000Z');
+  const clocks = clockProposals(t);
+  check('Where the next destination has another clock, a "clocks change" message is proposed the evening before', clocks.length > 0 && clocks.every((c) => /ahead of|behind/.test(c.body) && /forward|back/.test(c.body) && /^\d{4}-\d{2}-\d{2}$/.test(c.date)));
+  const set = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'auto-settings', settings: { dinnerAlert: false } });
+  const bad = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'auto-settings', settings: { nonsense: false } });
+  check('The leader\'s choice is saved on the trip and journaled; an unknown kind is refused', set.ok && ctxS.state.autoNotify.dinnerAlert === false && autoNotifySettings(ctxS.state).dinnerAlert === false && !bad.ok && groupBatches(ctxS.entries).map(summarize).some((x) => /automatic reminders and alerts/.test(x)));
 }
 
 // --- QR codes (the guests' links). The picture was also decoded by a real QR reader when it was written: see SPEC.md ---

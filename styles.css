@@ -1070,3 +1070,4 @@ body:has(.bottom-tabs) .toast { bottom: calc(86px + env(safe-area-inset-bottom))
 @media (min-width: 700px) { .bottom-tab { padding: 0 30px; } }
 .undo-btn { max-width: 300px; margin-left: auto; }
 input[type=checkbox] { accent-color: #000; }
+.chips > .btn { width: auto; flex: none; min-height: 40px; padding: 0 16px; font-size: 14px; }

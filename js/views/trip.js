@@ -29,6 +29,7 @@ import { groupsSettingsPage } from './settingsGroups.js';
 import { teamSettingsPage } from './settingsTeam.js';
 import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { guestAppSettingsPage } from './settingsGuestApp.js';
+import { scheduledSettingsPage } from './settingsScheduled.js';
 import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
 import { openPreviewSheet } from './preview.js';
@@ -48,6 +49,7 @@ const SETTINGS_SECTIONS = [
     { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
+    { label: 'Scheduled messages', page: 'scheduled', ownerOnly: true, hint: 'Messages sent at a time you choose, reminders, alerts for you' },
   ] },
   { key: 'documents', icon: 'documents', title: 'Documents and look', blurb: 'Exports and brand', items: [
     { label: 'Documents', page: 'exports', hint: 'Create lists, cards and sheets, and find every one already made' },
@@ -121,6 +123,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   if (mode === 'settings' && page === 'section') {
     return { node: h('div', { class: 'screen' }, settingsSection(ctx, trip, first)) };
   }
+  if (mode === 'settings' && page === 'scheduled') {
+    return { node: h('div', { class: 'screen' }, scheduledSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'guestapp') {
     return { node: h('div', { class: 'screen' }, guestAppSettingsPage(ctx, trip)) };
   }
@@ -178,7 +183,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
 // Which Settings entries this person may open (owner-only ones are hidden from everybody else).
 function visibleItems(ctx, trip, section) {
   const role = ctx.roleFor(trip.id);
-  const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
+  const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
   return section.items.filter(visible);
 }
 

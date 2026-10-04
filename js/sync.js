@@ -427,3 +427,34 @@ export async function notifyMe(message) {
   if (error) throw error;
   return data;
 }
+
+// ---------- Scheduled messages and automatic reminders (v0.88.0) ----------
+// The messages wait in the table scheduled_messages; a timer on the server sends them at the exact moment, even if this phone is shut.
+export async function listScheduled(tripId) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('scheduled_messages').select('id, send_at, audience, guest_ids, title, body, priority, source, status').eq('trip_id', tripId).eq('status', 'pending').order('send_at', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+export async function scheduleMessage(tripId, row) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('scheduled_messages').insert({ ...row, trip_id: tripId, source: 'manual' });
+  if (error) throw error;
+}
+export async function cancelScheduled(id) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('scheduled_messages').update({ status: 'cancelled' }).eq('id', id).eq('status', 'pending');
+  if (error) throw error;
+}
+// The automatic messages of one trip, as worked out by scheduledMessages.js: the server keeps exactly these (plus those already sent).
+export async function replaceAutoMessages(tripId, rows) {
+  const supabase = await getClient();
+  const { error } = await supabase.rpc('replace_auto_messages', { p_trip: tripId, p_rows: rows });
+  if (error) throw error;
+}
+export async function schedulerStatus() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc('scheduler_status');
+  if (error) throw error;
+  return data;
+}

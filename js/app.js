@@ -27,12 +27,13 @@ import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode,
+  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
+import { plannedAutoMessages } from './scheduledMessages.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
@@ -289,6 +290,11 @@ const ctx = {
   async notifyAllGuests(tripId, title, body, important = false) { return notifyGuests(tripId, undefined, { title, body, url: './guest/', category: 'announcement', priority: important ? 'important' : 'info' }); },
   guestPushOverview: (tripId) => guestPushOverview(tripId),
   makeGuestCode: (tripId, guestId) => makeGuestCode(tripId, guestId),
+  listScheduled: (tripId) => listScheduled(tripId),
+  scheduleMessage: async (tripId, row) => { await scheduleMessage(tripId, row); },
+  cancelScheduled: (id) => cancelScheduled(id),
+  schedulerStatus: () => schedulerStatus(),
+  refreshAutoMessages: (tripId) => syncAutoMessages(tripId),
   outboxFor: (tripId) => outbox.filter((r) => r.tripId === tripId),
   async sendRequest(tripId, changes) {
     outbox.push({ id: newId(), tripId, requesterName: state.owner.name, changes, requestedAt: new Date().toISOString() });
@@ -419,6 +425,7 @@ const ctx = {
     state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
     trackPush(pushAndTrack(trip, entries)).catch(() => {});
     notifyAfterChange(trip, entries);
+    syncAutoMessagesSoon(trip.id);
   },
 
   // Used by export.js: keep a PDF that was just built, so it can be found again in the Exports archive.
@@ -654,6 +661,24 @@ function notifyAfterChange(trip, entries) {
   }
 }
 
+// The automatic reminders and the leader's alerts (scheduledMessages.js) are renewed on the server whenever the trip changes, when the app opens and
+// when the phone is back online: the server then sends them at the right moment, even if this phone is shut. Best effort and quiet: a problem here
+// never blocks anything (the next change or start tries again). Only the owner's phone does this, and only for a trip that is not archived.
+const autoSent = new Map(); // tripId -> what was last sent, so nothing is sent twice for nothing
+const autoTimers = new Map();
+async function syncAutoMessages(tripId) {
+  const trip = state.trips.get(tripId);
+  if (!trip || !state.owner || hasSession === false || !navigator.onLine || ctx.roleFor(tripId) !== 'owner') return;
+  const rows = plannedAutoMessages(trip);
+  const signature = JSON.stringify(rows);
+  if (autoSent.get(tripId) === signature) return;
+  try { await replaceAutoMessages(tripId, rows); autoSent.set(tripId, signature); } catch { /* the next change tries again */ }
+}
+function syncAutoMessagesSoon(tripId) {
+  clearTimeout(autoTimers.get(tripId));
+  autoTimers.set(tripId, setTimeout(() => syncAutoMessages(tripId), 4000));
+}
+
 let processing = false;
 async function processRequests() {
   if (processing || !state.owner || hasSession === false || !navigator.onLine) return;
@@ -879,7 +904,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }
