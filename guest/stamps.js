@@ -46,10 +46,10 @@ const ICONS = {
 ${solid('M-52 42 V34 H-32 V28 H-12 V22 H14 V28 H34 V34 H52 V42Z')}${cut('M-50 38 H50', 1.8)}${cut('M-30 31 H-14 M16 31 H32', 1.8)}
 ${cut('M-8 22 V14 L-2 8 L4 14 V22', 2)}<circle cx="-36" cy="-26" r="7"/>${line('M-36 -38 V-35 M-48 -26 H-45 M-47 -37 L-45 -35 M-25 -37 L-27 -35', 2)}`,
 
-  miami: `<circle cx="-34" cy="-28" r="8"/>${line('M-34 -42 V-39 M-48 -28 H-45 M-47 -41 L-45 -39 M-21 -41 L-23 -39 M-20 -28 H-23', 2.6)}
-${solid('M0 42 V8 H40 V42Z M6 8 V-8 H34 V8Z M12 -8 V-22 H28 V-8Z M18 -22 V-32 H22 V-22Z')}${line('M20 -32 V-42', 2.4)}
-${cut('M3 18 H37 M3 28 H37 M3 36 H37 M9 -2 H31 M15 -14 H25', 2)}${cut('M20 8 V42', 1.6)}
-${line('M-18 42 Q-24 18 -14 -4', 3.6)}${solid('M-14 -4 q-14 -4 -22 6 q12 -8 22 -2Z M-14 -4 q-6 -16 -22 -14 q14 2 20 12Z M-14 -4 q8 -14 24 -10 q-14 0 -20 12Z M-14 -4 q14 -2 20 10 q-8 -8 -20 -6Z')}${line('M-52 42 H52', 3)}`,
+  // Washington: the Capitol dome beside the Washington Monument obelisk, the sun behind.
+  washington: `<circle cx="-30" cy="-30" r="7"/>${line('M-30 -42 V-39 M-42 -30 H-39 M-41 -41 L-39 -39 M-19 -41 L-21 -39 M-18 -30 H-21', 2.4)}
+${solid('M-50 42 V30 H-6 V42Z M-44 30 V18 H-12 V30Z M-38 18 Q-38 -4 -28 -8 Q-18 -4 -18 18Z')}${solid('M-30 -8 V-16 H-26 V-8Z')}${cut('M-40 24 H-16 M-33 18 V-2 M-23 18 V-2', 1.8)}
+${solid('M24 42 V-22 L32 -44 L40 -22 V42Z')}${cut('M32 -44 V-22 M24 -22 H40', 1.6)}${solid('M18 42 H46 V36 H18Z')}${waves(46, -50, 50)}`,
 
   apia: `${solid('M-44 8 Q-44 -26 0 -34 Q44 -26 44 8Z')}${cut('M-30 6 Q-30 -16 -10 -26 M-14 6 Q-14 -18 0 -28 M2 6 Q2 -18 8 -28 M18 6 Q18 -14 26 -22 M-38 4 H38', 2)}
 ${solid('M-44 8 H44 V14 H-44Z')}${solid('M-38 14 H-33 V34 H-38Z M-4 14 H1 V34 H-4Z M33 14 H38 V34 H33Z')}${waves(40)}`,
@@ -131,7 +131,7 @@ ICONS.marrakech2 = ICONS.marrakech;
 const LOOKS = [
   { key: 'easter-island', words: ['easter island', 'rapa nui'], ink: '#a8442a', frame: 'arch' },
   { key: 'cusco', words: ['cusco', 'cuzco', 'machu picchu'], ink: '#2f7a52', frame: 'octagon' },
-  { key: 'miami', words: ['miami'], ink: '#d6336c', frame: 'ticket' },
+  { key: 'washington', words: ['washington'], ink: '#2b4c9b', frame: 'ticket' },
   { key: 'apia', words: ['apia', 'samoa'], ink: '#1b8ca6', frame: 'scallop' },
   { key: 'port-douglas', words: ['port douglas', 'cairns', 'great barrier'], ink: '#e2562a', frame: 'circle' },
   { key: 'siem-reap', words: ['siem reap', 'angkor'], ink: '#8a5a24', frame: 'octagon' },

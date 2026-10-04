@@ -1,10 +1,4 @@
 {
- "miami": {
-  "author": "Averette",
-  "license": "CC BY 3.0",
-  "source": "https://commons.wikimedia.org/wiki/File:Miami_skyline_20080328.jpg",
-  "title": "Miami skyline 20080328.jpg"
- },
  "easter-island": {
   "author": "Mbmerino",
   "license": "CC BY-SA 3.0",
@@ -718,5 +712,11 @@
   "license": "CC BY-SA 4.0",
   "source": "https://commons.wikimedia.org/wiki/File:2016_Angkor,_Angkor_Thom,_Bajon_(14).jpg",
   "title": "2016 Angkor, Angkor Thom, Bajon (14).jpg"
+ },
+ "washington": {
+  "author": "Ali Khan",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lincoln_Memorial_Reflecting_Pool_With_The_Washington_Monument.jpg",
+  "title": "Lincoln Memorial Reflecting Pool With The Washington Monument.jpg"
  }
 }
