@@ -446,13 +446,20 @@ async function disablePush() {
 // ---------- the other options of one half-day ----------
 // Shown from the "Other options" button under a tour the guest is booked on: the other tours offered at the same time, read only. Asking for a
 // change comes later (it needs the team's answer); until then the guest is told to speak to their guide.
+// A page with no big photo (other options, where to dine, credits): a round back button, a small label and a big title.
+function plainHead(label, title) {
+  return h('div', { class: 'atl-head atl-head--sub' },
+    h('button', { class: 'atl-back atl-back--inline', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '‹'),
+    h('small', {}, label), h('h1', {}, title));
+}
+
 function optionsView(sheet, tourIndex, offline) {
   const mine = sheet.tours[tourIndex];
   const part = sheet.days.flatMap((d) => d.parts).find((p) => p.tour === tourIndex);
   const cards = (part?.alt ?? []).map((index) => {
     const tour = sheet.tours[index];
     const photo = tour.info?.photos?.[0];
-    const card = h('div', { class: 'option-card', role: 'button', tabindex: '0' },
+    const card = h('div', { class: 'option-card atl-option', role: 'button', tabindex: '0' },
       photo ? picture(photo.url, 'thumb', '') : null,
       h('div', { class: 'option-text' },
         h('div', { class: 'what' }, tour.name),
@@ -463,13 +470,12 @@ function optionsView(sheet, tourIndex, offline) {
     return card;
   });
   return [
-    h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
-      h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, `${dayDate(mine.date)} · ${mine.half} · ${mine.destination}`), h('h2', {}, 'Other options'))),
-    h('div', { class: 'content content--tour' },
+    plainHead(`${dayDate(mine.date)} · ${mine.half} · ${mine.destination}`, 'Other options'),
+    h('div', { class: 'atl-body' },
       offline,
-      h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'You are booked on'), h('div', { class: 'block-text' }, mine.name)),
-      ...cards,
-      h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Want to change?'), h('div', { class: 'block-text' }, 'Tap "Ask to switch" on the tour you prefer. Your leader decides and you are told here.')),
+      h('div', { class: 'atl-note' }, h('small', {}, 'You are booked on'), h('b', {}, mine.name)),
+      h('div', { class: 'atl-cards' }, ...cards),
+      h('div', { class: 'atl-note' }, h('small', {}, 'Want to change?'), h('span', {}, 'Tap "Ask to switch" on the tour you prefer. Your leader decides and you are told here.')),
       myRequestsBlock()),
   ];
 }
@@ -481,9 +487,9 @@ function restaurantView(sheet, index, offline) {
   const card = r.card;
   const photos = card.photos ?? [];
   const gallery = photos.length
-    ? h('div', { class: 'gallery' }, photos.map((p) => h('figure', { class: 'shot' }, picture(p.url, '', p.caption || r.name), p.caption ? h('figcaption', {}, p.caption) : null)))
-    : h('div', { class: 'gallery gallery--none' });
-  const block = (title, body) => (body ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, title), h('div', { class: 'block-text' }, body)) : null);
+    ? h('div', { class: 'atl-gallery' }, photos.map((p) => h('figure', { class: 'atl-shot' }, picture(p.url, '', p.caption || r.name))))
+    : null;
+  const block = (title, body) => (body ? h('section', { class: 'atl-section' }, h('div', { class: 'atl-label' }, title), h('p', { class: 'atl-text' }, body)) : null);
   const money = (price) => (price ? `${card.currency ? `${card.currency} ` : ''}${price}` : null);
   const menu = card.sections.map((section) => h('div', { class: 'menu-section' },
     h('div', { class: 'menu-title' }, section.name),
@@ -493,15 +499,16 @@ function restaurantView(sheet, index, offline) {
       item.tags?.length ? h('div', { class: 'chips' }, item.tags.map((t) => chip(t, 'chip--tag'))) : null))));
   const others = sheet.restaurants.map((x, i) => ({ x, i })).filter(({ x, i }) => i !== index && x.destination === r.destination);
   return [
-    h('div', { class: 'tour-top' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'), gallery),
-    h('div', { class: 'content content--tour' },
+    h('div', { class: `atl-tourtop${gallery ? '' : ' atl-tourtop--plain'}` }, gallery, h('button', { class: 'atl-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '‹')),
+    h('div', { class: 'atl-tourhead' },
+      h('span', { class: 'atl-pill' }, r.destination),
+      h('h1', {}, r.name),
+      h('div', { class: 'chips atl-chips' }, card.cuisine ? chip(card.cuisine, 'chip--time') : null, card.vibe ? chip(card.vibe, 'chip--place') : null)),
+    h('div', { class: 'atl-body atl-body--tour' },
       offline,
-      h('div', { class: 'line' }, r.destination),
-      h('h2', { class: 'tour-title' }, r.name),
-      h('div', { class: 'chips big' }, card.cuisine ? chip(card.cuisine) : null, card.vibe ? chip(card.vibe, 'chip--place') : null),
       block('About', card.about), block('Inside', card.interior), block('Outside', card.outdoor),
-      card.sections.length ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Menu'), ...menu, h('p', { class: 'foot' }, 'Please tell your waiter about any allergy or dietary requirement before ordering. Dish tags are a guide, not a guarantee.')) : null,
-      others.length ? h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, 'Other restaurants here'),
+      card.sections.length ? h('section', { class: 'atl-section atl-menu' }, h('div', { class: 'atl-label' }, 'Menu'), ...menu, h('p', { class: 'foot' }, 'Please tell your waiter about any allergy or dietary requirement before ordering. Dish tags are a guide, not a guarantee.')) : null,
+      others.length ? h('section', { class: 'atl-section' }, h('div', { class: 'atl-label' }, 'Other restaurants here'),
         others.map(({ x, i }) => h('button', { class: 'eat-row', type: 'button', onclick: () => openRestaurant(i) }, h('span', {}, x.name), h('span', { class: 'eat-count' }, `${x.card.cuisine ?? ''} ›`)))) : null),
   ].filter(Boolean);
 }
@@ -509,17 +516,16 @@ function restaurantView(sheet, index, offline) {
 function eatView(sheet, destination, offline) {
   const list = sheet.restaurants.map((r, i) => ({ r, i })).filter(({ r }) => r.destination === destination);
   return [
-    h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
-      h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, destination), h('h2', {}, 'Where to dine'))),
-    h('div', { class: 'content content--tour' }, offline,
+    plainHead(destination, 'Where to dine'),
+    h('div', { class: 'atl-body' }, offline, h('div', { class: 'atl-cards' },
       list.map(({ r, i }) => {
         const photo = r.card.photos?.[0];
-        const card = h('div', { class: 'option-card', role: 'button', tabindex: '0' },
+        const card = h('div', { class: 'option-card atl-option', role: 'button', tabindex: '0' },
           photo ? picture(photo.url, 'thumb', '') : null,
           h('div', { class: 'option-text' }, h('div', { class: 'what' }, r.name), h('div', { class: 'line' }, [r.card.cuisine, r.card.vibe].filter(Boolean).join(' · '))));
         card.addEventListener('click', () => openRestaurant(i));
         return card;
-      })),
+      }))),
   ];
 }
 
@@ -531,13 +537,13 @@ function creditsLink(sheet) {
   return h('p', { class: 'foot' }, h('button', { class: 'link-btn', type: 'button', onclick: () => go({ credits: true }) }, 'Photo credits'));
 }
 function creditsView(sheet, offline) {
-  const list = h('div', { class: 'content content--tour' }, offline, h('p', { class: 'foot' }, 'Loading…'));
+  const list = h('div', { class: 'atl-body' }, offline, h('p', { class: 'foot' }, 'Loading…'));
   fetch('photos/credits.json').then((r) => r.json()).then((all) => {
     const used = new Set([...(sheet.destinations ?? []).map((d) => d.photo), ...(sheet.tours ?? []).flatMap((t) => (t.info?.photos ?? []).map((p) => p.url)), ...(sheet.restaurants ?? []).flatMap((r) => (r.card.photos ?? []).map((p) => p.url))]);
     const rows = Object.entries(all).filter(([key]) => used.has(`photos/${key}.jpg`)).map(([key, c]) => h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, key.replace(/^tours\//, '').replace(/-/g, ' ')), h('div', { class: 'block-text' }, `${c.author}, ${c.license}`, h('br'), h('a', { href: c.source, target: '_blank', rel: 'noopener' }, 'Wikimedia Commons'))));
     list.replaceChildren(offline ?? '', ...rows);
   }).catch(() => { list.replaceChildren(h('p', { class: 'foot' }, 'The credits could not be loaded right now.')); });
-  return [h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'), h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, sheet.trip), h('h2', {}, 'Photo credits'))), list];
+  return [plainHead(sheet.trip, 'Photo credits'), list];
 }
 
 // The activity level, written out in the body of the tour page (owner's request): the level in words, what it means, then the leader's own details
@@ -653,6 +659,11 @@ function updatedRow(sheet) {
 })();
 
 function paint() {
+  paintPage();
+  // The wide-screen layout (iPad) puts the big photo of a tour or restaurant beside its text: say which kind of page this is.
+  app.dataset.page = (view.tour !== undefined || view.rest !== undefined) && !view.options && !view.credits && !view.eat ? 'photo' : 'plain';
+}
+function paintPage() {
   const sheet = currentSheet;
   if (!sheet) return;
   applyAccent(sheet.accent);
