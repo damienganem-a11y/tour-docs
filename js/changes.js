@@ -30,7 +30,7 @@
 //   { type: 'vehicle-number', activityId, vehicleId, number }
 //   (Several 'checkin' changes for the same roll call may be made together: a travel party checked in at once.)
 //   Settings (step 7), each on its own:
-//   { type: 'edit-destination', destinationId, name, country, timeZone }
+//   { type: 'edit-destination', destinationId, name, country, timeZone, facts? }   facts: up to 6 short fun facts shown to guests (left out = unchanged)
 //   { type: 'add-activity', slotId, name, meeting, startTime, capacity, short, info }     startTime: "HH:MM" or '' for none
 //   { type: 'edit-activity', activityId, name, meeting, startTime, capacity, short, info }
 //       info (optional, see tourInfo.js): what a guest reads about the tour. Left out on an edit = unchanged. Photos left out = kept.
@@ -286,7 +286,7 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'edit-destination' || entry.type === 'replace-destination') {
       const destination = trip.destinations.find((d) => d.id === entry.destinationId);
       if (!destination) return fail('This action cannot be undone: the destination no longer exists.');
-      if (destination.name !== entry.to.name || destination.country !== entry.to.country || destination.timeZone !== entry.to.timeZone) {
+      if (destination.name !== entry.to.name || destination.country !== entry.to.country || destination.timeZone !== entry.to.timeZone || JSON.stringify(destination.facts ?? []) !== JSON.stringify(entry.to.facts ?? [])) {
         return fail(`This action cannot be undone: "${entry.to.name}" has changed since.`);
       }
     }
@@ -451,6 +451,7 @@ function validateSettingsChange(trip, change) {
   if (!destination) return fail('That destination does not exist.');
   if (isBlank(change.name)) return fail('Give the destination a name.');
   if (!isValidTimeZone(change.timeZone)) return fail(`"${change.timeZone}" is not a time zone the phone knows. It should look like Europe/Lisbon.`);
+  if (change.facts !== undefined && (!Array.isArray(change.facts) || change.facts.length > 6 || !change.facts.every((f) => typeof f === 'string' && f.trim().length <= 200))) return fail('A destination can have up to 6 fun facts of 200 letters or fewer.');
   return { ok: true };
 }
 
@@ -1055,8 +1056,8 @@ async function doApply(ctx, tripId, changes, opts = {}) {
 
     // edit-destination and replace-destination: change the destination's own name, country, time zone.
     const destination = next.destinations.find((d) => d.id === change.destinationId);
-    const from = { name: destination.name, country: destination.country, timeZone: destination.timeZone };
-    const to = { name: change.name.trim(), country: String(change.country ?? '').trim(), timeZone: change.timeZone };
+    const from = { name: destination.name, country: destination.country, timeZone: destination.timeZone, facts: [...(destination.facts ?? [])] };
+    const to = { name: change.name.trim(), country: String(change.country ?? '').trim(), timeZone: change.timeZone, facts: change.facts === undefined ? [...from.facts] : change.facts.map((f) => f.trim()).filter(Boolean) };
     // A destination-level change is not tied to one half-day: shown with the destination's own (old) name and time.
     const destWhere = { slotId: null, slotLabel: from.name, place: { name: from.name, timeZone: from.timeZone } };
 

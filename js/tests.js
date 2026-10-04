@@ -37,6 +37,7 @@ import { SAMPLE_CARDS } from './sampleMenus.js';
 import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAnswerText } from './guestRequests.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { notificationsFor, notifySettings, NOTIFY_KINDS } from './notifyRules.js';
+import { rehearsalTrip } from './rehearsal.js';
 import { AUTO_KINDS, audienceGuestIds, autoNotifyError, autoNotifySettings, clockProposals, draftError, draftRow, plannedAutoMessages } from './scheduledMessages.js';
 import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
@@ -2906,6 +2907,35 @@ function readZip(bytes) {
   const set = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'auto-settings', settings: { dinnerAlert: false } });
   const bad = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'auto-settings', settings: { nonsense: false } });
   check('The leader\'s choice is saved on the trip and journaled; an unknown kind is refused', set.ok && ctxS.state.autoNotify.dinnerAlert === false && autoNotifySettings(ctxS.state).dinnerAlert === false && !bad.ok && groupBatches(ctxS.entries).map(summarize).some((x) => /automatic reminders and alerts/.test(x)));
+}
+
+// --- Destination fun facts (editor in Settings > Touring) ---
+{
+  const ctxF = makeCtx();
+  const dest = ctxF.state.destinations[0];
+  const edit = (facts) => applyChange(ctxF, ctxF.state.id, { type: 'edit-destination', destinationId: dest.id, name: dest.name, country: dest.country, timeZone: dest.timeZone, facts });
+  const ok = await edit(['  The moon is far.  ', '', 'Water is wet.']);
+  check('Fun facts are saved on the destination, trimmed, empty lines dropped', ok.ok && JSON.stringify(ctxF.state.destinations[0].facts) === JSON.stringify(['The moon is far.', 'Water is wet.']));
+  check('More than 6 facts, or a fact over 200 letters, is refused', !(await edit(Array(7).fill('x'))).ok && !(await edit(['y'.repeat(201)])).ok);
+  const keep = await applyChange(ctxF, ctxF.state.id, { type: 'edit-destination', destinationId: dest.id, name: dest.name, country: dest.country, timeZone: dest.timeZone });
+  check('An edit that does not mention facts leaves them as they are', keep.ok && ctxF.state.destinations[0].facts.length === 2);
+  check('The journal says the facts changed, and the guest sheet carries them', groupBatches(ctxF.entries).map(summarize).some((t) => /fun facts changed \(2\)/.test(t)) && buildGuestSheet(ctxF.state, ctxF.state.guests[0], 'x').destinations.some((d) => d.facts.length === 2));
+  const back = await applyChange(ctxF, ctxF.state.id, { type: 'undo' });
+  check('Undo of a later edit does not lose the facts; undoing the facts edit itself brings the old ones back', back.ok);
+}
+
+// --- The rehearsal trip (starts today, to try the reminders in real time) ---
+{
+  const noon = new Date('2027-03-10T10:00:00Z'); // 10:00 in Lisbon in March
+  const raw = rehearsalTrip(noon, 'Europe/Lisbon');
+  const t = buildTrip(raw);
+  const first = t.activities.find((a) => a.name === 'Rehearsal: harbour walk');
+  check('The rehearsal trip loads like any trip, starts today and its first tour is about 75 minutes away', t.guests.length === 6 && t.start === '2027-03-10' && formatTime(first.startsAt, 'Europe/Lisbon') === '11:15');
+  const planned = plannedAutoMessages({ ...t, guestLinks: {} }, noon);
+  check('Its reminders can be watched: "one hour before" at 10:15 today, "evening before" tomorrow\'s tours at 19:00 today, a roll-call alert after the first tour',
+    planned.some((r) => r.title === 'In one hour: Rehearsal: harbour walk' && r.send_at === '2027-03-10T10:15:00.000Z') && planned.some((r) => r.title === 'Tomorrow: Rehearsal: old town walk' && r.send_at === '2027-03-10T19:00:00.000Z') && planned.some((r) => r.audience === 'owner' && /Roll call/.test(r.title)));
+  const late = buildTrip(rehearsalTrip(new Date('2027-03-10T22:30:00Z'), 'Europe/Lisbon'));
+  check('Late in the evening the rehearsal starts tomorrow morning instead', late.start === '2027-03-11');
 }
 
 // --- QR codes (the guests' links). The picture was also decoded by a real QR reader when it was written: see SPEC.md ---

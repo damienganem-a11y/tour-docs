@@ -15,6 +15,7 @@ import { shareOrDownloadFile } from '../ui.js';
 import { openPreviewSheet } from './preview.js';
 import { pageHead, exportFormatSheet, syncDot } from './chrome.js';
 import { SAMPLE_CARDS } from '../sampleMenus.js';
+import { rehearsalTrip } from '../rehearsal.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
 const JET_SAMPLE_URL = './data/tour_docs_sample_trip_JET-01.json'; // a fictional 25-day private-jet trip (tools/make_jet_sample.py)
@@ -75,10 +76,10 @@ export function tripsView(ctx) {
   // fictional restaurants onto Lisbon's evening, through the ordinary add-restaurant change — owner's
   // call, 24 Sep 2026, mirroring a real restaurant-booking spreadsheet they shared — exactly as if
   // freshly typed in: journaled, undoable, editable like any other restaurant.
-  async function seedSampleDining(trip, destinationName) {
+  async function seedSampleDining(trip, destinationName, names = ['Salsa', 'Melaleuca', 'La Cucina', 'Zinc', 'Wrasse & Roe']) {
     const destination = trip.destinations.find((d) => d.name === destinationName);
     if (!destination) return;
-    for (const name of ['Salsa', 'Melaleuca', 'La Cucina', 'Zinc', 'Wrasse & Roe']) {
+    for (const name of names) {
       await applyChange(ctx, trip.id, {
         type: 'add-restaurant', destinationId: destination.id, name,
         seatings: ['18:45', '19:15'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4],
@@ -98,6 +99,16 @@ export function tripsView(ctx) {
       if (trip) await seedSampleDining(trip, 'Lisbon');
     } catch (error) {
       showError(`Could not load the sample trip (${error.message}).`);
+    }
+  }
+
+  // A tiny fictional trip that starts today, to try the reminders and alerts in real time (rehearsal.js).
+  async function loadRehearsal() {
+    try {
+      const trip = await useTrip(JSON.stringify(rehearsalTrip()));
+      if (trip) await seedSampleDining(trip, 'Rehearsal City', ['Chez Test', 'Bistro Rehearsal']);
+    } catch (error) {
+      showError(`Could not load the rehearsal trip (${error.message}).`);
     }
   }
 
@@ -168,7 +179,8 @@ export function tripsView(ctx) {
         h('div', { class: 'section-title' }, 'Sample trips (fictional)'),
         h('div', { class: 'menu' },
           row('Around the World', '24 days, 80 guests', () => { closeSheet(); loadSample(); }),
-          row('Private Jet Expedition', '25 days, 40 guests, with tour information and pictures', () => { closeSheet(); loadJetSample(); })),
+          row('Private Jet Expedition', '25 days, 40 guests, with tour information and pictures', () => { closeSheet(); loadJetSample(); }),
+          row('Rehearsal trip', 'Starts today: to try reminders and alerts in real time', () => { closeSheet(); loadRehearsal(); })),
       ],
     });
   }

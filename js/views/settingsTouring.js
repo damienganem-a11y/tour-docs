@@ -147,18 +147,22 @@ function editDestination(ctx, trip, destination) {
     autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Time zone',
   });
 
+  // Fun facts for the guests' "Did you know?" card: one per line, up to 6, a new one each day of the stay.
+  const factsInput = h('textarea', { class: 'text-input', rows: '6', 'aria-label': 'Fun facts', placeholder: 'One fun fact per line (up to 6). A new one is shown each day of the stay.' }, (destination.facts ?? []).join('\n'));
+  const factsLine = () => factsInput.value.split('\n').map((f) => f.trim()).filter(Boolean);
+
   const confirm = h('button', {
     class: 'btn', type: 'button',
     onclick: () => save(ctx, trip.id, {
       type: 'edit-destination', destinationId: destination.id,
-      name: nameInput.value, country: countryInput.value, timeZone: zoneInput.value.trim(),
+      name: nameInput.value, country: countryInput.value, timeZone: zoneInput.value.trim(), facts: factsLine(),
     }, `"${nameInput.value.trim()}" updated`),
   }, 'Save');
 
   openSheet({
     eyebrow: 'Destination', title: 'Edit destination details',
-    subtitle: 'The time zone must be one the phone knows, like Europe/Lisbon or Asia/Tokyo.',
-    body: [nameInput, countryInput, zoneInput, confirm], cancelLabel: 'Cancel',
+    subtitle: 'The time zone must be one the phone knows, like Europe/Lisbon or Asia/Tokyo. The country decides the language of the "hello" guests see.',
+    body: [nameInput, countryInput, zoneInput, h('div', { class: 'form-label' }, 'Fun facts for the guests'), factsInput, confirm], cancelLabel: 'Cancel',
   });
 }
 
