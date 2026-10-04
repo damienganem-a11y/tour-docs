@@ -170,31 +170,68 @@ function partView(part, sheet) {
   return node;
 }
 
-// The info bar under the header: where the guest is in the trip. During the trip: day x of n, the place, today's date. Before: when it starts.
-// After: that it is over. (Each day is judged in its own destination's time zone.)
-function tripBar(sheet) {
+// ---------- the Today tab (Atlas look): a big photo of the place that fades into the page, the "Next up" bar, and today's cards ----------
+// Which day the Today tab shows: today (each day is judged in its own destination's time zone); before the trip, its first day; after it, its last.
+function dayShown(sheet) {
   const days = sheet.days;
-  const first = days[0]; const last = days[days.length - 1];
-  const cell = (label, value) => h('div', {}, h('small', {}, label), h('b', {}, value));
-  if (!first) return null;
-  // Each day is compared with "today" in its own destination's time zone.
   const isToday = (d) => d.date === todayAt(sheet, d.destination);
   const here = days.find(isToday);
-  if (here) return h('div', { class: 'bar' }, cell('Day', `${here.day} of ${last.day}`), cell('Now in', here.destination), cell('Today', dayDate(here.date)));
-  const before = todayAt(sheet, first.destination) < first.date;
-  if (before) return h('div', { class: 'bar' }, cell('Starts', dayDate(first.date)), cell('Days', String(last.day)), cell('First stop', first.destination));
-  if (todayAt(sheet, last.destination) > last.date) return h('div', { class: 'bar' }, cell('Trip', 'Complete'), cell('Days', String(last.day)), cell('Last stop', last.destination));
+  if (here) return { day: here, label: 'Today' };
+  const first = days[0]; const last = days[days.length - 1];
+  if (todayAt(sheet, first.destination) < first.date) return { day: first, label: `Starts ${dayDate(first.date)}` };
+  if (todayAt(sheet, last.destination) > last.date) return { day: last, label: 'Trip complete' };
   const passed = days.filter((d) => d.date < todayAt(sheet, d.destination)).pop() ?? first; // a travel day with no programme line
-  return h('div', { class: 'bar' }, cell('Day', `${passed.day} of ${last.day}`), cell('Now in', passed.destination), cell('Today', dayDate(todayAt(sheet, passed.destination))));
+  return { day: passed, label: 'In between' };
 }
 
-// The "Next up" card, shown in the header of the programme.
-function nextCard(sheet) {
+// The "Next up" bar: what is coming and when. Tap it to open the tour or the restaurant.
+function nextBar(sheet) {
   const next = nextUp(sheet);
   if (!next) return null;
-  const what = next.part.kind === 'dinner' ? `Dinner at ${next.part.restaurant}` : next.part.name;
-  const detail = next.part.kind === 'dinner' ? `Table for ${next.part.seating}` : [next.part.time ? `Starts ${next.part.time}` : null, next.part.meeting ? `Meet: ${next.part.meeting}` : null].filter(Boolean).join(' · ');
-  return h('div', { class: 'next' }, h('div', { class: 'next-label' }, `Next up · ${dayDate(next.day.date)} · ${next.part.half}`), h('div', { class: 'next-what' }, what), detail ? h('div', { class: 'next-line' }, detail) : null);
+  const part = next.part;
+  const what = part.kind === 'dinner' ? `Dinner at ${part.restaurant}` : part.name;
+  const detail = [dayDate(next.day.date), part.half].join(' · ');
+  const bar = h('div', { class: 'atl-next' },
+    h('div', { class: 'atl-next-text' }, h('small', {}, `Next up · ${detail}`), h('b', {}, what)),
+    next.clock ? h('div', { class: 'atl-next-time' }, next.clock) : null);
+  const target = part.kind === 'dinner' ? part.rest : part.tour;
+  if (target !== undefined && target >= 0) { bar.setAttribute('role', 'button'); bar.tabIndex = 0; bar.addEventListener('click', () => (part.kind === 'dinner' ? openRestaurant(part.rest) : openTour(part.tour))); }
+  return bar;
+}
+
+function todayView(sheet, offline) {
+  const { day, label } = dayShown(sheet);
+  const last = sheet.days[sheet.days.length - 1];
+  const place = sheet.destinations?.find((d) => d.name === day.destination);
+  const next = nextUp(sheet);
+  // The picture: the place where the guest is; failing that, the next tour's picture, then the first destination's.
+  const art = (place?.photo ? { url: place.photo } : null)
+    ?? (next && next.part.kind === 'activity' && next.part.tour >= 0 ? sheet.tours?.[next.part.tour]?.info?.photos?.[0] : null)
+    ?? (sheet.destinations?.[0]?.photo ? { url: sheet.destinations[0].photo } : null);
+  const initial = (sheet.first || '?').trim().charAt(0).toUpperCase();
+  const hero = h('header', { class: `atl-hero${art ? '' : ' atl-hero--plain'}` },
+    art ? picture(art.url, 'atl-hero-art', '') : null,
+    h('div', { class: 'atl-bar' }, h('span', {}, sheet.company || sheet.trip), h('span', { class: 'atl-dot', title: `Hello ${sheet.first}` }, initial)));
+  const title = h('div', { class: 'atl-title' },
+    h('span', { class: 'atl-pill' }, label),
+    h('h1', {}, day.destination),
+    h('p', {}, `Day ${day.day} of ${last.day} · ${dayDate(day.date)}`));
+  const parts = day.parts.map((p) => partView(p, sheet));
+  return [hero, title, h('div', { class: 'atl-body' }, nextBar(sheet), h('div', { class: 'atl-day' }, parts), notifyRow(), myRequestsBlock(), installHint(), offline, staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+}
+
+// The Trip tab: the whole programme, folded by destination.
+function tripView(sheet, offline) {
+  return [h('div', { class: 'atl-head' }, h('small', {}, sheet.company || sheet.trip), h('h1', {}, 'Trip'), h('p', {}, `${sheet.days.length} days · ${sheet.trip}`)),
+    h('div', { class: 'atl-body' }, offline, staleNotice(sheet), ...programmeView(sheet), updatedRow(sheet), creditsLink(sheet))];
+}
+
+// The bottom menu: Today, Trip, Passport. A small dot on Passport when a new stamp has arrived.
+function tabBar(sheet) {
+  const fresh = passportOf(sheet).some((d) => d.given && !isSeen(seenStamps(), d));
+  const tab = (key, text) => h('button', { class: `atl-tab${view.tab === key ? ' on' : ''}`, type: 'button', 'aria-current': view.tab === key ? 'page' : null, onclick: () => { if (view.tab !== key) go({ tab: key }); else window.scrollTo({ top: 0, behavior: 'smooth' }); } },
+    text, key === 'passport' && fresh ? h('i', { class: 'atl-new', 'aria-label': 'New stamp' }) : null);
+  return h('nav', { class: 'atl-tabs', 'aria-label': 'Main menu' }, tab('today', 'Today'), tab('trip', 'Trip'), tab('passport', 'Passport'));
 }
 
 // The programme is folded by destination: tap Lisbon to open its days. Consecutive days in the same place form one group. Everything starts
@@ -243,20 +280,6 @@ const seenStamps = () => { try { return JSON.parse(store.get(STAMPS_SEEN_KEY)) ?
 // The stamps of the trip: given when the first day in a place begins THERE (its own time zone), whatever the phone's clock zone says.
 const passportOf = (sheet) => passportState(sheet.destinations, simulatedDate ?? new Date());
 
-function passportRow(sheet) {
-  const state = passportOf(sheet);
-  if (state.length === 0) return null;
-  const given = state.filter((d) => d.given).length;
-  const fresh = state.filter((d) => d.given && !isSeen(seenStamps(), d)).length;
-  const row = h('button', { class: 'passport-row', type: 'button' },
-    h('span', { class: 'passport-ic' }, '◎'),
-    h('span', { class: 'passport-text' }, h('span', { class: 'passport-title' }, 'My passport'), h('span', { class: 'passport-sub' }, `${given} of ${state.length} stamps`)),
-    fresh > 0 ? h('span', { class: 'passport-new' }, 'NEW') : null,
-    h('span', { class: 'dest-chev' }, '›'));
-  row.addEventListener('click', () => go({ passport: true }));
-  return row;
-}
-
 function passportView(sheet, offline) {
   const state = passportOf(sheet);
   const seen = seenStamps();
@@ -269,10 +292,9 @@ function passportView(sheet, offline) {
   });
   if (!simulatedDate) { const all = state.filter((d) => d.given).map(stampKey); store.set(STAMPS_SEEN_KEY, JSON.stringify([...new Set([...seen, ...all])])); }
   return [
-    h('div', { class: 'tour-top tour-top--plain' }, h('button', { class: 'back', type: 'button', onclick: () => history.back() }, '‹ Back'),
-      h('div', { class: 'options-head' }, h('div', { class: 'options-label' }, sheet.trip), h('h2', {}, 'My passport'))),
-    h('div', { class: 'content content--tour' }, offline, h('div', { class: 'stamp-grid' }, tiles),
-      h('p', { class: 'foot' }, 'A stamp arrives on the first day in each place, at the local time there.')),
+    h('div', { class: 'atl-head' }, h('small', {}, sheet.company || sheet.trip), h('h1', {}, 'Passport'), h('p', {}, `${state.filter((d) => d.given).length} of ${state.length} stamps`)),
+    h('div', { class: 'atl-body' }, offline, h('div', { class: 'stamp-grid' }, tiles),
+      h('p', { class: 'foot' }, 'A stamp arrives on the first day in each place, at the local time there.'), creditsLink(sheet)),
   ];
 }
 
@@ -558,7 +580,7 @@ function tourView(sheet, tour, offline) {
 
 // ---------- which screen is shown ----------
 // The tour page is a step in the phone's history, so the back gesture returns to the programme.
-let view = { tab: 'programme' }; // the programme, or { tour: index } for one tour's page
+let view = { tab: 'today' }; // a tab (today, trip, passport), or { tour: index } etc. for one page inside
 let currentSheet = null;
 let currentOffline = false;
 
@@ -566,7 +588,7 @@ function go(next) { history.pushState({ view: next }, ''); view = next; paint();
 function openTour(index) { go({ tour: index }); }
 function openOptions(index) { go({ options: index }); }
 function openRestaurant(index) { if (index >= 0) go({ rest: index }); }
-window.addEventListener('popstate', (event) => { view = event.state?.view ?? { tab: 'programme' }; if (currentSheet) paint(); });
+window.addEventListener('popstate', (event) => { view = event.state?.view ?? { tab: 'today' }; if (currentSheet) paint(); });
 
 // The company colour is kept for small touches only (a stripe at the top): the rest of the look is fixed, so a light or unusual company colour
 // can never make the app hard to read. Falls back to a calm green when the colour is missing or odd.
@@ -630,14 +652,10 @@ function paint() {
   applyAccent(sheet.accent);
   document.title = sheet.trip;
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
-  if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'programme' }; }
+  if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'today' }; }
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
-  if (view.passport) {
-    app.replaceChildren(...passportView(sheet, offline));
-    return;
-  }
   if (view.credits) { app.replaceChildren(...creditsView(sheet, offline)); return; }
-  if (view.rest !== undefined && !sheet.restaurants?.[view.rest]) view = { tab: 'programme' };
+  if (view.rest !== undefined && !sheet.restaurants?.[view.rest]) view = { tab: 'today' };
   if (view.rest !== undefined) { app.replaceChildren(...restaurantView(sheet, view.rest, offline)); return; }
   if (view.eat !== undefined) { app.replaceChildren(...eatView(sheet, view.eat, offline)); return; }
   if (view.options !== undefined) {
@@ -648,19 +666,9 @@ function paint() {
     app.replaceChildren(...tourView(sheet, tour, offline));
     return;
   }
-  const next = nextUp(sheet);
-  // The picture behind the header: the place where the guest is (or goes next); failing that, the next tour's picture, then the first destination's.
-  const placeOf = (name) => sheet.destinations?.find((d) => d.name === name);
-  const art = (next && placeOf(next.day.destination)?.photo ? { url: placeOf(next.day.destination).photo } : null)
-    ?? (next && next.part.kind === 'activity' && next.part.tour >= 0 ? sheet.tours?.[next.part.tour]?.info?.photos?.[0] : null)
-    ?? (sheet.destinations?.[0]?.photo ? { url: sheet.destinations[0].photo } : null);
-  const hero = h('header', { class: `hero${art ? ' hero--art' : ''}` },
-    art ? picture(art.url, 'hero-art', '') : null,
-    h('div', { class: 'hero-text' },
-      sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
-      h('p', { class: 'sub' }, 'Hello ', h('b', {}, sheet.first), ','),
-      h('h1', {}, sheet.trip)));
-  app.replaceChildren(hero, tripBar(sheet), h('div', { class: 'content' }, updatedRow(sheet), notifyRow(), myRequestsBlock(), nextCard(sheet), passportRow(sheet), installHint(), offline, staleNotice(sheet), ...programmeView(sheet), h('p', { class: 'foot' }, `Updated ${updatedText(sheet.updatedAt)}`), creditsLink(sheet)));
+  const tabs = { today: () => todayView(sheet, offline), trip: () => tripView(sheet, offline), passport: () => passportView(sheet, offline) };
+  if (!tabs[view.tab]) view = { tab: 'today' };
+  app.replaceChildren(...tabs[view.tab](), tabBar(sheet));
 }
 
 // The goodbye shown once the link has expired: the trip owner's own message (or the default one) and, if given, a link to the next trips.
