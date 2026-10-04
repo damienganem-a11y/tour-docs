@@ -407,6 +407,13 @@ export async function notifyGuests(tripId, guestIds, message) {
   if (error) throw error;
   return data;
 }
+// How many of the trip's guests can be reached by notification, and the last messages sent (owner only). Returns { guests_on, recent } or null.
+export async function guestPushOverview(tripId) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc('guest_push_overview', { p_trip: tripId });
+  if (error) throw error;
+  return data;
+}
 export async function notifyMe(message) {
   const supabase = await getClient();
   const { data, error } = await supabase.functions.invoke('send-push', { body: { kind: 'to-me', ...message } });

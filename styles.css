@@ -998,3 +998,4 @@ body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom))
 
 /* v0.81.1: the very top of each screen stays empty for a moment, so nothing readable sits in the band the iPhone softens at the top edge */
 .screen { padding-top: calc(env(safe-area-inset-top) + 44px); }
+.seat-line-row { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }

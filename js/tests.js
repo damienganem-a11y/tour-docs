@@ -36,6 +36,7 @@ import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuC
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAnswerText } from './guestRequests.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
+import { notificationsFor, notifySettings, NOTIFY_KINDS } from './notifyRules.js';
 import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
 import { buildBackup, parseBackup, backupFileName } from './backup.js';
@@ -2810,6 +2811,29 @@ function readZip(bytes) {
   check('Approving a request moves the guest, and the Journal records that it came from a guest request',
     approved.ok && guestPlace(ctxG.state, guest, askResolved.slot).activity?.id === askResolved.to.id && ctxG.entries.at(-1).source === 'guest request');
   check('Once moved, the same request is no longer possible (already on that tour)', !resolveGuestRequest(ctxG.state, askRow).ok);
+  // v0.83.0: what guests are told after a change (all on by default, each kind can be switched off)
+  const nSlot = askResolved.slot; const nTour = askResolved.to; const nPlace = () => guestPlace(ctxG.state, guest, nSlot);
+  check('Every kind of notification is on by default', NOTIFY_KINDS.every((k) => notifySettings(ctxG.state)[k.key] === true));
+  const nMove = await applyChange(ctxG, trip.id, { type: 'move', guestId: guest.id, slotId: nSlot.id, to: { kind: 'leisure' } });
+  const nMsgs = notificationsFor(ctxG.state, nMove.entries);
+  check('A guest moved by the leader is told, and only that guest', nMsgs.length === 1 && nMsgs[0].guestIds.length === 1 && nMsgs[0].guestIds[0] === guest.id && /at leisure/.test(nMsgs[0].body) && nMsgs[0].category === 'changes');
+  await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'notify-settings', settings: { moved: false } });
+  check('Switching "moved" off silences it (and the choice is saved on the trip)', ctxG.state.guestNotify.moved === false && notificationsFor(ctxG.state, nMove.entries).length === 0 && notifySettings(ctxG.state).cancelled === true);
+  check('A choice that is not a kind of notification is refused', !(await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'notify-settings', settings: { nonsense: true } })).ok && !(await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'notify-settings', settings: { moved: 'yes' } })).ok);
+  await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'notify-settings', settings: { moved: true } });
+  await applyChange(ctxG, trip.id, { type: 'move', guestId: guest.id, slotId: nSlot.id, to: { kind: 'activity', activityId: nTour.id }, force: true });
+  const zone = ctxG.state.destinations.find((d) => d.id === nSlot.destinationId).timeZone;
+  const editedTour = await applyChange(ctxG, trip.id, { type: 'edit-activity', activityId: nTour.id, name: nTour.name, meeting: 'The pool bar', startTime: formatTime(nTour.startsAt, zone), capacity: nTour.capacity, short: nTour.short ?? '' });
+  const editMsgs = notificationsFor(ctxG.state, editedTour.entries);
+  check('A new meeting point tells the guests booked on that tour (and not the others)', editedTour.ok && editMsgs.length === 1 && /pool bar/.test(editMsgs[0].body) && editMsgs[0].guestIds.includes(guest.id)
+    && editMsgs[0].guestIds.every((id) => { const b = ctxG.state.bookings[id]?.[nSlot.id]; return b?.kind === 'activity' && b.activityId === nTour.id; }));
+  const cancelled = await applyChange(ctxG, trip.id, { type: 'cancel-tour', activityId: nTour.id });
+  const cancelMsgs = notificationsFor(ctxG.state, cancelled.entries);
+  check('A cancelled tour tells everyone who was on it, with the tour\'s name', cancelled.ok && cancelMsgs.length === 1 && /cancelled/.test(cancelMsgs[0].title) && cancelMsgs[0].guestIds.includes(guest.id) && cancelMsgs[0].body.includes(nTour.name));
+  const undone = await applyChange(ctxG, trip.id, { type: 'undo' });
+  check('Undo says nothing to guests', undone.ok && notificationsFor(ctxG.state, undone.entries).length === 0);
+  check('Without guest links nothing is sent', notificationsFor({ ...ctxG.state, guestLinks: undefined }, cancelled.entries).length === 0);
+
   const { requestsSettingsPage } = await import('./views/settingsRequests.js');
   const requestsNode = requestsSettingsPage({
     roleFor: () => 'owner', requestsFor: () => [], outboxFor: () => [], guestRequestsFor: () => [askRow, { ...askRow, id: 'r2', status: 'approved', note: null, decided_at: '2027-01-02T00:00:00Z' }],

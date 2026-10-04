@@ -27,11 +27,12 @@ import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe,
+  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview,
   pullMyAccess, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
+import { notificationsFor, notifySettings } from './notifyRules.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { PASSCODE_CONFIG } from './passcode-config.js';
 import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate.js';
@@ -239,7 +240,7 @@ const ctx = {
     const result = await applyChange(ctx, trip.id, guestRequestChange(resolved, mode), { request: { id: row.id, at: row.created_at }, source: 'guest request' });
     if (!result.ok) return { ok: false, error: result.error, full: /full|over capacity|capacity/i.test(result.error ?? '') };
     await answerGuestRequest(row.id, 'approved', mode === 'waitlist' ? 'Waiting list' : mode === 'force' ? 'Over capacity' : null).catch(() => {});
-    notifyGuests(row.trip_id, [row.guest_id], guestAnswerText(row, mode === 'waitlist' ? 'waitlist' : 'approved')).catch(() => {});
+    sendAnswer(row, row.note, mode === 'waitlist' ? 'waitlist' : 'approved');
     await loadGuestRequests();
     render({ keepScroll: true });
     return { ok: true };
@@ -249,7 +250,7 @@ const ctx = {
     if (!row) return { ok: false, error: 'Unknown request.' };
     const reason = String(note ?? '').trim().slice(0, 200) || null;
     const recorded = await answerGuestRequest(id, 'declined', reason).catch(() => false);
-    if (recorded) notifyGuests(row.trip_id, [row.guest_id], guestAnswerText({ ...row, note: reason }, 'declined')).catch(() => {});
+    if (recorded) sendAnswer({ ...row, note: reason }, reason, 'declined');
     await loadGuestRequests();
     render({ keepScroll: true });
     return { ok: true };
@@ -285,7 +286,8 @@ const ctx = {
   },
   async testPush() { return notifyMe({ title: 'Tour Docs', body: 'Notifications work on this phone.' }); },
   // A short message to the guests of a trip who said "notify me" in their app (Settings > Guest links). Returns { sent }.
-  async notifyAllGuests(tripId, title, body) { return notifyGuests(tripId, undefined, { title, body, url: './guest/' }); },
+  async notifyAllGuests(tripId, title, body, important = false) { return notifyGuests(tripId, undefined, { title, body, url: './guest/', category: 'announcement', priority: important ? 'important' : 'info' }); },
+  guestPushOverview: (tripId) => guestPushOverview(tripId),
   outboxFor: (tripId) => outbox.filter((r) => r.tripId === tripId),
   async sendRequest(tripId, changes) {
     outbox.push({ id: newId(), tripId, requesterName: state.owner.name, changes, requestedAt: new Date().toISOString() });
@@ -635,14 +637,20 @@ async function loadGuestRequests() {
   } catch { /* the next round tries again */ }
 }
 
-// After a change that matters to guests who said "notify me", tell them: a cancelled tour. (Best effort: a problem never blocks the change.)
+// The guest is told their request was answered (if the owner left that kind of notification on).
+function sendAnswer(row, note, outcome) {
+  const trip = state.trips.get(row.trip_id);
+  if (trip && notifySettings(trip).answer === false) return;
+  notifyGuests(row.trip_id, [row.guest_id], { ...guestAnswerText({ ...row, note }, outcome), category: 'requests', priority: 'info' }).catch(() => {});
+}
+
+// After a change that matters to guests who turned notifications on, tell them (the owner chooses the kinds, Settings > Guest links; all on by default).
+// Best effort: a problem here never blocks the change.
 function notifyAfterChange(trip, entries) {
-  if (ctx.roleFor(trip.id) !== 'owner' || !trip.guestLinks) return;
-  const cancelled = entries.find((e) => e.type === 'cancel-tour' && !e.cause);
-  if (!cancelled) return;
-  const guestIds = [...new Set(entries.filter((e) => e.type === 'move' && e.guestId).map((e) => e.guestId))];
-  if (guestIds.length === 0) return;
-  notifyGuests(trip.id, guestIds, { title: 'A tour was cancelled', body: `"${cancelled.activityLabel}" is cancelled. Please open your programme.`, url: './guest/' }).catch(() => {});
+  if (ctx.roleFor(trip.id) !== 'owner') return;
+  for (const n of notificationsFor(trip, entries)) {
+    notifyGuests(trip.id, n.guestIds, { title: n.title, body: n.body, url: './guest/', category: n.category, priority: 'info' }).catch(() => {});
+  }
 }
 
 let processing = false;

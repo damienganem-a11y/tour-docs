@@ -350,13 +350,51 @@ function notifyRow() {
     : capability.denied ? 'Notifications are blocked: allow them in your phone\'s Settings.'
     : on ? 'Notifications are on: you will hear about changes to your programme.' : 'Get a notification when your programme changes or your request is answered.';
   const action = capability.needsInstall || capability.denied ? null
-    : h('button', { class: 'link-btn', type: 'button', onclick: async (e) => {
+    : h('span', { class: 'notify-actions' }, on ? h('button', { class: 'link-btn', type: 'button', onclick: prefsModal }, 'Choose') : null, h('button', { class: 'link-btn', type: 'button', onclick: async (e) => {
       const button = e.target; button.disabled = true;
       try { if (on) await disablePush(); else await enablePush(); } catch (error) { button.textContent = String(error.message).slice(0, 80); return; }
       paint();
-    } }, on ? 'Turn off' : '🔔 Turn on');
+    } }, on ? 'Turn off' : '🔔 Turn on'));
   return h('div', { class: 'notify-row' }, h('span', { class: 'notify-text' }, text), action);
 }
+// What the guest wants to hear about (kept on the phone and sent to the server with the phone's time zone, so quiet hours follow the guest around the world).
+const PREFS_KEY = 'tourdocs.guest.pushprefs';
+const DEFAULT_PREFS = { changes: true, requests: true, reminders: true, announcements: true, quiet: true };
+const loadPrefs = () => { try { return { ...DEFAULT_PREFS, ...JSON.parse(store.get(PREFS_KEY)) }; } catch { return { ...DEFAULT_PREFS }; } };
+const phoneZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+async function savePrefs(prefs) {
+  store.set(PREFS_KEY, JSON.stringify(prefs));
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  if (subscription) {
+    await callRpc('set_guest_push_prefs', { p_token: currentToken(), p_endpoint: subscription.endpoint, p_prefs: prefs, p_tz: phoneZone() });
+    store.set('tourdocs.guest.pushtz', phoneZone());
+  }
+}
+// The guest has travelled to another time zone: tell the server, so "quiet at night" means THEIR night.
+async function syncPushZone() {
+  if (store.get(PUSH_KEY) !== '1' || store.get('tourdocs.guest.pushtz') === phoneZone()) return;
+  try { await savePrefs(loadPrefs()); } catch { /* the next refresh tries again */ }
+}
+function prefsModal() {
+  const prefs = loadPrefs();
+  const rows = [
+    ['changes', 'Changes to my programme', 'a tour cancelled or moved, a new time or meeting point, my dinner'],
+    ['requests', 'Answers to my requests', 'when my leader answers a request to switch tours'],
+    ['reminders', 'Reminders', 'for example the evening before a tour'],
+    ['announcements', 'Messages from my leader', 'general news for the whole group'],
+  ].map(([key, label, hint]) => {
+    const box = h('input', { type: 'checkbox', 'aria-label': label }); box.checked = prefs[key] !== false;
+    box.addEventListener('change', () => { prefs[key] = box.checked; savePrefs(prefs).catch(() => {}); });
+    return h('label', { class: 'pref-row' }, box, h('span', {}, h('b', {}, label), h('small', {}, hint)));
+  });
+  const quiet = h('input', { type: 'checkbox', 'aria-label': 'Quiet at night' }); quiet.checked = prefs.quiet !== false;
+  quiet.addEventListener('change', () => { prefs.quiet = quiet.checked; savePrefs(prefs).catch(() => {}); });
+  const overlay = modal('What to be told about', [...rows,
+    h('label', { class: 'pref-row' }, quiet, h('span', {}, h('b', {}, 'Quiet at night'), h('small', {}, 'Between 10 pm and 7 am where you are, notifications arrive without sound. Important messages from your leader always arrive with sound.')))],
+  [h('button', { class: 'btn-link', type: 'button', onclick: () => overlay.remove() }, 'Done')]);
+}
+
 async function enablePush() {
   const key = await callRpc('get_push_public_key', {});
   if (!key) throw new Error('Notifications are not available yet.');
@@ -367,6 +405,7 @@ async function enablePush() {
   const result = await callRpc('save_guest_push', { p_token: currentToken(), p_endpoint: fields.endpoint, p_p256dh: fields.p256dh, p_auth: fields.auth });
   if (!result.ok) throw new Error('Could not save the notification.');
   store.set(PUSH_KEY, '1');
+  await savePrefs(loadPrefs()).catch(() => {}); // sends the choices and the time zone
 }
 async function disablePush() {
   const registration = await navigator.serviceWorker.ready;
@@ -710,6 +749,7 @@ async function refresh() {
     lastChecked = new Date();
     status = 'ok';
     loadMyRequests();
+    syncPushZone();
     const label = document.querySelector('.updated-text'); // the "checked" time moves on without redrawing the page
     if (label && !refreshNote && currentSheet?.updatedAt) label.textContent = `Updated ${updatedText(currentSheet.updatedAt)} · checked ${clockOf(lastChecked)}`;
     store.set(SHEET_KEY, JSON.stringify(result.sheet));

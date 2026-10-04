@@ -435,3 +435,9 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .btn-link { border: 0; cursor: pointer; }
 .pass-body .part { grid-template-columns: 104px 1fr; }
 .more { border-bottom-width: 2px; }
+
+.notify-actions { display: flex; gap: 8px; flex: none; }
+.pref-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+.pref-row input { width: 22px; height: 22px; margin-top: 2px; flex: none; }
+.pref-row span { display: flex; flex-direction: column; }
+.pref-row small { color: var(--muted); font-size: 13px; }

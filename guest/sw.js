@@ -1,6 +1,6 @@
 // The guest app's service worker: keeps the app's own files on the phone so it opens with no internet. (The programme itself is kept by
 // guest.js.) Network first, with the kept copy as the fallback. Its scope is this folder only: it never touches the leader's app.
-const VERSION = '0.82.0'; // keep equal to GUEST_VERSION in the tests
+const VERSION = '0.83.0'; // keep equal to GUEST_VERSION in the tests
 const CACHE = `tour-docs-guest-${VERSION}`;
 const FILES = ['./', 'index.html', 'guest.css', 'guest.js', 'passport.js', 'stamps.js', 'manifest.webmanifest', '../js/supabase-config.js', '../js/pushUtil.js',
   '../icons/apple-touch-icon.png', '../icons/icon-192.png', '../icons/icon-512.png'];
@@ -27,7 +27,7 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
   let message = { title: 'Tour Docs', body: '', url: './' };
   try { message = { ...message, ...event.data.json() }; } catch { /* a push with no readable content: show the default */ }
-  event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: '../icons/icon-192.png', badge: '../icons/icon-192.png', data: { url: message.url } }));
+  event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: '../icons/icon-192.png', badge: '../icons/icon-192.png', data: { url: message.url }, silent: message.silent === true }));
 });
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

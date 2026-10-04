@@ -15,7 +15,7 @@
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.82.0'; // keep equal to js/version.js
+const VERSION = '0.83.0'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
 const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)
@@ -47,6 +47,7 @@ const FILES = [
   'js/menuCard.js',
   'js/guestRequests.js',
   'js/pushUtil.js',
+  'js/notifyRules.js',
   'js/sampleMenus.js',
   'js/gate.js',
   'js/ids.js',
@@ -159,7 +160,7 @@ function withTimeout(promise, milliseconds) {
 self.addEventListener('push', (event) => {
   let message = { title: 'Tour Docs', body: '', url: './' };
   try { message = { ...message, ...event.data.json() }; } catch { /* a push with no readable content: show the default */ }
-  event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: message.url } }));
+  event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: message.url }, silent: message.silent === true }));
 });
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

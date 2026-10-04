@@ -223,6 +223,7 @@ export function summarize(batch) {
   }
   if (batch.kind === 'guest-links') {
     const { action, count, guestName } = batch.entries[0];
+    if (action === 'notify-settings') return 'The kinds of notification guests receive were changed';
     if (action === 'farewell') return 'The message guests read after the trip was changed';
     if (action === 'options-on' || action === 'options-off') return action === 'options-on' ? 'Guests can now see the other options of their tours' : 'Guests can no longer see the other options of their tours';
     const who = guestName ?? plural(count, 'guest');
