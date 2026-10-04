@@ -2868,6 +2868,8 @@ function readZip(bytes) {
   check('The sheet carries its expiry day, so the guest app also stops showing it with no connection', buildGuestSheet(ctxG.state, ctxG.state.guests[0], 'x').expiresOn === expiryDay);
   check('A wall-clock time in a place becomes the exact moment: 07:30 in Siem Reap is 00:30 UTC; 07:30 in New York in September is 11:30 UTC',
     wallToInstant('2027-09-08', '07:30', 'Asia/Phnom_Penh').toISOString() === '2027-09-08T00:30:00.000Z' && wallToInstant('2027-09-08', '07:30', 'America/New_York').toISOString() === '2027-09-08T11:30:00.000Z');
+  const appJsText = await (await fetch('./js/app.js')).text();
+  check('A notification sent to guests opens the guest app\'s own folder ("./"), never "./guest/" (that address does not exist from inside it)', !appJsText.includes("url: './guest/'"));
   const guestJsText = await (await fetch('../guest/guest.js')).text();
   check('The guest app has no sentence about dinner being included or not (it is the trip\'s own business)', !/dinner is included/i.test(guestJsText) && /allergy or dietary/.test(guestJsText));
   const rows = guestSheetRows(ctxG.state, 'x');

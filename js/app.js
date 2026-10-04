@@ -287,7 +287,7 @@ const ctx = {
   },
   async testPush() { return notifyMe({ title: 'Tour Docs', body: 'Notifications work on this phone.' }); },
   // A short message to the guests of a trip who said "notify me" in their app (Settings > Guest links). Returns { sent }.
-  async notifyAllGuests(tripId, title, body, important = false) { return notifyGuests(tripId, undefined, { title, body, url: './guest/', category: 'announcement', priority: important ? 'important' : 'info' }); },
+  async notifyAllGuests(tripId, title, body, important = false) { return notifyGuests(tripId, undefined, { title, body, url: './', category: 'announcement', priority: important ? 'important' : 'info' }); },
   guestPushOverview: (tripId) => guestPushOverview(tripId),
   makeGuestCode: (tripId, guestId) => makeGuestCode(tripId, guestId),
   listScheduled: (tripId) => listScheduled(tripId),
@@ -657,7 +657,7 @@ function sendAnswer(row, note, outcome) {
 function notifyAfterChange(trip, entries) {
   if (ctx.roleFor(trip.id) !== 'owner') return;
   for (const n of notificationsFor(trip, entries)) {
-    notifyGuests(trip.id, n.guestIds, { title: n.title, body: n.body, url: './guest/', category: n.category, priority: 'info' }).catch(() => {});
+    notifyGuests(trip.id, n.guestIds, { title: n.title, body: n.body, url: './', category: n.category, priority: 'info' }).catch(() => {});
   }
 }
 
