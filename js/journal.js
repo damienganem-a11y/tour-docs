@@ -8,7 +8,7 @@
 import { joinNames, plural, countIn, whoIsWhere } from './rules.js';
 
 // The kinds of journal lines that belong to a roll call (see changes.js).
-const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // The return count was taken out of the app (v0.7.1). A phone that used it (v0.7.0) still has its lines in the journal:
 // they stay readable, but can no longer be undone.
 const RETURN_COUNT_TYPES = new Set(['return-start', 'return-in', 'return-out']);
@@ -266,6 +266,7 @@ const alphaNames = (entries) => entries.map((e) => e.guestName).sort((a, b) => a
 // One line for one roll call action (a whole travel party checked in together is one action).
 function summarizeRollCall(batch) {
   const entry = batch.entries[0];
+  if (entry.type === 'rollcall-takeover') return `${entry.toName} took over the roll call from ${entry.fromName}: ${entry.activityLabel}`;
   if (entry.type === 'rollcall-start') return `Started the roll call: ${entry.activityLabel} (${entry.vehicles.join(', ')})`;
   if (entry.type === 'rollcall-end') {
     // The guests End roll call moved to At leisure are the "move" lines of the same action.

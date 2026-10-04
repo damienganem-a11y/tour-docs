@@ -2938,6 +2938,34 @@ function readZip(bytes) {
   check('Late in the evening the rehearsal starts tomorrow morning instead', late.start === '2027-03-11');
 }
 
+// --- Team: one destination, one person per roll call ---
+{
+  const ctxT = makeCtx();
+  const t = ctxT.state;
+  const act = t.activities.find((a) => a.name === 'Alfama walking tour');
+  const slot = t.slots.find((s) => s.id === act.slotId);
+  const elsewhere = t.slots.find((s) => s.destinationId !== slot.destinationId);
+  const anna = { id: 'u-anna', name: 'Anna Team', role: 'team', scope: slot.destinationId };
+  const ben = { id: 'u-ben', name: 'Ben Team', role: 'team', scope: null };
+  const booked = t.guests.find((g) => t.bookings[g.id]?.[slot.id]?.activityId === act.id);
+  const moveAt = (s) => [{ type: 'move', guestId: booked.id, slotId: s.id, to: { kind: 'leisure' } }];
+  const outside = validateChanges(t, anna, moveAt(elsewhere));
+  check('A colleague tied to one destination cannot change another one (and is told which one is theirs)', !outside.ok && /You work in/.test(outside.error) && validateChanges(t, anna, moveAt(slot)).ok && validateChanges(t, ben, moveAt(elsewhere)).ok);
+  const started = await applyChange(ctxT, t.id, { type: 'rollcall-start', activityId: act.id }, { as: anna });
+  const rollCall = ctxT.state.rollCalls.find((r) => r.activityId === act.id);
+  check('The colleague who asks to start a roll call is the one running it (not the owner whose device applied it)', started.ok && rollCall.startedBy.id === 'u-anna' && rollCall.startedBy.name === 'Anna Team');
+  const tap = (who) => validateChanges(ctxT.state, who, [{ type: 'checkin', activityId: act.id, guestId: booked.id, vehicleId: rollCall.vehicles[0].id }]);
+  const blocked = tap(ben);
+  check('Another colleague cannot change a roll call someone else runs; the runner can', !blocked.ok && /Anna Team is running this roll call/.test(blocked.error) && tap(anna).ok);
+  check('Nobody can start a roll call twice', !validateChanges(ctxT.state, ben, [{ type: 'rollcall-start', activityId: act.id }]).ok);
+  check('A colleague cannot take over; the owner can, and then Anna is locked out', !validateChanges(ctxT.state, anna, [{ type: 'rollcall-takeover', activityId: act.id }]).ok);
+  const took = await applyChange(ctxT, t.id, { type: 'rollcall-takeover', activityId: act.id });
+  const afterTake = ctxT.state.rollCalls.find((r) => r.activityId === act.id);
+  check('The owner takes the roll call over: the journal says so, and the earlier runner can no longer change it', took.ok && afterTake.runBy.id === ctxT.owner.id && !tap(anna).ok && groupBatches(ctxT.entries).map(summarize).some((x) => /took over the roll call from Anna Team/.test(x)));
+  const back = await applyChange(ctxT, t.id, { type: 'undo' });
+  check('Undo of a take-over gives the roll call back to Anna', back.ok && !ctxT.state.rollCalls.find((r) => r.activityId === act.id).runBy && tap(anna).ok);
+}
+
 // --- QR codes (the guests' links). The picture was also decoded by a real QR reader when it was written: see SPEC.md ---
 {
   const cells = qrCells('https://example.com/guest/#eB21LnCclPB3iCj2kGIjuA');

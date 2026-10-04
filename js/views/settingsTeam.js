@@ -47,10 +47,10 @@ function accessSheet(member) {
 }
 
 // One person of the team: the e-mail address (wraps, however long) with the role under it, then the two buttons side by side.
-export function memberCard(member, { resend, remove, access }) {
+export function memberCard(member, { resend, remove, access, scopeName }) {
   return h('div', { class: 'card team-member' },
     h('div', { class: 'act-name team-email' }, member.email),
-    h('div', { class: 'muted' }, ROLE_LABEL[member.role] ?? member.role),
+    h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · only ${scopeName}` : ''}`),
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: access }, 'QR code'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Re-send email'),
@@ -76,6 +76,7 @@ export function teamSettingsPage(ctx, trip) {
       list.replaceChildren(...(members.length === 0
         ? [h('p', { class: 'empty' }, 'Nobody else yet. Invite a colleague below.')]
         : members.map((m) => memberCard(m, {
+            scopeName: m.destination_id ? (trip.destinations.find((d) => d.id === m.destination_id)?.name ?? 'one destination') : null,
             access: () => accessSheet(m),
             resend: async () => showToast(await sendSignInEmail(m.email)),
             remove: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
@@ -87,6 +88,13 @@ export function teamSettingsPage(ctx, trip) {
 
   const email = h('input', { class: 'text-input', type: 'email', inputmode: 'email', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'E-mail address of the person' });
   const role = h('select', { class: 'text-input', 'aria-label': 'Role' }, MEMBER_ROLES.map((r) => h('option', { value: r }, ROLE_LABEL[r])));
+  // A Team colleague can be tied to ONE destination (a local team member): they see the whole trip but can only change things there.
+  const whereField = h('div', { class: 'form-field' });
+  const where = h('select', { class: 'text-input', 'aria-label': 'Where they can work' }, h('option', { value: '' }, 'Everywhere on the trip'), [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => h('option', { value: d.id }, `Only ${d.name}`)));
+  whereField.append(h('label', { class: 'form-label' }, 'Where they can work', where), h('div', { class: 'form-hint' }, 'A local team member can be tied to one destination: they still see the whole trip, but can only change things there.'));
+  const syncWhere = () => { whereField.hidden = role.value !== 'team'; };
+  syncWhere();
+  role.addEventListener('change', syncWhere);
   const invite = h('button', {
     class: 'btn', type: 'button',
     onclick: async () => {
@@ -94,7 +102,7 @@ export function teamSettingsPage(ctx, trip) {
       const address = cleanInviteEmail(email.value);
       if (!address) { say('That does not look like an e-mail address.'); return; }
       try {
-        await inviteMember(trip.id, address, role.value);
+        await inviteMember(trip.id, address, role.value, role.value === 'team' && where.value ? where.value : null);
         email.value = '';
         load();
         showToast(await sendSignInEmail(address)); // one tap: invited AND e-mailed
@@ -112,5 +120,6 @@ export function teamSettingsPage(ctx, trip) {
     h('h2', { class: 'section-title' }, 'Invite someone'),
     h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'E-mail address', email), h('div', { class: 'form-hint' }, 'They receive the usual sign-in e-mail (a code, and a link that opens the app). One tap to invite, one tap for them.')),
     h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Role', role)),
+    whereField,
     invite, message);
 }

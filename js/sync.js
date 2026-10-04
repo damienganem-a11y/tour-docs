@@ -266,21 +266,21 @@ export function roleOf(ownerId, userId, invitedAs) {
 export async function pullMyAccess() {
   const supabase = await getClient();
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { userId: null, invitations: new Map() };
-  const { data, error } = await supabase.from('trip_members').select('trip_id, role').ilike('email', session.user.email ?? '');
+  if (!session) return { userId: null, invitations: new Map(), scopes: new Map() };
+  const { data, error } = await supabase.from('trip_members').select('trip_id, role, destination_id').ilike('email', session.user.email ?? '');
   if (error) throw error;
-  return { userId: session.user.id, invitations: new Map(data.map((row) => [row.trip_id, row.role])) };
+  return { userId: session.user.id, invitations: new Map(data.map((row) => [row.trip_id, row.role])), scopes: new Map(data.filter((row) => row.destination_id).map((row) => [row.trip_id, row.destination_id])) };
 }
 
 export async function listMembers(tripId) {
   const supabase = await getClient();
-  const { data, error } = await supabase.from('trip_members').select('email, role, created_at').eq('trip_id', tripId).order('created_at', { ascending: true });
+  const { data, error } = await supabase.from('trip_members').select('email, role, destination_id, created_at').eq('trip_id', tripId).order('created_at', { ascending: true });
   if (error) throw error;
   return data;
 }
-export async function inviteMember(tripId, email, role) {
+export async function inviteMember(tripId, email, role, destinationId = null) {
   const supabase = await getClient();
-  const { error } = await supabase.from('trip_members').upsert({ trip_id: tripId, email, role }, { onConflict: 'trip_id,email' });
+  const { error } = await supabase.from('trip_members').upsert({ trip_id: tripId, email, role, destination_id: role === 'team' ? destinationId : null }, { onConflict: 'trip_id,email' });
   if (error) throw error;
 }
 export async function removeMember(tripId, email) {

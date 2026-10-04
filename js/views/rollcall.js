@@ -62,6 +62,14 @@ export function rollCallView(ctx, tripId, activityId) {
   const pending = state.expected; // the guests still to come
   const inVehicle = (vehicle) => state.perVehicle.get(vehicle.id) ?? [];
 
+  // Who runs this roll call: the person who started it, or the owner who took it over. Only that person (and the owner) can change it.
+  const me = ctx.userFor ? ctx.userFor(trip.id) : ctx.owner;
+  const runner = rollCall.runBy ?? rollCall.startedBy;
+  const runnerNotice = readOnly || !runner || runner.id === me.id ? null : h('div', { class: 'card team-member' },
+    h('div', { class: 'act-name' }, `${runner.name} is running this roll call`),
+    h('div', { class: 'muted' }, me.role === 'owner' ? 'You can take it over: from then on only you can change it.' : `Only ${runner.name} (or the owner, by taking it over) can change it. You can look.`),
+    me.role === 'owner' ? h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { const result = await applyChange(ctx, trip.id, { type: 'rollcall-takeover', activityId: activity.id }); if (result.ok) { showToast('You are running this roll call now'); ctx.refresh(); } else showToast(result.error, true); } }, 'Take over')) : null);
+
   // Makes one change (or several together); if it works the screen is redrawn (keeping its place), if not a message says why.
   async function change(changes) {
     const result = await applyChange(ctx, trip.id, changes);
@@ -260,6 +268,7 @@ export function rollCallView(ctx, tripId, activityId) {
           back: backTo, eyebrow: `Roll call ended · ${rollCall.endedBy?.name ?? ''}`, title: activity.name,
           subtitle: [...where, `${state.checkedIn.length} checked in`, endedAt].filter(Boolean).join(' · '),
         }),
+        runnerNotice,
         h('div', { class: 'vehicles' }, vehicleButtons),
         readOnly ? null : undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
         readOnly ? null : h('button', { class: 'btn', type: 'button', onclick: async () => { await reopenRollCall(ctx, trip.id, activity); } }, 'Re-open roll call'),
@@ -277,6 +286,7 @@ export function rollCallView(ctx, tripId, activityId) {
         title: activity.name,
         subtitle: [...where, `${state.expected.length} still expected`].filter(Boolean).join(' · '),
       }),
+      runnerNotice,
       search,
       h('div', { class: 'vehicles' }, vehicleButtons, addVehicle),
       readOnly ? null : undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),

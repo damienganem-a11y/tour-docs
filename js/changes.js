@@ -23,6 +23,7 @@
 //   Roll call (see rollcall.js), each one on its own:
 //   { type: 'rollcall-start', activityId }
 //   { type: 'rollcall-end', activityId, moveGuestIds }       End roll call: those guests go to At leisure ("moved by End roll call")
+//   { type: 'rollcall-takeover', activityId }                The OWNER takes over a roll call that a colleague runs (only the person running a roll call can change it; the owner always can)
 //   { type: 'rollcall-reopen', activityId }                  Re-open roll call: the guests End roll call moved to At leisure go back on the tour
 //   { type: 'checkin', activityId, guestId, vehicleId }      the guest goes into that vehicle (or moves to it)
 //   { type: 'checkout', activityId, guestId }                the guest comes out of the vehicle: back on the list
@@ -121,7 +122,7 @@ import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 
 // The changes that belong to a roll call. Each one is made on its own (never mixed with others).
-const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // Settings changes (step 7): each is made on its own, like cancel-tour and undo.
 const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant', 'restaurant-card']);
 // Booking a dinner table, or adding to an existing one (Phase 3 step 2a/2b): also made on its own,
@@ -157,6 +158,9 @@ export function validateChanges(trip, user, changes, journal = []) {
   if (!canUser(user, 'change')) return fail('You do not have permission to change bookings.');
   if (!trip) return fail('This trip is not on this phone.');
   if (user?.role === 'team' && Array.isArray(changes) && !changes.every((c) => TEAM_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
+  if (user?.role === 'team' && Array.isArray(changes)) {
+    for (const c of changes) { const limit = teamLimit(trip, user, c); if (limit) return fail(limit); }
+  }
   // Archived trips are read-only, except for undoing and the archive/delete actions themselves (so
   // a trip can be un-archived, or a deleted trip reinstated, without needing to be un-archived first).
   if (trip.archivedAt && changes[0]?.type !== 'undo' && !TRIP_TYPES.has(changes[0]?.type) && !DIETARY_TYPES.has(changes[0]?.type)) {
@@ -187,7 +191,7 @@ export function validateChanges(trip, user, changes, journal = []) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
     if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
     for (const change of changes) {
-      const result = validateRollCall(trip, change);
+      const result = validateRollCall(trip, change, user);
       if (!result.ok) return result;
     }
     return { ok: true };
@@ -455,6 +459,35 @@ function validateSettingsChange(trip, change) {
   return { ok: true };
 }
 
+// What a Team colleague may NOT do even among the things Team can do (SPEC.md, "Team: one destination, one person per roll call"):
+//   - a colleague tied to one destination (user.scope) changes nothing outside it;
+//   - a roll call is run by ONE person (the one who started it, or the owner who took it over): the others cannot change it.
+// Returns a sentence, or null.
+export function slotOfChange(trip, change) {
+  if (change.slotId) return trip.slots.find((s) => s.id === change.slotId) ?? null;
+  const activity = change.activityId ? trip.activities.find((a) => a.id === change.activityId) : null;
+  if (activity) return trip.slots.find((s) => s.id === activity.slotId) ?? null;
+  const booking = change.bookingId ? (trip.dinnerBookings ?? []).find((b) => b.id === change.bookingId) : null;
+  if (booking) return trip.slots.find((s) => s.id === booking.slotId) ?? null;
+  return null;
+}
+function teamLimit(trip, user, change) {
+  if (user.scope) {
+    const slot = slotOfChange(trip, change);
+    if (!slot) return 'This change cannot be placed in a destination, so only the owner can make it.';
+    if (slot.destinationId !== user.scope) {
+      const mine = trip.destinations.find((d) => d.id === user.scope)?.name ?? 'your destination';
+      return `You work in ${mine}: you can only change things there.`;
+    }
+  }
+  if (ROLLCALL_TYPES.has(change.type) && change.type !== 'rollcall-start') {
+    const rollCall = findRollCall(trip, change.activityId);
+    const runner = rollCall && (rollCall.runBy ?? rollCall.startedBy);
+    if (runner && runner.id !== user.id) return `${runner.name} is running this roll call. Only ${runner.name} (or the owner, by taking over) can change it.`;
+  }
+  return null;
+}
+
 // Checks the fields shared by add-restaurant and edit-restaurant (see the list at the top).
 function validateRestaurantFields(change) {
   if (isBlank(change.name)) return fail('Give the restaurant a name.');
@@ -679,7 +712,7 @@ function validateSplitChange(trip, change) {
 }
 
 // Checks one roll call change (see the list at the top).
-function validateRollCall(trip, change) {
+function validateRollCall(trip, change, user) {
   const activity = trip.activities.find((a) => a.id === change.activityId);
   if (!activity) return fail('That activity does not exist.');
   const rollCall = findRollCall(trip, activity.id);
@@ -691,6 +724,11 @@ function validateRollCall(trip, change) {
   }
 
   if (!rollCall) return fail(`There is no roll call for "${activity.name}".`);
+  if (change.type === 'rollcall-takeover') {
+    if (rollCall.endedAt) return fail('This roll call has ended: there is nothing to take over.');
+    if ((rollCall.runBy ?? rollCall.startedBy).id === user.id) return fail('You are already running this roll call.');
+    return { ok: true };
+  }
   if (change.type === 'rollcall-reopen') {
     if (!rollCall.endedAt) return fail('This roll call is not ended, so there is nothing to re-open.');
     if (activity.cancelled) return fail(`"${activity.name}" is cancelled.`);
@@ -905,7 +943,7 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     if (change.type === 'rollcall-start') {
       const rollCall = {
         id: newId(), activityId: activity.id, startedAt: at,
-        startedBy: { id: ctx.owner.id, name: ctx.owner.name },
+        startedBy: { id: actor.id, name: actor.name }, // whoever asked (a colleague's request is applied by the owner's device, but the colleague is the one running it)
         endedAt: null, vehicles: defaultVehicles(trip.defaultVehicles ?? 4), checkins: {}, movedByEnd: [],
       };
       (next.rollCalls ??= []).push(rollCall);
@@ -952,6 +990,12 @@ async function doApply(ctx, tripId, changes, opts = {}) {
         checkedInCount, movedCount: change.moveGuestIds.length, keptCount: booked.length - checkedInCount - change.moveGuestIds.length,
       });
       for (const id of change.moveGuestIds) move(trip.guests.find((g) => g.id === id), slot, { kind: 'leisure' }, 'end-roll-call');
+    } else if (change.type === 'rollcall-takeover') {
+      const rollCall = next.rollCalls.find((r) => r.activityId === activity.id);
+      const from = rollCall.runBy ?? null;
+      const previous = rollCall.runBy ?? rollCall.startedBy;
+      rollCall.runBy = { id: actor.id, name: actor.name };
+      entries.push({ ...base(), type: 'rollcall-takeover', ...about, fromRunBy: from, fromName: previous.name, toName: actor.name });
     } else if (change.type === 'rollcall-reopen') {
       // Re-open roll call: the roll call is open again, with its vehicles and check-ins. Everybody End roll call moved to
       // At leisure, and who is still At leisure, goes back on the tour, as far as there are places (a tour that filled up
@@ -1447,6 +1491,12 @@ function undoEntry(next, entry, base, entries) {
     return;
   }
 
+  if (entry.type === 'rollcall-takeover') {
+    const rollCall = next.rollCalls.find((r) => r.id === entry.rollCallId);
+    if (entry.fromRunBy) rollCall.runBy = entry.fromRunBy; else delete rollCall.runBy;
+    entries.push({ ...base(), type: 'rollcall-takeover', cause: 'undo', ...about, fromRunBy: null, fromName: entry.toName, toName: entry.fromName });
+    return;
+  }
   if (entry.type === 'rollcall-start') {
     next.rollCalls = next.rollCalls.filter((r) => r.id !== entry.rollCallId); // as if it was never started
     entries.push({ ...base(), type: 'rollcall-remove', cause: 'undo', ...about });

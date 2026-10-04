@@ -28,7 +28,7 @@ import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
-  pullMyAccess, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
+  pullMyAccess, listMembers, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
@@ -55,6 +55,7 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // The person's role on each trip that is shared with them: 'owner', 'team' or 'viewer' (SPEC.md, Team). A trip that is not in
 // this list is the person's own (a local trip, or one created here), so they are its owner. Kept on the device so it works offline.
 const tripRoles = new Map();
+const tripScopes = new Map(); // tripId -> the one destination a Team colleague is tied to (absent = the whole trip)
 
 // Owner only: "Preview as View only / Team" (views/preview.js). While it is on, every screen is drawn as that role would see it, and nothing
 // can be changed or sent. Kept per browser tab (sessionStorage), so closing the app always ends it.
@@ -211,6 +212,7 @@ const ctx = {
   documentsInfo: () => documentsInfo,
   // The role on this trip, and the person with that role: what the one change function checks (a viewer cannot change anything).
   roleFor: (tripId) => previewRole ?? tripRoles.get(tripId) ?? 'owner',
+  scopeFor: (tripId) => (previewRole ? null : tripScopes.get(tripId) ?? null),
   get previewRole() { return previewRole; },
   setPreview(role) {
     previewRole = role === 'viewer' || role === 'team' ? role : null;
@@ -225,7 +227,7 @@ const ctx = {
     if (trip) await sendGuestSheets(trip, { force: true });
     return ctx.guestSheetStatus();
   },
-  userFor: (tripId) => ({ ...state.owner, role: ctx.roleFor(tripId) }),
+  userFor: (tripId) => ({ ...state.owner, role: ctx.roleFor(tripId), scope: ctx.scopeFor(tripId) }),
   // Requests: a Team colleague asks, the owner's device applies (sendRequest is called by the one change function).
   requestsFor: (tripId) => requestRows.filter((r) => r.trip_id === tripId),
   guestRequestsFor: (tripId) => guestRequestRows.filter((r) => r.trip_id === tripId),
@@ -532,6 +534,7 @@ async function start() {
     companyLook = (await dbGet('settings', 'companyLook')) ?? null;
     companyLookAsked = Boolean(await dbGet('settings', 'companyLookAsked'));
     for (const [id, role] of Object.entries((await dbGet('settings', 'tripRoles')) ?? {})) tripRoles.set(id, role);
+    for (const [id, scope] of Object.entries((await dbGet('settings', 'tripScopes')) ?? {})) tripScopes.set(id, scope);
     outbox = (await dbGet('settings', 'outbox')) ?? [];
     for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); }
     for (const entry of await dbAll('journal')) {
@@ -679,6 +682,14 @@ function syncAutoMessagesSoon(tripId) {
   autoTimers.set(tripId, setTimeout(() => syncAutoMessages(tripId), 4000));
 }
 
+// The destination a colleague is tied to, asked from the server's member list (the owner's device is the one that applies requests, so it decides).
+// If the list cannot be read, the request is NOT applied this round (it stays waiting): it never falls back to "the whole trip".
+async function scopeOfRequester(row) {
+  const members = await listMembers(row.trip_id);
+  const member = members.find((m) => String(m.email).toLowerCase() === String(row.requester_email ?? '').toLowerCase());
+  return member?.destination_id ?? null;
+}
+
 let processing = false;
 async function processRequests() {
   if (processing || !state.owner || hasSession === false || !navigator.onLine) return;
@@ -689,7 +700,7 @@ async function processRequests() {
       // only the owner's own devices apply requests, and only for trips they have; oldest first, so the earlier request wins
       if (row.status !== 'pending' || ctx.roleFor(row.trip_id) !== 'owner' || !state.trips.has(row.trip_id)) continue;
       if (!(await claimRequest(row.id))) continue; // another of the owner's devices has it
-      const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team' };
+      const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: await scopeOfRequester(row) };
       let result;
       try { result = await applyChange(ctx, row.trip_id, row.changes, { as, request: { id: row.id, at: row.requested_at } }); }
       catch { result = { ok: false, error: 'It could not be applied.' }; }
@@ -811,10 +822,14 @@ function pullSync() {
 // invited to), and remembers it on the device. Never blocks the pull: if it cannot be asked, the roles already known stay.
 async function learnRoles(remote) {
   try {
-    const { userId, invitations } = await pullMyAccess();
+    const { userId, invitations, scopes } = await pullMyAccess();
     if (!userId) return;
-    for (const row of remote) tripRoles.set(row.id, roleOf(row.owner_id, userId, invitations.get(row.id)));
+    for (const row of remote) {
+      tripRoles.set(row.id, roleOf(row.owner_id, userId, invitations.get(row.id)));
+      if (scopes.has(row.id)) tripScopes.set(row.id, scopes.get(row.id)); else tripScopes.delete(row.id);
+    }
     await dbPut('settings', Object.fromEntries(tripRoles), 'tripRoles');
+    await dbPut('settings', Object.fromEntries(tripScopes), 'tripScopes');
   } catch { /* keep what is known */ }
 }
 
