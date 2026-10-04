@@ -727,11 +727,10 @@ function showProblem(title, text) {
   app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
 }
 
-// No link on this phone yet (for instance an app just put on the Home Screen, which starts empty): the guest types the 8-digit code the leader shows
-// next to the QR code, or pastes the link they were sent. The code is swapped for the long secret by the server (claim_guest_code).
+// No link on this phone yet (for instance an app just put on the Home Screen, which starts empty): the guest types the 4-digit one-time code the leader makes for this device, or pastes the link they were sent. The code is swapped for the long secret by the server (claim_guest_code).
 function showNoLink() {
   currentSheet = null;
-  const field = h('input', { class: 'paste-field', type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: 'Code, 8 digits', 'aria-label': 'Your code or link', autocapitalize: 'none', autocorrect: 'off' });
+  const field = h('input', { class: 'paste-field', type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: 'Code, 4 digits', 'aria-label': 'Your code or link', autocapitalize: 'none', autocorrect: 'off' });
   const message = h('p', { class: 'muted' }, '');
   const keep = (token) => { store.set(TOKEN_KEY, token); store.remove(SHEET_KEY); window.location.hash = token; window.location.reload(); };
   const go = async () => {
@@ -739,16 +738,16 @@ function showNoLink() {
     const asLink = typed.split('#').pop().trim();
     if (/^[A-Za-z0-9_-]{16,64}$/.test(asLink)) { keep(asLink); return; }
     const digits = typed.replace(/\D/g, '');
-    if (digits.length !== 8) { message.textContent = 'The code has 8 digits. Check the number your tour leader showed you.'; return; }
+    if (digits.length !== 4) { message.textContent = 'The code has 4 digits. Check the number your tour leader showed you.'; return; }
     message.textContent = 'Checking…';
     try {
       const token = await callRpc('claim_guest_code', { p_code: digits });
-      if (token) keep(token); else message.textContent = 'This code does not work. Check it, or ask your tour leader.';
+      if (token) keep(token); else message.textContent = 'This code does not work: it may have been used already or be older than 30 minutes. Ask your tour leader for a new one.';
     } catch { message.textContent = 'Could not check the code. Are you online? If it keeps failing, wait a few minutes.'; }
   };
   field.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(); });
   app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, 'Your code'),
-    h('p', { class: 'muted' }, 'Type the 8-digit code your tour leader shows you. You only do this once: after that, this app opens straight on your programme.'),
+    h('p', { class: 'muted' }, 'Type the 4-digit code your tour leader gives you. You only do this once: after that, this app opens straight on your programme.'),
     field, h('button', { class: 'btn-link paste-go', type: 'button', onclick: go }, 'Open my programme'), message));
 }
 

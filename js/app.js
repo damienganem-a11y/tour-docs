@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview,
+  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode,
   pullMyAccess, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
@@ -288,6 +288,7 @@ const ctx = {
   // A short message to the guests of a trip who said "notify me" in their app (Settings > Guest links). Returns { sent }.
   async notifyAllGuests(tripId, title, body, important = false) { return notifyGuests(tripId, undefined, { title, body, url: './guest/', category: 'announcement', priority: important ? 'important' : 'info' }); },
   guestPushOverview: (tripId) => guestPushOverview(tripId),
+  makeGuestCode: (tripId, guestId) => makeGuestCode(tripId, guestId),
   outboxFor: (tripId) => outbox.filter((r) => r.tripId === tripId),
   async sendRequest(tripId, changes) {
     outbox.push({ id: newId(), tripId, requesterName: state.owner.name, changes, requestedAt: new Date().toISOString() });

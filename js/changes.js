@@ -109,7 +109,7 @@
 // Undo never deletes anything from the journal: it writes new entries saying what was taken back.
 // Privacy: journal entries never contain dietary info.
 
-import { newId, newToken, newCode } from './ids.js';
+import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
@@ -1312,12 +1312,10 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     for (const guestId of c.guestIds) {
       const link = next.guestLinks[guestId];
       if (c.action === 'create') {
-        if (link) { // already has one: only a link made before codes existed gets its code
-          if (link.code) continue;
-          link.code = newCode(Object.values(next.guestLinks).map((l) => l.code));
-        } else next.guestLinks[guestId] = { token: newToken(), code: newCode(Object.values(next.guestLinks).map((l) => l.code)), active: true, createdAt: new Date().toISOString() };
+        if (link) continue; // already has one: nothing to do
+        next.guestLinks[guestId] = { token: newToken(), active: true, createdAt: new Date().toISOString() };
       } else if (c.action === 'renew') {
-        next.guestLinks[guestId] = { token: newToken(), code: newCode(Object.values(next.guestLinks).map((l) => l.code)), active: true, createdAt: new Date().toISOString() };
+        next.guestLinks[guestId] = { token: newToken(), active: true, createdAt: new Date().toISOString() };
       } else {
         link.active = c.action === 'switch-on';
       }

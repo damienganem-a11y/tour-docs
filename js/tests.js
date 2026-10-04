@@ -2748,14 +2748,8 @@ function readZip(bytes) {
   await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'create', guestIds: [guest.id] });
   check('Creating again leaves an existing link as it is', ctxG.state.guestLinks[guest.id].token === firstToken);
 
-  const firstCode = ctxG.state.guestLinks[guest.id].code;
-  check('Every link has its own 8-digit code (never shared between guests), and it reaches the server row', Object.values(ctxG.state.guestLinks).every((l) => /^\d{8}$/.test(l.code)) && new Set(Object.values(ctxG.state.guestLinks).map((l) => l.code)).size === ctxG.state.guests.length
-    && guestSheetRows(ctxG.state, '').every((r) => /^\d{8}$/.test(r.code)));
-  delete ctxG.state.guestLinks[guest.id].code; // a link made before codes existed
-  await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'create', guestIds: [guest.id] });
-  check('Creating again gives an old link its code, and keeps its secret', /^\d{8}$/.test(ctxG.state.guestLinks[guest.id].code) && ctxG.state.guestLinks[guest.id].token === firstToken);
   const renewed = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'renew', guestIds: [guest.id] });
-  check('A new link replaces the secret (the old one is no longer on the trip) and the code', renewed.ok && ctxG.state.guestLinks[guest.id].code !== firstCode && ctxG.state.guestLinks[guest.id].token !== firstToken && ctxG.state.guestLinks[guest.id].active);
+  check('A new link replaces the secret (the old one is no longer on the trip)', renewed.ok && ctxG.state.guestLinks[guest.id].token !== firstToken && ctxG.state.guestLinks[guest.id].active);
   const off = await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'switch-off', guestIds: [guest.id] });
   check('Switching a link off keeps the secret but turns it off', off.ok && ctxG.state.guestLinks[guest.id].active === false);
 

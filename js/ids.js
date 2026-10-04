@@ -21,12 +21,3 @@ export function newToken() {
   const text = btoa(String.fromCharCode(...bytes));
   return text.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-
-// An 8-digit code for a guest's link, shown next to the QR code: the guest types it once if their app started empty (see supabase/migrations/0009).
-// `taken` is the codes already used in this trip, so two guests never share one.
-export function newCode(taken = []) {
-  for (;;) {
-    const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 100000000).padStart(8, '0');
-    if (!taken.includes(code)) return code;
-  }
-}

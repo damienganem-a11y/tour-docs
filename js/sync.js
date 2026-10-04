@@ -65,7 +65,7 @@ export async function pushGuestSheets(tripId, rows, currentTokens = rows.map((r)
   const supabase = await getClient();
   if (rows.length > 0) {
     const { error } = await supabase.from('guest_links').upsert(
-      rows.map((r) => ({ token: r.token, short_code: r.code ?? null, trip_id: tripId, guest_id: r.guestId, active: r.active, data: r.sheet ?? {}, updated_at: new Date().toISOString() })),
+      rows.map((r) => ({ token: r.token, trip_id: tripId, guest_id: r.guestId, active: r.active, data: r.sheet ?? {}, updated_at: new Date().toISOString() })),
       { onConflict: 'token' });
     if (error) throw error;
   }
@@ -411,6 +411,13 @@ export async function notifyGuests(tripId, guestIds, message) {
 export async function guestPushOverview(tripId) {
   const supabase = await getClient();
   const { data, error } = await supabase.rpc('guest_push_overview', { p_trip: tripId });
+  if (error) throw error;
+  return data;
+}
+// A one-time code (4 digits, 30 minutes) for ONE device of a guest, made by the server for the owner of the trip. Needs the guest's link to be on and synced.
+export async function makeGuestCode(tripId, guestId) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc('make_guest_code', { p_trip: tripId, p_guest: guestId });
   if (error) throw error;
   return data;
 }
