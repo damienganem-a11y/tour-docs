@@ -10,7 +10,7 @@ import { showToast, openSheet, closeSheet } from '../ui.js';
 import { plural, joinNames } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
-import { addDays, formatFullMoment, localDateNow } from '../time.js';
+import { addDays, formatFullMoment, formatTime, localDateNow, localToInstant } from '../time.js';
 import { AUTO_KINDS, MESSAGE_TEMPLATES, audienceGuestIds, autoNotifySettings, clockProposals, draftError, draftRow } from '../scheduledMessages.js';
 
 const field = (label, input, hint) => h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, label, input), hint ? h('div', { class: 'form-hint' }, hint) : null);
@@ -74,6 +74,23 @@ export function scheduledSettingsPage(ctx, trip) {
     const time = h('input', { class: 'text-input', type: 'time', value: prefill.time ?? '19:00', 'aria-label': 'Time' });
     const important = h('input', { type: 'checkbox', 'aria-label': 'Important' });
     const errorLine = h('p', { class: 'modal-error' }, '');
+    // A line that says plainly WHEN it will go, so a wrong day is seen at once; and a quick way to test: "in 2 minutes" on the chosen clock.
+    const when = h('p', { class: 'muted' }, '');
+    const showWhen = () => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value) || !/^\d{2}:\d{2}$/.test(time.value)) { when.textContent = ''; return; }
+      const at = Date.parse(localToInstant(date.value, time.value, zone.value));
+      const minutes = Math.round((at - Date.now()) / 60000);
+      const away = minutes < 0 ? 'already past' : minutes < 120 ? `in ${plural(minutes, 'minute')}` : minutes < 2880 ? `in ${plural(Math.round(minutes / 60), 'hour')}` : `in ${plural(Math.round(minutes / 1440), 'day')}`;
+      when.textContent = `It will be sent ${formatFullMoment(new Date(at).toISOString(), zone.value)} (${zone.options[zone.selectedIndex].text}), ${away}.`;
+    };
+    [date, time, zone].forEach((input) => input.addEventListener('input', showWhen));
+    const inTwo = h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => {
+      const soonAt = new Date(Date.now() + 2 * 60000);
+      date.value = new Intl.DateTimeFormat('en-CA', { timeZone: zone.value, year: 'numeric', month: '2-digit', day: '2-digit' }).format(soonAt);
+      time.value = formatTime(soonAt.toISOString(), zone.value);
+      showWhen();
+    } }, 'Send in 2 minutes (to test)');
+    showWhen();
     const send = h('button', { class: 'btn', type: 'button', onclick: async () => {
       const chosen = options.find((o) => o.value === who.value);
       const draft = { title: title.value, body: body.value, date: date.value, time: time.value, timeZone: zone.value, important: important.checked, guestIds: audienceGuestIds(trip, chosen.audience) };
@@ -85,7 +102,7 @@ export function scheduledSettingsPage(ctx, trip) {
     } }, 'Schedule the message');
     openSheet({
       eyebrow: 'New message', title: 'Schedule a message', subtitle: 'It goes to the phones of the guests who turned notifications on.',
-      body: [templates, field('Title', title), field('Message', body), field('Who', who), field('Day', date), field('Time', time, 'On the clock chosen below.'), field('Clock', zone),
+      body: [templates, field('Title', title), field('Message', body), field('Who', who), field('Day', date), field('Time', time, 'On the clock chosen below.'), field('Clock', zone), inTwo, when,
         h('label', { class: 'check-row' }, important, " Important: arrives with sound, even during the guest's quiet night hours"), errorLine, send],
     });
   }
