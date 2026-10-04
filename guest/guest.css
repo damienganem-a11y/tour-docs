@@ -441,3 +441,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .pref-row input { width: 22px; height: 22px; margin-top: 2px; flex: none; }
 .pref-row span { display: flex; flex-direction: column; }
 .pref-row small { color: var(--muted); font-size: 13px; }
+
+/* The "paste your link" box on the empty start screen */
+.paste-field { display: block; width: 100%; box-sizing: border-box; margin: 18px 0 12px; padding: 14px; border: 2px solid #000; border-radius: 0; font: 16px Inter, sans-serif; }
+.paste-go { width: 100%; box-sizing: border-box; border: 0; cursor: pointer; }

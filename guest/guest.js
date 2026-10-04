@@ -50,6 +50,13 @@ const store = {
   remove(key) { try { localStorage.removeItem(key); } catch { /* nothing to do */ } },
 };
 
+// iPhone/iPad: an app put on the Home Screen has its own memory, empty at first, and it opens the manifest's start address (without the secret).
+// Without a manifest, iOS puts the CURRENT address (with the secret after the #) on the Home Screen, so the app opens straight on the programme.
+// Android keeps one shared memory between browser and app, so it keeps the manifest.
+if (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+  document.querySelector('link[rel="manifest"]')?.remove();
+}
+
 // The secret: from the link if there is one, else the one remembered. A link replaces what was remembered.
 function currentToken() {
   const fromLink = window.location.hash.replace(/^#/, '').trim();
@@ -720,6 +727,20 @@ function showProblem(title, text) {
   app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
 }
 
+// No link on this phone yet (for instance an app just put on the Home Screen, which starts empty): the guest can paste the link they were sent.
+function showNoLink() {
+  currentSheet = null;
+  const field = h('input', { class: 'paste-field', type: 'text', placeholder: 'Paste your personal link here', 'aria-label': 'Personal link', autocapitalize: 'none', autocorrect: 'off' });
+  const go = () => {
+    const token = field.value.trim().split('#').pop().trim();
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) { field.setCustomValidity('x'); field.placeholder = 'That is not a personal link. Copy it again.'; field.value = ''; return; }
+    store.set(TOKEN_KEY, token); store.remove(SHEET_KEY); window.location.hash = token; window.location.reload();
+  };
+  app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, 'No link yet'),
+    h('p', { class: 'muted' }, 'Paste the personal link your tour leader sent you. After that, this app opens straight on your programme.'),
+    field, h('button', { class: 'btn-link paste-go', type: 'button', onclick: go }, 'Open my programme')));
+}
+
 // ---------- running ----------
 let scrolledToToday = false;
 // Preview (owner, from the leader's app: Preview as Guest): the sheet was put on this phone by the leader's app, nothing is asked of the server and
@@ -741,7 +762,7 @@ async function refresh() {
   let status = 'none';
   if (PREVIEW) { showPreview(); return 'preview'; }
   const token = currentToken();
-  if (!token) { showProblem('No link yet', 'Open the personal link your tour leader sent you. After that, this app opens straight on your programme.'); return 'none'; }
+  if (!token) { showNoLink(); return 'none'; }
   const kept = (() => { try { return JSON.parse(store.get(SHEET_KEY)); } catch { return null; } })();
   if (kept && kept.v === SUPPORTED_SHEET && !app.querySelector('.pass, .dest')) render(kept, { offline: !navigator.onLine });
   const result = await fetchSheet(token);
