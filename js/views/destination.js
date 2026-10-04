@@ -94,8 +94,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       tightSubtitle: true,
       action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
     }),
-    cards,
-    leisureCard,
+    h('div', { class: 'card-grid' }, cards, leisureCard),
     attention.length > 0 ? attentionCard(ctx, trip, slot, attention, names) : null
   );
 }

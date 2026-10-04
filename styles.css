@@ -999,3 +999,73 @@ body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom))
 /* v0.81.1: the very top of each screen stays empty for a moment, so nothing readable sits in the band the iPhone softens at the top edge */
 .screen { padding-top: calc(env(safe-area-inset-top) + 44px); }
 .seat-line-row { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+
+/* =====================================================================================================================================
+   v0.87.0: "Atlas" look for the leader's app (owner's choice, 4 Oct 2026; same as the guest app): white pages, soft rounded cards with a gentle
+   shadow, pills instead of squares, a floating black menu, yellow for what is active. This is the last layer: it wins over the ones above. */
+:root { --atl-radius: 24px; --atl-shadow: 0 6px 24px rgba(0, 0, 0, .09); }
+.card { border: 0; border-radius: var(--atl-radius); box-shadow: var(--atl-shadow); }
+.card--soft { background: var(--soft); box-shadow: none; }
+.card--cancelled { border: 1px dashed #b5b5b0; box-shadow: none; }
+.card--warn { border: 0; box-shadow: 0 0 0 2px var(--yellow), var(--atl-shadow); }
+.card:has(> .card-head)::before { display: none; }
+.act-name, .card-title { font-family: Outfit, sans-serif; letter-spacing: 0; text-transform: none; }
+.count { border: 0; border-radius: 99px; background: #000; color: var(--yellow); padding: 6px 12px; }
+.count--bad { background: var(--yellow); color: #000; border: 0; }
+.card--soft .count { background: #fff; color: #555; border: 0; }
+.chip { border-radius: 99px; border: 0; background: var(--soft); }
+.btn { border-radius: 99px; border: 0; background: var(--yellow); color: #000; text-transform: none; letter-spacing: .02em; font-size: 16px; }
+.btn--plain { background: var(--soft); border: 0; color: #000; }
+.btn--danger { background: var(--bad-line); color: #fff; }
+.text-input { border-radius: 16px; border: 1px solid #cfcfca; }
+.pill { border-radius: 99px; }
+.switch { border-radius: 99px; background: var(--soft); padding: 4px; }
+.switch-item { border-radius: 99px; text-transform: none; letter-spacing: .02em; font-size: 14px; }
+.switch-item.is-active { background: #000; color: var(--yellow); }
+.strip-item { border-radius: 99px; border: 0; background: var(--soft); text-transform: none; letter-spacing: .02em; font-size: 14px; font-weight: 600; padding-left: 18px; padding-right: 18px; }
+.strip-item.is-active, button.strip-item.is-active { background: #000; color: var(--yellow); border: 0; }
+.bottom-tabs { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom)); width: auto; max-width: none; padding: 8px; gap: 4px; border: 0; border-radius: 99px; background: #0b0b0b; box-shadow: 0 10px 28px rgba(0, 0, 0, .28); }
+.bottom-tab { min-height: 46px; padding: 0 26px; border-radius: 99px; color: #fff; text-transform: none; letter-spacing: .02em; font-family: Inter, sans-serif; font-size: 14px; font-weight: 600; }
+.bottom-tab.is-active { background: var(--yellow); color: #000; }
+body:has(.bottom-tabs) .toast { bottom: calc(86px + env(safe-area-inset-bottom)); }
+.toast { border-radius: 18px; border: 0; background: #0b0b0b; color: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }
+.toast--error { background: #b3261e; color: #fff; }
+.toast--error::before { color: #fff; }
+.sheet { border-radius: 28px 28px 0 0; }
+.sheet::before { border-radius: 99px; }
+.tile { border: 0; border-radius: var(--atl-radius); box-shadow: var(--atl-shadow); }
+.tile-icon, .tile--access .tile-icon, .tile--documents .tile-icon, .tile--control .tile-icon { border-radius: 50%; }
+.tile-title { text-transform: none; letter-spacing: 0; font-size: 17px; }
+.cog { border-radius: 50%; border: 0; background: var(--soft); }
+.cog--home { background: var(--yellow); border: 0; }
+.dest-menu { border: 0; border-radius: 22px; background: var(--soft); }
+.dest-menu-pin { border-radius: 50%; }
+.dest-menu-name { text-transform: none; letter-spacing: 0; font-family: Outfit, sans-serif; }
+.menu-row.is-current { border-radius: 14px; }
+.avatar { border-radius: 50%; border: 0; }
+.card-more { border-radius: 50%; }
+.fold-count { border-radius: 99px; }
+.seat-card { border: 0; border-radius: var(--atl-radius); box-shadow: var(--atl-shadow); }
+.seat-line { border-radius: 14px; }
+.undo-btn { border-radius: 99px; border: 0; background: var(--soft); text-transform: none; letter-spacing: 0; }
+.eyebrow { text-transform: uppercase; }
+.card-grid { display: block; }
+
+/* ---- Wide screens (iPad): more room, two columns where a list is long ---- */
+@media (min-width: 700px) {
+  .screen { max-width: 920px; padding-left: 32px; padding-right: 32px; }
+  .tiles { grid-template-columns: 1fr 1fr 1fr; }
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .card-grid > .card { margin: 0; }
+  .list:has(.seat-card) { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+  .list:has(.seat-card) li { margin: 0; }
+}
+@media (min-width: 1000px) {
+  .screen { max-width: 1120px; }
+  .tiles { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .card-grid { grid-template-columns: 1fr 1fr 1fr; }
+  .list:has(.seat-card) { grid-template-columns: 1fr 1fr 1fr; }
+}
+.bottom-tab { white-space: nowrap; padding: 0 18px; }
+@media (min-width: 700px) { .bottom-tab { padding: 0 30px; } }
+.undo-btn { max-width: 300px; margin-left: auto; }
