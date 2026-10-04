@@ -135,7 +135,7 @@ export function clockProposals(trip) {
     const abs = Math.abs(diff);
     const amount = `${Math.floor(abs / 60) ? `${Math.floor(abs / 60)} ${Math.floor(abs / 60) === 1 ? 'hour' : 'hours'}` : ''}${abs % 60 ? `${Math.floor(abs / 60) ? ' ' : ''}${abs % 60} min` : ''}`;
     out.push({ key: `clock|${to.id}`, destination: to.name, date: addDays(arrival, -1), time: '19:00', timeZone: from.timeZone,
-      title: 'Clocks change tonight', body: clip(`${to.name} is ${amount} ${diff > 0 ? 'ahead of' : 'behind'} ${from.name}. Tonight, move your clock or watch ${diff > 0 ? 'forward' : 'back'} ${amount}.`, 200) });
+      title: 'Clocks change tonight', body: clip(`${to.name} is ${amount} ${diff > 0 ? 'ahead of' : 'behind'} ${from.name}. Tonight, move your clock or watch ${diff > 0 ? 'forward' : 'back'} ${amount}.${abs >= 720 ? ' You may also cross the date line.' : ''}`, 200) });
   }
   return out;
 }

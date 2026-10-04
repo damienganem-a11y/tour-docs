@@ -1071,3 +1071,19 @@ body:has(.bottom-tabs) .toast { bottom: calc(86px + env(safe-area-inset-bottom))
 .undo-btn { max-width: 300px; margin-left: auto; }
 input[type=checkbox] { accent-color: #000; }
 .chips > .btn { width: auto; flex: none; min-height: 40px; padding: 0 16px; font-size: 14px; }
+
+/* ---- finishing touches found in the full review of the leader's pages (v0.91.0) ---- */
+.switch--compact, .switch, .switch--compact .switch-item, .switch .switch-item { border-radius: 99px; }
+.choice { border: 0; background: var(--soft); border-radius: 20px; }
+.choice:active { background: var(--track); }
+.screen .menu { background: var(--soft); border-radius: 24px; padding: 2px 18px; }
+.screen .menu .menu-row:last-child, .screen .menu .menu-section:last-child .menu-row:last-child { border-bottom: 0; }
+.menu-row { border-bottom-color: #deded9; }
+/* many small buttons in a list of cards (a link per guest): compact pills, not a wide yellow bar each time */
+.btn--small { min-height: 44px; padding: 0 20px; font-size: 14px; width: auto; }
+.team-member .card-actions .btn { flex: 0 0 auto; }
+.screen .btn--small.btn--plain, .card .btn--small.btn--plain { background: var(--soft); }
+.card .btn--small:not(.btn--plain) { background: #000; color: var(--yellow); }
+.entry { border: 0; border-radius: var(--atl-radius); box-shadow: var(--atl-shadow); background: #fff; }
+.entry--muted { background: var(--soft); box-shadow: none; }
+.btn + .btn--small, .btn--plain + .btn--small { margin-top: 10px; }
