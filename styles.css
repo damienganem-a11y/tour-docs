@@ -827,7 +827,7 @@ button.menu-row:active { background: var(--brand-tint); }
 .cog .icon svg { width: 30px; height: 30px; }
 .cog--home { background: var(--brand); color: #fff; }
 .cog--home:active { background: var(--brand); opacity: 0.85; }
-.top-bar .top-trip { padding-left: 4px; }
+.top-bar .top-trip { padding-left: 4px; padding-right: 4px; }
 
 /* v0.70.0: By guest, in seat order, for one destination: a card per guest with one short line per half-day */
 .seat-card { list-style: none; margin: 0 0 10px; padding: 12px 14px; background: var(--card); border-radius: 20px; box-shadow: var(--shadow); }

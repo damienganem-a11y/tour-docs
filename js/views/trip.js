@@ -126,19 +126,17 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
     return { node: h('div', { class: 'screen' }, backupSettingsPage(ctx, trip)) };
   }
 
-  // One slim row, for both modes. Use: the trip's name (so you know where you are) and, on the right, the sync light and a cog that opens Settings.
+  // One slim row, for both modes. Use: the trip's name (so you know where you are) and, on the left a cog that opens Settings (easier with one thumb, owner's request 4 Oct 2026), on the right the sync light.
   // Settings: a way back to the trip. Changing trip lives in Settings (owner's request, 3 Oct 2026): once in a trip, you stay in it.
   const topBar = mode === 'settings'
     ? h('div', { class: 'top-bar' },
+        h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup')),
         h('span', { class: 'top-trip' }, 'Settings'),
-        h('span', { class: 'top-side' },
-          syncDot(ctx, { compact: true }),
-          h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup'))))
+        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true })))
     : h('div', { class: 'top-bar' },
+        h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         h('span', { class: 'top-trip' }, trip.ref || trip.name),
-        h('span', { class: 'top-side' },
-          syncDot(ctx, { compact: true }),
-          h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog'))));
+        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true })));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
