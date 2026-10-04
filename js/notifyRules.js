@@ -42,13 +42,15 @@ export function notificationsFor(trip, entries, settings = notifySettings(trip))
     if (e.type === 'cancel-tour') continue; // its guests come from the move lines below
     if (e.type === 'move' && e.cause === 'cancel-tour') {
       const tour = e.from?.label ?? 'Your tour';
-      add('cancelled', e.guestId, 'A tour was cancelled', `"${tour}" (${e.slotLabel}) is cancelled. Please open your programme.`);
+      add('cancelled', e.guestId, `Tour cancelled: ${tour}`, `${e.slotLabel}. You are now at leisure for this time.`);
     } else if (e.type === 'move' && (e.cause === null || e.cause === undefined) && e.source !== 'guest request') {
-      if (e.to?.kind === 'activity' && e.from?.kind === 'waitlist') add('place', e.guestId, 'A place opened for you', `You are now on "${e.to.label}" (${e.slotLabel}).`);
-      else if (e.to?.kind === 'activity') add('moved', e.guestId, 'Your plan changed', `You are now on "${e.to.label}" (${e.slotLabel}).`);
-      else if (e.to?.kind === 'leisure') add('moved', e.guestId, 'Your plan changed', `You are now at leisure (${e.slotLabel}).`);
+      // Words for what the guest was on before, so the preview alone says what changed.
+      const before = e.from?.kind === 'activity' ? ` You were on "${e.from.label}".` : e.from?.kind === 'leisure' ? ' You were at leisure.' : '';
+      if (e.to?.kind === 'activity' && e.from?.kind === 'waitlist') add('place', e.guestId, `Place available: ${e.to.label}`, `${e.slotLabel}. A place opened on the waiting list: you are now booked on this tour.`);
+      else if (e.to?.kind === 'activity') add('moved', e.guestId, `Tour change: now on ${e.to.label}`, `${e.slotLabel}.${before}`.trim());
+      else if (e.to?.kind === 'leisure') add('moved', e.guestId, 'Tour change: now at leisure', `${e.slotLabel}.${before}`.trim());
     } else if (e.type === 'move' && ['book-dinner', 'add-to-dinner-table', 'move-dinner-table'].includes(e.cause)) {
-      add('dinner', e.guestId, 'Your dinner', `Dinner: ${e.to?.label ?? 'a restaurant'} (${e.slotLabel}).`);
+      add('dinner', e.guestId, `Dinner: ${e.to?.label ?? 'a restaurant'}`, `${e.slotLabel}. Your dinner was booked or changed.`);
     } else if (e.type === 'edit-activity' && e.from && e.to) {
       const timeChanged = (e.from.startsAt ?? null) !== (e.to.startsAt ?? null);
       const meetingChanged = (e.from.meeting ?? '') !== (e.to.meeting ?? '');
@@ -60,7 +62,7 @@ export function notificationsFor(trip, entries, settings = notifySettings(trip))
       if (meetingChanged) bits.push(e.to.meeting ? `meet at ${e.to.meeting}` : 'the meeting point was removed');
       for (const guest of trip.guests) {
         const booking = slot && trip.bookings?.[guest.id]?.[slot.id];
-        if (!guest.leftAt && booking?.kind === 'activity' && booking.activityId === e.activityId) add('changed', guest.id, 'A tour changed', `"${e.to.name}" (${e.slotLabel}): ${bits.join('; ')}.`);
+        if (!guest.leftAt && booking?.kind === 'activity' && booking.activityId === e.activityId) add('changed', guest.id, `Tour change: ${e.to.name}`, `${e.slotLabel}. ${bits.join('; ').replace(/^./, (c) => c.toUpperCase())}.`);
       }
     }
   }

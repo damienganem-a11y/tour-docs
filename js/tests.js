@@ -2816,7 +2816,7 @@ function readZip(bytes) {
   check('Every kind of notification is on by default', NOTIFY_KINDS.every((k) => notifySettings(ctxG.state)[k.key] === true));
   const nMove = await applyChange(ctxG, trip.id, { type: 'move', guestId: guest.id, slotId: nSlot.id, to: { kind: 'leisure' } });
   const nMsgs = notificationsFor(ctxG.state, nMove.entries);
-  check('A guest moved by the leader is told, and only that guest', nMsgs.length === 1 && nMsgs[0].guestIds.length === 1 && nMsgs[0].guestIds[0] === guest.id && /at leisure/.test(nMsgs[0].body) && nMsgs[0].category === 'changes');
+  check('A guest moved by the leader is told, and only that guest', nMsgs.length === 1 && nMsgs[0].guestIds.length === 1 && nMsgs[0].guestIds[0] === guest.id && /at leisure/.test(nMsgs[0].title) && /^Tour change/.test(nMsgs[0].title) && nMsgs[0].category === 'changes');
   await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'notify-settings', settings: { moved: false } });
   check('Switching "moved" off silences it (and the choice is saved on the trip)', ctxG.state.guestNotify.moved === false && notificationsFor(ctxG.state, nMove.entries).length === 0 && notifySettings(ctxG.state).cancelled === true);
   check('A choice that is not a kind of notification is refused', !(await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'notify-settings', settings: { nonsense: true } })).ok && !(await applyChange(ctxG, trip.id, { type: 'guest-links', action: 'notify-settings', settings: { moved: 'yes' } })).ok);
@@ -2829,7 +2829,7 @@ function readZip(bytes) {
     && editMsgs[0].guestIds.every((id) => { const b = ctxG.state.bookings[id]?.[nSlot.id]; return b?.kind === 'activity' && b.activityId === nTour.id; }));
   const cancelled = await applyChange(ctxG, trip.id, { type: 'cancel-tour', activityId: nTour.id });
   const cancelMsgs = notificationsFor(ctxG.state, cancelled.entries);
-  check('A cancelled tour tells everyone who was on it, with the tour\'s name', cancelled.ok && cancelMsgs.length === 1 && /cancelled/.test(cancelMsgs[0].title) && cancelMsgs[0].guestIds.includes(guest.id) && cancelMsgs[0].body.includes(nTour.name));
+  check('A cancelled tour tells everyone who was on it, with the tour\'s name', cancelled.ok && cancelMsgs.length === 1 && /cancelled/.test(cancelMsgs[0].title) && cancelMsgs[0].guestIds.includes(guest.id) && cancelMsgs[0].title.includes(nTour.name));
   const undone = await applyChange(ctxG, trip.id, { type: 'undo' });
   check('Undo says nothing to guests', undone.ok && notificationsFor(ctxG.state, undone.entries).length === 0);
   check('Without guest links nothing is sent', notificationsFor({ ...ctxG.state, guestLinks: undefined }, cancelled.entries).length === 0);
