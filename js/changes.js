@@ -8,6 +8,7 @@
 //   3. the journal says who, what, from, to and when (the exact moment).
 //
 // A change is one of:
+//   (a Team colleague may ask to FORCE with force: true and forceReason: the owner then approves, declines or puts the guest on the waiting list instead)
 //   { type: 'move', guestId, slotId, to: { kind: 'activity', activityId } | { kind: 'leisure' } | { kind: 'dinner', bookingId, label } | { kind: 'waitlist', activityId }, force?, approvedBy? }
 //       force: true lets a move go into a full tour (the dispatcher has authority; owner only). The journal
 //       then says "forced", with the optional note approvedBy ("Approved by Sam"). A dinner `to` is written
@@ -154,7 +155,7 @@ const fail = (error) => ({ ok: false, error });
 // Returns { ok: true } or { ok: false, error: 'plain-language reason' }.
 // The screens also use this to grey out choices that would not be allowed.
 // journal: the trip's journal entries (only Undo needs them).
-export function validateChanges(trip, user, changes, journal = []) {
+export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   if (!canUser(user, 'change')) return fail('You do not have permission to change bookings.');
   if (!trip) return fail('This trip is not on this phone.');
   if (user?.role === 'team' && Array.isArray(changes) && !changes.every((c) => TEAM_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
@@ -217,7 +218,14 @@ export function validateChanges(trip, user, changes, journal = []) {
     const slot = trip.slots.find((s) => s.id === change.slotId);
     if (!guest) return fail('That guest is not in this trip.');
     if (!slot) return fail('That half-day is not in this trip.');
-    if (change.force && !canUser(user, 'force')) return fail('You do not have permission to force a move.');
+    // Forcing a move into a full tour is the owner's decision. A Team colleague can ASK for it (opts.filing: the request is being filed, with a reason
+    // that the owner reads); the owner's device never applies it by itself: only after the owner approves it (opts.forceApproved).
+    if (change.force && !canUser(user, 'force') && !opts.forceApproved) {
+      if (!opts.filing || user?.role !== 'team') return fail('You do not have permission to force a move.');
+      const reason = String(change.forceReason ?? '').trim();
+      if (!reason) return fail('Tell the owner why this move must be forced.');
+      if (reason.length > 200) return fail('The reason must be 200 letters or fewer.');
+    }
 
     const key = `${guest.id}|${slot.id}`;
     if (seen.has(key)) return fail(`${names.get(guest.id)} appears twice in the same change.`);
@@ -825,7 +833,7 @@ export function applyChange(ctx, tripId, changes, opts = {}) {
   if (ctx.previewRole && !opts.as) {
     if (ctx.previewRole !== 'team') return Promise.resolve(fail('You are previewing View only: nothing can be changed. Exit the preview first.'));
     const as = { id: 'preview-team', name: 'Preview (Team)', role: 'team' };
-    return enqueue(() => doApply(ctx, tripId, list, { as, request: { id: newId(), at: new Date().toISOString() } })).then((r) => (r.ok ? { ...r, preview: true } : r));
+    return enqueue(() => doApply(ctx, tripId, list, { as, request: { id: newId(), at: new Date().toISOString() }, forceApproved: { by: 'the owner (preview)' } })).then((r) => (r.ok ? { ...r, preview: true } : r));
   }
   // A Team colleague never changes the trip themselves: the change is checked against their copy, then sent as a request
   // that the owner's device applies (SPEC.md, Team step B).
@@ -834,7 +842,7 @@ export function applyChange(ctx, tripId, changes, opts = {}) {
 }
 
 async function requestChange(ctx, tripId, list) {
-  const check = validateChanges(ctx.trip(tripId), ctx.userFor(tripId), list, ctx.journal(tripId));
+  const check = validateChanges(ctx.trip(tripId), ctx.userFor(tripId), list, ctx.journal(tripId), { filing: true });
   if (!check.ok) return check;
   await ctx.sendRequest(tripId, list);
   return { ok: true, requested: true, entries: [] };
@@ -844,7 +852,7 @@ async function doApply(ctx, tripId, changes, opts = {}) {
   const trip = ctx.trip(tripId);
   const journal = ctx.journal(tripId);
   const actor = opts.as ?? (ctx.userFor ? ctx.userFor(tripId) : ctx.owner); // the person, with the role they have ON THIS TRIP
-  const check = validateChanges(trip, actor, changes, journal);
+  const check = validateChanges(trip, actor, changes, journal, { forceApproved: opts.forceApproved });
   if (!check.ok) return check;
 
   // Work on a copy. The real trip is only replaced once the copy is safely saved, so a failed
@@ -905,7 +913,7 @@ async function doApply(ctx, tripId, changes, opts = {}) {
   // A "move" of one guest in one half-day. to.kind 'dinner' is written only by book-dinner below
   // (there is no direct "move to this dinner" picker yet) — it never forces, so `forced` stays false.
   // to.kind 'waitlist' also never forces: joining a waitlist costs no seat.
-  const move = (guest, slot, to, cause, force = false, approvedBy = null) => {
+  const move = (guest, slot, to, cause, force = false, approvedBy = null, forceReason = null) => {
     const before = guestPlace(trip, guest, slot);
     const forced = force && to.kind === 'activity' && willBeOver(to.activityId);
     next.bookings[guest.id] ??= {};
@@ -918,6 +926,7 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     entries.push({
       ...base(), type: 'move', cause,
       forced, approvedBy: forced ? approvedBy : null, // a forced move says who approved it (optional note)
+      forceReason: forced ? forceReason : null,       // and, when a colleague asked for it, why
       guestId: guest.id, guestName: names.get(guest.id),
       ...where(trip, slot),
       from: describe(before),
@@ -1403,8 +1412,10 @@ async function doApply(ctx, tripId, changes, opts = {}) {
 
   for (const change of changes) {
     if (change.type === 'move') {
-      const approvedBy = String(change.approvedBy ?? '').trim().slice(0, 60) || null;
-      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null, Boolean(change.force), approvedBy);
+      // Typed by the owner ("Approved by Sam"), or, for a colleague's request the owner approved, the owner's own name; the colleague's reason travels with it.
+      const approvedBy = (opts.forceApproved ? String(opts.forceApproved.by ?? '') : String(change.approvedBy ?? '')).trim().slice(0, 60) || null;
+      const forceReason = String(change.forceReason ?? '').trim().slice(0, 200) || null;
+      move(trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId), change.to, null, Boolean(change.force), approvedBy, forceReason);
       continue;
     }
 

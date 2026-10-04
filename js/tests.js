@@ -2966,6 +2966,24 @@ function readZip(bytes) {
   check('Undo of a take-over gives the roll call back to Anna', back.ok && !ctxT.state.rollCalls.find((r) => r.activityId === act.id).runBy && tap(anna).ok);
 }
 
+// --- A colleague asks to FORCE a move: the owner decides ---
+{
+  const ctxQ = makeCtx();
+  const t = ctxQ.state;
+  const act = t.activities.find((a) => a.name === 'Alfama walking tour'); // full in the sample (20 / 20)
+  const slot = t.slots.find((s) => s.id === act.slotId);
+  const outsider = t.guests.find((g) => t.bookings[g.id]?.[slot.id]?.activityId !== act.id && !g.leftAt);
+  const ben = { id: 'u-ben', name: 'Ben Team', role: 'team', scope: null };
+  const force = (extra = {}) => [{ type: 'move', guestId: outsider.id, slotId: slot.id, to: { kind: 'activity', activityId: act.id }, force: true, ...extra }];
+  check('A colleague cannot force a move directly', !validateChanges(t, ben, force({ forceReason: 'VIP' })).ok);
+  check('A colleague can ASK to force, but must say why', !validateChanges(t, ben, force(), [], { filing: true }).ok && validateChanges(t, ben, force({ forceReason: 'Her mother is on this tour' }), [], { filing: true }).ok);
+  const refused = await applyChange(ctxQ, t.id, force({ forceReason: 'x' }), { as: ben });
+  check('The owner\'s device does not apply a forced request by itself', !refused.ok);
+  const approved = await applyChange(ctxQ, t.id, force({ forceReason: 'Her mother is on this tour' }), { as: ben, request: { id: 'r1', at: '2027-01-01T00:00:00Z' }, forceApproved: { by: 'Damien' } });
+  const entry = approved.entries.find((e) => e.type === 'move' && e.forced);
+  check('Once the owner approves, the guest is in the full tour, and the journal says forced, by whom, who asked and why', approved.ok && entry && entry.approvedBy === 'Damien' && entry.who.name === 'Ben Team' && entry.forceReason === 'Her mother is on this tour' && entry.source === 'colleague request');
+}
+
 // --- QR codes (the guests' links). The picture was also decoded by a real QR reader when it was written: see SPEC.md ---
 {
   const cells = qrCells('https://example.com/guest/#eB21LnCclPB3iCj2kGIjuA');

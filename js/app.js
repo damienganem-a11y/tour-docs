@@ -303,7 +303,11 @@ const ctx = {
     await dbPut('settings', outbox, 'outbox');
     flushOutbox().catch(() => {});
   },
-  async declineRequest(id) { await finishRequest(id, 'declined', null); await processRequests(); render({ keepScroll: true }); },
+  async declineRequest(id, note = null) { await finishRequest(id, 'declined', note || null); await processRequests(); render({ keepScroll: true }); },
+  approveForcedRequest: (id) => decideForcedRequest(id, 'approve'),
+  waitlistForcedRequest: (id) => decideForcedRequest(id, 'waitlist'),
+  declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
+  needsOwnerDecision,
   async retryRequest(id) { await reopenRequest(id); await processRequests(); render({ keepScroll: true }); },
   exportsFor: (tripId) => (state.exports.get(tripId) ?? []).filter((r) => !r.deletedAt), // a document deleted here waits, hidden, until the server has been told
   go(hash) { location.hash = hash; },
@@ -690,6 +694,27 @@ async function scopeOfRequester(row) {
   return member?.destination_id ?? null;
 }
 
+// A request that asks to force a move into a full tour is never applied by itself: it waits for the owner's decision.
+const needsOwnerDecision = (row) => Array.isArray(row.changes) && row.changes.some((c) => c?.force === true);
+
+// The owner's three answers to such a request: approve (the move is made, forced, journaled with the colleague's reason and the owner's name),
+// put the guest on the tour's waiting list instead, or decline with a word for the colleague.
+async function decideForcedRequest(id, how, note = null) {
+  const row = requestRows.find((r) => r.id === id);
+  if (!row || row.status !== 'pending' || ctx.roleFor(row.trip_id) !== 'owner') return;
+  if (how === 'decline') { await finishRequest(id, 'declined', note || null); await processRequests(); render({ keepScroll: true }); return; }
+  if (!(await claimRequest(id))) return;
+  const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: await scopeOfRequester(row) };
+  const changes = how === 'waitlist'
+    ? row.changes.map((c) => (c.force && c.to?.kind === 'activity' ? { type: 'move', guestId: c.guestId, slotId: c.slotId, to: { kind: 'waitlist', activityId: c.to.activityId } } : c))
+    : row.changes;
+  let result;
+  try { result = await applyChange(ctx, row.trip_id, changes, { as, request: { id: row.id, at: row.requested_at }, forceApproved: how === 'approve' ? { by: state.owner.name } : undefined }); }
+  catch { result = { ok: false, error: 'It could not be applied.' }; }
+  await finishRequest(id, result.ok ? 'applied' : 'failed', result.ok ? null : result.error);
+  await processRequests(); render({ keepScroll: true });
+}
+
 let processing = false;
 async function processRequests() {
   if (processing || !state.owner || hasSession === false || !navigator.onLine) return;
@@ -699,6 +724,7 @@ async function processRequests() {
     for (const row of requestRows) {
       // only the owner's own devices apply requests, and only for trips they have; oldest first, so the earlier request wins
       if (row.status !== 'pending' || ctx.roleFor(row.trip_id) !== 'owner' || !state.trips.has(row.trip_id)) continue;
+      if (needsOwnerDecision(row)) continue; // a colleague asked to FORCE a move: only the owner decides (Settings > Requests)
       if (!(await claimRequest(row.id))) continue; // another of the owner's devices has it
       const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: await scopeOfRequester(row) };
       let result;

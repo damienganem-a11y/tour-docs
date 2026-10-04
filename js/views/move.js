@@ -107,6 +107,7 @@ export function showForcedInfo(ctx, trip, guest, slot, entry) {
       h('div', { class: 'card' },
         fact('Approved by', entry.approvedBy ?? 'Not written down'),
         fact('Added by', entry.who.name),
+        entry.forceReason ? fact('Reason', entry.forceReason) : null,
         // Shown in the local time of the place, with the place named.
         fact('When', `${formatMoment(entry.at, entry.place.timeZone)} ${entry.place.name} time`),
         fact('Moved from', entry.from.kind === 'blank' ? 'Nothing chosen yet' : entry.from.label),
@@ -324,20 +325,27 @@ async function saveChanges(ctx, trip, changes, done) {
 // force: the move goes into a full tour. The button says "Force move", and an optional box lets you write
 // who approved it ("Approved by Sam"); it is saved in the journal with the move.
 function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, cancelLabel, changes, done, secondary = null }) {
+  // The owner may write who approved it (optional). A Team colleague cannot force: they ASK, with a reason the owner reads, and the owner decides.
+  const asking = force && ctx.roleFor?.(trip.id) === 'team';
   const approval = force
-    ? h('input', {
+    ? (asking
+      ? h('textarea', { class: 'text-input approval-input', rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' })
+      : h('input', {
         class: 'text-input approval-input', type: 'text', placeholder: 'Approved by (optional)', 'aria-label': 'Approved by (optional)',
         maxlength: '60', autocomplete: 'off', autocapitalize: 'words', spellcheck: 'false',
-      })
+      }))
     : null;
 
   const confirmButton = h('button', {
     class: `btn${danger || force ? ' btn--danger' : ''}`, type: 'button',
-    onclick: () => saveChanges(
-      ctx, trip,
-      force ? changes.map((change) => ({ ...change, force: true, approvedBy: approval.value })) : changes,
-      force ? `${done} (forced)` : done),
-  }, confirmLabel);
+    onclick: () => {
+      if (asking && !approval.value.trim()) { showToast('Write why this move must be forced.', true); return; }
+      saveChanges(
+        ctx, trip,
+        force ? changes.map((change) => (asking ? { ...change, force: true, forceReason: approval.value.trim() } : { ...change, force: true, approvedBy: approval.value })) : changes,
+        force ? (asking ? `${done} (asked: the owner decides)` : `${done} (forced)`) : done);
+    },
+  }, asking ? 'Ask to force' : confirmLabel);
 
   const secondaryButton = secondary
     ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => saveChanges(ctx, trip, secondary.changes, secondary.done) }, secondary.label)
@@ -345,7 +353,7 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
 
   openSheet({
     eyebrow: force ? 'Over capacity' : 'Confirm change', title, subtitle: detail,
-    body: [warnings.map(notice), approval, confirmButton, secondaryButton],
+    body: [warnings.map(notice), asking ? notice('The owner decides. They will see your reason, and can approve it, put the guest on the waiting list instead, or decline.') : null, approval, confirmButton, secondaryButton],
     cancelLabel, cancelDanger: !(danger || force),
   });
 }

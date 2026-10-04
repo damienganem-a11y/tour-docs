@@ -65,11 +65,11 @@ function notificationsCard(ctx) {
     else if (state === 'install') line.textContent = 'On an iPhone, first add Tour Docs to the Home Screen (Share button, then Add to Home Screen), and open it from there.';
     else if (state === 'denied') line.textContent = 'Notifications are blocked for this app. Allow them in the phone\'s Settings, then come back.';
     else if (state === 'on') {
-      line.textContent = 'On: you are told when a guest sends a request.';
+      line.textContent = 'On: you are told when a guest or a colleague sends a request.';
       actions.append(button('Send a test', async () => { try { const r = await ctx.testPush(); showToast(r?.sent > 0 ? 'Test sent' : 'Nothing was sent: is the setup done? (supabase/PUSH_SETUP.md)', !(r?.sent > 0)); } catch (e) { showToast('Could not send the test.', true); } }),
         button('Turn off', async () => { await ctx.disablePush(); show(); }));
     } else {
-      line.textContent = 'Off. Turn them on to be told at once when a guest sends a request.';
+      line.textContent = 'Off. Turn them on to be told at once when a guest or a colleague sends a request.';
       actions.append(button('Turn on', async () => { try { const r = await ctx.enablePush(); if (!r.ok) showToast(r.error, true); else showToast('Notifications are on'); } catch (e) { showToast(String(e?.message ?? e).slice(0, 120), true); } show(); }, false));
     }
   }
@@ -92,17 +92,32 @@ export function requestsSettingsPage(ctx, trip) {
     h('div', { class: 'act-name' }, describeRequest(trip, row.changes, names) || 'A change'),
     h('div', { class: 'muted' }, `${owner ? `${row.requester_name || row.requester_email || 'A colleague'} · ` : ''}${when(row.requested_at)}`),
     row.status === 'failed' && row.note ? h('div', { class: 'notice' }, `It no longer fits: ${row.note}`) : null,
-    row.status === 'declined' ? h('div', { class: 'muted' }, 'Declined') : null,
+    row.status === 'declined' ? h('div', { class: 'muted' }, row.note ? `Declined: ${row.note}` : 'Declined') : null,
+    forcedReason(row) ? h('div', { class: 'quote' }, `Reason: ${forcedReason(row)}`) : null,
     actions ? h('div', { class: 'card-actions' }, actions) : null);
 
+  const forcedReason = (row) => (Array.isArray(row.changes) ? row.changes.find((c) => c?.force)?.forceReason ?? null : null);
   const section = (title, items) => (items.length === 0 ? null : h('div', {}, h('h2', { class: 'section-title' }, title), ...items));
   const failed = rows.filter((r) => r.status === 'failed');
-  const pending = rows.filter((r) => r.status === 'pending' || r.status === 'applying');
+  const wantsForce = rows.filter((r) => r.status === 'pending' && ctx.needsOwnerDecision(r));
+  const pending = rows.filter((r) => (r.status === 'pending' && !ctx.needsOwnerDecision(r)) || r.status === 'applying');
   const done = rows.filter((r) => r.status === 'applied' || r.status === 'declined').slice(-20).reverse();
 
   const decide = (row) => [
     h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => ctx.retryRequest(row.id) }, 'Try again'),
     h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => ctx.declineRequest(row.id) }, 'Decline'),
+  ];
+
+  // A colleague asks to force a move into a full tour: the owner approves, puts the guest on the waiting list instead, or declines with a word.
+  function declineSheet2(row) {
+    const reason = h('textarea', { class: 'text-input', rows: '3', maxlength: '200', placeholder: 'A word for your colleague (optional)', 'aria-label': 'A word for your colleague' });
+    openSheet({ eyebrow: 'Request', title: 'Decline this request?', subtitle: describeRequest(trip, row.changes, names),
+      body: [reason, h('button', { class: 'btn', type: 'button', onclick: async () => { closeSheet(); await ctx.declineForcedRequest(row.id, reason.value.trim()); showToast('Declined'); } }, 'Decline and tell them')], cancelLabel: 'Cancel' });
+  }
+  const decideForce = (row) => [
+    h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { await ctx.approveForcedRequest(row.id); showToast('Approved: the guest was moved (forced)'); } }, 'Approve and force'),
+    h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => { await ctx.waitlistForcedRequest(row.id); showToast('The guest is on the waiting list'); } }, 'Waiting list instead'),
+    h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => declineSheet2(row) }, 'Decline...'),
   ];
 
   // Requests from guests: only the owner decides.
@@ -124,10 +139,11 @@ export function requestsSettingsPage(ctx, trip) {
       ? notice('Your devices apply a colleague\'s request by themselves when it fits. Only the ones that no longer fit wait here for you.')
       : notice('A change you make is sent to the owner\'s device and applied there, usually within seconds. It then shows up in your copy of the trip.'),
     owner ? notificationsCard(ctx) : null,
+    owner ? section('Wants to force: your decision', wantsForce.map((r) => card(r, decideForce(r)))) : null,
     guestSection,
     nothing && !owner ? h('p', { class: 'empty' }, 'No requests yet.') : null,
     section('Waiting to be sent', waiting.map((r) => h('div', { class: 'card' }, h('div', { class: 'act-name' }, describeRequest(trip, r.changes, names) || 'A change'), h('div', { class: 'muted' }, `${when(r.requestedAt)} · it will be sent as soon as you are online`)))),
     section(owner ? 'Needs your attention' : 'Did not fit', failed.map((r) => card(r, owner ? decide(r) : null))),
-    section('Waiting for the owner\'s device', pending.map((r) => card(r, null))),
+    section(owner ? 'Waiting' : 'Waiting for the owner', [...(owner ? [] : wantsForce), ...pending].map((r) => card(r, null))),
     section('Done', done.map((r) => card(r, null))));
 }
