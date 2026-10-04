@@ -727,18 +727,29 @@ function showProblem(title, text) {
   app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
 }
 
-// No link on this phone yet (for instance an app just put on the Home Screen, which starts empty): the guest can paste the link they were sent.
+// No link on this phone yet (for instance an app just put on the Home Screen, which starts empty): the guest types the 8-digit code the leader shows
+// next to the QR code, or pastes the link they were sent. The code is swapped for the long secret by the server (claim_guest_code).
 function showNoLink() {
   currentSheet = null;
-  const field = h('input', { class: 'paste-field', type: 'text', placeholder: 'Paste your personal link here', 'aria-label': 'Personal link', autocapitalize: 'none', autocorrect: 'off' });
-  const go = () => {
-    const token = field.value.trim().split('#').pop().trim();
-    if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) { field.setCustomValidity('x'); field.placeholder = 'That is not a personal link. Copy it again.'; field.value = ''; return; }
-    store.set(TOKEN_KEY, token); store.remove(SHEET_KEY); window.location.hash = token; window.location.reload();
+  const field = h('input', { class: 'paste-field', type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: 'Code, 8 digits', 'aria-label': 'Your code or link', autocapitalize: 'none', autocorrect: 'off' });
+  const message = h('p', { class: 'muted' }, '');
+  const keep = (token) => { store.set(TOKEN_KEY, token); store.remove(SHEET_KEY); window.location.hash = token; window.location.reload(); };
+  const go = async () => {
+    const typed = field.value.trim();
+    const asLink = typed.split('#').pop().trim();
+    if (/^[A-Za-z0-9_-]{16,64}$/.test(asLink)) { keep(asLink); return; }
+    const digits = typed.replace(/\D/g, '');
+    if (digits.length !== 8) { message.textContent = 'The code has 8 digits. Check the number your tour leader showed you.'; return; }
+    message.textContent = 'Checking…';
+    try {
+      const token = await callRpc('claim_guest_code', { p_code: digits });
+      if (token) keep(token); else message.textContent = 'This code does not work. Check it, or ask your tour leader.';
+    } catch { message.textContent = 'Could not check the code. Are you online? If it keeps failing, wait a few minutes.'; }
   };
-  app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, 'No link yet'),
-    h('p', { class: 'muted' }, 'Paste the personal link your tour leader sent you. After that, this app opens straight on your programme.'),
-    field, h('button', { class: 'btn-link paste-go', type: 'button', onclick: go }, 'Open my programme')));
+  field.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(); });
+  app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, 'Your code'),
+    h('p', { class: 'muted' }, 'Type the 8-digit code your tour leader shows you. You only do this once: after that, this app opens straight on your programme.'),
+    field, h('button', { class: 'btn-link paste-go', type: 'button', onclick: go }, 'Open my programme'), message));
 }
 
 // ---------- running ----------

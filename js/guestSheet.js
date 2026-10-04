@@ -146,7 +146,7 @@ export function guestSheetRows(trip, now, today = new Date().toISOString().slice
   for (const [guestId, link] of Object.entries(trip.guestLinks ?? {})) {
     const guest = trip.guests.find((g) => g.id === guestId);
     if (!guest) continue;
-    rows.push({ token: link.token, guestId, active: link.active === true && !guest.leftAt && !archivedEarly, sheet: link.active && !guest.leftAt && !archivedEarly ? (expired ? farewell(guest) : buildGuestSheet(trip, guest, now)) : null });
+    rows.push({ token: link.token, code: link.code ?? null, guestId, active: link.active === true && !guest.leftAt && !archivedEarly, sheet: link.active && !guest.leftAt && !archivedEarly ? (expired ? farewell(guest) : buildGuestSheet(trip, guest, now)) : null });
   }
   return rows;
 }

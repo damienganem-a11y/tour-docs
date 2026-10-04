@@ -24,6 +24,9 @@ export function guestLinkUrl(token) {
   return `${new URL('guest/', window.location.href).href}#${token}`;
 }
 
+// 12345678 -> "1234 5678": easier to read out loud and to type.
+const spaced = (code) => `${code.slice(0, 4)} ${code.slice(4)}`;
+
 export function guestLinksSettingsPage(ctx, trip) {
   const head = pageHead({
     back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
@@ -34,7 +37,7 @@ export function guestLinksSettingsPage(ctx, trip) {
   const names = displayNames(trip.guests);
   const guests = trip.guests.filter((g) => !g.leftAt).sort(alphabetical(names));
   const links = trip.guestLinks ?? {};
-  const without = guests.filter((g) => !links[g.id]);
+  const without = guests.filter((g) => !links[g.id] || !links[g.id].code); // no link yet, or a link from before codes existed
 
   async function run(change, message) {
     const result = await applyChange(ctx, trip.id, change);
@@ -55,7 +58,7 @@ export function guestLinksSettingsPage(ctx, trip) {
     picture.innerHTML = qrSvg(url, { pixels: 260 }); // the picture is made by qr.js from the link, nothing typed by anyone
     openSheet({
       eyebrow: 'QR code', title: guest.first, subtitle: 'Ask the guest to point their camera at it.',
-      body: [picture, h('p', { class: 'muted qr-url' }, url)],
+      body: [picture, links[guest.id]?.code ? h('p', { class: 'qr-code' }, `Code: ${spaced(links[guest.id].code)}`) : null, h('p', { class: 'muted qr-url' }, 'If their Home Screen app asks for a code, they type this one (or paste the link).'), h('p', { class: 'muted qr-url' }, url)],
     });
   }
 
@@ -77,7 +80,8 @@ export function guestLinksSettingsPage(ctx, trip) {
       return card;
     }
     const url = guestLinkUrl(link.token);
-    card.append(h('div', { class: 'muted' }, link.active ? 'Link is on' : 'Link is switched off'));
+    card.append(h('div', { class: 'muted' }, link.active ? 'Link is on' : 'Link is switched off'),
+      link.code ? h('div', { class: 'guest-code' }, `Code ${spaced(link.code)}`) : h('div', { class: 'muted' }, 'No code yet: tap "Create links" above'));
     if (link.active) {
       card.append(h('div', { class: 'card-actions' },
         h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => copy(url) }, 'Copy link'),
@@ -104,7 +108,7 @@ export function guestLinksSettingsPage(ctx, trip) {
     notice('A guest sees only their own programme: their activities and times, At leisure, and their dinners with their own travel party. Never allergies, notes or other guests.'),
     without.length > 0
       ? h('button', { class: 'btn', type: 'button', onclick: () => run({ type: 'guest-links', action: 'create', guestIds: without.map((g) => g.id) }, `${plural(without.length, 'link')} created`) },
-        without.length === guests.length ? 'Create links for everyone' : `Create links for the ${without.length} without one`)
+        without.length === guests.length ? 'Create links for everyone' : `Create links and codes for the ${without.length} missing one`)
       : null,
     statusLine, sendNow,
     h('div', {}, ...guests.map(guestCard)));

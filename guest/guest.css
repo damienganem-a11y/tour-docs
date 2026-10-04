@@ -445,3 +445,6 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 /* The "paste your link" box on the empty start screen */
 .paste-field { display: block; width: 100%; box-sizing: border-box; margin: 18px 0 12px; padding: 14px; border: 2px solid #000; border-radius: 0; font: 16px Inter, sans-serif; }
 .paste-go { width: 100%; box-sizing: border-box; border: 0; cursor: pointer; }
+
+.qr-code, .guest-code { font: 800 22px Outfit, sans-serif; letter-spacing: .18em; text-align: center; margin: 10px 0; }
+.guest-code { text-align: left; font-size: 15px; margin: 4px 0; }

@@ -65,7 +65,7 @@ export async function pushGuestSheets(tripId, rows, currentTokens = rows.map((r)
   const supabase = await getClient();
   if (rows.length > 0) {
     const { error } = await supabase.from('guest_links').upsert(
-      rows.map((r) => ({ token: r.token, trip_id: tripId, guest_id: r.guestId, active: r.active, data: r.sheet ?? {}, updated_at: new Date().toISOString() })),
+      rows.map((r) => ({ token: r.token, short_code: r.code ?? null, trip_id: tripId, guest_id: r.guestId, active: r.active, data: r.sheet ?? {}, updated_at: new Date().toISOString() })),
       { onConflict: 'token' });
     if (error) throw error;
   }
