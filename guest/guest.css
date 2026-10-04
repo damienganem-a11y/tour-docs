@@ -233,7 +233,7 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
 
 
 /* =====================================================================================================================================
-   v0.76.0: "Expedition" look (owner's go, 3 Oct 2026), inspired by the National Geographic Expeditions website: white pages, pure black bands,
+   v0.76.0: "Expedition" look (owner's go, 3 Oct 2026), inspired by an expedition-magazine website: white pages, pure black bands,
    one vivid yellow for actions and tags, very bold wide-spaced capital titles, big photographs. Fully replaces the look above. No logo and no
    frame of any brand: only colours, type and layout. The company colour stays a thin stripe at the very top.
    ===================================================================================================================================== */
@@ -601,3 +601,49 @@ html, body, main { background: #fff; }
 /* nothing may widen the page sideways, not even a stamp while it is pressed (it starts large) */
 main { overflow-x: clip; }
 input[type=checkbox] { accent-color: #000; }
+
+/* ---- Atlas: header (messages bell, initials), greeting, fun fact, messages page, the guest's panel ---- */
+.atl-bar-left { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.atl-bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atl-bell { position: relative; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .92); color: #000; display: inline-grid; place-items: center; cursor: pointer; padding: 0; text-shadow: none; box-shadow: 0 2px 10px rgba(0, 0, 0, .2); flex: none; }
+.atl-hero--plain .atl-bell { background: #fff; }
+.atl-badge { position: absolute; top: -3px; right: -3px; min-width: 20px; height: 20px; border-radius: 99px; background: var(--yellow); color: #000; font: 800 11px/20px Outfit, sans-serif; text-align: center; font-style: normal; box-shadow: 0 0 0 2px #fff; }
+.atl-dot { width: 44px; height: 44px; border: 0; cursor: pointer; font-size: 15px; letter-spacing: .02em; flex: none; box-shadow: 0 2px 10px rgba(0, 0, 0, .2); }
+.atl-hello { margin: 12px 0 0; font: 700 22px/1.2 Outfit, sans-serif; color: #000; }
+.atl-hello small { display: block; font: 500 13px Inter, sans-serif; color: #4a4a46; margin-top: 2px; }
+.atl-title .atl-hello + h1 { margin-top: 6px; }
+.atl-funfact { margin: 14px 0 0; padding: 16px 18px; border-radius: 24px; background: var(--yellow); color: #000; }
+.atl-funfact small { display: block; font: 700 10px Outfit, sans-serif; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 6px; }
+.atl-funfact p { margin: 0; font: 600 16px/1.4 Outfit, sans-serif; }
+.atl-msg { background: #fff; border-radius: 24px; box-shadow: 0 6px 24px rgba(0, 0, 0, .09); padding: 14px 18px; }
+.atl-msg b { font: 700 16px Outfit, sans-serif; }
+.atl-msg p { margin: 4px 0; font-size: 14px; color: #33332f; }
+.atl-msg small { color: #6b6b66; font-size: 12px; }
+.atl-empty { padding: 8px 4px; }
+.atl-pill-btn { border: 0; border-radius: 99px; background: var(--yellow); color: #000; font: 700 14px Inter, sans-serif; min-height: 44px; padding: 0 20px; cursor: pointer; margin-top: 8px; }
+.atl-pill-btn--plain { background: var(--atl-mist); }
+.atl-pill-btn[disabled] { opacity: .5; }
+.atl-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #ececE8; }
+.atl-row small { display: block; color: #55554f; font-size: 13px; margin-top: 2px; }
+.atl-row-actions { display: flex; gap: 8px; flex: none; }
+.atl-row-actions .atl-pill-btn { margin-top: 0; }
+@media (max-width: 480px) { .atl-row { flex-direction: column; align-items: flex-start; } }
+
+/* ---- Atlas: one look for every small piece (banners, buttons, links, panels, fields) ---- */
+.banner { background: var(--atl-mist); color: #1d1d1b; border-radius: 20px; padding: 14px 16px; margin: 12px 0; font-size: 14px; line-height: 1.45; }
+.banner .link { border: 0; background: var(--yellow); color: #000; border-radius: 99px; font: 700 13px Inter, sans-serif; padding: 8px 16px; min-height: 36px; margin-left: 6px; cursor: pointer; }
+.updated-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0 0; font-size: 13px; color: #55554f; }
+.link-btn { border: 0; border-radius: 99px; background: var(--atl-mist); color: #000; font: 600 12px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; padding: 10px 16px; min-height: 40px; cursor: pointer; }
+.btn-link { display: block; width: 100%; border: 0; border-radius: 99px; background: var(--yellow); color: #000; font: 700 15px Inter, sans-serif; letter-spacing: 0; text-transform: none; padding: 14px 20px; min-height: 48px; text-align: center; text-decoration: none; cursor: pointer; }
+.plain-link { display: block; width: 100%; border: 0; border-radius: 99px; background: var(--atl-mist); color: #000; font: 600 15px Inter, sans-serif; letter-spacing: 0; text-transform: none; padding: 14px 20px; min-height: 48px; cursor: pointer; }
+.modal { background: rgba(0, 0, 0, .45); }
+.modal-box { border-radius: 28px 28px 0 0; padding: 26px 22px calc(env(safe-area-inset-bottom) + 22px); }
+.modal-box h3 { font: 800 24px Outfit, sans-serif; letter-spacing: -.01em; }
+.modal-actions { gap: 10px; }
+.note-input, .paste-field { border: 1px solid #cfcfca; border-radius: 16px; padding: 14px; }
+.requests { background: var(--atl-mist); border-radius: 24px; padding: 14px 18px; margin: 14px 0; }
+.requests .block-title { font: 700 11px Outfit, sans-serif; letter-spacing: .18em; text-transform: uppercase; color: #6b6b66; }
+.request { border-top: 1px solid #deded9; }
+.pref-row { border-top: 1px solid #ececE8; }
+.problem { padding: 40px 22px; }
+.problem h1 { font: 800 40px/1 Outfit, sans-serif; letter-spacing: -.02em; }

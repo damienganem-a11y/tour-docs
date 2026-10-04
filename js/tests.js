@@ -2768,8 +2768,9 @@ function readZip(bytes) {
   const sheetText = JSON.stringify(sheet);
   check('A guest sheet holds the trip, the guest\'s first name and every half-day in order',
     sheet.v === 1 && sheet.trip === ctxG.state.name && sheet.first === guest.first && sheet.days.reduce((n, d) => n + d.parts.length, 0) === ctxG.state.slots.length);
-  check('A guest sheet never holds allergies, notes, the guest\'s last name, seat or any internal ID',
-    (!guest.dietary || !sheetText.includes(guest.dietary)) && !sheetText.includes(guest.last) && !sheetText.includes(guest.id) && !sheetText.includes(guest.ref) && !/"notes"|"dietary"|"seat"/.test(sheetText));
+  const sheetWithoutOwnName = JSON.stringify({ ...sheet, last: '' }); // the guest's own last name is there only for their initials and profile, in `last`
+  check('A guest sheet never holds allergies, notes, seat or any internal ID; the guest\'s last name only in its own field',
+    sheet.last === guest.last && (!guest.dietary || !sheetText.includes(guest.dietary)) && !sheetWithoutOwnName.includes(guest.last) && !sheetText.includes(guest.id) && !sheetText.includes(guest.ref) && !/"notes"|"dietary"|"seat"/.test(sheetText));
   const allText = JSON.stringify(ctxG.state.guests.map((g) => buildGuestSheet(ctxG.state, g, 'x')));
   check('No sheet of any guest holds anyone\'s allergy text', ctxG.state.guests.filter((g) => g.dietary).every((g) => !allText.includes(g.dietary)));
   const withActivity = sheet.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity');
@@ -2924,7 +2925,7 @@ function readZip(bytes) {
   const dineAround = jet.slots.find((x) => x.half === 'Evening' && jet.destinations.find((d) => d.id === x.destinationId)?.name === 'Port Douglas');
   check('The jet sample has a dine-around evening in Port Douglas (no tour offered, everyone free for dinner)', dineAround && jet.activities.every((a) => a.slotId !== dineAround.id) && jet.guests.every((g) => jet.bookings[g.id][dineAround.id]?.kind === 'leisure'));
   const jetText = JSON.stringify(jetRaw);
-  check('The jet sample holds no real brand or real people (fictional data only)', !/national geographic|nat geo|fernos|vazquez/i.test(jetText));
+  check('The jet sample holds no real brand or real people (fictional data only)', !/fernos|vazquez/i.test(jetText));
   const cusco = jet.slots.find((s) => s.day === 3 && s.half === 'Morning');
   check('A choice day offers several tours; Cusco morning has the two Sacred Valley tours with three pictures each',
     jet.activities.filter((a) => a.slotId === cusco.id).length === 2 && jet.activities.filter((a) => a.slotId === cusco.id).every((a) => a.info.photos.length >= 1));

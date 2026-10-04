@@ -118,12 +118,13 @@ export function buildGuestSheet(trip, guest, now) {
     company: trip.branding?.companyName || '',
     accent: trip.branding?.accent || '#1d5c57',
     first: guest.first,
+    last: guest.last || '', // the guest's own full name, for the initials and the profile in their app
     updatedAt: now,
     days,
     // For the passport: each destination with its time zone and the first and last date there (from its half-days), in trip order.
     destinations: [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => {
       const dates = trip.slots.filter((x) => x.destinationId === d.id).map((x) => x.date).sort();
-      return { name: d.name, country: d.country || '', photo: d.photo || '', tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null };
+      return { name: d.name, country: d.country || '', photo: d.photo || '', facts: (d.facts ?? []).slice(0, 6), tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null };
     }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
     expiresOn: guestLinkExpiry(trip), // the guest app also stops showing the programme after this day, even with no connection

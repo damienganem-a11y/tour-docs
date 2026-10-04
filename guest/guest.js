@@ -12,6 +12,7 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
 import { passportState, stampSvg, dayIn, wallToInstant } from './passport.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
+import { greetingFor } from './greetings.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
 const SHEET_KEY = 'tourdocs.guest.sheet';
@@ -199,6 +200,70 @@ function nextBar(sheet) {
   return bar;
 }
 
+// ---------- messages received (the inbox) ----------
+// The service worker keeps every notification it receives (sw.js), so the guest can read them again here. Stored on the phone only.
+const INBOX_SEEN_KEY = 'tourdocs.guest.inboxSeen';
+let inbox = [];
+function readInbox() {
+  return new Promise((resolve) => {
+    try {
+      const open = indexedDB.open('tourdocs-guest', 1);
+      open.onupgradeneeded = () => open.result.createObjectStore('inbox', { keyPath: 'id', autoIncrement: true });
+      open.onerror = () => resolve([]);
+      open.onsuccess = () => {
+        const request = open.result.transaction('inbox', 'readonly').objectStore('inbox').getAll();
+        request.onsuccess = () => resolve((request.result ?? []).sort((x, y) => y.at - x.at));
+        request.onerror = () => resolve([]);
+      };
+    } catch { resolve([]); }
+  });
+}
+const unreadCount = () => { const seen = Number(store.get(INBOX_SEEN_KEY)) || 0; return inbox.filter((m) => m.at > seen).length; };
+async function refreshInbox() { inbox = await readInbox(); if (currentSheet && !view.inbox && (view.tab ?? 'today') === 'today' && view.tour === undefined && view.rest === undefined && !view.options && !view.eat && !view.credits) paint(); }
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', (event) => { if (event.data?.type === 'inbox') refreshInbox(); });
+const messageTime = (at) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(at));
+
+const bellIcon = () => { const span = h('span', { class: 'atl-icon' }); span.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>'; return span; };
+
+function inboxView(sheet, offline) {
+  store.set(INBOX_SEEN_KEY, String(Date.now()));
+  const capability = pushCapability();
+  const on = store.get(PUSH_KEY) === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  const prompt = !PREVIEW && capability.supported && !on && !capability.needsInstall && !capability.denied
+    ? h('div', { class: 'atl-note' }, h('small', {}, 'Notifications are off'), h('span', {}, 'Turn them on to hear about changes to your programme as they happen.'),
+      h('button', { class: 'atl-pill-btn', type: 'button', onclick: async (e) => { e.target.disabled = true; try { await enablePush(); paint(); } catch (error) { e.target.textContent = String(error.message).slice(0, 60); } } }, 'Turn on notifications'))
+    : null;
+  const list = inbox.length === 0
+    ? h('p', { class: 'muted atl-empty' }, 'No messages yet. Changes to your programme and messages from your tour leader will appear here.')
+    : inbox.map((m) => h('div', { class: 'atl-msg' }, h('b', {}, m.title), h('p', {}, m.body), h('small', {}, messageTime(m.at))));
+  return [plainHead(sheet.company || sheet.trip, 'Messages'), h('div', { class: 'atl-body' }, offline, prompt, h('div', { class: 'atl-cards' }, list))];
+}
+
+// ---------- the guest's own panel (tap the initials): name, notifications, refresh ----------
+function profileModal(sheet) {
+  const full = [sheet.first, sheet.last].filter(Boolean).join(' ');
+  const capability = pushCapability();
+  const on = store.get(PUSH_KEY) === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  const rows = [];
+  if (!PREVIEW && capability.supported) {
+    const text = capability.needsInstall ? 'To get notifications, first add this app to your Home Screen (Share button, then Add to Home Screen).'
+      : capability.denied ? 'Notifications are blocked: allow them in your phone\'s Settings.'
+      : on ? 'You will be told about changes to your programme.' : 'Be told when your programme changes or your request is answered.';
+    const buttons = capability.needsInstall || capability.denied ? [] : [
+      on ? h('button', { class: 'atl-pill-btn atl-pill-btn--plain', type: 'button', onclick: () => { overlay.remove(); prefsModal(); } }, 'Choose') : null,
+      h('button', { class: `atl-pill-btn${on ? ' atl-pill-btn--plain' : ''}`, type: 'button', onclick: async (e) => {
+        const button = e.target; button.disabled = true;
+        try { if (on) await disablePush(); else await enablePush(); } catch (error) { button.textContent = String(error.message).slice(0, 60); return; }
+        overlay.remove(); profileModal(sheet); paint();
+      } }, on ? 'Turn off' : 'Turn on')];
+    rows.push(h('div', { class: 'atl-row' }, h('div', {}, h('b', {}, `Notifications: ${on ? 'on' : 'off'}`), h('small', {}, text)), h('div', { class: 'atl-row-actions' }, ...buttons)));
+  }
+  rows.push(h('div', { class: 'atl-row' }, h('div', {}, h('b', {}, 'Programme'), h('small', {}, sheet.updatedAt ? `Updated ${updatedText(sheet.updatedAt)}` : '')), h('div', { class: 'atl-row-actions' },
+    h('button', { class: 'atl-pill-btn atl-pill-btn--plain', type: 'button', onclick: () => { overlay.remove(); manualRefresh(); } }, 'Refresh'))));
+  const overlay = modal(full || 'My programme', [h('p', { class: 'muted' }, sheet.trip), ...rows],
+    [h('button', { class: 'atl-pill-btn', type: 'button', onclick: () => overlay.remove() }, 'Close')]);
+}
+
 function todayView(sheet, offline) {
   const { day, label } = dayShown(sheet);
   const last = sheet.days[sheet.days.length - 1];
@@ -208,16 +273,27 @@ function todayView(sheet, offline) {
   const art = (place?.photo ? { url: place.photo } : null)
     ?? (next && next.part.kind === 'activity' && next.part.tour >= 0 ? sheet.tours?.[next.part.tour]?.info?.photos?.[0] : null)
     ?? (sheet.destinations?.[0]?.photo ? { url: sheet.destinations[0].photo } : null);
-  const initial = (sheet.first || '?').trim().charAt(0).toUpperCase();
+  const initials = `${(sheet.first || '?').trim().charAt(0)}${(sheet.last || '').trim().charAt(0)}`.toUpperCase();
+  const unread = unreadCount();
+  const bell = h('button', { class: 'atl-bell', type: 'button', 'aria-label': unread ? `Messages, ${unread} new` : 'Messages', onclick: () => go({ inbox: true }) }, bellIcon(), unread ? h('i', { class: 'atl-badge' }, String(Math.min(unread, 9))) : null);
   const hero = h('header', { class: `atl-hero${art ? '' : ' atl-hero--plain'}` },
     art ? picture(art.url, 'atl-hero-art', '') : null,
-    h('div', { class: 'atl-bar' }, h('span', {}, sheet.company || sheet.trip), h('span', { class: 'atl-dot', title: `Hello ${sheet.first}` }, initial)));
+    h('div', { class: 'atl-bar' }, h('span', { class: 'atl-bar-left' }, bell, h('span', { class: 'atl-bar-name' }, sheet.company || sheet.trip)),
+      h('button', { class: 'atl-dot', type: 'button', 'aria-label': 'My profile', onclick: () => profileModal(sheet) }, initials)));
+  // "Hello" in the language of the place, for the time of day there.
+  const hour = simulatedDate ? 9 : (() => { try { return Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: zoneOf(sheet, day.destination) || undefined }).format(new Date())); } catch { return 12; } })();
+  const hello = greetingFor(place?.country ?? day.country, hour);
   const title = h('div', { class: 'atl-title' },
     h('span', { class: 'atl-pill' }, label),
+    h('p', { class: 'atl-hello' }, `${hello.text}, ${sheet.first}`, hello.language === 'English' ? null : h('small', {}, `${hello.english}, in ${hello.language}`)),
     h('h1', {}, day.destination),
     h('p', {}, `Day ${day.day} of ${last.day} · ${dayDate(day.date)}`));
   const parts = day.parts.map((p) => partView(p, sheet));
-  return [hero, title, h('div', { class: 'atl-body' }, nextBar(sheet), h('div', { class: 'atl-day' }, parts), notifyRow(), myRequestsBlock(), installHint(), offline, staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+  // A fun fact about the place, a new one each day of the stay.
+  const facts = place?.facts ?? [];
+  const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
+  const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
+  return [hero, title, h('div', { class: 'atl-body' }, nextBar(sheet), h('div', { class: 'atl-day' }, parts), factCard, myRequestsBlock(), installHint(), offline, staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -368,24 +444,8 @@ function myRequestsBlock() {
       r.status === 'pending' ? h('button', { class: 'link-btn', type: 'button', onclick: async () => { try { await callRpc('cancel_guest_request', { p_token: currentToken(), p_id: r.id }); await loadMyRequests(); paint(); } catch { /* offline */ } } }, 'Take it back') : null)));
 }
 
-// Notifications: one row under the "Updated" line. On an iPhone the app must be on the Home Screen first.
+// Notifications: turned on and off from the guest's own panel (tap the initials) or from the Messages page. On an iPhone the app must be on the Home Screen first.
 const PUSH_KEY = 'tourdocs.guest.push';
-function notifyRow() {
-  if (PREVIEW) return null;
-  const capability = pushCapability();
-  if (!capability.supported) return null;
-  const on = store.get(PUSH_KEY) === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted';
-  const text = capability.needsInstall ? 'To get notifications, first add this app to your Home Screen (Share button, then Add to Home Screen).'
-    : capability.denied ? 'Notifications are blocked: allow them in your phone\'s Settings.'
-    : on ? 'Notifications are on: you will hear about changes to your programme.' : 'Get a notification when your programme changes or your request is answered.';
-  const action = capability.needsInstall || capability.denied ? null
-    : h('span', { class: 'notify-actions' }, on ? h('button', { class: 'link-btn', type: 'button', onclick: prefsModal }, 'Choose') : null, h('button', { class: 'link-btn', type: 'button', onclick: async (e) => {
-      const button = e.target; button.disabled = true;
-      try { if (on) await disablePush(); else await enablePush(); } catch (error) { button.textContent = String(error.message).slice(0, 80); return; }
-      paint();
-    } }, on ? 'Turn off' : '🔔 Turn on'));
-  return h('div', { class: 'notify-row' }, h('span', { class: 'notify-text' }, text), action);
-}
 // What the guest wants to hear about (kept on the phone and sent to the server with the phone's time zone, so quiet hours follow the guest around the world).
 const PREFS_KEY = 'tourdocs.guest.pushprefs';
 const DEFAULT_PREFS = { changes: true, requests: true, reminders: true, announcements: true, quiet: true };
@@ -671,6 +731,7 @@ function paintPage() {
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
   if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'today' }; }
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
+  if (view.inbox) { app.replaceChildren(...inboxView(sheet, offline)); return; }
   if (view.credits) { app.replaceChildren(...creditsView(sheet, offline)); return; }
   if (view.rest !== undefined && !sheet.restaurants?.[view.rest]) view = { tab: 'today' };
   if (view.rest !== undefined) { app.replaceChildren(...restaurantView(sheet, view.rest, offline)); return; }
@@ -795,6 +856,7 @@ function showPreview() {
 
 async function refresh() {
   let status = 'none';
+  readInbox().then((list) => { const changed = list.length !== inbox.length; inbox = list; if (changed && currentSheet) paint(); });
   if (PREVIEW) { showPreview(); return 'preview'; }
   const token = currentToken();
   if (!token) { showNoLink(); return 'none'; }
