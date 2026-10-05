@@ -308,7 +308,7 @@ const ctx = {
   approveForcedRequest: (id) => decideForcedRequest(id, 'approve'),
   waitlistForcedRequest: (id) => decideForcedRequest(id, 'waitlist'),
   declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
-  needsOwnerDecision,
+  needsOwnerDecision: (row) => needsOwnerDecision(row),
   async retryRequest(id) { await reopenRequest(id); await processRequests(); render({ keepScroll: true }); },
   exportsFor: (tripId) => (state.exports.get(tripId) ?? []).filter((r) => !r.deletedAt), // a document deleted here waits, hidden, until the server has been told
   go(hash) { location.hash = hash; },
