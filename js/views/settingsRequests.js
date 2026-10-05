@@ -103,10 +103,35 @@ export function requestsSettingsPage(ctx, trip) {
   const pending = rows.filter((r) => (r.status === 'pending' && !ctx.needsOwnerDecision(r)) || r.status === 'applying');
   const done = rows.filter((r) => r.status === 'applied' || r.status === 'declined').slice(-20).reverse();
 
+  // A request that "no longer fits" because the tour is full: the owner can still force it, or put the guest on the waiting list, not only try again.
+  const fullTour = (row) => /is full/.test(row.note ?? '') && Array.isArray(row.changes) && row.changes.some((c) => c?.type === 'move' && c.to?.kind === 'activity');
   const decide = (row) => [
+    ...(fullTour(row) ? [
+      h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { await ctx.approveForcedRequest(row.id); showToast('Approved: the guest was moved (forced)'); } }, 'Force it'),
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => { await ctx.waitlistForcedRequest(row.id); showToast('The guest is on the waiting list'); } }, 'Waiting list instead'),
+    ] : []),
     h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => ctx.retryRequest(row.id) }, 'Try again'),
-    h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => ctx.declineRequest(row.id) }, 'Decline'),
+    h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => (fullTour(row) ? declineSheet2(row) : ctx.declineRequest(row.id)) }, fullTour(row) ? 'Decline...' : 'Decline'),
   ];
+
+  // The colleague whose request did not fit is not left with "sorry, full": they can put the guest on the waiting list, or ask the owner to force it, with a reason.
+  function colleagueChoices(row) {
+    const asWaitlist = row.changes.map((c) => (c?.type === 'move' && c.to?.kind === 'activity' ? { type: 'move', guestId: c.guestId, slotId: c.slotId, to: { kind: 'waitlist', activityId: c.to.activityId } } : c));
+    const askSheet = () => {
+      const reason = h('textarea', { class: 'text-input', rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' });
+      openSheet({ eyebrow: 'Over capacity', title: 'Ask the owner to force it?', subtitle: describeRequest(trip, row.changes, names),
+        body: [reason, h('button', { class: 'btn btn--danger', type: 'button', onclick: async () => {
+          if (!reason.value.trim()) { showToast('Write why this move must be forced.', true); return; }
+          closeSheet();
+          const result = await ctx.askAgain(trip.id, row.changes.map((c) => (c?.type === 'move' && c.to?.kind === 'activity' ? { ...c, force: true, forceReason: reason.value.trim() } : c)));
+          showToast(result.ok ? 'Request sent to the owner' : result.error, !result.ok);
+        } }, 'Ask to force')], cancelLabel: 'Cancel' });
+    };
+    return [
+      h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { const result = await ctx.askAgain(trip.id, asWaitlist); showToast(result.ok ? 'Request sent: waiting list' : result.error, !result.ok); } }, 'Waiting list instead'),
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: askSheet }, 'Ask the owner to force'),
+    ];
+  }
 
   // A colleague asks to force a move into a full tour: the owner approves, puts the guest on the waiting list instead, or declines with a word.
   function declineSheet2(row) {
@@ -143,7 +168,7 @@ export function requestsSettingsPage(ctx, trip) {
     guestSection,
     nothing && !owner ? h('p', { class: 'empty' }, 'No requests yet.') : null,
     section('Waiting to be sent', waiting.map((r) => h('div', { class: 'card' }, h('div', { class: 'act-name' }, describeRequest(trip, r.changes, names) || 'A change'), h('div', { class: 'muted' }, `${when(r.requestedAt)} · it will be sent as soon as you are online`)))),
-    section(owner ? 'Needs your attention' : 'Did not fit', failed.map((r) => card(r, owner ? decide(r) : null))),
+    section(owner ? 'Needs your attention' : 'Did not fit', failed.map((r) => card(r, owner ? decide(r) : (fullTour(r) ? colleagueChoices(r) : null)))),
     section(owner ? 'Waiting' : 'Waiting for the owner', [...(owner ? [] : wantsForce), ...pending].map((r) => card(r, null))),
     section('Done', done.map((r) => card(r, null))));
 }

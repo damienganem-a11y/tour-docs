@@ -305,6 +305,7 @@ const ctx = {
     flushOutbox().catch(() => {});
   },
   async declineRequest(id, note = null) { await finishRequest(id, 'declined', note || null); await processRequests(); render({ keepScroll: true }); },
+  askAgain: (tripId, changes) => applyChange(ctx, tripId, changes),
   approveForcedRequest: (id) => decideForcedRequest(id, 'approve'),
   waitlistForcedRequest: (id) => decideForcedRequest(id, 'waitlist'),
   declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
@@ -702,13 +703,15 @@ const needsOwnerDecision = (row) => Array.isArray(row.changes) && row.changes.so
 // put the guest on the tour's waiting list instead, or decline with a word for the colleague.
 async function decideForcedRequest(id, how, note = null) {
   const row = requestRows.find((r) => r.id === id);
-  if (!row || row.status !== 'pending' || ctx.roleFor(row.trip_id) !== 'owner') return;
+  if (!row || !['pending', 'failed'].includes(row.status) || ctx.roleFor(row.trip_id) !== 'owner') return;
   if (how === 'decline') { await finishRequest(id, 'declined', note || null); await processRequests(); render({ keepScroll: true }); return; }
+  if (row.status === 'failed') await reopenRequest(id); // a request that "no longer fits" (the tour filled up) can still be forced or put on the waiting list by the owner
   if (!(await claimRequest(id))) return;
   const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: await scopeOfRequester(row) };
+  const intoTour = (c) => c?.type === 'move' && c.to?.kind === 'activity';
   const changes = how === 'waitlist'
-    ? row.changes.map((c) => (c.force && c.to?.kind === 'activity' ? { type: 'move', guestId: c.guestId, slotId: c.slotId, to: { kind: 'waitlist', activityId: c.to.activityId } } : c))
-    : row.changes;
+    ? row.changes.map((c) => (intoTour(c) ? { type: 'move', guestId: c.guestId, slotId: c.slotId, to: { kind: 'waitlist', activityId: c.to.activityId } } : c))
+    : row.changes.map((c) => (intoTour(c) ? { ...c, force: true } : c));
   let result;
   try { result = await applyChange(ctx, row.trip_id, changes, { as, request: { id: row.id, at: row.requested_at }, forceApproved: how === 'approve' ? { by: state.owner.name } : undefined }); }
   catch { result = { ok: false, error: 'It could not be applied.' }; }

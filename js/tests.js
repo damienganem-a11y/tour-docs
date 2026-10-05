@@ -2995,6 +2995,22 @@ function readZip(bytes) {
   check('The address in the QR code is short enough for the app\'s QR maker (213 letters)', typical.length <= 213 && qrSvg(typical, { pixels: 200 }).includes('<svg'));
 }
 
+// --- A request that did not fit because the tour filled up: nobody is left with "sorry, full" ---
+{
+  const ctxR = makeCtx();
+  const tr = ctxR.state;
+  const act = tr.activities.find((a) => a.name === 'Alfama walking tour');
+  const slotR = tr.slots.find((s) => s.id === act.slotId);
+  const row = { id: 'rq1', trip_id: tr.id, status: 'failed', note: `"${act.name}" is full (20 / 20).`, requested_at: '2027-01-01T00:00:00Z', requester_name: 'Ben',
+    changes: [{ type: 'move', guestId: tr.guests[0].id, slotId: slotR.id, to: { kind: 'activity', activityId: act.id } }] };
+  const { requestsSettingsPage: page } = await import('./views/settingsRequests.js');
+  const base = { requestsFor: () => [row], outboxFor: () => [], guestRequestsFor: () => [], pushState: async () => ({ state: 'off' }), needsOwnerDecision: () => false };
+  const asTeam = page({ ...base, roleFor: () => 'team' }, tr).textContent;
+  const asOwner = page({ ...base, roleFor: () => 'owner' }, tr).textContent;
+  check('A colleague whose request found the tour full can put the guest on the waiting list or ask the owner to force it', /Waiting list instead/.test(asTeam) && /Ask the owner to force/.test(asTeam));
+  check('The owner of such a request can force it, put the guest on the waiting list, try again or decline', /Force it/.test(asOwner) && /Waiting list instead/.test(asOwner) && /Try again/.test(asOwner) && /Decline/.test(asOwner));
+}
+
 // --- QR codes (the guests' links). The picture was also decoded by a real QR reader when it was written: see SPEC.md ---
 {
   const cells = qrCells('https://example.com/guest/#eB21LnCclPB3iCj2kGIjuA');

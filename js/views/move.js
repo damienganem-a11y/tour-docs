@@ -353,7 +353,10 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
 
   openSheet({
     eyebrow: force ? 'Over capacity' : 'Confirm change', title, subtitle: detail,
-    body: [warnings.map(notice), asking ? notice('The owner decides. They will see your reason, and can approve it, put the guest on the waiting list instead, or decline.') : null, approval, confirmButton, secondaryButton],
+    // A colleague's choices are laid out so both are visible at once: the waiting list first (no one has to decide), then "ask the owner to force it" with its reason.
+    body: asking
+      ? [warnings.map(notice), secondaryButton, h('div', { class: 'form-label' }, 'Or ask the owner to force it'), approval, confirmButton, notice('The owner decides. They will see your reason, and can approve it, put the guest on the waiting list instead, or decline.')]
+      : [warnings.map(notice), approval, confirmButton, secondaryButton],
     cancelLabel, cancelDanger: !(danger || force),
   });
 }
