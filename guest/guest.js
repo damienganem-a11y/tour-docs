@@ -912,4 +912,11 @@ window.addEventListener('online', refresh);
 window.addEventListener('hashchange', () => { scrolledToToday = false; refresh(); });
 
 // Offline: the service worker keeps the app's own files on the phone.
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// A new version of the guest app takes over at once: the page reloads ONE time when that happens (only if an older version was running), so a guest
+// never keeps looking at old colours or old screens until they close the app twice.
+if ('serviceWorker' in navigator) {
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded) { reloaded = true; window.location.reload(); } });
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
