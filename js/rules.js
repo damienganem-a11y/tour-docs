@@ -235,6 +235,37 @@ export function splitPastSlots(trip, today) {
   return { upcoming, earlier };
 }
 
+// ---------- Age rules (v0.95.0) ----------
+
+// A guest under this age is a "child": they cannot join an ordinary tour without an adult of their own travel party.
+export const ADULT_AGE = 18;
+
+// Who may not join `activity` without a decision (FORCE)? Pure. Looks at the guests who would JOIN it in one change (`joiningIds`), and at who
+// would LEAVE it in the same change (`leavingIds`), so a family moved together is judged as a family.
+//   activity.minAge     the youngest age allowed (e.g. 14 for a bike tour)
+//   activity.audience   'adults' (18+ only), 'juniors' (under 18 only: the children's programme, run by a guide) or 'all' (default)
+//   a child on an 'all' tour needs an adult of the SAME travel party on that tour (a parent or a grandparent)
+// A guest whose age is not known is never questioned. Returns [{ guestId, text }].
+export function eligibilityProblems(trip, activity, joiningIds, leavingIds = new Set()) {
+  const names = displayNames(trip.guests);
+  const joining = new Set(joiningIds);
+  const found = [];
+  for (const guest of trip.guests) {
+    if (!joining.has(guest.id) || guest.leftAt || typeof guest.age !== 'number') continue;
+    const who = `${names.get(guest.id)} (${guest.age})`;
+    const audience = activity.audience ?? 'all';
+    if (typeof activity.minAge === 'number' && guest.age < activity.minAge) found.push({ guestId: guest.id, text: `${who} is under the minimum age of ${activity.minAge} for "${activity.name}"` });
+    else if (audience === 'adults' && guest.age < ADULT_AGE) found.push({ guestId: guest.id, text: `${who} is under ${ADULT_AGE}: "${activity.name}" is for adults only` });
+    else if (audience === 'juniors' && guest.age >= ADULT_AGE) found.push({ guestId: guest.id, text: `${who} is an adult: "${activity.name}" is the children's programme` });
+    else if (audience === 'all' && guest.age < ADULT_AGE) {
+      const adultThere = trip.guests.some((o) => o.id !== guest.id && !o.leftAt && o.partyId === guest.partyId && typeof o.age === 'number' && o.age >= ADULT_AGE
+        && (joining.has(o.id) || (!leavingIds.has(o.id) && trip.bookings[o.id]?.[activity.slotId]?.kind === 'activity' && trip.bookings[o.id][activity.slotId].activityId === activity.id)));
+      if (!adultThere) found.push({ guestId: guest.id, text: `${who} is a child: no adult of their travel party is on "${activity.name}"` });
+    }
+  }
+  return found;
+}
+
 // ---------- Capacity ----------
 
 // How a guest (and the travel party who is with them) fit into a place they might be moved to.

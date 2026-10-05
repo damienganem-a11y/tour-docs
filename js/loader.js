@@ -15,14 +15,14 @@
 // The trip we return looks like this (every `id` is a UUID):
 //   trip.destinations  [ { id, ref, order, name, country, timeZone, firstDay, lastDay, photo, facts } ]   photo: an optional picture of the place (https address or demo/ path); facts: up to 6 short fun facts (optional)
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
-//   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled, short, info } ]   short: a one-word keyword for compact lists (optional); info: what a guest can read about the tour
+//   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled, short, info, minAge, audience } ]   short: a one-word keyword for compact lists (optional); info: what a guest can read about the tour
 //                          (tourInfo.js: duration, description, difficulty, difficultyNote, bring, included, photos), or null
 //   trip.restaurants   [ { id, destinationId, name, seatings, mode, seatsPerSeating, maxTableSize,
 //                          tables: [{id,size}], card } ]   Phase 3 step 1 (Settings); card: presentation + menu, see menuCard.js (or null)
 //   trip.dinnerBookings [ { id, slotId, restaurantId, seating, tableIds, status } ]  Phase 3 step 2a:
 //                          one per table; membership is derived from trip.bookings, like activities
 //   trip.parties       [ { id, ref, type } ]                                   travel parties
-//   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt, seat } ]
+//   trip.guests        [ { id, ref, first, last, partyId, notes, dietary, leftAt, seat, age } ]   age: age at departure, or null (age rules, rules.js eligibilityProblems)
 //   trip.bookings      { guestId: { slotId: { kind: 'activity', activityId } | { kind: 'leisure' }
 //                          | { kind: 'dinner', bookingId } | { kind: 'unknown', raw } } }
 //   trip.archivedAt, trip.deletedAt   null until "Archive" / "Delete" (Trips screen, step 9) are used
@@ -129,6 +129,8 @@ export function buildTrip(raw) {
         meeting: o.meeting ?? '',
         capacity: o.cap === null || o.cap === undefined ? null : Number(o.cap), // no capacity = never full
         cancelled: false,
+        minAge: Number.isInteger(o.min_age) && o.min_age > 0 ? o.min_age : null,          // the youngest age allowed (optional)
+        audience: ['adults', 'juniors'].includes(o.audience) ? o.audience : 'all',          // 'adults' (18+), 'juniors' (under 18, children's programme) or everyone
         short: typeof o.short === 'string' ? o.short.trim().slice(0, 16) : '',
         info: cleanTourInfo({ duration: o.duration, description: o.description, difficulty: o.difficulty, difficultyNote: o.difficulty_note, bring: o.bring, included: o.included, accessibility: o.accessibility, photos: o.photos }),
       };
@@ -158,6 +160,7 @@ export function buildTrip(raw) {
       id: newId(), ref: g.id, first: g.first.trim(), last: g.last.trim(),
       partyId: partyByRef.get(partyRef).id, notes: g.notes ?? '', dietary: g.dietary ?? '',
       leftAt: null, // set to the exact moment when "Guest left the trip" is used (Settings, step 7d); reversible
+      age: Number.isInteger(g.age) && g.age >= 0 && g.age < 120 ? g.age : null, // age at departure (optional): used by the age rules
       seat: isText(g.seat) ? g.seat.trim() : null, // e.g. "2C", optional; used to sort By guest for reconfirming names on board
     };
     guests.push(guest);

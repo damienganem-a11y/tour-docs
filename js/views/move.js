@@ -11,7 +11,7 @@ import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { applyChange } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
-import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
+import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, eligibilityProblems, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
 
 const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :
@@ -169,7 +169,12 @@ export function startAddGuest(ctx, trip, slot, activity) {
 //   - not everyone fits: the question says so, and whatever does not fit goes to the FORCE confirmation
 //     (the dispatcher decides, and may write who approved it).
 function afterPick(ctx, trip, guest, slot, target, options = {}) {
-  const { movers, room, guestFits, everyoneFits } = partyPlan(trip, guest, slot, target);
+  const plan = partyPlan(trip, guest, slot, target);
+  const { movers, room } = plan;
+  // Age rules count like capacity: a move that breaks one goes to the FORCE confirmation.
+  const clean = (people) => target.kind !== 'activity' || eligibilityProblems(trip, target.activity, people.map((g) => g.id)).length === 0;
+  const guestFits = plan.guestFits && clean([guest]);
+  const everyoneFits = plan.everyoneFits && clean([guest, ...movers]);
   if (movers.length === 0 || options.askParty === false) return confirmMove(ctx, trip, guest, slot, target, [], options);
 
   const withParty = moveFacts(trip, guest, slot, target, movers);
@@ -181,8 +186,8 @@ function afterPick(ctx, trip, guest, slot, target, options = {}) {
   if (target.kind === 'activity' && target.activity.capacity !== null) {
     const tour = target.activity;
     const now = countIn(trip, tour);
-    if (!guestFits) roomNote = `"${tour.name}" is full (${now} / ${tour.capacity}). Moving anyone in needs FORCE.`;
-    else if (!everyoneFits) roomNote = `Only ${plural(room, 'seat')} left in "${tour.name}". Moving everyone makes it ${now + 1 + movers.length} / ${tour.capacity}: that needs FORCE.`;
+    if (!plan.guestFits) roomNote = `"${tour.name}" is full (${now} / ${tour.capacity}). Moving anyone in needs FORCE.`;
+    else if (!plan.everyoneFits) roomNote = `Only ${plural(room, 'seat')} left in "${tour.name}". Moving everyone makes it ${now + 1 + movers.length} / ${tour.capacity}: that needs FORCE.`;
     else if (room <= 3) roomNote = `Only ${plural(room, 'seat')} left in "${tour.name}".`;
   }
 
@@ -238,9 +243,12 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
   const leftBehind = options.askParty === false ? [] : partyHere.filter((m) => !movers.includes(m));
 
   // The group does not fit in the tour: the dispatcher can still decide to put them in, by FORCING it.
-  const needsForce = limited && roomBefore < group.length;
+  const overCapacity = limited && roomBefore < group.length;
+  const ageProblems = target.kind === 'activity' ? eligibilityProblems(trip, target.activity, group.map((g) => g.id)) : [];
+  const needsForce = overCapacity || ageProblems.length > 0;
 
-  if (needsForce) {
+  for (const problem of ageProblems) warnings.push(`${problem.text}. Moving them needs FORCE, with a reason.`);
+  if (overCapacity) {
     const now = countIn(trip, target.activity);
     warnings.push(`"${target.activity.name}" is full (${now} / ${target.activity.capacity}). Forcing this makes it ${now + group.length} / ${target.activity.capacity}.`);
     if (leftBehind.length > 0) {
@@ -253,7 +261,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
     warnings.push(`Their travel party will be split: ${joinNames(leftBehind.map((m) => names.get(m.id)))} ${stay} in ${placeText(here)}.`);
   }
   // A nearly full tour.
-  if (limited && !needsForce) {
+  if (limited && !overCapacity && !needsForce) {
     const left = roomBefore - group.length;
     if (left === 0) warnings.unshift(`Only ${plural(roomBefore, 'seat')} left: the tour will be full after this.`);
     else if (left <= 3) warnings.unshift(`${plural(left, 'seat')} left after this.`);
@@ -261,7 +269,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
 
   // When forcing is needed, the dispatcher gets a second option: join the tour's waitlist instead of
   // overriding capacity. Never offered otherwise — there is no waitlist to join when there is room.
-  const secondary = needsForce && target.kind === 'activity'
+  const secondary = overCapacity && target.kind === 'activity'
     ? {
         label: `Add ${who} to the waitlist instead`,
         changes: group.map((g) => ({ type: 'move', guestId: g.id, slotId: slot.id, to: { kind: 'waitlist', activityId: target.activity.id } })),
@@ -271,7 +279,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
 
   confirmSheet(ctx, trip, {
     title: `Move ${who}${from} to ${to}?`, detail, warnings,
-    confirmLabel: needsForce ? 'Force move' : 'Confirm', force: needsForce, changes, done, secondary,
+    confirmLabel: needsForce ? 'Force move' : 'Confirm', force: needsForce, forceEyebrow: overCapacity ? 'Over capacity' : 'Needs a decision', changes, done, secondary,
   });
 }
 
@@ -324,7 +332,7 @@ async function saveChanges(ctx, trip, changes, done) {
 // A tour cancellation or a forced move has its own red button, so there the Cancel button stays plain.
 // force: the move goes into a full tour. The button says "Force move", and an optional box lets you write
 // who approved it ("Approved by Sam"); it is saved in the journal with the move.
-function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, cancelLabel, changes, done, secondary = null }) {
+function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, forceEyebrow = 'Over capacity', cancelLabel, changes, done, secondary = null }) {
   // The owner may write who approved it (optional). A Team colleague cannot force: they ASK, with a reason the owner reads, and the owner decides.
   const asking = force && ctx.roleFor?.(trip.id) === 'team';
   const approval = force
@@ -352,7 +360,7 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
     : null;
 
   openSheet({
-    eyebrow: force ? 'Over capacity' : 'Confirm change', title, subtitle: detail,
+    eyebrow: force ? forceEyebrow : 'Confirm change', title, subtitle: detail,
     // A colleague's choices are laid out so both are visible at once: the waiting list first (no one has to decide), then "ask the owner to force it" with its reason.
     body: asking
       ? [warnings.map(notice), secondaryButton, h('div', { class: 'form-label' }, 'Or ask the owner to force it'), approval, confirmButton, notice('The owner decides. They will see your reason, and can approve it, put the guest on the waiting list instead, or decline.')]

@@ -26,7 +26,7 @@ import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync
 import { APP_VERSION } from './version.js';
 import { tourShort, PART_CODE } from './rules.js';
 import { passportState, dayIn, stampSvg, wallToInstant } from '../guest/passport.js';
-import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds } from './rules.js';
+import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds, eligibilityProblems } from './rules.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
@@ -3371,6 +3371,70 @@ function readZip(bytes) {
   await applyChange(ctxX, trip.id, { type: 'assign-guests', splitId: made.splitId, assignments: [{ guestId: allergic.id, groupId: spl().groups[0].id }] });
   const everything = pdf + JSON.stringify(groupsExportData(ctxX.state, spl(), 'T')) + JSON.stringify(groupCards(ctxX.state, spl()));
   check('Nothing printed for groups ever mentions dietary needs', !/shellfish|allerg|dietary/i.test(everything));
+}
+
+// --- The river cruise sample and the age rules (v0.95.0) ---
+{
+  const rnRaw = await (await fetch('./data/tour_docs_sample_trip_RN-01.json')).json();
+  const rn = buildTrip(rnRaw);
+  check('The river cruise sample loads: 5 stops, 8 days, 160 guests, 29 tours', rn.destinations.length === 5 && rn.days === 8 && rn.guests.length === 160 && rn.activities.length === 29);
+  check('Every guest of the river cruise has an age, and there are children and three-generation families', rn.guests.every((g) => typeof g.age === 'number') && rn.guests.filter((g) => g.age < 18).length > 30 && rn.parties.some((p) => p.type === 'Three generations'));
+  const everyoneAllowed = rn.activities.every((a) => eligibilityProblems(rn, a, rn.guests.filter((g) => rn.bookings[g.id][a.slotId]?.activityId === a.id).map((g) => g.id)).length === 0);
+  check('In the river cruise sample nobody is on a tour the age rules forbid', everyoneAllowed);
+  check('Tours carry their rules: bikes from 14, kayaking from 6, the children\'s programme for juniors, the wine tasting for adults',
+    rn.activities.find((a) => /Bike/.test(a.name)).minAge === 14 && rn.activities.find((a) => /Kayaking/.test(a.name)).minAge === 6 && rn.activities.find((a) => /Juniors Experience/.test(a.name)).audience === 'juniors' && rn.activities.find((a) => /adults/.test(a.name)).audience === 'adults');
+
+  const rnCtx = () => { const c = { owner, state: structuredClone(rn), entries: [], trip: (id) => (id === c.state.id ? c.state : undefined), journal: () => c.entries, async commit(next, entries) { c.state = next; c.entries.push(...entries); } }; return c; };
+  const parent = rn.guests.find((g) => g.age >= 30 && g.age < 55 && rn.guests.some((k) => k.partyId === g.partyId && k.age < 12));
+  const child = rn.guests.find((g) => g.partyId === parent.partyId && g.age < 12);
+  const sl = rn.slots.find((x) => x.day === 5 && x.half === 'Morning'); // Avignon morning: Luberon, kayaking (from 6), Pont du Gard II
+  const tour = (re) => rn.activities.find((a) => a.slotId === sl.id && re.test(a.name));
+  const mv = (g, a, extra = {}) => ({ type: 'move', guestId: g.id, slotId: sl.id, to: { kind: 'activity', activityId: a.id }, ...extra });
+  const luberon = tour(/Luberon/), kayak = tour(/Kayaking/);
+  // Make sure the child is not already on the tour, and the family starts at leisure for a clean test.
+  const clean = async () => { const c = rnCtx(); for (const g of rn.guests.filter((x) => x.partyId === parent.partyId)) c.state.bookings[g.id][sl.id] = { kind: 'leisure' }; return c; };
+
+  let c = await clean();
+  let r = await applyChange(c, rn.id, mv(child, luberon));
+  check('A child alone on an ordinary tour is refused: no adult of their travel party', !r.ok && /is a child: no adult/.test(r.error) && /needs FORCE/.test(r.error), r.error);
+  r = await applyChange(c, rn.id, [mv(parent, luberon), mv(child, luberon)]);
+  check('The same child moved together with a parent is fine', r.ok, r.error);
+  c = await clean();
+  await applyChange(c, rn.id, mv(parent, luberon));
+  r = await applyChange(c, rn.id, mv(child, luberon));
+  check('A child may join a tour a parent is already on', r.ok, r.error);
+  c = await clean();
+  const grand = rn.guests.find((g) => g.partyId !== parent.partyId && rn.parties.find((p) => p.id === g.partyId).type === 'Three generations' && g.age >= 62);
+  const grandKid = rn.guests.find((g) => g.partyId === grand.partyId && g.age < 12);
+  for (const g of rn.guests.filter((x) => x.partyId === grand.partyId)) c.state.bookings[g.id][sl.id] = { kind: 'leisure' };
+  r = await applyChange(c, rn.id, [mv(grand, luberon), mv(grandKid, luberon)]);
+  check('A grandchild may go with the grandparent only', r.ok, r.error);
+  c = await clean();
+  const tiny = rn.guests.find((g) => g.age < 6) ?? null;
+  const bike = rn.activities.find((a) => /Bike/.test(a.name));
+  const bikeSlot = rn.slots.find((x) => x.id === bike.slotId);
+  const young = rn.guests.find((g) => g.age >= 6 && g.age < 14);
+  const youngParent = rn.guests.find((g) => g.partyId === young.partyId && g.age >= 18);
+  const cb = rnCtx(); for (const g of [young, youngParent]) cb.state.bookings[g.id][bikeSlot.id] = { kind: 'leisure' };
+  const bm = (g, extra = {}) => ({ type: 'move', guestId: g.id, slotId: bikeSlot.id, to: { kind: 'activity', activityId: bike.id }, ...extra });
+  r = await applyChange(cb, rn.id, [bm(youngParent), bm(young)]);
+  check('A child under the minimum age (14 for the bike tour) is refused even with a parent', !r.ok && /minimum age of 14/.test(r.error), r.error);
+  r = await applyChange(cb, rn.id, [bm(youngParent), bm(young, { force: true, approvedBy: 'Sam' })]);
+  const forcedLine = cb.entries.find((e) => e.type === 'move' && e.guestId === young.id);
+  check('The owner can force it: the journal says forced', r.ok && forcedLine?.forced === true, r.error);
+  check('Without a known age nobody is questioned', eligibilityProblems({ ...rn, guests: rn.guests.map((g) => ({ ...g, age: null })) }, bike, [young.id]).length === 0);
+  const adultsTour = rn.activities.find((a) => a.audience === 'adults');
+  const adultsSlot = rn.slots.find((x) => x.id === adultsTour.slotId);
+  const cd = rnCtx(); cd.state.bookings[young.id][adultsSlot.id] = { kind: 'leisure' };
+  r = await applyChange(cd, rn.id, { type: 'move', guestId: young.id, slotId: adultsSlot.id, to: { kind: 'activity', activityId: adultsTour.id } });
+  check('A child on an adults-only tour is refused', !r.ok && /for adults only/.test(r.error), r.error);
+  const juniorTour = rn.activities.find((a) => a.audience === 'juniors' && a.slotId === adultsSlot.id);
+  const cj = rnCtx(); cj.state.bookings[parent.id][juniorTour.slotId] = { kind: 'leisure' };
+  r = await applyChange(cj, rn.id, { type: 'move', guestId: parent.id, slotId: juniorTour.slotId, to: { kind: 'activity', activityId: juniorTour.id } });
+  check('An adult on the children\'s programme is refused', !r.ok && /children's programme/.test(r.error), r.error);
+  const cj2 = rnCtx(); cj2.state.bookings[child.id][juniorTour.slotId] = { kind: 'leisure' };
+  r = await applyChange(cj2, rn.id, { type: 'move', guestId: child.id, slotId: juniorTour.slotId, to: { kind: 'activity', activityId: juniorTour.id } });
+  check('A child may join the children\'s programme without a parent', r.ok, r.error);
 }
 
 // --- Show the results ---

@@ -113,7 +113,7 @@
 
 import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
-import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn } from './rules.js';
+import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn, eligibilityProblems } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
 import { menuCardError, cleanMenuCard } from './menuCard.js';
@@ -201,7 +201,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   const seen = new Set();     // the same guest cannot be changed twice in the same half-day
   const flows = new Map();    // activityId -> { activity, joining, leaving, forced }, to check capacity below
   const flow = (activity) => {
-    if (!flows.has(activity.id)) flows.set(activity.id, { activity, joining: 0, leaving: 0, forced: false });
+    if (!flows.has(activity.id)) flows.set(activity.id, { activity, joining: 0, leaving: 0, forced: false, joiningIds: new Set(), leavingIds: new Set() });
     return flows.get(activity.id);
   };
 
@@ -244,6 +244,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
         return fail(`${names.get(guest.id)} is already in "${activity.name}".`);
       }
       flow(activity).joining++;
+      flow(activity).joiningIds.add(guest.id);
       if (change.force) flow(activity).forced = true;
     } else if (target?.kind === 'waitlist') {
       // Joining a tour's waitlist never needs a seat and is never forced: it costs no capacity, so it
@@ -260,13 +261,18 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
     } else {
       return fail('Choose an activity, At leisure, or the waitlist.');
     }
-    if (here.kind === 'activity') flow(here.activity).leaving++;
+    if (here.kind === 'activity') { flow(here.activity).leaving++; flow(here.activity).leavingIds.add(guest.id); }
   }
 
   // Capacity: for every activity that gains guests, will they all fit?
   // An activity with no capacity never fills up. Guests leaving in the same change free their places.
   // A forced move (dispatcher's decision) may go over capacity.
-  for (const { activity, joining, leaving, forced } of flows.values()) {
+  for (const { activity, joining, leaving, forced, joiningIds, leavingIds } of flows.values()) {
+    // Age rules: an exception is a decision, like a full tour (the owner forces, with a reason).
+    if (joining > 0 && !forced) {
+      const problems = eligibilityProblems(trip, activity, joiningIds, leavingIds);
+      if (problems.length > 0) return fail(`${problems[0].text}. Moving them needs FORCE.`);
+    }
     if (joining === 0 || activity.capacity === null || forced) continue;
 
     const now = countIn(trip, activity);
@@ -881,8 +887,17 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     if (before.kind === 'activity') net.set(before.activity.id, (net.get(before.activity.id) ?? 0) - 1);
     if (change.to.kind === 'activity') net.set(change.to.activityId, (net.get(change.to.activityId) ?? 0) + 1);
   }
+  // Who joins and who leaves each activity in this change, to judge the age rules on the whole group.
+  const joinersOf = new Map(), leaversOf = new Map();
+  for (const change of changes) {
+    if (change.type !== 'move') continue;
+    const before = guestPlace(trip, trip.guests.find((g) => g.id === change.guestId), trip.slots.find((s) => s.id === change.slotId));
+    if (before.kind === 'activity') { if (!leaversOf.has(before.activity.id)) leaversOf.set(before.activity.id, new Set()); leaversOf.get(before.activity.id).add(change.guestId); }
+    if (change.to.kind === 'activity') { if (!joinersOf.has(change.to.activityId)) joinersOf.set(change.to.activityId, new Set()); joinersOf.get(change.to.activityId).add(change.guestId); }
+  }
   const willBeOver = (activityId) => {
     const activity = trip.activities.find((a) => a.id === activityId);
+    if (eligibilityProblems(trip, activity, joinersOf.get(activityId) ?? [], leaversOf.get(activityId) ?? new Set()).length > 0) return true; // an age rule is broken: also a forced move
     return activity.capacity !== null && countIn(trip, activity) + (net.get(activityId) ?? 0) > activity.capacity;
   };
 

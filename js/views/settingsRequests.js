@@ -35,10 +35,10 @@ function guestRequestCard(ctx, trip, row, names) {
 function fullSheet(ctx, row, why) {
   const choose = async (mode) => { closeSheet(); const r = await ctx.approveGuestRequest(row.id, mode); showToast(r.ok ? (mode === 'waitlist' ? 'The guest is on the waiting list' : 'The guest has been moved') : r.error, !r.ok); };
   openSheet({
-    eyebrow: 'Guest request', title: 'That tour is full', subtitle: why,
+    eyebrow: 'Guest request', title: /needs FORCE/.test(why ?? '') ? 'That move breaks a rule' : 'That tour is full', subtitle: why,
     body: [
       h('button', { class: 'btn', type: 'button', onclick: () => choose('waitlist') }, 'Put the guest on the waiting list'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => choose('force') }, 'Move the guest anyway (over capacity)'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => choose('force') }, 'Move the guest anyway (force)'),
     ], cancelLabel: 'Cancel',
   });
 }
@@ -104,7 +104,7 @@ export function requestsSettingsPage(ctx, trip) {
   const done = rows.filter((r) => r.status === 'applied' || r.status === 'declined').slice(-20).reverse();
 
   // A request that "no longer fits" because the tour is full: the owner can still force it, or put the guest on the waiting list, not only try again.
-  const fullTour = (row) => /is full/.test(row.note ?? '') && Array.isArray(row.changes) && row.changes.some((c) => c?.type === 'move' && c.to?.kind === 'activity');
+  const fullTour = (row) => /is full|needs FORCE/.test(row.note ?? '') && Array.isArray(row.changes) && row.changes.some((c) => c?.type === 'move' && c.to?.kind === 'activity');
   const decide = (row) => [
     ...(fullTour(row) ? [
       h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { await ctx.approveForcedRequest(row.id); showToast('Approved: the guest was moved (forced)'); } }, 'Force it'),

@@ -18,6 +18,7 @@ import { SAMPLE_CARDS } from '../sampleMenus.js';
 import { rehearsalTrip } from '../rehearsal.js';
 
 const SAMPLE_URL = './data/tour_docs_sample_trip_ZX-01.json';
+const RHONE_SAMPLE_URL = './data/tour_docs_sample_trip_RN-01.json'; // a fictional 8-day river cruise, 160 guests, families with ages (tools/make_rhone_sample.py)
 const JET_SAMPLE_URL = './data/tour_docs_sample_trip_JET-01.json'; // a fictional 25-day private-jet trip (tools/make_jet_sample.py)
 const PURGE_AFTER_DAYS = 30; // kept equal to app.js's own purgeExpiredTrips, just for the wording shown here
 
@@ -123,6 +124,16 @@ export function tripsView(ctx) {
     }
   }
 
+  async function loadRhoneSample() {
+    try {
+      const response = await fetch(RHONE_SAMPLE_URL);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await useTrip(await response.text());
+    } catch (error) {
+      showError(`Could not load the river cruise sample (${error.message}).`);
+    }
+  }
+
   // Excel import: read the file, show what was found (and anything odd) in plain words, then create the trip on a tap.
   const excelInput = h('input', {
     class: 'file-input', type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -180,6 +191,7 @@ export function tripsView(ctx) {
         h('div', { class: 'menu' },
           row('Around the World', '24 days, 80 guests', () => { closeSheet(); loadSample(); }),
           row('Private Jet Expedition', '25 days, 40 guests, with tour information and pictures', () => { closeSheet(); loadJetSample(); }),
+          row('Rhône River Cruise', '8 days, 160 guests: families with ages, age rules on some tours', () => { closeSheet(); loadRhoneSample(); }),
           row('Rehearsal trip', 'Starts today: to try reminders and alerts in real time', () => { closeSheet(); loadRehearsal(); })),
       ],
     });
