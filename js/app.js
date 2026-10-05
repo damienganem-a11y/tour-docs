@@ -20,7 +20,7 @@ import {
 } from './db.js';
 import { newId } from './ids.js';
 import { guestSheetRows } from './guestSheet.js';
-import { defaultBranding, brandingFromLook } from './loader.js';
+import { defaultBranding, brandingFromLook, tripAccent } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast, onSheetClosed } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
@@ -500,7 +500,7 @@ function render({ keepScroll = false } = {}) {
     return;
   }
 
-  // Inside a trip the app wears the company's colour; the Trips list and everything outside a trip stay neutral (Tour Docs orange).
+  // Inside a trip the app wears the company's colour; the Trips list and everything outside a trip stay neutral (neutral).
   applyLook(ctx.trip(location.hash.match(/^#\/trip\/([^/]+)/)?.[1]));
 
   const scrollY = window.scrollY; // remembered so refresh() can put the page back where it was
@@ -510,12 +510,12 @@ function render({ keepScroll = false } = {}) {
 }
 
 // The colour of the company, used where the neutral look uses yellow (buttons, the active tab, tags). The text on top of it is black or white,
-// whichever reads better, so any company colour stays readable. A trip with no company name keeps the neutral orange.
+// whichever reads better, so any company colour stays readable. A trip with no company name wears Tour Docs orange.
 function applyLook(trip) {
   const root = document.documentElement.style;
-  const accent = trip?.branding?.companyName && /^#[0-9a-f]{6}$/i.test(trip.branding.accent ?? '') ? trip.branding.accent : null;
+  // Outside a trip (the Trips list): neutral, near-black with white text. Inside a trip: the trip's colour (company colour, else orange).
+  const accent = trip ? tripAccent(trip.branding) : '#1a1a1a';
   document.documentElement.removeAttribute('data-dark-company');
-  if (!accent) { root.removeProperty('--yellow'); root.removeProperty('--on-yellow'); return; }
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
   root.setProperty('--yellow', accent);
   const light = (r * 299 + g * 587 + b * 114) / 1000;

@@ -1,5 +1,5 @@
 {
-"trip": {"code": "JET-01", "name": "Private Jet Expedition, 28 August (fictional)", "start": "2027-08-28", "days": 25, "default_vehicles": 4},
+"trip": {"code": "JET-01", "name": "Private Jet Expedition, 28 August (fictional)", "start": "2027-08-28", "days": 25, "default_vehicles": 4, "accent": "#E9A800"},
 "destinations": [
  {"index": 1, "name": "Washington", "country": "USA", "timezone": "America/New_York", "first_day": 1, "last_day": 1, "photo": "photos/washington.jpg", "facts": ["The Washington Monument is 169 metres tall. A law from 1910 keeps every other building in the city lower, so it still rules the skyline.", "The famous cherry trees along the Tidal Basin were a gift from the city of Tokyo, in 1912.", "The city was designed from scratch: Pierre L'Enfant drew its streets and avenues in 1791."]},
  {"index": 2, "name": "Cusco", "country": "Peru", "timezone": "America/Lima", "first_day": 2, "last_day": 4, "photo": "photos/machu-picchu.jpg", "facts": ["Cusco means \"navel\" in Quechua: the Inca saw their capital as the centre of the world.", "The Inca built about 40,000 km of roads across the Andes. Many are still walked today.", "At 3,400 m the air holds about a third less oxygen. Coca tea is the local remedy."]},

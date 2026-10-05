@@ -2,7 +2,7 @@
 // They cover the sample trip's planted test cases (see SPEC.md) that step 1 can check, plus
 // time zones, unique IDs, saving on the device, and files with mistakes.
 
-import { buildTrip, brandingFromLook, defaultBranding } from './loader.js';
+import { tripAccent, buildTrip, brandingFromLook, defaultBranding } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
 import { applyChange, validateChanges, enqueue } from './changes.js';
 import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
@@ -3389,6 +3389,10 @@ function readZip(bytes) {
   check('The guest app tells who can join a tour: minimum age, adults only, children\'s programme',
     /Minimum age 14/.test(rnWho(/Bike/) ?? '') && /Adults only/.test(rnWho(/\(adults\)/) ?? '') && /Children's programme/.test(rnWho(/Juniors Experience/) ?? '') && /Children under 18 join with an adult/.test(rnWho(/Old Lyon/) ?? ''), JSON.stringify(rnSheet.tours.map((t) => t.who)).slice(0, 200));
   check('That text holds no guest name', !rn.guests.some((g) => rnSheet.tours.some((t) => (t.who ?? '').includes(g.first))));
+  check('A trip wears orange by default, the colour of its company or its file otherwise (tripAccent)',
+    tripAccent(rn.branding) === '#FF8200' && tripAccent({ companyName: 'X', accent: '#336699' }) === '#336699' && tripAccent({ companyName: '', accent: '#336699' }) === '#336699' && tripAccent({ companyName: '', accent: '#1d5c57' }) === '#FF8200');
+  const jetLook = buildTrip(await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json());
+  check('The expedition sample wears a warm gold, not bright yellow, and the guest sheet carries it', tripAccent(jetLook.branding) === '#E9A800' && buildGuestSheet(jetLook, jetLook.guests[0], '2027-01-01T00:00:00.000Z').theme === '#E9A800');
   const rnCtx = () => { const c = { owner, state: structuredClone(rn), entries: [], trip: (id) => (id === c.state.id ? c.state : undefined), journal: () => c.entries, async commit(next, entries) { c.state = next; c.entries.push(...entries); } }; return c; };
   const parent = rn.guests.find((g) => g.age >= 30 && g.age < 55 && rn.guests.some((k) => k.partyId === g.partyId && k.age < 12));
   const child = rn.guests.find((g) => g.partyId === parent.partyId && g.age < 12);

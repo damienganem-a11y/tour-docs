@@ -52,6 +52,15 @@ export function defaultBranding() {
 // The company look is set ONCE per device (Trips screen > My company) and copied into every new trip, so
 // a trip stays self-contained: it syncs, duplicates and backs up with its own branding. cardNote belongs
 // to the trip (a meeting time is not the same every trip), so it is kept, never taken from the look.
+// The colour a trip wears inside the app (owner's decision, 5 Oct 2026): the company's own colour when the trip has one (a company name, or a colour
+// chosen in Settings > Brand or written in the trip file), else Tour Docs orange. Outside a trip the app is neutral (see app.js applyLook).
+export const TOUR_DOCS_ORANGE = '#FF8200';
+export function tripAccent(branding) {
+  const accent = branding?.accent ?? '';
+  const chosen = /^#[0-9a-f]{6}$/i.test(accent) && (branding.companyName || accent.toLowerCase() !== defaultBranding().accent);
+  return chosen ? accent : TOUR_DOCS_ORANGE;
+}
+
 export function brandingFromLook(look, cardNote = '') {
   return { companyName: look.companyName ?? '', accent: look.accent ?? defaultBranding().accent, cardNote, logo: look.logo ?? null };
 }
@@ -206,7 +215,7 @@ export function buildTrip(raw) {
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
     splits: [],                                     // Settings > Groups: named splits of the guests (bus groups, boat groups...)
-    branding: defaultBranding(),                    // Settings > Brand: the look of the confirmation cards
+    branding: { ...defaultBranding(), ...(/^#[0-9a-f]{6}$/i.test(raw.trip.accent ?? '') ? { accent: raw.trip.accent } : {}) }, // Settings > Brand: the look of the confirmation cards; the file may bring a colour (trip.accent)
     restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
     dinnerBookings: [],                             // Phase 3 step 2a: tables, booked one at a time in Use > Dining
     rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)

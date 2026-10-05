@@ -14,6 +14,7 @@
 import { guestPlace, samePlace, bySlotOrder } from './rules.js';
 import { formatTime } from './time.js';
 import { guestMenuCard } from './menuCard.js';
+import { tripAccent } from './loader.js';
 
 // The sheet's own format number: the guest app refuses a sheet it does not understand instead of showing it wrongly.
 export const SHEET_VERSION = 1;
@@ -138,6 +139,7 @@ export function buildGuestSheet(trip, guest, now) {
       return { name: d.name, country: d.country || '', photo: d.photo || '', facts: (d.facts ?? []).slice(0, 6), tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null };
     }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
+    theme: tripAccent(trip.branding), // the colour the guest app wears: the company's, else Tour Docs orange
     expiresOn: guestLinkExpiry(trip), // the guest app also stops showing the programme after this day, even with no connection
     farewell: farewellOf(trip),
     restaurants: restaurants.map(({ _id, ...restaurant }) => restaurant),
