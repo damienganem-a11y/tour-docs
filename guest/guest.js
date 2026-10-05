@@ -664,9 +664,16 @@ window.addEventListener('popstate', (event) => { view = event.state?.view ?? { t
 
 // The company colour is kept for small touches only (a stripe at the top): the rest of the look is fixed, so a light or unusual company colour
 // can never make the app hard to read. Falls back to a calm green when the colour is missing or odd.
-function applyAccent(accent) {
+function applyAccent(accent, company) {
   const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#1d5c57';
   document.documentElement.style.setProperty('--company', hex);
+  // A trip with a company name wears the company colour where the neutral look uses yellow; the text on top is black or white, whichever reads better.
+  const root = document.documentElement.style;
+  if (company && /^#[0-9a-f]{6}$/i.test(accent)) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
+    root.setProperty('--yellow', accent);
+    root.setProperty('--on-yellow', (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#000' : '#fff');
+  } else { root.removeProperty('--yellow'); root.removeProperty('--on-yellow'); }
   const meta = document.querySelector('meta[name=theme-color]');
   if (meta) meta.setAttribute('content', '#ffffff');
 }
@@ -726,7 +733,7 @@ function paint() {
 function paintPage() {
   const sheet = currentSheet;
   if (!sheet) return;
-  applyAccent(sheet.accent);
+  applyAccent(sheet.accent, sheet.company);
   document.title = sheet.trip;
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
   if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'today' }; }

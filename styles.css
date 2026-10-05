@@ -860,7 +860,7 @@ button.menu-row:active { background: var(--brand-tint); }
    ===================================================================================================================================== */
 :root {
   --brand: #000; --brand-ink: #fff; --brand-tint: #f2f2f0;
-  --accent: #ffcc00; --teal: #000; --teal-tint: #f2f2f0;
+  --accent: var(--yellow, #ffcc00); --teal: #000; --teal-tint: #f2f2f0;
   --ink: #111; --muted: #6b6b68;
   --bg: #fff; --card: #fff; --soft: #f2f2f0; --track: #e8e8e5; --line: #d9d9d6;
   --undo: #111; --shadow: none; --yellow: #ffcc00;
@@ -882,13 +882,13 @@ body { background: #fff; }
 .card--soft:has(> .card-head)::before, .card--cancelled:has(> .card-head)::before { background: #bbb; }
 .act-name, .card-title { font-family: Outfit, sans-serif; font-weight: 800; letter-spacing: 0; }
 .count { border-radius: 0; background: #000; color: #fff; font-family: Outfit, sans-serif; letter-spacing: 0.06em; }
-.count--bad { background: var(--yellow); color: #000; }
+.count--bad { background: var(--yellow); color: var(--on-yellow, #000); }
 .card--soft .count { background: #ccc; color: #111; }
 .chip { border-radius: 0; border: 1px solid #000; background: #fff; font-size: 15px; }
 .chip--more { background: transparent; }
 
 /* buttons and fields */
-.btn { border-radius: 0; background: var(--yellow); border: 2px solid var(--yellow); color: #000; font-family: Outfit, sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; font-size: 14px; }
+.btn { border-radius: 0; background: var(--yellow); border: 2px solid var(--yellow); color: var(--on-yellow, #000); font-family: Outfit, sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; font-size: 14px; }
 .btn:active { filter: brightness(0.93); }
 .btn--plain { background: transparent; border: 2px solid #000; color: #000; }
 .btn--danger { border-color: var(--bad-line); background: var(--bad-line); color: #fff; }
@@ -905,7 +905,7 @@ body { background: #fff; }
 .strip-item.is-active { background: #000; border-color: #000; color: #fff; }
 .bottom-tabs { left: 0; right: 0; bottom: 0; margin: 0 auto; max-width: none; padding: 0 0 env(safe-area-inset-bottom); gap: 0; border-radius: 0; background: #000; box-shadow: none; }
 .bottom-tab { min-height: 56px; border-radius: 0; color: #bbb; font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; font-weight: 700; }
-.bottom-tab.is-active { background: var(--yellow); color: #000; font-weight: 800; }
+.bottom-tab.is-active { background: var(--yellow); color: var(--on-yellow, #000); font-weight: 800; }
 
 /* sheets */
 .sheet { border-radius: 0; }
@@ -925,7 +925,7 @@ body { background: #fff; }
 .cog--home .icon svg circle[fill='#fff'] { fill: #000; }
 .dest-menu { background: #000; color: #fff; border-radius: 0; box-shadow: none; padding: 12px 14px; }
 .dest-menu:active { background: #222; }
-.dest-menu-pin { background: var(--yellow); color: #000; border-radius: 0; }
+.dest-menu-pin { background: var(--yellow); color: var(--on-yellow, #000); border-radius: 0; }
 .dest-menu-name { font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; font-size: 17px; }
 .dest-menu-sub { color: #bbb; }
 .dest-menu-chev { color: #fff; }
@@ -936,7 +936,7 @@ body { background: #fff; }
 .avatar { border-radius: 0; background: #000; color: var(--yellow); }
 .card-more { border-radius: 0; background: var(--soft); color: #000; }
 .fold-row { text-transform: uppercase; letter-spacing: 0.14em; font-family: Outfit, sans-serif; font-size: 12px; color: #000; }
-.fold-count { border-radius: 0; background: var(--yellow); color: #000; }
+.fold-count { border-radius: 0; background: var(--yellow); color: var(--on-yellow, #000); }
 
 /* by guest by seat */
 .seat-card { border-radius: 0; box-shadow: none; border: 1px solid var(--line); }
@@ -944,7 +944,7 @@ body { background: #fff; }
 .seat-line { border-radius: 0; background: var(--soft); color: #111; }
 .seat-line:active { background: var(--yellow); }
 .seat-line--leisure { background: #fff; border: 1px solid var(--line); color: var(--muted); }
-.seat-line--bad { background: var(--yellow); color: #000; }
+.seat-line--bad { background: var(--yellow); color: var(--on-yellow, #000); }
 .switch--compact .switch-item, .switch .switch-item { border-radius: 0; }
 .switch--compact { border-radius: 0; }
 .undo-btn { border-radius: 0; background: #000; color: #fff; text-transform: uppercase; letter-spacing: 0.06em; font-family: Outfit, sans-serif; }
@@ -959,20 +959,20 @@ body { background: #fff; }
 .dest-menu-chev { color: #000; }
 .bottom-tabs { background: #fff; border-top: 1px solid #000; }
 .bottom-tab { color: #555; }
-.bottom-tab.is-active { background: var(--yellow); color: #000; }
-.switch-item.is-active { background: var(--yellow); color: #000; }
-.strip-item.is-active { background: var(--yellow); border-color: #000; color: #000; }
+.bottom-tab.is-active { background: var(--yellow); color: var(--on-yellow, #000); }
+.switch-item.is-active { background: var(--yellow); color: var(--on-yellow, #000); }
+.strip-item.is-active { background: var(--yellow); border-color: #000; color: var(--on-yellow, #000); }
 button.strip-item.is-active { color: #000; }
 .count { background: #fff; color: #000; border: 1px solid #000; }
 .count--bad { background: var(--yellow); border-color: #000; }
 .card--soft .count { background: #fff; border-color: #bbb; color: #555; }
 .undo-btn { background: #fff; color: #000; border: 1px solid #000; }
 .undo-btn:disabled { background: var(--soft); border-color: var(--soft); color: var(--muted); }
-.tile-icon, .tile--access .tile-icon, .tile--documents .tile-icon, .tile--control .tile-icon { background: var(--yellow); color: #000; }
-.cog--home { background: var(--yellow); color: #000; border-color: #000; }
+.tile-icon, .tile--access .tile-icon, .tile--documents .tile-icon, .tile--control .tile-icon { background: var(--yellow); color: var(--on-yellow, #000); }
+.cog--home { background: var(--yellow); color: var(--on-yellow, #000); border-color: #000; }
 .cog--home .icon svg circle[fill='#fff'] { fill: var(--yellow); }
-.avatar { background: var(--yellow); color: #000; border: 1px solid #000; }
-.dest-menu-pin { background: var(--yellow); color: #000; }
+.avatar { background: var(--yellow); color: var(--on-yellow, #000); border: 1px solid #000; }
+.dest-menu-pin { background: var(--yellow); color: var(--on-yellow, #000); }
 
 /* v0.78.0: messages ("Up to date", "saved", errors) sit at the BOTTOM, just above the Touring / Dining / By guest tabs, in the theme: a white
    frame with a yellow edge (no orange). An error has a dark-red edge and bold text. */
@@ -981,7 +981,7 @@ body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom))
 .toast--error { background: #fff; color: #000; border-left-color: #b3261e; }
 .toast--error::before { content: "! "; color: #b3261e; font-weight: 800; }
 .pull-indicator { border-radius: 0; background: #fff; border: 1px solid #000; color: #000; font-family: Outfit, sans-serif; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; }
-.pull-indicator--ready { background: var(--yellow); color: #000; }
+.pull-indicator--ready { background: var(--yellow); color: var(--on-yellow, #000); }
 /* "needs attention" is now yellow, not orange (the same family as the rest of the look) */
 :root { --warn-bg: #fff6cc; --warn-line: #e0b000; --warn-ink: #4a3900; }
 
@@ -995,7 +995,7 @@ body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom))
 
 /* v0.81.0: a count of waiting guest requests on the Settings tile and the Requests row; a guest's own words on a request */
 .tile { position: relative; }
-.tile-badge { position: absolute; top: 10px; right: 10px; min-width: 26px; height: 26px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--yellow); color: #000; border: 1px solid #000; font: 800 13px Outfit, sans-serif; }
+.tile-badge { position: absolute; top: 10px; right: 10px; min-width: 26px; height: 26px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--yellow); color: var(--on-yellow, #000); border: 1px solid #000; font: 800 13px Outfit, sans-serif; }
 .tile-badge--row { position: static; margin-right: 8px; }
 .quote { margin: 6px 0; padding: 6px 10px; border-left: 4px solid var(--yellow); background: var(--soft); font-style: italic; }
 
@@ -1014,10 +1014,10 @@ body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom))
 .card:has(> .card-head)::before { display: none; }
 .act-name, .card-title { font-family: Outfit, sans-serif; letter-spacing: 0; text-transform: none; }
 .count { border: 0; border-radius: 99px; background: #000; color: var(--yellow); padding: 6px 12px; }
-.count--bad { background: var(--yellow); color: #000; border: 0; }
+.count--bad { background: var(--yellow); color: var(--on-yellow, #000); border: 0; }
 .card--soft .count { background: #fff; color: #555; border: 0; }
 .chip { border-radius: 99px; border: 0; background: var(--soft); }
-.btn { border-radius: 99px; border: 0; background: var(--yellow); color: #000; text-transform: none; letter-spacing: .02em; font-size: 16px; }
+.btn { border-radius: 99px; border: 0; background: var(--yellow); color: var(--on-yellow, #000); text-transform: none; letter-spacing: .02em; font-size: 16px; }
 .btn--plain { background: var(--soft); border: 0; color: #000; }
 .btn--danger { background: var(--bad-line); color: #fff; }
 .text-input { border-radius: 16px; border: 1px solid #cfcfca; }
@@ -1029,7 +1029,7 @@ body:has(.bottom-tabs) .toast { bottom: calc(72px + env(safe-area-inset-bottom))
 .strip-item.is-active, button.strip-item.is-active { background: #000; color: var(--yellow); border: 0; }
 .bottom-tabs { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom)); width: auto; max-width: none; padding: 8px; gap: 4px; border: 0; border-radius: 99px; background: #0b0b0b; box-shadow: 0 10px 28px rgba(0, 0, 0, .28); }
 .bottom-tab { min-height: 46px; padding: 0 26px; border-radius: 99px; color: #fff; text-transform: none; letter-spacing: .02em; font-family: Inter, sans-serif; font-size: 14px; font-weight: 600; }
-.bottom-tab.is-active { background: var(--yellow); color: #000; }
+.bottom-tab.is-active { background: var(--yellow); color: var(--on-yellow, #000); }
 body:has(.bottom-tabs) .toast { bottom: calc(86px + env(safe-area-inset-bottom)); }
 .toast { border-radius: 18px; border: 0; background: #0b0b0b; color: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }
 .toast--error { background: #b3261e; color: #fff; }

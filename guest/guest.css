@@ -262,7 +262,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 
 /* Next up: a thin frame with a yellow tab */
 .next { background: #fff; border: 1px solid var(--line); border-radius: 0; box-shadow: none; margin: 0 0 16px; padding: 0; }
-.next-label { display: inline-block; background: var(--yellow); color: #000; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 6px 10px; }
+.next-label { display: inline-block; background: var(--yellow); color: var(--on-yellow, #000); font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 6px 10px; }
 .next-what { font: 800 19px/1.2 Outfit, sans-serif; text-transform: uppercase; letter-spacing: .02em; margin: 10px 14px 4px; }
 .next-line { color: var(--muted); margin: 0 14px 14px; font-size: 14px; }
 
@@ -271,7 +271,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .passport-ic { border-radius: 50%; border: 2px dashed #000; color: #000; width: 38px; height: 38px; font-size: 20px; }
 .passport-title { font: 800 14px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
 .passport-sub { font-size: 12px; text-transform: none; color: var(--muted); }
-.passport-new { background: var(--yellow); color: #000; border-radius: 0; font-family: Outfit, sans-serif; letter-spacing: .14em; }
+.passport-new { background: var(--yellow); color: var(--on-yellow, #000); border-radius: 0; font-family: Outfit, sans-serif; letter-spacing: .14em; }
 .dest { margin: 0 0 2px; }
 .dest-head { background: var(--grey); border-radius: 0; box-shadow: none; padding: 17px 14px; min-height: 76px; }
 .dest.is-open .dest-head { background: #000; color: #fff; }
@@ -287,7 +287,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .stub { display: block; flex: none; background: none; color: #000; border: 0; border-radius: 0; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 0; text-transform: uppercase; }
 .stub i { display: inline; opacity: 1; font: inherit; margin: 0; }
 .stub i::after { content: " "; }
-.stub .today-tag { display: inline-block; margin: 0 0 0 8px; background: var(--yellow); color: #000; border-radius: 0; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 2px 7px; vertical-align: 1px; }
+.stub .today-tag { display: inline-block; margin: 0 0 0 8px; background: var(--yellow); color: var(--on-yellow, #000); border-radius: 0; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 2px 7px; vertical-align: 1px; }
 .pass-body { padding: 0; }
 .pass-date { font: 600 12px Inter, sans-serif; padding: 2px 0 4px; color: var(--muted); }
 .pass-body .part { display: grid; grid-template-columns: 84px 1fr; column-gap: 8px; padding: 12px 0 2px; border-top: 0; }
@@ -296,11 +296,11 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .half { color: var(--muted); font: 700 12px Outfit, sans-serif; letter-spacing: .16em; }
 .what { font: 700 16px/1.25 Inter, sans-serif; text-transform: none; letter-spacing: 0; }
 .more { color: #000; text-transform: uppercase; font: 800 12px Outfit, sans-serif; letter-spacing: .16em; border-bottom: 2px solid var(--yellow); display: inline-block; width: fit-content; }
-.tag { border-radius: 0; background: var(--yellow); color: #000; font: 800 12px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; width: fit-content; }
+.tag { border-radius: 0; background: var(--yellow); color: var(--on-yellow, #000); font: 800 12px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; width: fit-content; }
 .tag.warn { background: #000; color: #fff; }
 .other-btn, .eat-row.btn-y { border-radius: 0; border: 2px solid #000; color: #000; font: 800 12px Outfit, sans-serif; letter-spacing: .16em; }
-.other-btn:active { background: var(--yellow); color: #000; }
-.eat-row, .dest .eat-row { background: var(--yellow); color: #000; border-radius: 0; box-shadow: none; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 15px 14px; margin: 14px 0; justify-content: center; text-align: center; }
+.other-btn:active { background: var(--yellow); color: var(--on-yellow, #000); }
+.eat-row, .dest .eat-row { background: var(--yellow); color: var(--on-yellow, #000); border-radius: 0; box-shadow: none; font: 800 12px Outfit, sans-serif; letter-spacing: .18em; padding: 15px 14px; margin: 14px 0; justify-content: center; text-align: center; }
 .eat-count { display: none; }
 .dest-photo, .dest .eat-row { }
 
@@ -349,7 +349,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .stamp-ghost { border-radius: 50%; }
 
 /* small things */
-.banner { border-radius: 0; background: var(--yellow); color: #000; }
+.banner { border-radius: 0; background: var(--yellow); color: var(--on-yellow, #000); }
 .problem { border-radius: 0; box-shadow: none; border: 1px solid var(--line); }
 .preview-strip { background: #000; color: #fff; font-family: Outfit, sans-serif; letter-spacing: .06em; }
 .link-btn { color: #000; }
@@ -411,7 +411,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 .pull.is-ready { background: var(--yellow); }
 .farewell { padding-top: 28px; }
 .farewell-text { font-size: 19px; line-height: 1.5; margin: 0 0 16px; color: #111; }
-.btn-link { display: block; background: var(--yellow); color: #000; text-align: center; font: 800 14px Outfit, sans-serif; letter-spacing: .12em; padding: 16px; text-decoration: none; word-break: break-all; }
+.btn-link { display: block; background: var(--yellow); color: var(--on-yellow, #000); text-align: center; font: 800 14px Outfit, sans-serif; letter-spacing: .12em; padding: 16px; text-decoration: none; word-break: break-all; }
 
 
 /* v0.81.0: requests to switch tours, notifications, and the small window used to ask */
@@ -462,10 +462,10 @@ html, body, main { background: #fff; }
 .atl-hero--plain::after { display: none; }
 .atl-bar { position: absolute; z-index: 2; top: 18px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; color: #fff; font: 700 11px Outfit, sans-serif; letter-spacing: .2em; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0, 0, 0, .35); }
 .atl-hero--plain .atl-bar { color: #000; text-shadow: none; }
-.atl-dot { width: 34px; height: 34px; border-radius: 50%; background: var(--yellow); color: #000; display: grid; place-items: center; font: 800 14px Outfit, sans-serif; letter-spacing: 0; text-shadow: none; }
+.atl-dot { width: 34px; height: 34px; border-radius: 50%; background: var(--yellow); color: var(--on-yellow, #000); display: grid; place-items: center; font: 800 14px Outfit, sans-serif; letter-spacing: 0; text-shadow: none; }
 .atl-title { position: relative; z-index: 2; margin-top: -104px; padding: 0 22px; }
 .atl-hero--plain + .atl-title { margin-top: -50px; }
-.atl-pill { display: inline-block; background: var(--yellow); color: #000; font: 800 11px Outfit, sans-serif; letter-spacing: .12em; text-transform: uppercase; padding: 6px 12px; border-radius: 99px; }
+.atl-pill { display: inline-block; background: var(--yellow); color: var(--on-yellow, #000); font: 800 11px Outfit, sans-serif; letter-spacing: .12em; text-transform: uppercase; padding: 6px 12px; border-radius: 99px; }
 .atl-title h1, .atl-head h1 { font: 800 48px/.95 Outfit, sans-serif; letter-spacing: -.025em; margin: 8px 0 0; color: #000; text-transform: none; }
 .atl-title p, .atl-head p { margin: 6px 0 0; font-size: 14px; color: #4a4a46; }
 .atl-head { padding: 34px 22px 6px; }
@@ -485,7 +485,7 @@ html, body, main { background: #fff; }
 .atl-day .part--tap:active { background: var(--atl-mist); }
 .atl-tabs { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 14px); display: flex; gap: 4px; padding: 8px; border-radius: 99px; background: var(--atl-ink); box-shadow: 0 10px 28px rgba(0, 0, 0, .28); }
 .atl-tab { position: relative; border: 0; background: transparent; color: #fff; font: 600 13px Inter, sans-serif; padding: 11px 20px; min-height: 44px; border-radius: 99px; cursor: pointer; }
-.atl-tab.on { background: var(--yellow); color: #000; }
+.atl-tab.on { background: var(--yellow); color: var(--on-yellow, #000); }
 .atl-new { position: absolute; top: 8px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); box-shadow: 0 0 0 2px var(--atl-ink); }
 .atl-tab.on .atl-new { background: #000; box-shadow: 0 0 0 2px var(--yellow); }
 .updated-row { margin: 16px 0 0; }
@@ -590,7 +590,7 @@ html, body, main { background: #fff; }
 .atl-body .stub { flex-direction: row; justify-content: flex-start; width: auto; flex: none; padding: 0 0 8px; text-align: left; }
 .atl-body .stub i { display: inline; font: inherit; opacity: 1; margin: 0; }
 .atl-body .stub i::after { content: " "; }
-.atl-body .stub .today-tag { margin: 0 0 0 8px; background: var(--yellow); color: #000; border-radius: 99px; padding: 3px 9px; font-size: 10px; }
+.atl-body .stub .today-tag { margin: 0 0 0 8px; background: var(--yellow); color: var(--on-yellow, #000); border-radius: 99px; padding: 3px 9px; font-size: 10px; }
 .atl-body .pass-date { padding: 0 0 6px; }
 .atl-body .pass-body { padding: 0; }
 .atl-body .pass-body .part { display: block; }
@@ -607,12 +607,12 @@ input[type=checkbox] { accent-color: #000; }
 .atl-bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .atl-bell { position: relative; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .92); color: #000; display: inline-grid; place-items: center; cursor: pointer; padding: 0; text-shadow: none; box-shadow: 0 2px 10px rgba(0, 0, 0, .2); flex: none; }
 .atl-hero--plain .atl-bell { background: #fff; }
-.atl-badge { position: absolute; top: -3px; right: -3px; min-width: 20px; height: 20px; border-radius: 99px; background: var(--yellow); color: #000; font: 800 11px/20px Outfit, sans-serif; text-align: center; font-style: normal; box-shadow: 0 0 0 2px #fff; }
+.atl-badge { position: absolute; top: -3px; right: -3px; min-width: 20px; height: 20px; border-radius: 99px; background: var(--yellow); color: var(--on-yellow, #000); font: 800 11px/20px Outfit, sans-serif; text-align: center; font-style: normal; box-shadow: 0 0 0 2px #fff; }
 .atl-dot { width: 44px; height: 44px; border: 0; cursor: pointer; font-size: 15px; letter-spacing: .02em; flex: none; box-shadow: 0 2px 10px rgba(0, 0, 0, .2); }
 .atl-hello { margin: 12px 0 0; font: 700 22px/1.2 Outfit, sans-serif; color: #000; }
 .atl-hello small { display: block; font: 500 13px Inter, sans-serif; color: #4a4a46; margin-top: 2px; }
 .atl-title .atl-hello + h1 { margin-top: 6px; }
-.atl-funfact { margin: 14px 0 0; padding: 16px 18px; border-radius: 24px; background: var(--yellow); color: #000; }
+.atl-funfact { margin: 14px 0 0; padding: 16px 18px; border-radius: 24px; background: var(--yellow); color: var(--on-yellow, #000); }
 .atl-funfact small { display: block; font: 700 10px Outfit, sans-serif; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 6px; }
 .atl-funfact p { margin: 0; font: 600 16px/1.4 Outfit, sans-serif; }
 .atl-msg { background: #fff; border-radius: 24px; box-shadow: 0 6px 24px rgba(0, 0, 0, .09); padding: 14px 18px; }
@@ -620,7 +620,7 @@ input[type=checkbox] { accent-color: #000; }
 .atl-msg p { margin: 4px 0; font-size: 14px; color: #33332f; }
 .atl-msg small { color: #6b6b66; font-size: 12px; }
 .atl-empty { padding: 8px 4px; }
-.atl-pill-btn { border: 0; border-radius: 99px; background: var(--yellow); color: #000; font: 700 14px Inter, sans-serif; min-height: 44px; padding: 0 20px; cursor: pointer; margin-top: 8px; }
+.atl-pill-btn { border: 0; border-radius: 99px; background: var(--yellow); color: var(--on-yellow, #000); font: 700 14px Inter, sans-serif; min-height: 44px; padding: 0 20px; cursor: pointer; margin-top: 8px; }
 .atl-pill-btn--plain { background: var(--atl-mist); }
 .atl-pill-btn[disabled] { opacity: .5; }
 .atl-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #ececE8; }
@@ -631,10 +631,10 @@ input[type=checkbox] { accent-color: #000; }
 
 /* ---- Atlas: one look for every small piece (banners, buttons, links, panels, fields) ---- */
 .banner { background: var(--atl-mist); color: #1d1d1b; border-radius: 20px; padding: 14px 16px; margin: 12px 0; font-size: 14px; line-height: 1.45; }
-.banner .link { border: 0; background: var(--yellow); color: #000; border-radius: 99px; font: 700 13px Inter, sans-serif; padding: 8px 16px; min-height: 36px; margin-left: 6px; cursor: pointer; }
+.banner .link { border: 0; background: var(--yellow); color: var(--on-yellow, #000); border-radius: 99px; font: 700 13px Inter, sans-serif; padding: 8px 16px; min-height: 36px; margin-left: 6px; cursor: pointer; }
 .updated-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0 0; font-size: 13px; color: #55554f; }
 .link-btn { border: 0; border-radius: 99px; background: var(--atl-mist); color: #000; font: 600 12px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; padding: 10px 16px; min-height: 40px; cursor: pointer; }
-.btn-link { display: block; width: 100%; border: 0; border-radius: 99px; background: var(--yellow); color: #000; font: 700 15px Inter, sans-serif; letter-spacing: 0; text-transform: none; padding: 14px 20px; min-height: 48px; text-align: center; text-decoration: none; cursor: pointer; }
+.btn-link { display: block; width: 100%; border: 0; border-radius: 99px; background: var(--yellow); color: var(--on-yellow, #000); font: 700 15px Inter, sans-serif; letter-spacing: 0; text-transform: none; padding: 14px 20px; min-height: 48px; text-align: center; text-decoration: none; cursor: pointer; }
 .plain-link { display: block; width: 100%; border: 0; border-radius: 99px; background: var(--atl-mist); color: #000; font: 600 15px Inter, sans-serif; letter-spacing: 0; text-transform: none; padding: 14px 20px; min-height: 48px; cursor: pointer; }
 .modal { background: rgba(0, 0, 0, .45); }
 .modal-box { border-radius: 28px 28px 0 0; padding: 26px 22px calc(env(safe-area-inset-bottom) + 22px); }
