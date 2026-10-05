@@ -586,6 +586,9 @@ body.sheet-open { overflow: hidden; }   /* the page behind the sheet does not sc
   font-weight: 600;
 }
 
+/* The same line when nothing is wrong (family checklist) */
+.notice--calm { background: var(--card, #f1f1ee); color: var(--ink, inherit); font-weight: 500; }
+
 /* One tappable choice in a sheet: an activity, a guest... */
 .choice {
   display: flex;

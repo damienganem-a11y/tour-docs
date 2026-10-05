@@ -177,6 +177,8 @@ function afterPick(ctx, trip, guest, slot, target, options = {}) {
   const everyoneFits = plan.everyoneFits && clean([guest, ...movers]);
   if (movers.length === 0 || options.askParty === false) return confirmMove(ctx, trip, guest, slot, target, [], options);
 
+  if (movers.length >= 2) { familySheet(ctx, trip, guest, slot, target, movers); return; }
+
   const withParty = moveFacts(trip, guest, slot, target, movers);
   const alone = moveFacts(trip, guest, slot, target, []);
   const moverNames = joinNames([...movers].sort(alphabetical(alone.names)).map((m) => alone.names.get(m.id)));
@@ -207,6 +209,55 @@ function afterPick(ctx, trip, guest, slot, target, options = {}) {
       h('button', { class: 'btn btn--plain', type: 'button', onclick: no }, `No, only ${alone.who}`),
     ],
     cancelDanger: true,
+  });
+}
+
+// A bigger family (two or more others in the same place): a checklist instead of Yes/No, so you tick exactly who goes
+// (grandparents and children together, a parent staying behind...). Ages are shown, and a line under the list says at once
+// whether the choice breaks a rule (a child with no adult of the family, a minimum age) or does not fit. Then the usual
+// confirmation (which asks for FORCE when needed).
+function familySheet(ctx, trip, guest, slot, target, movers) {
+  const names = displayNames(trip.guests);
+  const everyone = [guest, ...movers].sort(alphabetical(names));
+  const checked = new Set(everyone.map((g) => g.id));
+  const label = (g) => `${names.get(g.id)}${typeof g.age === 'number' ? ` · ${g.age}` : ''}${g.id === guest.id ? ' (tapped)' : ''}`;
+  const say = h('div', { class: 'notice' });
+  const go = h('button', { class: 'btn', type: 'button' }, '');
+  const chosen = () => everyone.filter((g) => checked.has(g.id));
+  function update() {
+    const group = chosen();
+    const lines = [];
+    if (target.kind === 'activity') {
+      const problems = eligibilityProblems(trip, target.activity, group.map((g) => g.id));
+      if (problems.length > 0) lines.push(`${problems[0].text}${problems.length > 1 ? `, and ${plural(problems.length - 1, 'other problem')}` : ''}. This needs FORCE.`);
+      if (target.activity.capacity !== null) {
+        const room = target.activity.capacity - countIn(trip, target.activity);
+        if (room < group.length) lines.push(`"${target.activity.name}" has ${room > 0 ? plural(room, 'seat') : 'no seat'} left for ${group.length}: that needs FORCE.`);
+      }
+    }
+    say.textContent = lines.length ? lines.join(' ') : 'Nothing in the way.';
+    say.classList.toggle('notice--calm', lines.length === 0);
+    go.textContent = group.length === 0 ? 'Tick at least one person' : `Move ${group.length === 1 ? names.get(group[0].id) : `${group.length} people`}`;
+    go.disabled = group.length === 0;
+    go.onclick = () => {
+      if (group.length === 0) return;
+      const lead = group.find((g) => g.id === guest.id) ?? group[0];
+      closeSheet();
+      const rest = group.filter((g) => g.id !== lead.id);
+      const facts = moveFacts(trip, lead, slot, target, rest);
+      const fits = target.kind !== 'activity' || (lines.length === 0);
+      if (fits) saveChanges(ctx, trip, facts.changes, facts.done); else confirmMove(ctx, trip, lead, slot, target, rest);
+    };
+  }
+  update();
+  const rows = everyone.map((g) => {
+    const box = h('input', { type: 'checkbox', checked: true, 'aria-label': names.get(g.id) });
+    box.addEventListener('change', () => { if (box.checked) checked.add(g.id); else checked.delete(g.id); update(); });
+    return h('label', { class: 'tick-row' }, box, h('span', {}, label(g)));
+  });
+  openSheet({
+    eyebrow: 'Travel party', title: 'Who goes?', subtitle: `${slotLabel(trip, slot)} · to ${target.kind === 'leisure' ? 'At leisure' : target.activity.name}`,
+    body: [...rows, say], footer: [go], cancelLabel: 'Cancel', cancelDanger: true,
   });
 }
 
