@@ -40,6 +40,28 @@ export function looksLikeAuthCallback(hash, search) {
   return false;
 }
 
+// A QR code made by the trip's owner (Settings > Team) holds a one-time token instead of asking for an e-mail: ?th=<token>&t=m|i&name=...
+// Pure string check, like looksLikeAuthCallback. t: m = magic link, i = invite (a person who never signed in before).
+export function teamLinkFromAddress(search) {
+  const params = new URLSearchParams(search ?? '');
+  const token = (params.get('th') ?? '').trim();
+  if (!/^[A-Za-z0-9_-]{20,120}$/.test(token)) return null;
+  return { tokenHash: token, type: params.get('t') === 'i' ? 'invite' : 'magiclink', name: (params.get('name') ?? '').trim().slice(0, 60) };
+}
+
+// Swaps the token of such a QR code for a session. Returns { id, email }; throws a plain sentence when it fails (used already, or too old).
+export async function signInWithTeamLink(link) {
+  let supabase;
+  try { supabase = await getClient(); }
+  catch { throw new Error('Could not reach the sign-in service. Check your connection and try again.'); }
+  let result = await supabase.auth.verifyOtp({ token_hash: link.tokenHash, type: link.type });
+  if (result.error && link.type === 'magiclink') result = await supabase.auth.verifyOtp({ token_hash: link.tokenHash, type: 'email' });
+  history.replaceState(null, '', location.pathname);
+  const session = result.data?.session;
+  if (result.error || !session) throw new Error('This QR code did not work: it can only be used once, and only for about an hour. Ask for a new one.');
+  return { id: session.user.id, email: session.user.email };
+}
+
 // Sends the magic link. The name travels inside the link itself (as a query parameter, next to
 // the token Supabase adds), not in localStorage: the phone's mail app often opens the link in a
 // browsing context that does not share storage with the installed app, so anything saved locally

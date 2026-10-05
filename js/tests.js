@@ -38,6 +38,7 @@ import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAns
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { notificationsFor, notifySettings, NOTIFY_KINDS } from './notifyRules.js';
 import { rehearsalTrip } from './rehearsal.js';
+import { teamLinkFromAddress } from './auth.js';
 import { AUTO_KINDS, audienceGuestIds, autoNotifyError, autoNotifySettings, clockProposals, draftError, draftRow, plannedAutoMessages } from './scheduledMessages.js';
 import { tourInfoError, cleanTourInfo, DIFFICULTIES } from './tourInfo.js';
 import { qrCells, qrSvg } from './qr.js';
@@ -2982,6 +2983,16 @@ function readZip(bytes) {
   const approved = await applyChange(ctxQ, t.id, force({ forceReason: 'Her mother is on this tour' }), { as: ben, request: { id: 'r1', at: '2027-01-01T00:00:00Z' }, forceApproved: { by: 'Damien' } });
   const entry = approved.entries.find((e) => e.type === 'move' && e.forced);
   check('Once the owner approves, the guest is in the full tour, and the journal says forced, by whom, who asked and why', approved.ok && entry && entry.approvedBy === 'Damien' && entry.who.name === 'Ben Team' && entry.forceReason === 'Her mother is on this tour' && entry.source === 'colleague request');
+}
+
+// --- A QR code that signs a colleague in with no e-mail ---
+{
+  const hash = 'a'.repeat(64);
+  const link = teamLinkFromAddress(`?th=${hash}&t=i&name=Anna%20B`);
+  check('A team QR code is read: token, kind of token (invite or magic link) and the name', link && link.tokenHash === hash && link.type === 'invite' && link.name === 'Anna B' && teamLinkFromAddress(`?th=${hash}`).type === 'magiclink');
+  check('Anything that is not a token is ignored (no token, too short, odd characters)', teamLinkFromAddress('') === null && teamLinkFromAddress('?th=abc') === null && teamLinkFromAddress(`?th=${'a'.repeat(30)}<script>`) === null && teamLinkFromAddress('?email=a@b.co') === null);
+  const typical = `https://damienganem-a11y.github.io/tour-docs/?th=${hash}&t=m&name=damien.ganem`;
+  check('The address in the QR code is short enough for the app\'s QR maker (213 letters)', typical.length <= 213 && qrSvg(typical, { pixels: 200 }).includes('<svg'));
 }
 
 // --- QR codes (the guests' links). The picture was also decoded by a real QR reader when it was written: see SPEC.md ---

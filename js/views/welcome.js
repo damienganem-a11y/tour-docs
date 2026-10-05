@@ -31,7 +31,7 @@
 import { h } from '../dom.js';
 import { pageHead } from './chrome.js';
 import { newId } from '../ids.js';
-import { looksLikeAuthCallback, sendMagicLink, completeSignIn, saveNameToAccount, existingSession, verifyEmailCode, cleanEmailCode } from '../auth.js';
+import { looksLikeAuthCallback, teamLinkFromAddress, signInWithTeamLink, sendMagicLink, completeSignIn, saveNameToAccount, existingSession, verifyEmailCode, cleanEmailCode } from '../auth.js';
 
 const PENDING_NAME_KEY = 'tourdocs.pendingName'; // best-effort fallback only; the link itself is the real carrier
 
@@ -45,7 +45,7 @@ let errorText = '';
 let recoveryTried = false; // trySilentRecovery below only ever needs to run once per boot
 
 export function welcomeView(ctx) {
-  if (step === 'form' && looksLikeAuthCallback(location.hash, location.search)) {
+  if (step === 'form' && (looksLikeAuthCallback(location.hash, location.search) || teamLinkFromAddress(location.search))) {
     step = 'callback';
     finishCallback(ctx); // async; does not block this render
   } else if (step === 'form' && !recoveryTried) {
@@ -77,8 +77,10 @@ async function finishCallback(ctx) {
   let nameFromLink = '';
   try { nameFromLink = new URLSearchParams(location.search).get('name') ?? ''; } catch { /* ignore */ }
 
+  const teamLink = teamLinkFromAddress(location.search); // a QR code from the trip's owner: signs in with no e-mail
+  if (teamLink) nameFromLink = teamLink.name;
   try {
-    const { id, email } = await completeSignIn();
+    const { id, email } = teamLink ? await signInWithTeamLink(teamLink) : await completeSignIn();
     pendingId = id;
     pendingEmail = email;
     pendingName = nameFromLink;

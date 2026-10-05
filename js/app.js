@@ -28,7 +28,7 @@ import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
-  pullMyAccess, listMembers, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
+  pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange } from './changes.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
@@ -292,6 +292,7 @@ const ctx = {
   async notifyAllGuests(tripId, title, body, important = false) { return notifyGuests(tripId, undefined, { title, body, url: './', category: 'announcement', priority: important ? 'important' : 'info' }); },
   guestPushOverview: (tripId) => guestPushOverview(tripId),
   makeGuestCode: (tripId, guestId) => makeGuestCode(tripId, guestId),
+  teamSignInToken: (tripId, email) => teamSignInToken(tripId, email),
   listScheduled: (tripId) => listScheduled(tripId),
   scheduleMessage: async (tripId, row) => { await scheduleMessage(tripId, row); },
   cancelScheduled: (id) => cancelScheduled(id),

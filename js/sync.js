@@ -421,6 +421,14 @@ export async function makeGuestCode(tripId, guestId) {
   if (error) throw error;
   return data;
 }
+// A one-time sign-in for an invited colleague (made by the server for the trip's owner): { token_hash, type }. It goes into a QR code (settingsTeam.js).
+export async function teamSignInToken(tripId, email) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.functions.invoke('send-push', { body: { kind: 'team-link', tripId, email } });
+  if (error) throw error;
+  if (!data?.token_hash) throw new Error(data?.error ?? 'no token');
+  return data;
+}
 export async function notifyMe(message) {
   const supabase = await getClient();
   const { data, error } = await supabase.functions.invoke('send-push', { body: { kind: 'to-me', ...message } });

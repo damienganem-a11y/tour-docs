@@ -34,16 +34,31 @@ export function signInAddress(email, name) {
   return url.href;
 }
 
-// Shows the QR code for one team member. It holds no secret: it only fills in the sign-in form on the other device.
-function accessSheet(member) {
-  const address = signInAddress(member.email, member.email.split('@')[0]);
-  const picture = h('div', { class: 'qr-box' });
-  picture.innerHTML = qrSvg(address, { pixels: 260 }); // drawn by qr.js from the address, nothing typed by anyone
+// Shows the sign-in QR code for one team member. Best: a one-time code made by the server, so the colleague scans it and is signed in at once, with no
+// e-mail (it works once, for about an hour, and only for this address). If the server cannot make one, the older QR code is shown: it only fills the
+// sign-in form with the address, and the colleague asks for the e-mail code as usual.
+async function accessSheet(ctx, trip, member) {
+  const name = member.email.split('@')[0].slice(0, 20);
+  const picture = h('div', { class: 'qr-box' }, h('p', { class: 'muted' }, 'Making the QR code…'));
+  const note = h('p', { class: 'muted qr-url' }, '');
   openSheet({
     eyebrow: ROLE_LABEL[member.role] ?? member.role, title: member.email,
-    subtitle: 'On the other device: scan this, tap "Send me a sign-in link", then type the code from the e-mail. If that device is signed in already, sign out first (Trips screen).',
-    body: [picture, h('p', { class: 'muted qr-url' }, address)],
+    subtitle: 'Scan it with the other device\'s camera: it signs them in at once. It works once, for about an hour. Keep the screen to yourself until they have scanned it.',
+    body: [picture, note],
   });
+  const draw = (address) => { picture.replaceChildren(); picture.innerHTML = qrSvg(address, { pixels: 260 }); }; // drawn by qr.js from the address
+  try {
+    const { token_hash: token, type } = await ctx.teamSignInToken(trip.id, member.email);
+    const url = new URL('./', window.location.href);
+    url.search = new URLSearchParams({ th: token, t: type === 'invite' ? 'i' : 'm', name }).toString();
+    url.hash = '';
+    draw(url.href);
+    note.textContent = 'One-time sign-in. If it does not work, close this and make a new one.';
+  } catch {
+    const address = signInAddress(member.email, name);
+    draw(address);
+    note.textContent = 'A one-time sign-in could not be made (are you online and signed in, and is the push setup done?). This older code only fills in their address: on their device tap "Send me a sign-in link" and type the code from the e-mail.';
+  }
 }
 
 // One person of the team: the e-mail address (wraps, however long) with the role under it, then the two buttons side by side.
@@ -77,7 +92,7 @@ export function teamSettingsPage(ctx, trip) {
         ? [h('p', { class: 'empty' }, 'Nobody else yet. Invite a colleague below.')]
         : members.map((m) => memberCard(m, {
             scopeName: m.destination_id ? (trip.destinations.find((d) => d.id === m.destination_id)?.name ?? 'one destination') : null,
-            access: () => accessSheet(m),
+            access: () => accessSheet(ctx, trip, m),
             resend: async () => showToast(await sendSignInEmail(m.email)),
             remove: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
           }))));
