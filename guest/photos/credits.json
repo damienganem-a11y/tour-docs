@@ -718,5 +718,35 @@
   "license": "CC BY-SA 4.0",
   "source": "https://commons.wikimedia.org/wiki/File:Lincoln_Memorial_Reflecting_Pool_With_The_Washington_Monument.jpg",
   "title": "Lincoln Memorial Reflecting Pool With The Washington Monument.jpg"
+ },
+ "lyon": {
+  "author": "Geoprofi Lars",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Panorama_of_Lyon_2019-03-11.jpg",
+  "title": "Panorama of Lyon 2019-03-11.jpg"
+ },
+ "tournon": {
+  "author": "John Samuel",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:%C3%89glise_Saint-Julien_de_Tournon-sur-Rh%C3%B4ne_13.jpg",
+  "title": "Église Saint-Julien de Tournon-sur-Rhône 13.jpg"
+ },
+ "viviers": {
+  "author": "Finoskov",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Viviers,cath%C3%A9drale,ext%C3%A9rieur10,angle_nord-ouest_du_choeur2.jpg",
+  "title": "Viviers,cathédrale,extérieur10,angle nord-ouest du choeur2.jpg"
+ },
+ "avignon": {
+  "author": "Txllxt TxllxT",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Avignon_-_%C3%8Ele_de_Piot_-_Chemin_des_Berges_-_Rh%C3%B4ne_river_bank_-_Panorama_View_on_Pont_Saint_B%C3%A9n%C3%A9zet_(Pont_d%27Avignon),_Jardin_des_doms,_Avignon_Cathedral,_Palais_des_Papes_%26_Ramparts_01.jpg",
+  "title": "Avignon - Île de Piot - Chemin des Berges - Rhône river bank - Panorama View on Pont Saint Bénézet (Pont d'Avignon), Jardin des doms, Avignon Cathedral, Palais des Papes & Ramparts 01.jpg"
+ },
+ "arles": {
+  "author": "DimiTalen",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Quai_Marx_Dormoy,_Arles,_2012.jpg",
+  "title": "Quai Marx Dormoy, Arles, 2012.jpg"
  }
 }
