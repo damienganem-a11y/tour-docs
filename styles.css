@@ -860,10 +860,10 @@ button.menu-row:active { background: var(--brand-tint); }
    ===================================================================================================================================== */
 :root {
   --brand: #000; --brand-ink: #fff; --brand-tint: #f2f2f0;
-  --accent: var(--yellow, #ffcc00); --teal: #000; --teal-tint: #f2f2f0;
+  --accent: var(--yellow, #FF8200); --teal: #000; --teal-tint: #f2f2f0;
   --ink: #111; --muted: #6b6b68;
   --bg: #fff; --card: #fff; --soft: #f2f2f0; --track: #e8e8e5; --line: #d9d9d6;
-  --undo: #111; --shadow: none; --yellow: #ffcc00;
+  --undo: #111; --shadow: none; --yellow: #FF8200;
 }
 body { background: #fff; }
 .title { font-weight: 800; letter-spacing: -0.005em; }
@@ -1090,3 +1090,6 @@ input[type=checkbox] { accent-color: #000; }
 .entry { border: 0; border-radius: var(--atl-radius); box-shadow: var(--atl-shadow); background: #fff; }
 .entry--muted { background: var(--soft); box-shadow: none; }
 .btn + .btn--small, .btn--plain + .btn--small { margin-top: 10px; }
+
+/* v0.96.0: a very dark company colour on the black menu: the active tab gets a thin white outline so it stays visible */
+:root[data-dark-company] .bottom-tab.is-active { outline: 2px solid #fff; outline-offset: -3px; }

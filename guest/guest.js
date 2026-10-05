@@ -646,6 +646,7 @@ function tourView(sheet, tour, offline) {
       offline,
       section('What happens', info.description, 'atl-story'),
       section('Good to know', info.bring),
+      tour.who ? section('Who can join', tour.who) : null,
       levelBlock(info)),
   ].filter(Boolean);
 }
@@ -672,8 +673,10 @@ function applyAccent(accent, company) {
   if (company && /^#[0-9a-f]{6}$/i.test(accent)) {
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
     root.setProperty('--yellow', accent);
-    root.setProperty('--on-yellow', (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#000' : '#fff');
-  } else { root.removeProperty('--yellow'); root.removeProperty('--on-yellow'); }
+    const light = (r * 299 + g * 587 + b * 114) / 1000;
+    root.setProperty('--on-yellow', light > 150 ? '#000' : '#fff');
+    if (light < 70) document.documentElement.setAttribute('data-dark-company', ''); else document.documentElement.removeAttribute('data-dark-company');
+  } else { root.removeProperty('--yellow'); root.removeProperty('--on-yellow'); document.documentElement.removeAttribute('data-dark-company'); }
   const meta = document.querySelector('meta[name=theme-color]');
   if (meta) meta.setAttribute('content', '#ffffff');
 }

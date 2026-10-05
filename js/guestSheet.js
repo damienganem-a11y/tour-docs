@@ -34,6 +34,16 @@ export function guestLinkExpiry(trip) {
   return dates.length ? addDays(dates[dates.length - 1], trip.guestLinkGraceDays ?? GUEST_LINK_GRACE_DAYS) : null;
 }
 
+// Who may join a tour, in plain words (age rules, rules.js eligibilityProblems). Null when there is no rule to tell.
+function whoCanJoin(activity) {
+  const bits = [];
+  if (activity.audience === 'adults') bits.push('Adults only (18 and over)');
+  else if (activity.audience === 'juniors') bits.push('Children\'s programme (under 18), with a guide');
+  else bits.push('Children under 18 join with an adult of their family');
+  if (typeof activity.minAge === 'number') bits.unshift(`Minimum age ${activity.minAge}`);
+  return bits.join('. ');
+}
+
 // The tours of the trip the guest can read about (the "Tours" tab). Dinners that still exist as activities ("Dinner: ...") are left out: dinners
 // have their own place in the programme. A cancelled tour is left out. Never any guest name or any internal ID.
 function toursOf(trip, guest, destinationOf) {
@@ -45,6 +55,7 @@ function toursOf(trip, guest, destinationOf) {
       list.push({
         _id: activity.id, _slot: slot.id, day: slot.day, date: slot.date, half: slot.half, destination: destination.name, name: activity.name,
         time: activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : null, meeting: activity.meeting || null,
+        who: whoCanJoin(activity), // who may join, in words (age rules): the same for every guest, no names
         info: info && {
           duration: info.duration || null, description: info.description || null, difficulty: info.difficulty || null, difficultyNote: info.difficultyNote || null,
           bring: info.bring || null, accessibility: info.accessibility || null, photos: (info.photos ?? []).map((p) => ({ url: p.url, caption: p.caption || '' })),

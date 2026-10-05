@@ -237,7 +237,7 @@ em { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 600
    one vivid yellow for actions and tags, very bold wide-spaced capital titles, big photographs. Fully replaces the look above. No logo and no
    frame of any brand: only colours, type and layout. The company colour stays a thin stripe at the very top.
    ===================================================================================================================================== */
-:root { --primary: #000; --on-primary: #fff; --accent: #000; --label: #000; --yellow: #ffcc00; --bg: #fff; --ink: #111; --muted: #6b6b68; --line: #d9d9d6; --grey: #f2f2f0; --shadow: none; --radius: 0; }
+:root { --primary: #000; --on-primary: #fff; --accent: #000; --label: #000; --yellow: #FF8200; --bg: #fff; --ink: #111; --muted: #6b6b68; --line: #d9d9d6; --grey: #f2f2f0; --shadow: none; --radius: 0; }
 html, body, main { background: #fff; }
 h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title, .stamp-name { font-family: Outfit, -apple-system, sans-serif; letter-spacing: 0; }
 .caps, .company, .half, .block-title, .next-label, .menu-title, .options-label, .back, .btn-y, .other-btn, .eat-row, .passport-sub, .bar small { text-transform: uppercase; }
@@ -452,7 +452,7 @@ h1, h2, .dest-name, .what, .next-what, .tour-title, .pass .stub, .passport-title
 /* =====================================================================================================================================
    v0.85.0 Atlas look (owner's choice, 4 Oct 2026): white pages, a big photo that fades into the page, soft rounded cards, a black "Next up" bar,
    a floating black menu (Today, Trip, Passport). This is the last layer: it wins over the older ones above. */
-:root { --yellow: #FFCC00; --atl-ink: #0b0b0b; --atl-mist: #f2f2ef; }
+:root { --yellow: #FF8200; --atl-ink: #0b0b0b; --atl-mist: #f2f2ef; }
 html, body, main { background: #fff; }
 .atl-hero { position: relative; height: 380px; overflow: hidden; background: #e9e9e6; }
 .atl-hero-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -649,3 +649,6 @@ input[type=checkbox] { accent-color: #000; }
 .problem h1 { font: 800 40px/1 Outfit, sans-serif; letter-spacing: -.02em; }
 .updated-row .link-btn, .foot .link-btn { border: 0; border-radius: 99px; background: var(--atl-mist); color: #000; text-decoration: none; font: 600 12px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; padding: 10px 18px; min-height: 40px; }
 .foot { margin-top: 18px; }
+
+/* v0.96.0: same for the guest app's menu */
+:root[data-dark-company] .atl-tab.on { outline: 2px solid #fff; outline-offset: -3px; }

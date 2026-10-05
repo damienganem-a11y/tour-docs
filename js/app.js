@@ -500,7 +500,7 @@ function render({ keepScroll = false } = {}) {
     return;
   }
 
-  // Inside a trip the app wears the company's colour; the Trips list and everything outside a trip stay neutral (Tour Docs yellow).
+  // Inside a trip the app wears the company's colour; the Trips list and everything outside a trip stay neutral (Tour Docs orange).
   applyLook(ctx.trip(location.hash.match(/^#\/trip\/([^/]+)/)?.[1]));
 
   const scrollY = window.scrollY; // remembered so refresh() can put the page back where it was
@@ -510,14 +510,17 @@ function render({ keepScroll = false } = {}) {
 }
 
 // The colour of the company, used where the neutral look uses yellow (buttons, the active tab, tags). The text on top of it is black or white,
-// whichever reads better, so any company colour stays readable. A trip with no company name keeps the neutral yellow.
+// whichever reads better, so any company colour stays readable. A trip with no company name keeps the neutral orange.
 function applyLook(trip) {
   const root = document.documentElement.style;
   const accent = trip?.branding?.companyName && /^#[0-9a-f]{6}$/i.test(trip.branding.accent ?? '') ? trip.branding.accent : null;
+  document.documentElement.removeAttribute('data-dark-company');
   if (!accent) { root.removeProperty('--yellow'); root.removeProperty('--on-yellow'); return; }
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
   root.setProperty('--yellow', accent);
-  root.setProperty('--on-yellow', (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#000' : '#fff');
+  const light = (r * 299 + g * 587 + b * 114) / 1000;
+  root.setProperty('--on-yellow', light > 150 ? '#000' : '#fff');
+  if (light < 70) document.documentElement.setAttribute('data-dark-company', ''); // a very dark colour needs an outline on the black menu
 }
 
 // A trip saved before a later step shipped is missing whatever that step added. Applied to every

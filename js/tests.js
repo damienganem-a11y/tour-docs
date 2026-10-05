@@ -3384,6 +3384,11 @@ function readZip(bytes) {
   check('Tours carry their rules: bikes from 14, kayaking from 6, the children\'s programme for juniors, the wine tasting for adults',
     rn.activities.find((a) => /Bike/.test(a.name)).minAge === 14 && rn.activities.find((a) => /Kayaking/.test(a.name)).minAge === 6 && rn.activities.find((a) => /Juniors Experience/.test(a.name)).audience === 'juniors' && rn.activities.find((a) => /adults/.test(a.name)).audience === 'adults');
 
+  const rnSheet = buildGuestSheet(rn, rn.guests[0], '2027-06-01T00:00:00.000Z');
+  const rnWho = (re) => rnSheet.tours.find((t) => re.test(t.name))?.who;
+  check('The guest app tells who can join a tour: minimum age, adults only, children\'s programme',
+    /Minimum age 14/.test(rnWho(/Bike/) ?? '') && /Adults only/.test(rnWho(/\(adults\)/) ?? '') && /Children's programme/.test(rnWho(/Juniors Experience/) ?? '') && /Children under 18 join with an adult/.test(rnWho(/Old Lyon/) ?? ''), JSON.stringify(rnSheet.tours.map((t) => t.who)).slice(0, 200));
+  check('That text holds no guest name', !rn.guests.some((g) => rnSheet.tours.some((t) => (t.who ?? '').includes(g.first))));
   const rnCtx = () => { const c = { owner, state: structuredClone(rn), entries: [], trip: (id) => (id === c.state.id ? c.state : undefined), journal: () => c.entries, async commit(next, entries) { c.state = next; c.entries.push(...entries); } }; return c; };
   const parent = rn.guests.find((g) => g.age >= 30 && g.age < 55 && rn.guests.some((k) => k.partyId === g.partyId && k.age < 12));
   const child = rn.guests.find((g) => g.partyId === parent.partyId && g.age < 12);
