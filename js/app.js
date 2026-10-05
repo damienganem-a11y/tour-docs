@@ -377,7 +377,7 @@ const ctx = {
   // backup; pulling it onto another device is step 2b) — best-effort, not awaited: the local save
   // above is what matters, and already happened by the time this runs.
   async addTrip(trip) {
-    if (companyLook) trip.branding = brandingFromLook(companyLook, trip.branding?.cardNote ?? ''); // a new trip starts with the company look
+    if (companyLook && !trip.branding?.fixed) trip.branding = brandingFromLook(companyLook, trip.branding?.cardNote ?? ''); // a new trip starts with the company look
     await dbPut('trips', trip);
     state.trips.set(trip.id, trip);
     trackPush(pushAndTrack(trip)).catch(() => {});

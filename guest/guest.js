@@ -236,7 +236,7 @@ function inboxView(sheet, offline) {
   const list = inbox.length === 0
     ? h('p', { class: 'muted atl-empty' }, 'No messages yet. Changes to your programme and messages from your tour leader will appear here.')
     : inbox.map((m) => h('div', { class: 'atl-msg' }, h('b', {}, m.title), h('p', {}, m.body), h('small', {}, messageTime(m.at))));
-  return [plainHead(sheet.company || sheet.trip, 'Messages'), h('div', { class: 'atl-body' }, offline, prompt, h('div', { class: 'atl-cards' }, list))];
+  return [plainHead(sheet.trip, 'Messages'), h('div', { class: 'atl-body' }, offline, prompt, h('div', { class: 'atl-cards' }, list))];
 }
 
 // ---------- the guest's own panel (tap the initials): name, notifications, refresh ----------
@@ -278,7 +278,7 @@ function todayView(sheet, offline) {
   const bell = h('button', { class: 'atl-bell', type: 'button', 'aria-label': unread ? `Messages, ${unread} new` : 'Messages', onclick: () => go({ inbox: true }) }, bellIcon(), unread ? h('i', { class: 'atl-badge' }, String(Math.min(unread, 9))) : null);
   const hero = h('header', { class: `atl-hero${art ? '' : ' atl-hero--plain'}` },
     art ? picture(art.url, 'atl-hero-art', '') : null,
-    h('div', { class: 'atl-bar' }, h('span', { class: 'atl-bar-left' }, bell, h('span', { class: 'atl-bar-name' }, sheet.company || sheet.trip)),
+    h('div', { class: 'atl-bar' }, h('span', { class: 'atl-bar-left' }, bell),
       h('button', { class: 'atl-dot', type: 'button', 'aria-label': 'My profile', onclick: () => profileModal(sheet) }, initials)));
   // "Hello" in the language of the place, for the time of day there.
   const hour = simulatedDate ? 9 : (() => { try { return Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: zoneOf(sheet, day.destination) || undefined }).format(new Date())); } catch { return 12; } })();
@@ -298,7 +298,7 @@ function todayView(sheet, offline) {
 
 // The Trip tab: the whole programme, folded by destination.
 function tripView(sheet, offline) {
-  return [h('div', { class: 'atl-head' }, h('small', {}, sheet.company || sheet.trip), h('h1', {}, 'Trip'), h('p', {}, `${sheet.days.length} days · ${sheet.trip}`)),
+  return [h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Trip'), h('p', {}, `${sheet.days.length} days · ${sheet.trip}`)),
     h('div', { class: 'atl-body' }, offline, staleNotice(sheet), ...programmeView(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
@@ -368,7 +368,7 @@ function passportView(sheet, offline) {
   });
   if (!simulatedDate) { const all = state.filter((d) => d.given).map(stampKey); store.set(STAMPS_SEEN_KEY, JSON.stringify([...new Set([...seen, ...all])])); }
   return [
-    h('div', { class: 'atl-head' }, h('small', {}, sheet.company || sheet.trip), h('h1', {}, 'Passport'), h('p', {}, `${state.filter((d) => d.given).length} of ${state.length} stamps`)),
+    h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Passport'), h('p', {}, `${state.filter((d) => d.given).length} of ${state.length} stamps`)),
     h('div', { class: 'atl-body' }, offline, h('div', { class: 'stamp-grid' }, tiles),
       h('p', { class: 'foot' }, 'A stamp arrives on the first day in each place, at the local time there.'), creditsLink(sheet)),
   ];
@@ -770,7 +770,6 @@ function farewellView(sheet) {
   document.title = sheet.trip;
   return [
     h('header', { class: 'hero' }, h('div', { class: 'hero-text' },
-      sheet.company ? h('div', { class: 'company' }, sheet.company) : null,
       h('p', { class: 'sub' }, sheet.trip),
       h('h1', {}, 'Thank you'))),
     h('div', { class: 'content farewell' },

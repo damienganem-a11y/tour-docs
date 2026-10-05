@@ -215,7 +215,7 @@ export function buildTrip(raw) {
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
     splits: [],                                     // Settings > Groups: named splits of the guests (bus groups, boat groups...)
-    branding: { ...defaultBranding(), ...(/^#[0-9a-f]{6}$/i.test(raw.trip.accent ?? '') ? { accent: raw.trip.accent } : {}) }, // Settings > Brand: the look of the confirmation cards; the file may bring a colour (trip.accent)
+    branding: { ...defaultBranding(), ...(/^#[0-9a-f]{6}$/i.test(raw.trip.accent ?? '') ? { accent: raw.trip.accent, fixed: true } : {}) }, // fixed: the file's own colour wins over the device's company look; Settings > Brand: the look of the confirmation cards; the file may bring a colour (trip.accent)
     restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
     dinnerBookings: [],                             // Phase 3 step 2a: tables, booked one at a time in Use > Dining
     rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)

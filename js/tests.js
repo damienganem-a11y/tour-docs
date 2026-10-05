@@ -3393,6 +3393,10 @@ function readZip(bytes) {
     tripAccent(rn.branding) === '#FF8200' && tripAccent({ companyName: 'X', accent: '#336699' }) === '#336699' && tripAccent({ companyName: '', accent: '#336699' }) === '#336699' && tripAccent({ companyName: '', accent: '#1d5c57' }) === '#FF8200');
   const jetLook = buildTrip(await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json());
   check('The expedition sample wears a warm gold, not bright yellow, and the guest sheet carries it', tripAccent(jetLook.branding) === '#E9A800' && buildGuestSheet(jetLook, jetLook.guests[0], '2027-01-01T00:00:00.000Z').theme === '#E9A800');
+  const fixedLook = structuredClone(rnRaw); const lookTrip = buildTrip(fixedLook);
+  check('A trip file with its own colour keeps it (fixed), so the device\'s company look does not replace it', lookTrip.branding.fixed === true && lookTrip.branding.accent === '#FF8200' && !buildTrip({ ...rnRaw, trip: { ...rnRaw.trip, accent: undefined } }).branding.fixed);
+  const guestSrc = await (await fetch('./guest/guest.js')).text();
+  check('The guest app never shows the company name in its headers', !/sheet\.company/.test(guestSrc.replace(/const keep = [^\n]*/, '')));
   const rnCtx = () => { const c = { owner, state: structuredClone(rn), entries: [], trip: (id) => (id === c.state.id ? c.state : undefined), journal: () => c.entries, async commit(next, entries) { c.state = next; c.entries.push(...entries); } }; return c; };
   const parent = rn.guests.find((g) => g.age >= 30 && g.age < 55 && rn.guests.some((k) => k.partyId === g.partyId && k.age < 12));
   const child = rn.guests.find((g) => g.partyId === parent.partyId && g.age < 12);
