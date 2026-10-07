@@ -1158,6 +1158,24 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
     dinnerFit(ctxDF.state, rDF(tableLimited), evening, '19:00', 4).status === 'special-request'
     && dinnerFit(ctxDF.state, rDF(tableLimited), evening, '19:00', 3).status === 'confirmed');
 
+  // --- "+ New table": an extra table on top of the restaurant's list, at any time ---
+  {
+    const ctxX = makeCtx();
+    const strictX = (await applyChange(ctxX, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Extra Strict', seatings: ['19:15'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+    const flexX = (await applyChange(ctxX, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Extra Flex', seatings: ['19:00'], mode: 'flexible', seatsPerSeating: 20, maxTableSize: 6, tableSizes: [] })).entries[0].restaurantId;
+    const refused = await applyChange(ctxX, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexX, seating: '20:30', guestIds: [g1.id] });
+    check('A time the restaurant does not list is refused for an ordinary table', !refused.ok && /seating times/.test(refused.error), refused.error);
+    const extraS = await applyChange(ctxX, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: strictX, seating: '19:15', guestIds: [g1.id, g2.id], extra: true });
+    const bS = ctxX.state.dinnerBookings.at(-1);
+    check('An extra table in a Strict restaurant is a Special request with no table assigned', extraS.ok && extraS.status === 'special-request' && bS.tableIds.length === 0 && bS.extra === true);
+    const extraF = await applyChange(ctxX, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexX, seating: '20:30', guestIds: [g3.id], extra: true });
+    check('A table at any other time is allowed in a Flexible restaurant, and fits', extraF.ok && extraF.status === 'confirmed' && ctxX.state.dinnerBookings.at(-1).seating === '20:30');
+    const badTime = await applyChange(ctxX, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: flexX, seating: '25:99', guestIds: [g4.id], extra: true });
+    check('An extra table needs a real time', !badTime.ok && /19:15/.test(badTime.error), badTime.error);
+    const undone = await applyChange(ctxX, trip.id, { type: 'undo', scope: ['book-dinner'] });
+    check('Undo takes an extra table back', undone.ok && ctxX.state.dinnerBookings.every((b) => b.seating !== '20:30') && guestPlace(ctxX.state, g3, evening).kind !== 'dinner');
+  }
+
   // --- dinnerFit (Strict): smallest free table, then Special request (no table-joining) ---
   const ctxDS = makeCtx();
   const strictNoJoin = (await applyChange(ctxDS, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'O Pátio', seatings: ['20:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4, 6] })).entries[0].restaurantId;

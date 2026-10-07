@@ -49,7 +49,8 @@
 //       request — never two joined tables).
 //   { type: 'edit-restaurant', restaurantId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes }
 //   { type: 'restaurant-card', restaurantId, card }   the restaurant's presentation and menu (menuCard.js); card null removes it
-//   { type: 'book-dinner', slotId, restaurantId, seating, guestIds: [id, ...], tableId? }
+//   { type: 'book-dinner', slotId, restaurantId, seating, guestIds: [id, ...], tableId?, extra? }   extra: a table the restaurant gives on top of its list
+//       (Dining > "+ New table"): the seating may be ANY time like 19:15; in a Strict restaurant it has no assigned table, so it is a Special request
 //       Phase 3 step 2a/2b: always creates a NEW table. tableId (Strict only, step 2b): book directly
 //       onto that specific, currently-empty table instead of letting dinnerFit search for one — the
 //       "By table" grid's empty-cell tap; can be deliberately oversized (becomes a Special request on
@@ -548,7 +549,9 @@ function validateBookDinner(trip, change) {
   const restaurant = trip.restaurants.find((r) => r.id === change.restaurantId);
   if (!restaurant) return fail('That restaurant does not exist.');
   if (restaurant.destinationId !== slot.destinationId) return fail('That restaurant is not in this destination.');
-  if (!restaurant.seatings.includes(change.seating)) return fail('That is not one of this restaurant\'s seating times.');
+  if (change.extra === true) {
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(change.seating ?? '')) return fail('The time must look like 19:15.');
+  } else if (!restaurant.seatings.includes(change.seating)) return fail('That is not one of this restaurant\'s seating times.');
 
   // A specific table, chosen on the "By table" grid (step 2b) — Strict mode only, and must not
   // already be occupied (an occupied cell is an add-to-dinner-table action instead, not this one).
@@ -1164,10 +1167,10 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     const restaurant = trip.restaurants.find((r) => r.id === change.restaurantId);
     // A specific table chosen on the "By table" grid (step 2b): book onto it directly, even
     // deliberately oversized ("force a bigger table"), instead of letting dinnerFit search for one.
-    const { status, tableIds } = change.tableId
+    const { status, tableIds } = change.extra === true && restaurant.mode === 'strict' ? { status: 'special-request', tableIds: [] } : change.tableId
       ? { status: change.guestIds.length <= restaurant.tables.find((t) => t.id === change.tableId).size ? 'confirmed' : 'special-request', tableIds: [change.tableId] }
       : dinnerFit(trip, restaurant, slot, change.seating, change.guestIds.length);
-    const booking = { id: newId(), slotId: slot.id, restaurantId: restaurant.id, seating: change.seating, tableIds, status };
+    const booking = { id: newId(), slotId: slot.id, restaurantId: restaurant.id, seating: change.seating, tableIds, status, ...(change.extra === true ? { extra: true } : {}) };
     next.dinnerBookings.push(booking);
     entries.push({
       ...base(), type: 'book-dinner', bookingId: booking.id, restaurantId: restaurant.id,

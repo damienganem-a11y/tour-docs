@@ -94,6 +94,7 @@ export function diningPage(ctx, trip, destinationId, slotId, restaurantId, seati
   const noDinnerYet = trip.guests.filter((g) => !g.leftAt && guestPlace(trip, g, slot).kind !== 'dinner');
 
   return h('div', {}, destinationStrip, eveningStrip, modeSwitch, head,
+    h('button', { class: 'btn btn--plain', type: 'button', disabled: Boolean(trip.archivedAt), onclick: () => newTable(ctx, trip, slot) }, '+ New table'),
     tables.map((booking) => tableCard(ctx, trip, names, slot, booking)),
     noDinnerYetCard(ctx, trip, slot, noDinnerYet, names));
 }
@@ -479,6 +480,42 @@ function pickForExistingBooking(ctx, trip, slot, restaurant, seatingTime, bookin
   });
 }
 
+// ---------- "+ New table" (Dining overview) ----------
+// A table the restaurants give you as you go: pick the restaurant, the time (one of its seating times, or any other time), then tick who sits there.
+// In a Strict restaurant it is an EXTRA table on top of the ones it listed: no table assigned, so it is saved as a Special request until sorted out.
+function newTable(ctx, trip, slot) {
+  if (blockedIfArchived(trip)) return;
+  const restaurants = trip.restaurants.filter((r) => r.destinationId === slot.destinationId);
+  openSheet({
+    eyebrow: 'New table', title: 'Which restaurant?', subtitle: `${slot.half}, Day ${slot.day}`,
+    body: restaurants.map((r) => choiceRow({ title: r.name, detail: r.mode === 'flexible' ? 'Flexible' : 'Strict: an extra table', onclick: () => newTableTime(ctx, trip, slot, r) })),
+  });
+}
+
+function newTableTime(ctx, trip, slot, restaurant) {
+  const timeInput = h('input', { class: 'text-input', type: 'time', 'aria-label': 'Other time', value: '19:00' });
+  const go = (time, custom) => newTableGuests(ctx, trip, slot, restaurant, time, custom);
+  openSheet({
+    eyebrow: restaurant.name, title: 'What time?',
+    body: [
+      ...[...restaurant.seatings].sort().map((time) => choiceRow({ title: time, onclick: () => go(time, false) })),
+      h('div', { class: 'form-label' }, 'Another time'),
+      timeInput,
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => (timeInput.value ? go(timeInput.value, true) : showToast('Pick a time.', true)) }, 'Use this time'),
+    ],
+  });
+}
+
+function newTableGuests(ctx, trip, slot, restaurant, time, custom) {
+  // Extra table: Strict (no table to assign) or a time the restaurant does not list. A listed time in a Flexible restaurant is an ordinary table.
+  const extra = custom || restaurant.mode === 'strict';
+  guestPicker(trip, slot, {
+    eyebrow: restaurant.name, title: 'New table', subtitle: `${time} · pick who is sitting together`,
+    ceiling: extra ? null : restaurant.maxTableSize, baseUsed: 0, confirmLabel: 'Book the table',
+    onConfirm: (guestIds) => saveBookDinner(ctx, trip, slot, restaurant, time, guestIds, null, null, extra),
+  });
+}
+
 function pickForNewFlexibleTable(ctx, trip, slot, restaurant, seatingTime) {
   if (blockedIfArchived(trip)) return;
   guestPicker(trip, slot, {
@@ -491,10 +528,10 @@ function pickForNewFlexibleTable(ctx, trip, slot, restaurant, seatingTime) {
 // ---------- Saving ----------
 
 let saving = false;
-async function saveBookDinner(ctx, trip, slot, restaurant, seatingTime, guestIds, tableId, who) {
+async function saveBookDinner(ctx, trip, slot, restaurant, seatingTime, guestIds, tableId, who, extra = false) {
   if (saving) return;
   saving = true;
-  const result = await applyChange(ctx, trip.id, { type: 'book-dinner', slotId: slot.id, restaurantId: restaurant.id, seating: seatingTime, guestIds, tableId });
+  const result = await applyChange(ctx, trip.id, { type: 'book-dinner', slotId: slot.id, restaurantId: restaurant.id, seating: seatingTime, guestIds, tableId, ...(extra ? { extra: true } : {}) });
   saving = false;
   if (result.ok) {
     closeSheet();
