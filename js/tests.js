@@ -3488,7 +3488,7 @@ function readZip(bytes) {
   check('The drawings hold no script and no outside address', jetT.destinations.every((d) => !/<script|onload|http:\/\/(?!www\.w3\.org)|https:\/\//i.test(sceneSvg(d.explorer.scene) + decodeURIComponent(patternCss(d.explorer.theme.pattern).url))));
   // The games built so far (stage 4, first pair): runner and fit, with the skins the jet sample asks for.
   check('Every step of the jet sample that names a built game has its skin (llama, wall, ...)', jetT.destinations.flatMap((d) => d.explorer.steps).filter((st) => ENGINES[st.engine]).every((st) => hasGame(st.engine, st.skin)), jetT.destinations.flatMap((d) => d.explorer.steps).filter((st) => ENGINES[st.engine] && !hasGame(st.engine, st.skin)).map((st) => `${st.engine}/${st.skin}`).join());
-  check('A game that is not built yet is reported as such (the step can be skipped)', hasGame('runner', 'llama') && hasGame('fit', 'wall') && !hasGame('archery', 'dha') && !hasGame('runner', 'nowhere'));
+  check('A game or skin that does not exist is reported as such (the step can be skipped)', hasGame('runner', 'llama') && hasGame('archery', 'dha') && !hasGame('runner', 'nowhere') && !hasGame('nogame', 'x'));
   const hostFit = document.createElement('div'); document.body.append(hostFit);
   let fitEnd = null; const hudFit = document.createElement('div');
   const gameFit = ENGINES.fit(hostFit, hudFit, (r) => { fitEnd = r; }, SKINS.fit.wall);
@@ -3496,6 +3496,20 @@ function readZip(bytes) {
   for (let i = 0; i < 150 && !fitEnd; i++) { hostFit.querySelector('.cand:not([disabled])')?.click(); await new Promise((r) => setTimeout(r, 100)); } // a round takes about a second
   gameFit.stop(); hostFit.remove();
   check('The Fit game can be played to its end by tapping (wrong pieces get disabled, the right one moves on)', fitEnd !== null && typeof fitEnd.title === 'string' && typeof fitEnd.star === 'boolean');
+  // Every game and skin the jet sample asks for can be built, started and stopped without an error (canvas games draw a few frames).
+  const asked = jetT.destinations.flatMap((d) => d.explorer.steps.map((st) => `${st.engine}/${st.skin}`));
+  check('Every game and skin named in the jet sample exists', asked.every((k) => hasGame(...k.split('/'))), asked.filter((k) => !hasGame(...k.split('/'))).join());
+  const gameErrors = [];
+  for (const key of [...new Set(asked)]) {
+    const [engine, skin] = key.split('/');
+    const host = document.createElement('div'); host.style.width = '360px'; document.body.append(host);
+    const hudX = document.createElement('div');
+    try { const g = ENGINES[engine](host, hudX, () => {}, SKINS[engine][skin]); g.start(); await new Promise((r) => setTimeout(r, 250)); g.move(0); g.stop(); } catch (error) { gameErrors.push(`${key}: ${error.message}`); }
+    host.remove();
+  }
+  check("Each game of the jet sample starts, draws and stops cleanly", gameErrors.length === 0, gameErrors.join(" | "));
+  const guestSrcX = await (await fetch('./guest/guest.js')).text();
+  check('The guest app has the Today card for the day the games open, and no notification for it', /function explorerCard/.test(guestSrcX) && !/explorer[^\n]*notif/i.test(guestSrcX.slice(guestSrcX.indexOf('function explorerCard'), guestSrcX.indexOf('function explorerCard') + 900)));
   const bad = cleanExplorer({ ...jetFile.destinations[1].explorer, questions: jetFile.destinations[1].explorer.questions.filter((q) => q.category !== 'nature') });
   check('Fewer than 2 questions in a category is reported in words', explorerProblems(bad).some((t) => /at least 2 "nature" questions/.test(t)));
   check('The units check fires on km, m and °C and not on miles, feet or "mild"', explorerUnitWarnings(cleanExplorer({ facts: ['It is 12 km long', 'About 3,400 m high', 'Daytime 25 °C', 'Mild: 5 miles and 400 feet'] })).length === 3);

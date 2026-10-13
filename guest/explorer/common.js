@@ -5,7 +5,7 @@ let soundIsOn = () => false;
 export function setSoundCheck(fn) { soundIsOn = fn; }
 
 let actx = null;
-function tone(f1, f2, dur, type, vol) {
+export function tone(f1, f2, dur, type, vol) {
   if (!soundIsOn()) return;
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
@@ -34,3 +34,4 @@ export const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 export const shuffle = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
 export function setHud(hud, html){ if (hud._s !== html) { hud.innerHTML = html; hud._s = html; } }
 export function canvasIn(host, label){ const c = document.createElement('canvas'); c.setAttribute('aria-label', label); host.prepend(c); return c; }
+export function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }

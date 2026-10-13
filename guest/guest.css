@@ -747,3 +747,40 @@ input[type=checkbox] { accent-color: #000; }
 .ex-stage .muted { color: #55524c; }
 .ex-stage .shake { animation: ex-shake .35s ease; }
 @keyframes ex-shake { 25% { transform: translateX(-6px); } 50% { transform: translateX(6px); } 75% { transform: translateX(-3px); } }
+
+/* v0.99.5: styles of the DOM games (sequence, mirror, pipes) and the maze's arrow pad, from the prototype, scoped to the game stage. */
+.ex-stage .row {display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ex-stage .seq-game, .ex-stage .mir-game {display:flex;flex-direction:column;gap:14px;padding:14px;min-height:320px}
+.ex-stage .seq-msg {font-family:var(--ex-title);font-weight:700;font-size:22px;text-align:center;min-height:34px}
+.ex-stage .seq-pads {display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px}
+.ex-stage .pad {background:#fff;border:2px solid #e6e1d6;border-radius:18px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;transition:transform .12s ease,box-shadow .12s ease}
+.ex-stage .pad svg {width:46px;height:46px}
+.ex-stage .pad b {font-family:Outfit, sans-serif;font-size:14px}
+.ex-stage .pad small {font-size:11px;color:#55524c;text-align:center;line-height:1.2}
+.ex-stage .pad.lit {transform:scale(1.07);border-color:var(--ex-accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--ex-accent) 30%,transparent)}
+.ex-stage .pgrid {display:grid;gap:3px;align-items:center}
+.ex-stage .ptile {border:0;padding:0;background:none;aspect-ratio:1;max-width:100%;display:block}
+.ex-stage .ptile svg {width:100%;height:100%;display:block;transition:transform .12s ease}
+.ex-stage .ptile:active svg {transform:scale(.94)}
+.ex-stage .pend svg {width:100%;height:auto;display:block}
+.ex-stage .mgrid {display:grid;gap:4px;padding:8px;border-radius:16px;position:relative}
+.ex-stage .mcell {aspect-ratio:1;border-radius:7px;border:0;padding:0;max-width:100%}
+.ex-stage button.mcell {box-shadow:inset 0 0 0 2px rgba(0,0,0,.12)}
+.ex-stage .maxis {position:absolute;top:4px;bottom:4px;left:50%;width:3px;margin-left:-1.5px;border-radius:3px}
+.ex-stage .mgrid.win {animation:pop .5s ease}
+@keyframes pop {50%{transform:scale(1.03)}}
+.ex-hud .pill.gold { background: var(--ex-accent); color: var(--ex-on); }
+.ex-dpad { display: grid; grid-template-columns: repeat(3, 66px); grid-template-rows: repeat(2, 58px); gap: 8px; justify-content: center; margin: 16px 0 0; }
+.ex-dpad button { background: #fff; border: 0; border-radius: 18px; font-size: 22px; touch-action: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); cursor: pointer; }
+.ex-dpad button:active { background: var(--ex-accent); color: var(--ex-on); }
+.ex-dpad .up { grid-column: 2; grid-row: 1; } .ex-dpad .left { grid-column: 1; grid-row: 2; } .ex-dpad .down { grid-column: 2; grid-row: 2; } .ex-dpad .right { grid-column: 3; grid-row: 2; }
+
+/* The game's title and scores sit on a dark panel so they stay readable on any pattern. */
+.ex-gamehead { margin: calc(env(safe-area-inset-top) + 64px) 14px 12px; padding: 14px 16px; border-radius: 22px; background: rgba(0, 0, 0, .58); }
+@media (min-width: 700px) { .ex-gamehead, .ex-stage, .ex-dpad { max-width: 732px; margin-left: auto; margin-right: auto; } .ex-gamehead { margin-left: auto; margin-right: auto; } }
+
+/* The card on Today on the day a destination's games open. */
+.ex-today { display: grid; gap: 4px; width: 100%; text-align: left; border: 0; border-radius: 24px; padding: 16px 18px; background: #0b0b0b; color: #fff; cursor: pointer; margin: 0 0 14px; }
+.ex-today small { font: 700 10px Outfit, sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--yellow); }
+.ex-today b { font: 700 18px Outfit, sans-serif; }
+.ex-today span { font-size: 14px; opacity: .85; }

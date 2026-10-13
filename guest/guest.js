@@ -297,7 +297,7 @@ function todayView(sheet, offline) {
   const facts = place?.facts ?? [];
   const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
   const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
-  return [hero, title, h('div', { class: 'atl-body' }, nextBar(sheet), h('div', { class: 'atl-day' }, parts), factCard, myRequestsBlock(), installHint(), offline, staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+  return [hero, title, h('div', { class: 'atl-body' }, nextBar(sheet), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), offline, staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -424,6 +424,16 @@ function progressDots(entry) {
   return [entry.steps[0], entry.steps[1], Boolean(entry.stamp)].map((done) => h('b', { class: done ? 'is-done' : '' }));
 }
 
+// On the day a destination's games open (and only that day, no notification): a card on Today that leads to them, until the stamp is earned.
+function explorerCard(sheet) {
+  const state = passportOf(sheet);
+  const index = state.findIndex((d) => d.ex && !d.given && d.unlocked && dayIn(d.ex.unlockTz || 'UTC', simulatedDate ?? new Date()) === d.ex.unlockOn);
+  if (index < 0) return null;
+  const d = state[index];
+  return h('button', { class: 'ex-today', type: 'button', onclick: () => go({ dest: index }) },
+    h('small', {}, 'Passport'), h('b', {}, `Your ${d.name} challenge is open`), h('span', {}, 'Two games and a short quiz earn your stamp. Play now, even on the plane.'));
+}
+
 // ---------- one destination of the Passport Explorer ----------
 // The page takes on the look of the place: its colors and title typeface (the drawn patterns and scenes come with the themes step). Nothing here is
 // typed by the guest. The three steps open in order once the destination itself is open; the games and the quiz themselves are built in later steps.
@@ -521,13 +531,21 @@ function gamePage(sheet, index, stepIndex) {
         nextIsGame ? `Next: ${other.title}` : stepIndex === 1 ? 'On to the questions' : `Back to ${d.name}`),
       h('button', { class: 'ex-wide ex-wide--plain', type: 'button', onclick: () => { gameRun = null; paint(); } }, 'Play again')));
   }
+  // The maze is steered with an arrow pad under the stage (directions: 0 up, 1 right, 2 down, 3 left, as the game expects).
+  const pad = step.engine !== 'maze' ? null : h('div', { class: 'ex-dpad', 'aria-label': 'Move' }, ...[['up', 0, '\u2191', 'Up'], ['left', 3, '\u2190', 'Left'], ['down', 2, '\u2193', 'Down'], ['right', 1, '\u2192', 'Right']].map(([cls, dir, label, name]) => h('button', { class: cls, type: 'button', 'data-dir': String(dir), 'aria-label': name }, label)));
   const nodes = [h('div', { class: 'ex-page ex-gamepage', style: exStyle(d.ex.theme) }, back, soundButton(),
-    h('div', { class: 'ex-gamehead' }, h('small', {}, `Step ${stepIndex + 1} of 3 \u00b7 ${d.name}`), h('h1', {}, step.title), hud), stage)];
+    h('div', { class: 'ex-gamehead' }, h('small', {}, `Step ${stepIndex + 1} of 3 \u00b7 ${d.name}`), h('h1', {}, step.title), hud), stage, pad)];
   overlay.append(sheetBox(h('h3', {}, step.title), h('p', {}, step.intro), h('button', { class: 'ex-wide', type: 'button', id: 'ex-go' }, 'Start')));
   const mount = () => {
     const game = ENGINES[step.engine](stage, hud, showEnd, SKINS[step.engine][step.skin]);
     gameRun = { running: false, stop: () => { game.stop(); } };
     overlay.querySelector('#ex-go').onclick = () => { overlay.hidden = true; gameRun.running = true; game.start(); };
+    pad?.querySelectorAll('button').forEach((b) => {
+      let timer = null;
+      const down = (e) => { e.preventDefault(); game.move(Number(b.dataset.dir)); clearInterval(timer); timer = setInterval(() => game.move(Number(b.dataset.dir)), 170); };
+      const up = () => { clearInterval(timer); timer = null; };
+      b.addEventListener('pointerdown', down); ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, up));
+    });
   };
   return { nodes, mount };
 }
