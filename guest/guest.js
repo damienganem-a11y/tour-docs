@@ -11,6 +11,7 @@
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
 import { passportState, stampSvg, dayIn, wallToInstant, hashOf } from './passport.js';
+import { sceneSvg, patternCss } from './explorer/themes.js';
 import { entryOf, totals, stepOpen, finishStep, finishQuiz, drawQuiz, QUIZ_LENGTH, STAMP_NEEDED } from './explorer/state.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
@@ -362,7 +363,7 @@ const destKey = (d) => `${d.name}|${d.firstDate}`;
 const saveEntry = (d, entry) => { const all = readProgress(); all[destKey(d)] = entry; store.set(progressKey(), JSON.stringify(all)); };
 const QUIZ_CATEGORIES = ['landmark', 'history', 'tradition', 'nature', 'food'];
 // The CSS variables that give a destination page the colors and title typeface of the place (from the trip file; a color that is not a plain hex was already dropped).
-const exStyle = (theme = {}) => [['--ex-page', theme.page], ['--ex-card', theme.card], ['--ex-surface', theme.surface], ['--ex-accent', theme.accent], ['--ex-on', theme.onAccent], ['--ex-title', theme.titleFont ? `'${theme.titleFont}', Outfit, sans-serif` : null]]
+const exStyle = (theme = {}) => [['--ex-pattern', patternCss(theme.pattern).url || null], ['--ex-psize', patternCss(theme.pattern).size || null], ['--ex-page', theme.page], ['--ex-card', theme.card], ['--ex-surface', theme.surface], ['--ex-accent', theme.accent], ['--ex-on', theme.onAccent], ['--ex-title', theme.titleFont ? `'${theme.titleFont}', Outfit, sans-serif` : null]]
   .filter(([, v]) => v).map(([k, v]) => `${k}:${v}`).join(';');
 // Sound is OFF unless the guest turns it on (guests play next to each other on the plane). Two tiny tones, made by the phone itself.
 const SOUND_KEY = 'tourdocs.guest.sound';
@@ -453,6 +454,7 @@ function destinationView(sheet, index, offline) {
     quizOpen ? stepButton(entry.stamp ? 'Play again' : entry.best > 0 ? 'Try again' : 'Start', () => startQuiz(index)) : h('div', { class: 'ex-step-state' }, 'Locked'));
   return [h('div', { class: 'ex-page', style },
     h('button', { class: 'atl-back ex-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '\u2039'),
+    sceneZone(ex.scene),
     h('header', { class: 'ex-hero' },
       h('small', {}, d.country),
       h('h1', {}, d.name),
@@ -466,6 +468,15 @@ function destinationView(sheet, index, offline) {
       d.given ? h('p', { class: 'ex-stamp-line' }, `Stamp earned ${stampDate(d.stampDay ?? d.firstDate)}`) : h('p', { class: 'ex-stamp-line' }, d.unlocked ? 'Finish the three steps to earn your stamp.' : `Opens ${stampDate(ex.unlockOn)}`),
       gameRow(0), gameRow(1), quizRow,
       d.given && ex.etiquette?.length ? h('section', { class: 'ex-tips' }, h('div', { class: 'atl-label' }, 'Local etiquette'), ...ex.etiquette.map((t) => h('p', {}, t))) : null))];
+}
+
+// The illustrated scene of the place (drawn in explorer/themes.js from the name in the trip file; nothing when the name is unknown).
+function sceneZone(name) {
+  const svg = sceneSvg(name);
+  if (!svg) return null;
+  const zone = h('div', { class: 'ex-art' });
+  zone.innerHTML = svg;
+  return zone;
 }
 
 // The stamp picture in a round frame (drawn from the destination's own name), pressed onto the page when it has just been earned.

@@ -659,7 +659,7 @@ input[type=checkbox] { accent-color: #000; }
 .ex-dots { display: flex; gap: 6px; }
 .ex-dots b { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; }
 .ex-dots b.is-done { background: currentColor; }
-.ex-page { --ex-page: #1d3a63; --ex-card: #fff; --ex-surface: #f4f1ea; --ex-accent: var(--yellow); --ex-on: #000; --ex-title: Outfit, sans-serif; min-height: 100vh; background: var(--ex-page); padding-bottom: 40px; }
+.ex-page { --ex-pattern: none; --ex-psize: auto; --ex-page: #1d3a63; --ex-card: #fff; --ex-surface: #f4f1ea; --ex-accent: var(--yellow); --ex-on: #000; --ex-title: Outfit, sans-serif; min-height: 100vh; background: var(--ex-page) var(--ex-pattern); background-size: var(--ex-psize); padding-bottom: 40px; }
 .ex-back { position: absolute; top: calc(env(safe-area-inset-top) + 14px); left: 18px; z-index: 3; }
 .ex-hero { color: #fff; padding: calc(env(safe-area-inset-top) + 70px) 22px 26px; }
 .ex-hero small { font: 700 11px Outfit, sans-serif; letter-spacing: .2em; text-transform: uppercase; opacity: .85; }
@@ -706,3 +706,14 @@ input[type=checkbox] { accent-color: #000; }
 .ex-result .ex-wide { margin-top: 4px; }
 .ex-tips--light { text-align: left; font-size: 14px; }
 @media (min-width: 700px) { .ex-q, .ex-result { max-width: 640px; margin-left: auto; margin-right: auto; } }
+
+/* v0.99.2: Passport Explorer, step 3: the drawn scene of the place on top of its page, on the place's own repeating pattern. */
+.ex-art { height: 210px; overflow: hidden; }
+.ex-art svg { width: 100%; height: 100%; display: block; }
+.ex-art .fade { display: none; }
+.ex-art + .ex-hero { padding-top: 18px; }
+@media (min-width: 700px) { .ex-art { height: 280px; } }
+.ex-hero { margin: 14px 14px 0; padding: 18px 18px 20px; border-radius: 22px; background: rgba(0, 0, 0, .58); }
+.ex-art + .ex-hero { padding-top: 18px; }
+.ex-body { margin-top: 14px; }
+@media (min-width: 700px) { .ex-hero { max-width: 732px; margin-left: auto; margin-right: auto; } }

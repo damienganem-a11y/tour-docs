@@ -3,6 +3,7 @@
 // time zones, unique IDs, saving on the device, and files with mistakes.
 
 import { cleanExplorer, explorerProblems, explorerUnitWarnings, explorerUnlock, explorerForGuest, QUIZ_CATEGORIES } from './explorer.js';
+import { sceneSvg, patternCss, PATTERN_NAMES } from '../guest/explorer/themes.js';
 import { entryOf, emptyEntry, explorerOpen, stepOpen, finishStep, finishQuiz, totals, drawQuiz } from '../guest/explorer/state.js';
 import { tripAccent, buildTrip, brandingFromLook, defaultBranding } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
@@ -3481,6 +3482,9 @@ function readZip(bytes) {
   check('A destination with no explorer block has none (the stamp stays automatic)', buildTrip(await (await fetch('./data/tour_docs_sample_trip_RN-01.json')).json()).destinations.every((d) => d.explorer === null));
   check('A short color like #fff is kept (written in full), a wrong one is dropped', cleanExplorer({ theme: { onAccent: '#fff', accent: 'red', page: '#14325c' } }).theme.onAccent === '#ffffff' && cleanExplorer({ theme: { accent: 'red' } }).theme.accent === null);
   check('Every destination keeps its text color on the accent', jetT.destinations.every((d) => /^#[0-9a-f]{6}$/i.test(d.explorer.theme.onAccent)));
+  check('Every pattern and scene named in the jet sample exists in the drawn library', jetT.destinations.every((d) => PATTERN_NAMES().includes(d.explorer.theme.pattern) && sceneSvg(d.explorer.scene).startsWith('<svg')));
+  check('An unknown pattern or scene name gives nothing (the page keeps its plain colors)', sceneSvg('nowhere') === '' && patternCss('nowhere').url === '' && /^url\("data:image\/svg\+xml,/.test(patternCss('peru').url) && /^\d+px \d+px$/.test(patternCss('peru').size));
+  check('The drawings hold no script and no outside address', jetT.destinations.every((d) => !/<script|onload|http:\/\/(?!www\.w3\.org)|https:\/\//i.test(sceneSvg(d.explorer.scene) + decodeURIComponent(patternCss(d.explorer.theme.pattern).url))));
   const bad = cleanExplorer({ ...jetFile.destinations[1].explorer, questions: jetFile.destinations[1].explorer.questions.filter((q) => q.category !== 'nature') });
   check('Fewer than 2 questions in a category is reported in words', explorerProblems(bad).some((t) => /at least 2 "nature" questions/.test(t)));
   check('The units check fires on km, m and °C and not on miles, feet or "mild"', explorerUnitWarnings(cleanExplorer({ facts: ['It is 12 km long', 'About 3,400 m high', 'Daytime 25 °C', 'Mild: 5 miles and 400 feet'] })).length === 3);
