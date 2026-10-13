@@ -14,7 +14,8 @@ export const GAME_ENGINES = ['runner', 'catch', 'rhythm', 'flap', 'hidden', 'arc
 export const STAMP_NEEDED = 3; // right answers out of 5 that earn the stamp
 
 const text = (v, max = 600) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-const colour = (v) => (/^#[0-9a-f]{6}$/i.test(v ?? '') ? v : null);
+// A plain hex colour (#c0392b, or the short #fff written out in full); anything else is dropped.
+const colour = (v) => (/^#[0-9a-f]{3}$/i.test(v ?? '') ? `#${[...v.slice(1)].map((c) => c + c).join('')}` : /^#[0-9a-f]{6}$/i.test(v ?? '') ? v : null);
 
 // A clean copy of a destination's explorer block from a trip file, or null if there is none. Never throws: content that is not good enough is
 // reported by explorerProblems (shown in Warnings, and it stops the owner switching the destination on for guests).

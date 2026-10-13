@@ -11,7 +11,7 @@
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
 import { passportState, stampSvg, dayIn, wallToInstant, hashOf } from './passport.js';
-import { entryOf, totals } from './explorer/state.js';
+import { entryOf, totals, stepOpen, finishStep, finishQuiz, drawQuiz, QUIZ_LENGTH, STAMP_NEEDED } from './explorer/state.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
 
@@ -359,6 +359,28 @@ const seenStamps = () => { try { return JSON.parse(store.get(STAMPS_SEEN_KEY)) ?
 const progressKey = () => `tourdocs.guest.explorer.${hashOf(store.get(TOKEN_KEY) ?? '')}`;
 const readProgress = () => { try { return JSON.parse(store.get(progressKey())) ?? {}; } catch { return {}; } };
 const destKey = (d) => `${d.name}|${d.firstDate}`;
+const saveEntry = (d, entry) => { const all = readProgress(); all[destKey(d)] = entry; store.set(progressKey(), JSON.stringify(all)); };
+const QUIZ_CATEGORIES = ['landmark', 'history', 'tradition', 'nature', 'food'];
+// The CSS variables that give a destination page the colors and title typeface of the place (from the trip file; a color that is not a plain hex was already dropped).
+const exStyle = (theme = {}) => [['--ex-page', theme.page], ['--ex-card', theme.card], ['--ex-surface', theme.surface], ['--ex-accent', theme.accent], ['--ex-on', theme.onAccent], ['--ex-title', theme.titleFont ? `'${theme.titleFont}', Outfit, sans-serif` : null]]
+  .filter(([, v]) => v).map(([k, v]) => `${k}:${v}`).join(';');
+// Sound is OFF unless the guest turns it on (guests play next to each other on the plane). Two tiny tones, made by the phone itself.
+const SOUND_KEY = 'tourdocs.guest.sound';
+const soundOn = () => store.get(SOUND_KEY) === '1';
+let audio = null;
+function tone(kind) {
+  if (!soundOn()) return;
+  try {
+    audio ??= new (window.AudioContext || window.webkitAudioContext)();
+    const notes = kind === 'right' ? [[660, 0], [880, 0.12]] : [[220, 0]];
+    for (const [hz, at] of notes) {
+      const osc = audio.createOscillator(); const gain = audio.createGain();
+      osc.frequency.value = hz; osc.connect(gain); gain.connect(audio.destination);
+      const t = audio.currentTime + at; gain.gain.setValueAtTime(0.0001, t); gain.gain.exponentialRampToValueAtTime(0.15, t + 0.02); gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      osc.start(t); osc.stop(t + 0.25);
+    }
+  } catch { /* no sound: nothing else changes */ }
+}
 const passportOf = (sheet) => passportState(sheet.destinations, simulatedDate ?? new Date(), readProgress());
 
 function passportView(sheet, offline) {
@@ -407,19 +429,28 @@ function destinationView(sheet, index, offline) {
   if (!ex) return null;
   const entry = entryOf(readProgress(), destKey(d));
   const theme = ex.theme ?? {};
-  const style = [['--ex-page', theme.page], ['--ex-card', theme.card], ['--ex-surface', theme.surface], ['--ex-accent', theme.accent], ['--ex-on', theme.onAccent], ['--ex-title', theme.titleFont ? `'${theme.titleFont}', Outfit, sans-serif` : null]]
-    .filter(([, v]) => v).map(([k, v]) => `${k}:${v}`).join(';');
+  const style = exStyle(theme);
   const zone = d.tz || 'UTC';
   const clock = (() => { try { return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: zone }).format(new Date()); } catch { return ''; } })();
-  const steps = [
-    { title: ex.steps[0]?.title, blurb: ex.steps[0]?.blurb, label: 'Step 1' },
-    { title: ex.steps[1]?.title, blurb: ex.steps[1]?.blurb, label: 'Step 2' },
-    { title: 'Local quiz', blurb: `Five questions about ${d.name}. Three right earns your stamp.`, label: 'Quiz' },
-  ];
-  const stepRow = (s, i) => h('div', { class: 'ex-step is-locked' },
-    h('div', { class: 'ex-step-no' }, String(i + 1)),
-    h('div', { class: 'ex-step-text' }, h('small', {}, s.label), h('b', {}, s.title), h('span', {}, s.blurb)),
-    h('div', { class: 'ex-step-state' }, d.unlocked ? 'Coming soon' : 'Locked'));
+  const open = d.unlocked;
+  const stepButton = (label, onclick) => h('button', { class: 'ex-btn', type: 'button', onclick }, label);
+  const star = (i) => (entry.stars[i] ? ' \u2605' : '');
+  // Steps 1 and 2 are the two games, built in a later step: until then each can be skipped, so the quiz and the stamp can be tried from start to end.
+  const gameRow = (i) => {
+    const s = ex.steps[i];
+    const done = entry.steps[i];
+    const action = !open || !stepOpen(entry, i) ? h('div', { class: 'ex-step-state' }, open ? 'Locked' : 'Locked')
+      : done ? h('div', { class: 'ex-step-state' }, `Done${star(i)}`)
+      : stepButton('Skip for now', () => { saveEntry(d, finishStep(entry, i, false)); paint(); });
+    return h('div', { class: `ex-step${open && stepOpen(entry, i) ? '' : ' is-locked'}` },
+      h('div', { class: 'ex-step-no' }, String(i + 1)),
+      h('div', { class: 'ex-step-text' }, h('small', {}, `Step ${i + 1}`), h('b', {}, s?.title), h('span', {}, s?.blurb)), action);
+  };
+  const quizOpen = open && stepOpen(entry, 2);
+  const quizRow = h('div', { class: `ex-step${quizOpen ? '' : ' is-locked'}` },
+    h('div', { class: 'ex-step-no' }, '3'),
+    h('div', { class: 'ex-step-text' }, h('small', {}, 'Quiz'), h('b', {}, 'Local quiz'), h('span', {}, entry.best > 0 ? `Five questions about ${d.name}. Best so far: ${entry.best} of ${QUIZ_LENGTH}${star(2)}.` : `Five questions about ${d.name}. ${STAMP_NEEDED} right earns your stamp.`)),
+    quizOpen ? stepButton(entry.stamp ? 'Play again' : entry.best > 0 ? 'Try again' : 'Start', () => startQuiz(index)) : h('div', { class: 'ex-step-state' }, 'Locked'));
   return [h('div', { class: 'ex-page', style },
     h('button', { class: 'atl-back ex-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '\u2039'),
     h('header', { class: 'ex-hero' },
@@ -431,9 +462,98 @@ function destinationView(sheet, index, offline) {
       h('p', { class: 'ex-facts' }, [clock ? `Local time ${clock}` : null, ...ex.facts].filter(Boolean).join(' · '))),
     h('div', { class: 'ex-body' },
       offline,
+      d.given ? stampZone(d, stampDate(d.stampDay ?? d.firstDate), 'dest') : null,
       d.given ? h('p', { class: 'ex-stamp-line' }, `Stamp earned ${stampDate(d.stampDay ?? d.firstDate)}`) : h('p', { class: 'ex-stamp-line' }, d.unlocked ? 'Finish the three steps to earn your stamp.' : `Opens ${stampDate(ex.unlockOn)}`),
-      ...steps.map(stepRow),
+      gameRow(0), gameRow(1), quizRow,
       d.given && ex.etiquette?.length ? h('section', { class: 'ex-tips' }, h('div', { class: 'atl-label' }, 'Local etiquette'), ...ex.etiquette.map((t) => h('p', {}, t))) : null))];
+}
+
+// The stamp picture in a round frame (drawn from the destination's own name), pressed onto the page when it has just been earned.
+function stampZone(d, dateText, id, fresh = false) {
+  const zone = h('div', { class: `ex-stamp${fresh ? ' is-new' : ''}` });
+  zone.innerHTML = stampSvg(d, dateText, `ex${id}`);
+  return zone;
+}
+
+// ---------- the quiz of a destination ----------
+// Five questions, one per category, one screen each with no scrolling: after an answer the other choices disappear and the explanation, with a full-width
+// "Next question" button, appears right below. 3 right out of 5 earns the stamp. Nothing is kept until the quiz is finished; leaving it starts a fresh set.
+let quizRun = null;
+const lastQuizIds = {};
+function startQuiz(index, silent = false) {
+  const d = passportOf(currentSheet)[index];
+  const key = destKey(d);
+  const quiz = drawQuiz(d.ex.questions, QUIZ_CATEGORIES, Math.random, lastQuizIds[key] ?? []);
+  lastQuizIds[key] = quiz.map((x) => x.id);
+  quizRun = { index, quiz, i: 0, score: 0, picked: null, result: null };
+  if (!silent) go({ quiz: index }); else paintQuiz();
+}
+
+function paintQuiz() { app.replaceChildren(...quizPage(currentSheet, quizRun.index)); }
+
+function soundButton() {
+  const button = h('button', { class: 'ex-sound', type: 'button', 'aria-label': soundOn() ? 'Sound on' : 'Sound off', 'aria-pressed': String(soundOn()) }, soundOn() ? '\u{1F50A}' : '\u{1F507}');
+  button.onclick = () => { store.set(SOUND_KEY, soundOn() ? '0' : '1'); button.textContent = soundOn() ? '\u{1F50A}' : '\u{1F507}'; button.setAttribute('aria-pressed', String(soundOn())); button.setAttribute('aria-label', soundOn() ? 'Sound on' : 'Sound off'); tone('right'); };
+  return button;
+}
+
+function answerQuiz(optionIndex) {
+  const run = quizRun;
+  if (run.picked !== null) return;
+  const question = run.quiz[run.i];
+  run.picked = optionIndex;
+  if (question.options[optionIndex].right) run.score++;
+  tone(question.options[optionIndex].right ? 'right' : 'wrong');
+  paintQuiz();
+}
+
+function nextQuestion() {
+  const run = quizRun;
+  if (run.i + 1 < run.quiz.length) { run.i++; run.picked = null; paintQuiz(); return; }
+  // Finished: the stamp is earned from 3 right answers and a retry never takes it away; stars and the best score only go up.
+  const d = passportOf(currentSheet)[run.index];
+  const before = entryOf(readProgress(), destKey(d));
+  const today = dayIn(d.tz || 'UTC', simulatedDate ?? new Date());
+  const after = finishQuiz(before, run.score, today);
+  saveEntry(d, after);
+  run.result = { newStamp: !before.stamp && Boolean(after.stamp), star: after.stars[2] > before.stars[2] || (run.score === QUIZ_LENGTH) };
+  paintQuiz();
+}
+
+function quizPage(sheet, index) {
+  const d = passportOf(sheet)[index];
+  if (!d?.ex) return [h('p', {}, 'Nothing here.')];
+  if (!quizRun || quizRun.index !== index) { quizRun = null; startQuiz(index, true); return []; }
+  const run = quizRun;
+  const style = exStyle(d.ex.theme);
+  const back = h('button', { class: 'atl-back ex-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '‹');
+
+  if (run.result) {
+    const earned = Boolean(passportOf(sheet)[index].given);
+    const entry = entryOf(readProgress(), destKey(d));
+    return [h('div', { class: 'ex-page ex-quiz', style }, back, soundButton(),
+      h('div', { class: 'ex-result' },
+        h('small', {}, `${d.name} quiz`),
+        h('h1', {}, `${run.score} of ${QUIZ_LENGTH}`),
+        earned ? stampZone(d, stampDate(entry.stamp ?? d.firstDate), 'res', run.result.newStamp) : null,
+        h('p', { class: 'ex-result-line' }, run.score === QUIZ_LENGTH ? '★ Perfect score!' : earned ? (run.result.newStamp ? 'Your stamp is earned.' : 'You already have this stamp.') : `Not quite: ${STAMP_NEEDED} right answers earn the stamp. Try again with a fresh set.`),
+        earned && d.ex.etiquette?.length && run.result.newStamp ? h('section', { class: 'ex-tips ex-tips--light' }, h('div', { class: 'atl-label' }, 'Local etiquette'), ...d.ex.etiquette.map((t) => h('p', {}, t))) : null,
+        h('button', { class: 'ex-wide', type: 'button', onclick: () => { quizRun = null; history.back(); } }, earned ? `Back to ${d.name}` : 'Back'),
+        earned ? null : h('button', { class: 'ex-wide ex-wide--plain', type: 'button', onclick: () => startQuiz(index, true) }, 'Try again')))];
+  }
+
+  const q = run.quiz[run.i];
+  const answered = run.picked !== null;
+  const shown = q.options.map((option, i) => ({ option, i })).filter(({ option, i }) => !answered || i === run.picked || option.right);
+  return [h('div', { class: 'ex-page ex-quiz', style }, back, soundButton(),
+    h('div', { class: 'ex-q' },
+      h('small', {}, `Question ${run.i + 1} of ${run.quiz.length} · ${q.category === 'food' ? 'Food & daily life' : q.category.replace(/^./, (c) => c.toUpperCase())}`),
+      h('h2', {}, q.q),
+      h('div', { class: 'ex-options' }, shown.map(({ option, i }) => h('button', {
+        class: `ex-option${answered ? (option.right ? ' is-right' : ' is-wrong') : ''}`, type: 'button', disabled: answered, onclick: () => answerQuiz(i),
+      }, option.text))),
+      answered ? h('div', { class: 'ex-explain' }, h('b', {}, q.options[run.picked].right ? 'Right!' : 'Not this time.'), h('p', {}, q.explain),
+        h('button', { class: 'ex-wide', type: 'button', onclick: nextQuestion }, run.i + 1 < run.quiz.length ? 'Next question' : 'See my result')) : null))];
 }
 
 // ---------- asking for a change, and notifications ----------
@@ -816,6 +936,11 @@ function paintPage() {
   if (tour) {
     app.replaceChildren(...tourView(sheet, tour, offline));
     return;
+  }
+  if (view.quiz !== undefined) {
+    const page = quizPage(sheet, view.quiz);
+    if (page.length > 0) { app.replaceChildren(...page); return; }
+    return; // quizPage drew a fresh quiz by itself
   }
   if (view.dest !== undefined) {
     const page = destinationView(sheet, view.dest, offline);

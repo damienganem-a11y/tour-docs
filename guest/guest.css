@@ -678,3 +678,31 @@ input[type=checkbox] { accent-color: #000; }
 .ex-step-state { font: 700 12px Outfit, sans-serif; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
 .ex-tips p { margin: 6px 0; }
 @media (min-width: 700px) { .ex-hero { max-width: 760px; margin: 0 auto; } .ex-body { max-width: 760px; margin: 0 auto; border-radius: 28px; } }
+
+/* v0.99.1: Passport Explorer, step 2: the quiz and the stamp. One screen, no scrolling. */
+.ex-btn { border: 0; border-radius: 99px; background: var(--ex-accent); color: var(--ex-on); font: 700 12px Outfit, sans-serif; letter-spacing: .08em; text-transform: uppercase; padding: 10px 16px; cursor: pointer; }
+.ex-stamp { width: 150px; margin: 4px auto 10px; }
+.ex-stamp svg { width: 100%; height: auto; display: block; }
+.ex-stamp.is-new svg { animation: stamp-press 0.7s cubic-bezier(.2, 1.5, .4, 1) both; }
+.ex-quiz { display: flex; flex-direction: column; min-height: 100dvh; }
+.ex-sound { position: absolute; top: calc(env(safe-area-inset-top) + 14px); right: 18px; z-index: 3; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .92); font-size: 20px; cursor: pointer; }
+.ex-q { background: var(--ex-card); border-radius: 28px; margin: calc(env(safe-area-inset-top) + 70px) 14px 20px; padding: 20px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.ex-q small { font: 700 11px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; opacity: .7; }
+.ex-q h2 { font: 700 20px/1.25 var(--ex-title); margin: 0; }
+.ex-options { display: grid; gap: 10px; }
+.ex-option { text-align: left; border: 2px solid transparent; border-radius: 18px; background: var(--ex-surface); color: inherit; font: 600 16px/1.3 Inter, sans-serif; padding: 14px 16px; cursor: pointer; }
+.ex-option:not(:disabled):active { border-color: var(--ex-accent); }
+.ex-option.is-right { border-color: #2e8b57; background: #e5f4ea; }
+.ex-option.is-wrong { border-color: #c0392b; background: #fbe9e6; }
+.ex-option:disabled { opacity: 1; cursor: default; }
+.ex-explain { display: grid; gap: 8px; }
+.ex-explain p { margin: 0; font-size: 15px; line-height: 1.4; }
+.ex-wide { width: 100%; border: 0; border-radius: 99px; background: var(--ex-accent); color: var(--ex-on); font: 700 15px Outfit, sans-serif; padding: 16px; cursor: pointer; }
+.ex-wide--plain { background: transparent; color: inherit; border: 2px solid currentColor; }
+.ex-result { background: var(--ex-card); border-radius: 28px; margin: calc(env(safe-area-inset-top) + 70px) 14px 20px; padding: 24px 18px; text-align: center; display: grid; gap: 12px; justify-items: center; }
+.ex-result small { font: 700 11px Outfit, sans-serif; letter-spacing: .14em; text-transform: uppercase; opacity: .7; }
+.ex-result h1 { font: 700 44px var(--ex-title); margin: 0; }
+.ex-result-line { margin: 0; font-weight: 600; }
+.ex-result .ex-wide { margin-top: 4px; }
+.ex-tips--light { text-align: left; font-size: 14px; }
+@media (min-width: 700px) { .ex-q, .ex-result { max-width: 640px; margin-left: auto; margin-right: auto; } }

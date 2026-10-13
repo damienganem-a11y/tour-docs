@@ -3479,6 +3479,8 @@ function readZip(bytes) {
   check('No real company name in the explorer content (NGE instead)', !/national geographic/i.test(JSON.stringify(jetFile)));
   check('Kathmandu has its own content, and Washington is the wrap-up at the end', jetT.destinations.find((d) => d.name === 'Kathmandu').explorer.greeting.word === 'Namaste' && jetT.destinations.find((d) => d.name === 'Washington').explorer.wrapUp === true);
   check('A destination with no explorer block has none (the stamp stays automatic)', buildTrip(await (await fetch('./data/tour_docs_sample_trip_RN-01.json')).json()).destinations.every((d) => d.explorer === null));
+  check('A short color like #fff is kept (written in full), a wrong one is dropped', cleanExplorer({ theme: { onAccent: '#fff', accent: 'red', page: '#14325c' } }).theme.onAccent === '#ffffff' && cleanExplorer({ theme: { accent: 'red' } }).theme.accent === null);
+  check('Every destination keeps its text color on the accent', jetT.destinations.every((d) => /^#[0-9a-f]{6}$/i.test(d.explorer.theme.onAccent)));
   const bad = cleanExplorer({ ...jetFile.destinations[1].explorer, questions: jetFile.destinations[1].explorer.questions.filter((q) => q.category !== 'nature') });
   check('Fewer than 2 questions in a category is reported in words', explorerProblems(bad).some((t) => /at least 2 "nature" questions/.test(t)));
   check('The units check fires on km, m and °C and not on miles, feet or "mild"', explorerUnitWarnings(cleanExplorer({ facts: ['It is 12 km long', 'About 3,400 m high', 'Daytime 25 °C', 'Mild: 5 miles and 400 feet'] })).length === 3);
