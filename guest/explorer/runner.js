@@ -1,5 +1,5 @@
 // Passport Explorer game: Runner (jump over obstacles to reach a goal). PORTED unchanged in logic and tuning from the owner's prototype; only the
-// imports and the exports are new. Skins here: llama (Peru), swim (Easter Island), hike (Bhutan).
+// imports and the exports are new. Only the llama skin (Peru) is kept: the owner chose three DIFFERENT games for Easter Island and Bhutan instead of three runners, so the prototype's other two runner skins (swim, hike) are not brought over.
 import { ridgeC, peakC, skyC, ell, circ, plural, setHud, canvasIn, sfx } from './common.js';
 
 export const runner = function(host, hud, onEnd, sk){
@@ -93,63 +93,5 @@ export const runnerSkins = {
       ctx.fillStyle = '#ffd99a'; ctx.beginPath(); ctx.moveTo(x - 14, g); ctx.lineTo(x - 10, g - 74); ctx.lineTo(x + 10, g - 74); ctx.lineTo(x + 14, g); ctx.fill(); },
     ok:(n, clean) => ({ title:'Sun Gate reached!', text:`You reached Inti Punku with ${plural(n, 'woven textile')}. Machu Picchu lies below you in the morning light. ${clean ? 'Not a single stumble!' : 'Reach it without a stumble for a star.'}` }),
     fail:() => ({ title:'The llama sat down', text:'After three stumbles your llama lay down and refused to move. Real llamas do this when a load feels too heavy! The trail team carries on to the Sun Gate.' })
-  },
-  swim: {
-    label:'Birdman race: tap or press Space to ride over the waves', hudItem:'Terns',
-    bg(ctx, W, H, dist, g){
-      skyC(ctx, W, g, ['#5a6fa8','#f0a07a','#ffd9a8']);
-      circ(ctx, W * 0.25, g - 40, 26, '#ffe2b0');
-      const cx = W * 0.05 - dist * 0.3; if (cx > -260) { ctx.fillStyle = '#4b4540'; ctx.beginPath(); ctx.moveTo(cx - 40, g); ctx.lineTo(cx - 40, g - 150); ctx.lineTo(cx + 120, g - 130); ctx.lineTo(cx + 180, g); ctx.fill(); ctx.fillStyle = '#6f8f4f'; ctx.fillRect(cx - 40, g - 156, 165, 10); }
-      const sea = ctx.createLinearGradient(0, g - 8, 0, H); sea.addColorStop(0, '#3d7aa3'); sea.addColorStop(1, '#173f5f'); ctx.fillStyle = sea; ctx.fillRect(0, g - 8, W, H - g + 8);
-      ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 2;
-      for (let r = 0; r < 4; r++) { ctx.beginPath(); for (let x = 0; x <= W; x += 10) { const yy = g + 6 + r * 9 + Math.sin((x + dist * (0.6 + r * 0.2)) * 0.04) * 2.5; x ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); } ctx.stroke(); }
-    },
-    player(ctx, x, y, phase, ground, flash){
-      ctx.save(); ctx.translate(x, y); if (flash) ctx.globalAlpha = 0.4;
-      ell(ctx, 0, -6, 34, 7, '#b58b4c'); ctx.strokeStyle = '#8a6a36'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-30, -6); ctx.lineTo(30, -6); ctx.moveTo(-26, -9); ctx.lineTo(26, -9); ctx.stroke();
-      ell(ctx, 0, -15, 20, 6, '#6b4a3a'); circ(ctx, 24, -18, 7, '#6b4a3a');
-      ctx.strokeStyle = '#6b4a3a'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(14, -16); ctx.lineTo(14 + Math.cos(phase * 2) * 16, -12 + Math.sin(phase * 2) * 10); ctx.stroke();
-      ctx.restore();
-    },
-    obstacle(ctx, o, g){ ctx.fillStyle = '#9fd3e6'; ctx.beginPath(); ctx.moveTo(o.x - 6, g); ctx.quadraticCurveTo(o.x + o.w * 0.3, g - o.h * 1.4, o.x + o.w * 0.75, g - o.h * 1.05); ctx.quadraticCurveTo(o.x + o.w * 0.55, g - o.h * 0.5, o.x + o.w + 6, g); ctx.fill();
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(o.x + o.w * 0.15, g - o.h * 0.9); ctx.quadraticCurveTo(o.x + o.w * 0.4, g - o.h * 1.35, o.x + o.w * 0.75, g - o.h * 1.05); ctx.stroke(); },
-    item(ctx, x, y){ ctx.strokeStyle = '#1d2433'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - 2, y + 4); ctx.quadraticCurveTo(x + 5, y - 4, x + 10, y + 5); ctx.quadraticCurveTo(x + 15, y - 4, x + 22, y + 4); ctx.stroke(); circ(ctx, x + 10, y + 6, 3, '#fff'); },
-    goal(ctx, x, g){ ctx.fillStyle = '#5b544c'; ctx.beginPath(); ctx.moveTo(x - 70, g); ctx.quadraticCurveTo(x - 40, g - 110, x + 10, g - 95); ctx.quadraticCurveTo(x + 60, g - 80, x + 90, g); ctx.fill();
-      ctx.fillStyle = '#7d9a5a'; ctx.fillRect(x - 30, g - 100, 60, 6); const glow = ctx.createRadialGradient(x, g - 106, 0, x, g - 106, 22); glow.addColorStop(0, 'rgba(255,240,200,.9)'); glow.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = glow; ctx.fillRect(x - 22, g - 128, 44, 44); ell(ctx, x, g - 106, 5, 7, '#f4ead7'); },
-    ok:(n, clean) => ({ title:'Motu Nui!', text:`You reached the islet and spotted ${plural(n, 'sooty tern')}. Now the wait for the first egg begins. ${clean ? 'Not one wave got the better of you!' : 'Make it without a tumble for a star.'}` }),
-    fail:() => ({ title:'Swept back to shore', text:'Three big waves pushed you back to the rocks below Orongo. The crossing is about a mile of open, rough sea: even champions needed several tries.' })
-  },
-  hike: {
-    label:'Tiger’s Nest climb: tap or press Space to hop', hudItem:'Flags',
-    bg(ctx, W, H, dist, g){
-      skyC(ctx, W, H, ['#8fb8e0','#cfe0ee','#eef4f7']);
-      ridgeC(ctx, W, H, dist * 0.04, H * 0.42, 60, 0.007, '#dfe8f0');
-      ridgeC(ctx, W, H, dist * 0.15, H * 0.62, 40, 0.01, '#6f8e74');
-      const cl = ((W * 0.85 - dist * 0.14) % (W + 400) + W + 400) % (W + 400) - 200;
-      ctx.fillStyle = '#56524c'; ctx.beginPath(); ctx.moveTo(cl - 40, H); ctx.lineTo(cl - 30, H * 0.3); ctx.lineTo(cl + 50, H * 0.18); ctx.lineTo(cl + 70, H); ctx.fill();
-      ctx.fillStyle = '#f6f1e7'; ctx.fillRect(cl - 10, H * 0.24, 34, 18); ctx.fillStyle = '#d9a531'; ctx.beginPath(); ctx.moveTo(cl - 14, H * 0.24); ctx.lineTo(cl + 7, H * 0.2); ctx.lineTo(cl + 28, H * 0.24); ctx.fill();
-      ridgeC(ctx, W, H, dist * 0.5, g - 8, 16, 0.02, '#3e5a45');
-      ctx.fillStyle = '#2f4a37'; const po = dist * 0.5 % 60; for (let x = -po; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, g - 50); ctx.lineTo(x + 14, g - 6); ctx.lineTo(x - 14, g - 6); ctx.fill(); }
-      ctx.fillStyle = '#4f6b44'; ctx.fillRect(0, g, W, H - g); ctx.fillStyle = '#8a6a4a'; ctx.fillRect(0, g, W, 7);
-      ctx.fillStyle = '#6e5238'; const off = dist % 28; for (let x = -off; x < W; x += 28) ctx.fillRect(x, g + 2, 6, 2);
-    },
-    player(ctx, x, y, phase, ground, flash){
-      ctx.save(); ctx.translate(x, y); if (flash) ctx.globalAlpha = 0.4;
-      const s = ground ? Math.sin(phase) * 10 : 6;
-      ctx.strokeStyle = '#2b2b33'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(s, 0); ctx.moveTo(0, -30); ctx.lineTo(-s, 0); ctx.stroke();
-      ctx.fillStyle = '#7d1d2a'; ctx.fillRect(-9, -62, 18, 34); ctx.fillStyle = '#e58a00'; ctx.fillRect(-19, -60, 11, 24);
-      ctx.strokeStyle = '#7d1d2a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(4, -54); ctx.lineTo(14 - s * 0.4, -38); ctx.stroke();
-      circ(ctx, 2, -72, 9, '#c99670'); ctx.fillStyle = '#2b2b33'; ctx.fillRect(-8, -82, 20, 5);
-      ctx.restore();
-    },
-    obstacle(ctx, o, g){ if (o.k < 0.5) rock(ctx, o, g, '#7f7b74', '#a9a49b'); else { ctx.strokeStyle = '#5a3f2a'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(o.x, g); ctx.quadraticCurveTo(o.x + o.w / 2, g - o.h * 1.2, o.x + o.w, g); ctx.stroke(); } },
-    item(ctx, x, y, k){ const cols = ['#2f6db5','#f4efe6','#c8332b','#2e8b57','#e9b40c']; ctx.strokeStyle = '#8a7a5a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 24, y + 2); ctx.stroke();
-      for (let i = 0; i < 3; i++) { ctx.fillStyle = cols[(Math.floor(k * 5) + i) % 5]; ctx.fillRect(x - 4 + i * 9, y + 1, 7, 11); } },
-    goal(ctx, x, g, H){ ctx.fillStyle = '#56524c'; ctx.beginPath(); ctx.moveTo(x - 30, g); ctx.lineTo(x - 20, g - 170); ctx.lineTo(x + 80, g - 190); ctx.lineTo(x + 100, g); ctx.fill();
-      ctx.fillStyle = '#f6f1e7'; ctx.fillRect(x - 10, g - 150, 60, 34); ctx.fillStyle = '#8a1f2b'; ctx.fillRect(x - 10, g - 150, 60, 5);
-      ctx.fillStyle = '#d9a531'; ctx.beginPath(); ctx.moveTo(x - 16, g - 150); ctx.lineTo(x + 20, g - 166); ctx.lineTo(x + 56, g - 150); ctx.fill(); },
-    ok:(n, clean) => ({ title:'Taktsang!', text:`You reached Tiger’s Nest with ${plural(n, 'prayer flag')}. Below you lies the Paro valley; above, the cliff where Guru Rinpoche meditated. ${clean ? 'Sure-footed all the way!' : 'Climb it without a stumble for a star.'}` }),
-    fail:() => ({ title:'Back on the mule', text:'After three stumbles you rode a mule back down. Many pilgrims take it slowly: it’s a steep climb at altitude.' })
   }
 };
