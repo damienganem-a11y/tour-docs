@@ -12,6 +12,8 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
 import { passportState, stampSvg, dayIn, wallToInstant, hashOf } from './passport.js';
 import { sceneSvg, patternCss } from './explorer/themes.js';
+import { ENGINES, SKINS, hasGame } from './explorer/games.js';
+import { setSoundCheck } from './explorer/common.js';
 import { entryOf, totals, stepOpen, finishStep, finishQuiz, drawQuiz, QUIZ_LENGTH, STAMP_NEEDED } from './explorer/state.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
@@ -368,6 +370,7 @@ const exStyle = (theme = {}) => [['--ex-pattern', patternCss(theme.pattern).url 
 // Sound is OFF unless the guest turns it on (guests play next to each other on the plane). Two tiny tones, made by the phone itself.
 const SOUND_KEY = 'tourdocs.guest.sound';
 const soundOn = () => store.get(SOUND_KEY) === '1';
+setSoundCheck(() => soundOn()); // the games' own blips follow the same switch
 let audio = null;
 function tone(kind) {
   if (!soundOn()) return;
@@ -436,11 +439,14 @@ function destinationView(sheet, index, offline) {
   const open = d.unlocked;
   const stepButton = (label, onclick) => h('button', { class: 'ex-btn', type: 'button', onclick }, label);
   const star = (i) => (entry.stars[i] ? ' \u2605' : '');
-  // Steps 1 and 2 are the two games, built in a later step: until then each can be skipped, so the quiz and the stamp can be tried from start to end.
+  // Steps 1 and 2 are the two games. A game that is not built yet (the step names a game or skin missing from explorer/games.js) can be skipped, so the quiz
+  // and the stamp can still be tried from start to end.
   const gameRow = (i) => {
     const s = ex.steps[i];
     const done = entry.steps[i];
-    const action = !open || !stepOpen(entry, i) ? h('div', { class: 'ex-step-state' }, open ? 'Locked' : 'Locked')
+    const playable = hasGame(s?.engine, s?.skin);
+    const action = !open || !stepOpen(entry, i) ? h('div', { class: 'ex-step-state' }, 'Locked')
+      : playable ? stepButton(done ? `Play again${star(i)}` : 'Play', () => go({ game: index, step: i }))
       : done ? h('div', { class: 'ex-step-state' }, `Done${star(i)}`)
       : stepButton('Skip for now', () => { saveEntry(d, finishStep(entry, i, false)); paint(); });
     return h('div', { class: `ex-step${open && stepOpen(entry, i) ? '' : ' is-locked'}` },
@@ -484,6 +490,46 @@ function stampZone(d, dateText, id, fresh = false) {
   const zone = h('div', { class: `ex-stamp${fresh ? ' is-new' : ''}` });
   zone.innerHTML = stampSvg(d, dateText, `ex${id}`);
   return zone;
+}
+
+// ---------- a game of a destination ----------
+// A page with the game's title, its scores bar (hud) and the stage the game draws on. The start sheet explains the game; when it ends, the step is done
+// (won or lost: nobody gets stuck), a star is added only if it was played well, and the sheet shows the fact and what comes next.
+let gameRun = null;      // { stop, running } of the game on screen
+let pendingMount = null; // starts the game once its page is on the screen (a game needs its real width)
+function gamePage(sheet, index, stepIndex) {
+  const d = passportOf(sheet)[index];
+  const step = d?.ex?.steps?.[stepIndex];
+  if (!step || !hasGame(step.engine, step.skin)) return null;
+  const hud = h('div', { class: 'ex-hud' });
+  const overlay = h('div', { class: 'ex-overlay' });
+  const stage = h('div', { class: 'ex-stage' }, overlay);
+  const back = h('button', { class: 'atl-back ex-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '\u2039');
+  const sheetBox = (...kids) => h('div', { class: 'ex-sheet' }, ...kids);
+  const other = d.ex.steps[stepIndex + 1];
+  function showEnd(result) {
+    const before = entryOf(readProgress(), destKey(d));
+    saveEntry(d, finishStep(before, stepIndex, result.star));
+    gameRun.running = false;
+    const nextIsGame = stepIndex === 0 && other && hasGame(other.engine, other.skin);
+    overlay.hidden = false;
+    overlay.replaceChildren(sheetBox(
+      h('h3', {}, result.title), h('p', {}, result.text),
+      h('p', { class: 'ex-star-line' }, result.star ? '\u2605 Star earned for this step' : 'No star this time. Play again any time to earn it.'),
+      h('p', { class: 'ex-fact' }, step.fact),
+      h('button', { class: 'ex-wide', type: 'button', onclick: () => { if (nextIsGame) go({ game: index, step: 1 }); else if (stepIndex === 1 && entryOf(readProgress(), destKey(d)).steps[0]) startQuiz(index); else history.back(); } },
+        nextIsGame ? `Next: ${other.title}` : stepIndex === 1 ? 'On to the questions' : `Back to ${d.name}`),
+      h('button', { class: 'ex-wide ex-wide--plain', type: 'button', onclick: () => { gameRun = null; paint(); } }, 'Play again')));
+  }
+  const nodes = [h('div', { class: 'ex-page ex-gamepage', style: exStyle(d.ex.theme) }, back, soundButton(),
+    h('div', { class: 'ex-gamehead' }, h('small', {}, `Step ${stepIndex + 1} of 3 \u00b7 ${d.name}`), h('h1', {}, step.title), hud), stage)];
+  overlay.append(sheetBox(h('h3', {}, step.title), h('p', {}, step.intro), h('button', { class: 'ex-wide', type: 'button', id: 'ex-go' }, 'Start')));
+  const mount = () => {
+    const game = ENGINES[step.engine](stage, hud, showEnd, SKINS[step.engine][step.skin]);
+    gameRun = { running: false, stop: () => { game.stop(); } };
+    overlay.querySelector('#ex-go').onclick = () => { overlay.hidden = true; gameRun.running = true; game.start(); };
+  };
+  return { nodes, mount };
 }
 
 // ---------- the quiz of a destination ----------
@@ -923,7 +969,11 @@ function updatedRow(sheet) {
 })();
 
 function paint() {
+  // A game in progress is never redrawn by the app's background refreshes (the minute check, messages arriving...); leaving the page stops it.
+  if (gameRun && view.game !== undefined && gameRun.running) return;
+  if (gameRun) { gameRun.stop(); gameRun = null; }
   paintPage();
+  if (view.game !== undefined && pendingMount) { const mount = pendingMount; pendingMount = null; mount(); }
   // The wide-screen layout (iPad) puts the big photo of a tour or restaurant beside its text: say which kind of page this is.
   app.dataset.page = (view.tour !== undefined || view.rest !== undefined) && !view.options && !view.credits && !view.eat ? 'photo' : 'plain';
 }
@@ -947,6 +997,11 @@ function paintPage() {
   if (tour) {
     app.replaceChildren(...tourView(sheet, tour, offline));
     return;
+  }
+  if (view.game !== undefined) {
+    const page = gamePage(sheet, view.game, view.step);
+    if (page) { app.replaceChildren(...page.nodes); pendingMount = page.mount; return; }
+    view = { tab: 'passport' };
   }
   if (view.quiz !== undefined) {
     const page = quizPage(sheet, view.quiz);

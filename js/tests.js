@@ -4,6 +4,7 @@
 
 import { cleanExplorer, explorerProblems, explorerUnitWarnings, explorerUnlock, explorerForGuest, QUIZ_CATEGORIES } from './explorer.js';
 import { sceneSvg, patternCss, PATTERN_NAMES } from '../guest/explorer/themes.js';
+import { ENGINES, SKINS, hasGame } from '../guest/explorer/games.js';
 import { entryOf, emptyEntry, explorerOpen, stepOpen, finishStep, finishQuiz, totals, drawQuiz } from '../guest/explorer/state.js';
 import { tripAccent, buildTrip, brandingFromLook, defaultBranding } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
@@ -3485,6 +3486,16 @@ function readZip(bytes) {
   check('Every pattern and scene named in the jet sample exists in the drawn library', jetT.destinations.every((d) => PATTERN_NAMES().includes(d.explorer.theme.pattern) && sceneSvg(d.explorer.scene).startsWith('<svg')));
   check('An unknown pattern or scene name gives nothing (the page keeps its plain colors)', sceneSvg('nowhere') === '' && patternCss('nowhere').url === '' && /^url\("data:image\/svg\+xml,/.test(patternCss('peru').url) && /^\d+px \d+px$/.test(patternCss('peru').size));
   check('The drawings hold no script and no outside address', jetT.destinations.every((d) => !/<script|onload|http:\/\/(?!www\.w3\.org)|https:\/\//i.test(sceneSvg(d.explorer.scene) + decodeURIComponent(patternCss(d.explorer.theme.pattern).url))));
+  // The games built so far (stage 4, first pair): runner and fit, with the skins the jet sample asks for.
+  check('Every step of the jet sample that names a built game has its skin (llama, wall, ...)', jetT.destinations.flatMap((d) => d.explorer.steps).filter((st) => ENGINES[st.engine]).every((st) => hasGame(st.engine, st.skin)), jetT.destinations.flatMap((d) => d.explorer.steps).filter((st) => ENGINES[st.engine] && !hasGame(st.engine, st.skin)).map((st) => `${st.engine}/${st.skin}`).join());
+  check('A game that is not built yet is reported as such (the step can be skipped)', hasGame('runner', 'llama') && hasGame('fit', 'wall') && !hasGame('archery', 'dha') && !hasGame('runner', 'nowhere'));
+  const hostFit = document.createElement('div'); document.body.append(hostFit);
+  let fitEnd = null; const hudFit = document.createElement('div');
+  const gameFit = ENGINES.fit(hostFit, hudFit, (r) => { fitEnd = r; }, SKINS.fit.wall);
+  gameFit.start();
+  for (let i = 0; i < 150 && !fitEnd; i++) { hostFit.querySelector('.cand:not([disabled])')?.click(); await new Promise((r) => setTimeout(r, 100)); } // a round takes about a second
+  gameFit.stop(); hostFit.remove();
+  check('The Fit game can be played to its end by tapping (wrong pieces get disabled, the right one moves on)', fitEnd !== null && typeof fitEnd.title === 'string' && typeof fitEnd.star === 'boolean');
   const bad = cleanExplorer({ ...jetFile.destinations[1].explorer, questions: jetFile.destinations[1].explorer.questions.filter((q) => q.category !== 'nature') });
   check('Fewer than 2 questions in a category is reported in words', explorerProblems(bad).some((t) => /at least 2 "nature" questions/.test(t)));
   check('The units check fires on km, m and °C and not on miles, feet or "mild"', explorerUnitWarnings(cleanExplorer({ facts: ['It is 12 km long', 'About 3,400 m high', 'Daytime 25 °C', 'Mild: 5 miles and 400 feet'] })).length === 3);
