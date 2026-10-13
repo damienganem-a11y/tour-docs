@@ -813,3 +813,10 @@ input[type=checkbox] { accent-color: #000; }
 .ex-hud .muted { color: #55524c; }
 .ex-stage { border: 3px solid var(--ex-page); box-shadow: 0 10px 30px rgba(0, 0, 0, .12); }
 @media (min-width: 700px) { .ex-art { height: 320px; } .ex-art + .ex-band + .ex-hero, .ex-body { max-width: 760px; margin-left: auto; margin-right: auto; } }
+
+/* v0.99.8: a light, printed finish over every game stage (a soft darkening at the edges and a fine grain), so the flat drawings feel richer. Pure CSS: it
+   sits above the drawing and below the start/end sheets, and lets every tap through. */
+.ex-stage::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit;
+  box-shadow: inset 0 0 64px rgba(34, 18, 8, .26);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 .2 0 0 0 0 .15 0 0 0 0 .1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: .22; mix-blend-mode: multiply; }

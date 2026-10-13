@@ -1,6 +1,6 @@
 // Passport Explorer game: Catch (drag to catch falling items, dodge the others). Skins: egg (Easter Island), blossom (Washington, new).
 // PORTED unchanged in logic and tuning from the owner's prototype (tools/reference/jet-set-explorer-prototype.html); only the imports and exports are new.
-import { canvasIn, circ, ell, plural, setHud, sfx, skyC } from './common.js';
+import { canvasIn, circ, ell, plural, setHud, sfx, skyC, glow, groundShadow, cloud } from './common.js';
 
 export const catchGame = function(host, hud, onEnd, sk){
   const c = canvasIn(host, sk.label), ctx = c.getContext('2d');
@@ -75,10 +75,13 @@ export const catchGame = function(host, hud, onEnd, sk){
     if (!W) return;
     const gy = groundY();
     if (sk.art) sk.art.bg(ctx, W, H, gy, clock); else {
-    skyC(ctx, W, H, ['#7fa8d6','#f2b48c','#ffe0b2']);
+    skyC(ctx, W, H, ['#5f7fb8','#e99a7e','#ffd8a6','#ffe9c4']);
+    glow(ctx, W * 0.22, H * 0.5, 150, '255,222,160', 0.8);
+    cloud(ctx, ((W * 0.6 - clock * 6) % (W + 200) + W + 200) % (W + 200) - 100, H * 0.14, 0.9, 0.45, '255,236,226');
     ctx.fillStyle = '#4b4540'; ctx.beginPath(); ctx.moveTo(W, H * 0.25); ctx.lineTo(W * 0.78, H * 0.3); ctx.lineTo(W * 0.7, H * 0.55); ctx.lineTo(W, H * 0.6); ctx.fill();
     ctx.fillStyle = '#6f8f4f'; ctx.beginPath(); ctx.moveTo(W, H * 0.24); ctx.lineTo(W * 0.78, H * 0.29); ctx.lineTo(W * 0.8, H * 0.31); ctx.lineTo(W, H * 0.27); ctx.fill();
-    ctx.fillStyle = '#3d6f95'; ctx.fillRect(0, H * 0.58, W, gy - H * 0.58 + 10);
+    const sea = ctx.createLinearGradient(0, H * 0.58, 0, gy + 10); sea.addColorStop(0, '#5a93b5'); sea.addColorStop(1, '#2c5d82'); ctx.fillStyle = sea; ctx.fillRect(0, H * 0.58, W, gy - H * 0.58 + 10);
+    glow(ctx, W * 0.22, H * 0.6, 120, '255,225,170', 0.35);
     ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2; for (let r = 0; r < 4; r++) { ctx.beginPath(); for (let x = 0; x <= W; x += 10) { const yy = H * 0.62 + r * 18 + Math.sin(x * 0.05 + clock * (1 + r * 0.3)) * 2.5; x ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); } ctx.stroke(); }
     ctx.fillStyle = '#5b544c'; ctx.beginPath(); ctx.moveTo(0, gy + 6); ctx.quadraticCurveTo(W * 0.5, gy - 16, W, gy + 6); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();
     ctx.fillStyle = '#7d9a5a'; ctx.beginPath(); ctx.moveTo(0, gy + 8); ctx.quadraticCurveTo(W * 0.5, gy - 12, W, gy + 8); ctx.lineTo(W, gy + 16); ctx.quadraticCurveTo(W * 0.5, gy - 2, 0, gy + 16); ctx.fill();
@@ -86,7 +89,7 @@ export const catchGame = function(host, hud, onEnd, sk){
     // A skin may bring its own drawings (art.flier, art.bad, art.good, art.catcher); without one, the Easter Island terns, eggs, stones and swimmer are drawn.
     birds.forEach(sk.art ? (b) => sk.art.flier(ctx, b) : tern);
     falls.forEach(f => (f.rock ? (sk.art ? sk.art.bad(ctx, f) : stone(f)) : (sk.art ? sk.art.good(ctx, f.x, f.y) : egg(f.x, f.y))));
-    if (sk.art) sk.art.catcher(ctx, px, gy - 8, hurt > 0 && Math.floor(hurt * 10) % 2 === 0); else swimmer(px, gy - 8);
+    if (sk.art) sk.art.catcher(ctx, px, gy - 8, hurt > 0 && Math.floor(hurt * 10) % 2 === 0); else { groundShadow(ctx, px, gy + 14, 26, 5, 0.3); swimmer(px, gy - 8); }
     fx.forEach(f => { ctx.globalAlpha = 1 - f.t / 0.9; ctx.fillStyle = f.crack ? '#d1513b' : '#ffffff'; ctx.font = '800 18px Outfit, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(f.txt, f.x, f.y - f.t * 30); ctx.globalAlpha = 1; });
   }
   size();
