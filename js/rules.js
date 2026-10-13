@@ -1,4 +1,5 @@
 import { localToInstant, addDays } from './time.js';
+import { explorerProblems } from './explorer.js';
 // The rules of the trip: who is where, what counts as full, how names are shown.
 //
 // These are plain functions: give them the trip data (see loader.js for its shape), they give
@@ -464,7 +465,14 @@ export function tripWarnings(trip) {
     }
   }
 
-  return { overbooked, blank, unknown };
+  // Passport Explorer content that is not good enough (missing answers, metric units...): said in plain words, one line per destination.
+  const explorer = [];
+  for (const destination of trip.destinations) {
+    const problems = explorerProblems(destination.explorer);
+    if (problems.length > 0) explorer.push({ destination, problems });
+  }
+
+  return { overbooked, blank, unknown, explorer };
 }
 
 // ---------- Allergies and dietary needs: when they are erased (Phase 3, owner's rule) ----------

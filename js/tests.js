@@ -2,6 +2,8 @@
 // They cover the sample trip's planted test cases (see SPEC.md) that step 1 can check, plus
 // time zones, unique IDs, saving on the device, and files with mistakes.
 
+import { cleanExplorer, explorerProblems, explorerUnitWarnings, explorerUnlock, explorerForGuest, QUIZ_CATEGORIES } from './explorer.js';
+import { entryOf, emptyEntry, explorerOpen, stepOpen, finishStep, finishQuiz, totals, drawQuiz } from '../guest/explorer/state.js';
 import { tripAccent, buildTrip, brandingFromLook, defaultBranding } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
 import { applyChange, validateChanges, enqueue } from './changes.js';
@@ -3466,6 +3468,71 @@ function readZip(bytes) {
   const cj2 = rnCtx(); cj2.state.bookings[child.id][juniorTour.slotId] = { kind: 'leisure' };
   r = await applyChange(cj2, rn.id, { type: 'move', guestId: child.id, slotId: juniorTour.slotId, to: { kind: 'activity', activityId: juniorTour.id } });
   check('A child may join the children\'s programme without a parent', r.ok, r.error);
+}
+
+// --- Passport Explorer, step 1: content, validation, unlock, progress (v0.99.0) ---
+{
+  const jetFile = await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json();
+  const jetT = buildTrip(jetFile);
+  check('The jet sample has Passport Explorer content for all 12 destinations, all still draft', jetT.destinations.length === 12 && jetT.destinations.every((d) => d.explorer?.status === 'draft'));
+  check('Every destination has two steps and at least 2 questions per category, and nothing to fix (no metric units)', jetT.destinations.every((d) => explorerProblems(d.explorer).length === 0 && d.explorer.steps.length === 2 && QUIZ_CATEGORIES.every((c) => d.explorer.questions.filter((q) => q.category === c).length >= 2)));
+  check('No real company name in the explorer content (NGE instead)', !/national geographic/i.test(JSON.stringify(jetFile)));
+  check('Kathmandu has its own content, and Washington is the wrap-up at the end', jetT.destinations.find((d) => d.name === 'Kathmandu').explorer.greeting.word === 'Namaste' && jetT.destinations.find((d) => d.name === 'Washington').explorer.wrapUp === true);
+  check('A destination with no explorer block has none (the stamp stays automatic)', buildTrip(await (await fetch('./data/tour_docs_sample_trip_RN-01.json')).json()).destinations.every((d) => d.explorer === null));
+  const bad = cleanExplorer({ ...jetFile.destinations[1].explorer, questions: jetFile.destinations[1].explorer.questions.filter((q) => q.category !== 'nature') });
+  check('Fewer than 2 questions in a category is reported in words', explorerProblems(bad).some((t) => /at least 2 "nature" questions/.test(t)));
+  check('The units check fires on km, m and °C and not on miles, feet or "mild"', explorerUnitWarnings(cleanExplorer({ facts: ['It is 12 km long', 'About 3,400 m high', 'Daytime 25 °C', 'Mild: 5 miles and 400 feet'] })).length === 3);
+
+  const cusco = jetT.destinations.find((d) => d.name === 'Cusco');
+  const unlockCusco = explorerUnlock(jetT, cusco);
+  const firstCusco = jetT.slots.filter((x) => x.destinationId === cusco.id).map((x) => x.date).sort()[0];
+  check('Games open on the travel day: the day before the first day in the place, in its time zone', unlockCusco.on === addDays(firstCusco, -1) && unlockCusco.tz === 'America/Lima');
+  const lastDate = jetT.slots.map((x) => x.date).sort().at(-1);
+  check('The wrap-up opens on the trip\'s last day', explorerUnlock(jetT, jetT.destinations.find((d) => d.name === 'Washington')).on === lastDate);
+  check('Open or not depends on the date IN that time zone', explorerOpen({ unlockOn: '2027-08-28', unlockTz: 'Asia/Kathmandu' }, new Date('2027-08-27T19:00:00Z')) && !explorerOpen({ unlockOn: '2027-08-28', unlockTz: 'America/Lima' }, new Date('2027-08-27T19:00:00Z')) && explorerOpen({ unlockOn: '2027-08-28', unlockTz: 'UTC' }, '2027-08-28'));
+
+  // Draft content never reaches the guest; validating needs good content, goes through the one change function, and can be undone.
+  const exCtx = { owner, state: structuredClone(jetT), entries: [], trip: (id) => (id === exCtx.state.id ? exCtx.state : undefined), journal: () => exCtx.entries, async commit(next, entries) { exCtx.state = next; exCtx.entries.push(...entries); } };
+  const someone = exCtx.state.guests[0];
+  check('Draft explorer content is NOT in the guest\'s sheet', buildGuestSheet(exCtx.state, someone, '2027-08-01T00:00:00.000Z').destinations.every((d) => !d.ex));
+  const destC = exCtx.state.destinations.find((d) => d.name === 'Cusco');
+  const editC = (extra) => ({ type: 'edit-destination', destinationId: destC.id, name: destC.name, country: destC.country, timeZone: destC.timeZone, ...extra });
+  const on = await applyChange(exCtx, jetT.id, editC({ explorerStatus: 'validated' }));
+  const sheetOn = buildGuestSheet(exCtx.state, someone, '2027-08-01T00:00:00.000Z');
+  const exC = sheetOn.destinations.find((d) => d.name === 'Cusco').ex;
+  check('Once validated, the guest\'s sheet carries the content and its opening day, and no status word', on.ok && exC && exC.unlockOn === unlockCusco.on && exC.status === undefined && sheetOn.destinations.filter((d) => d.ex).length === 1);
+  check('The journal says it in words', /Passport Explorer switched on for guests/.test(summarize(groupBatches(exCtx.entries).at(-1))));
+  const undoEx = await applyChange(exCtx, jetT.id, { type: 'undo' });
+  check('Undo switches it off again', undoEx.ok && exCtx.state.destinations.find((d) => d.name === 'Cusco').explorer.status === 'draft');
+  const broken = structuredClone(jetT); broken.destinations[1].explorer.questions = broken.destinations[1].explorer.questions.slice(0, 3);
+  const exCtx2 = { owner, state: broken, entries: [], trip: (id) => (id === exCtx2.state.id ? exCtx2.state : undefined), journal: () => exCtx2.entries, async commit(next, entries) { exCtx2.state = next; exCtx2.entries.push(...entries); } };
+  const refusedOn = await applyChange(exCtx2, jetT.id, { type: 'edit-destination', destinationId: broken.destinations[1].id, name: broken.destinations[1].name, country: broken.destinations[1].country, timeZone: broken.destinations[1].timeZone, explorerStatus: 'validated' });
+  check('Content that is not ready cannot be switched on', !refusedOn.ok && /not ready/.test(refusedOn.error), refusedOn.error);
+  const rnNo = buildTrip(await (await fetch('./data/tour_docs_sample_trip_RN-01.json')).json());
+  const exCtx3 = { owner, state: rnNo, entries: [], trip: (id) => (id === exCtx3.state.id ? exCtx3.state : undefined), journal: () => exCtx3.entries, async commit(next, entries) { exCtx3.state = next; exCtx3.entries.push(...entries); } };
+  const noEx = await applyChange(exCtx3, rnNo.id, { type: 'edit-destination', destinationId: rnNo.destinations[0].id, name: rnNo.destinations[0].name, country: 'France', timeZone: 'Europe/Paris', explorerStatus: 'validated' });
+  check('A destination without explorer content cannot get a status', !noEx.ok && /no Passport Explorer content/.test(noEx.error), noEx.error);
+
+  // The guest's progress rules
+  let e = emptyEntry();
+  e = finishQuiz(e, 2, '2027-09-01');
+  check('2 right out of 5 does not earn the stamp, 3 does', e.stamp === null && finishQuiz(e, 3, '2027-09-02').stamp === '2027-09-02');
+  const earned = finishQuiz(e, 4, '2027-09-02');
+  check('A retry never removes a stamp, keeps the first day and the best score', finishQuiz(earned, 0, '2027-09-09').stamp === '2027-09-02' && finishQuiz(earned, 1, '2027-09-09').best === 4);
+  check('Stars only ever go up', finishQuiz(finishQuiz(e, 5, 'd'), 3, 'd').stars[2] === 1 && finishStep(finishStep(emptyEntry(), 0, true), 0, false).stars[0] === 1);
+  let st = emptyEntry();
+  check('Steps open in order: game 1, game 2, then the quiz', stepOpen(st, 0) && !stepOpen(st, 1) && !stepOpen(st, 2) && stepOpen(finishStep(st, 0, false), 1) && !stepOpen(finishStep(st, 0, false), 2) && stepOpen(finishStep(finishStep(st, 0, false), 1, false), 2));
+  check('A game lost still completes its step (no star)', finishStep(st, 0, false).steps[0] === true && finishStep(st, 0, false).stars[0] === 0);
+  check('Totals count stamps and stars over the given destinations', JSON.stringify(totals({ a: finishQuiz(emptyEntry(), 5, 'd'), b: emptyEntry() }, ['a', 'b', 'c'])) === '{"stamps":1,"stars":1}');
+  const qs = jetT.destinations[1].explorer.questions;
+  const q1 = drawQuiz(qs, QUIZ_CATEGORIES);
+  check('A quiz has one question per category, with four shuffled answers and one right', q1.length === 5 && QUIZ_CATEGORIES.every((c) => q1.filter((x) => x.category === c).length === 1) && q1.every((x) => x.options.length === 4 && x.options.filter((o) => o.right).length === 1));
+  let repeats = 0; for (let i = 0; i < 200; i++) { const a = drawQuiz(qs, QUIZ_CATEGORIES); const b = drawQuiz(qs, QUIZ_CATEGORIES, Math.random, a.map((x) => x.id)); if (b.some((x) => a.some((y) => y.id === x.id))) repeats++; }
+  check('The same question is never drawn twice in a row when a category has two or more', repeats === 0);
+  const guestDests = [{ name: 'A', firstDate: '2027-09-01', tz: 'UTC', ex: { unlockOn: '2027-08-31', unlockTz: 'UTC' } }, { name: 'B', firstDate: '2027-09-01', tz: 'UTC' }];
+  const ps = passportState(guestDests, '2027-09-05', { 'A|2027-09-01': { stamp: '2027-09-02' } });
+  const ps2 = passportState(guestDests, '2027-09-05', {});
+  check('With games the stamp is earned, not given; without them it still arrives on the first day', ps[0].given && !ps2[0].given && ps2[0].unlocked && ps2[1].given && !passportState(guestDests, '2027-08-20', {})[0].unlocked);
 }
 
 // --- Show the results ---

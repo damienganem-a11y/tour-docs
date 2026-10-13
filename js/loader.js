@@ -13,7 +13,7 @@
 //   - Dietary info stays on the guest. It is never copied anywhere else (journal, exports).
 //
 // The trip we return looks like this (every `id` is a UUID):
-//   trip.destinations  [ { id, ref, order, name, country, timeZone, firstDay, lastDay, photo, facts } ]   photo: an optional picture of the place (https address or demo/ path); facts: up to 6 short fun facts (optional)
+//   trip.destinations  [ { id, ref, order, name, country, timeZone, firstDay, lastDay, photo, facts, explorer } ]   photo: an optional picture of the place (https address or demo/ path); facts: up to 6 short fun facts (optional)
 //   trip.slots         [ { id, ref, destinationId, day, date, half } ]         one slot = one half-day
 //   trip.activities    [ { id, ref, slotId, name, startsAt, meeting, capacity, cancelled, short, info, minAge, audience } ]   short: a one-word keyword for compact lists (optional); info: what a guest can read about the tour
 //                          (tourInfo.js: duration, description, difficulty, difficultyNote, bring, included, photos), or null
@@ -31,6 +31,7 @@ import { newId } from './ids.js';
 import { isValidTimeZone, localToInstant } from './time.js';
 import { bySlotOrder, PARTS_OF_DAY } from './rules.js';
 import { tourInfoError, cleanTourInfo, goodUrl } from './tourInfo.js';
+import { cleanExplorer } from './explorer.js';
 
 const AT_LEISURE = 'at leisure'; // the words used in the file (compared in lower case)
 
@@ -85,6 +86,7 @@ export function buildTrip(raw) {
         firstDay: d.first_day ?? null, lastDay: d.last_day ?? null,
         photo: goodUrl(d.photo) ? d.photo : '', // a picture of the place, shown to guests (optional)
         facts: Array.isArray(d.facts) ? d.facts.filter((f) => isText(f)).map((f) => f.trim().slice(0, 200)).slice(0, 6) : [], // a few fun facts, shown to guests one a day (optional)
+        explorer: cleanExplorer(d.explorer), // Passport Explorer: the games and quiz of this destination (optional, see explorer.js); null when there is none
       };
     })
     .sort((a, b) => a.order - b.order);

@@ -300,6 +300,7 @@ function summarizeEditDestination(entry) {
   if (entry.from.country !== entry.to.country) changed.push(`country set to "${entry.to.country}"`);
   if (entry.from.timeZone !== entry.to.timeZone) changed.push(`time zone set to ${entry.to.timeZone}`);
   if (JSON.stringify(entry.from.facts ?? []) !== JSON.stringify(entry.to.facts ?? [])) changed.push(`fun facts changed (${(entry.to.facts ?? []).length})`);
+  if ((entry.from.explorerStatus ?? null) !== (entry.to.explorerStatus ?? null)) changed.push(`Passport Explorer ${entry.to.explorerStatus === 'validated' ? 'switched on for guests' : 'switched off for guests'}`);
   return `${entry.from.name} ${changed.length > 0 ? changed.join(', ') : 'updated (nothing actually changed)'}`;
 }
 

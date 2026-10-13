@@ -652,3 +652,29 @@ input[type=checkbox] { accent-color: #000; }
 
 /* v0.96.0: same for the guest app's menu */
 :root[data-dark-company] .atl-tab.on { outline: 2px solid #fff; outline-offset: -3px; }
+
+/* v0.99.0: Passport Explorer, step 1 (the hub and a destination page). The destination page wears the colors of the place (--ex-* set from the trip file). */
+.stamp-cell--ex { cursor: pointer; }
+.stamp-ghost--ex { flex-direction: column; gap: 6px; border-style: solid; border-color: #e3dccb; color: #8a8478; font-size: 26px; }
+.ex-dots { display: flex; gap: 6px; }
+.ex-dots b { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; }
+.ex-dots b.is-done { background: currentColor; }
+.ex-page { --ex-page: #1d3a63; --ex-card: #fff; --ex-surface: #f4f1ea; --ex-accent: var(--yellow); --ex-on: #000; --ex-title: Outfit, sans-serif; min-height: 100vh; background: var(--ex-page); padding-bottom: 40px; }
+.ex-back { position: absolute; top: calc(env(safe-area-inset-top) + 14px); left: 18px; z-index: 3; }
+.ex-hero { color: #fff; padding: calc(env(safe-area-inset-top) + 70px) 22px 26px; }
+.ex-hero small { font: 700 11px Outfit, sans-serif; letter-spacing: .2em; text-transform: uppercase; opacity: .85; }
+.ex-hero h1 { font-family: var(--ex-title); font-size: 38px; line-height: 1.05; margin: 6px 0 14px; }
+.ex-greet { font-size: 20px; margin: 0; }
+.ex-meaning { margin: 4px 0 0; opacity: .9; font-size: 15px; max-width: 34em; }
+.ex-facts { margin: 14px 0 0; font: 600 13px Inter, sans-serif; opacity: .85; }
+.ex-body { background: var(--ex-card); border-radius: 28px 28px 0 0; padding: 22px 16px 30px; display: grid; gap: 12px; }
+.ex-stamp-line { margin: 0 0 4px; font-weight: 600; }
+.ex-step { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; background: var(--ex-surface); border-radius: 20px; padding: 14px; }
+.ex-step.is-locked { opacity: .65; }
+.ex-step-no { width: 40px; height: 40px; border-radius: 50%; background: var(--ex-accent); color: var(--ex-on); display: grid; place-items: center; font: 800 18px Outfit, sans-serif; }
+.ex-step-text { display: grid; gap: 2px; min-width: 0; }
+.ex-step-text small { font: 700 10px Outfit, sans-serif; letter-spacing: .16em; text-transform: uppercase; opacity: .7; }
+.ex-step-text span { font-size: 14px; opacity: .85; }
+.ex-step-state { font: 700 12px Outfit, sans-serif; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+.ex-tips p { margin: 6px 0; }
+@media (min-width: 700px) { .ex-hero { max-width: 760px; margin: 0 auto; } .ex-body { max-width: 760px; margin: 0 auto; border-radius: 28px; } }

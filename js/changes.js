@@ -32,7 +32,8 @@
 //   { type: 'vehicle-number', activityId, vehicleId, number }
 //   (Several 'checkin' changes for the same roll call may be made together: a travel party checked in at once.)
 //   Settings (step 7), each on its own:
-//   { type: 'edit-destination', destinationId, name, country, timeZone, facts? }   facts: up to 6 short fun facts shown to guests (left out = unchanged)
+//   { type: 'edit-destination', destinationId, name, country, timeZone, facts?, explorerStatus? }   facts: up to 6 short fun facts shown to guests (left out = unchanged)
+//       explorerStatus: 'draft' | 'validated', the Passport Explorer content of this destination (left out = unchanged; only for a destination that HAS explorer content)
 //   { type: 'add-activity', slotId, name, meeting, startTime, capacity, short, info }     startTime: "HH:MM" or '' for none
 //   { type: 'edit-activity', activityId, name, meeting, startTime, capacity, short, info }
 //       info (optional, see tourInfo.js): what a guest reads about the tour. Left out on an edit = unchanged. Photos left out = kept.
@@ -114,6 +115,7 @@
 
 import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
+import { explorerProblems } from './explorer.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn, eligibilityProblems } from './rules.js';
 import { isValidTimeZone, localToInstant } from './time.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
@@ -471,7 +473,20 @@ function validateSettingsChange(trip, change) {
   if (isBlank(change.name)) return fail('Give the destination a name.');
   if (!isValidTimeZone(change.timeZone)) return fail(`"${change.timeZone}" is not a time zone the phone knows. It should look like Europe/Lisbon.`);
   if (change.facts !== undefined && (!Array.isArray(change.facts) || change.facts.length > 6 || !change.facts.every((f) => typeof f === 'string' && f.trim().length <= 200))) return fail('A destination can have up to 6 fun facts of 200 letters or fewer.');
+  if (change.explorerStatus !== undefined) {
+    if (!['draft', 'validated'].includes(change.explorerStatus)) return fail('The Passport Explorer status is draft or validated.');
+    if (!destination.explorer) return fail('This destination has no Passport Explorer content.');
+    const problems = change.explorerStatus === 'validated' ? explorerProblems(destination.explorer) : [];
+    if (problems.length > 0) return fail(`The Passport Explorer content is not ready: ${problems[0]}.`);
+  }
   return { ok: true };
+}
+
+// Puts a destination's own fields in place (edit, replace and undo all use this). explorerStatus lives inside the destination's explorer block.
+function setDestinationFields(destination, fields) {
+  const { explorerStatus, ...own } = fields;
+  Object.assign(destination, own);
+  if (explorerStatus !== undefined && destination.explorer) destination.explorer.status = explorerStatus;
 }
 
 // What a Team colleague may NOT do even among the things Team can do (SPEC.md, "Team: one destination, one person per roll call"):
@@ -1127,8 +1142,8 @@ async function doApply(ctx, tripId, changes, opts = {}) {
 
     // edit-destination and replace-destination: change the destination's own name, country, time zone.
     const destination = next.destinations.find((d) => d.id === change.destinationId);
-    const from = { name: destination.name, country: destination.country, timeZone: destination.timeZone, facts: [...(destination.facts ?? [])] };
-    const to = { name: change.name.trim(), country: String(change.country ?? '').trim(), timeZone: change.timeZone, facts: change.facts === undefined ? [...from.facts] : change.facts.map((f) => f.trim()).filter(Boolean) };
+    const from = { name: destination.name, country: destination.country, timeZone: destination.timeZone, facts: [...(destination.facts ?? [])], ...(destination.explorer ? { explorerStatus: destination.explorer.status } : {}) };
+    const to = { name: change.name.trim(), country: String(change.country ?? '').trim(), timeZone: change.timeZone, facts: change.facts === undefined ? [...from.facts] : change.facts.map((f) => f.trim()).filter(Boolean), ...(destination.explorer ? { explorerStatus: change.explorerStatus ?? from.explorerStatus } : {}) };
     // A destination-level change is not tied to one half-day: shown with the destination's own (old) name and time.
     const destWhere = { slotId: null, slotLabel: from.name, place: { name: from.name, timeZone: from.timeZone } };
 
@@ -1152,7 +1167,7 @@ async function doApply(ctx, tripId, changes, opts = {}) {
     } else {
       entries.push({ ...base(), type: 'edit-destination', destinationId: destination.id, from, to, ...destWhere });
     }
-    Object.assign(destination, to);
+    setDestinationFields(destination, to);
     return save(ctx, next, entries, {});
   }
 
@@ -1571,7 +1586,7 @@ function undoEntry(next, entry, base, entries) {
     // Puts the destination's own fields back (a replace-destination's cancelled tours and moved guests are put
     // back by their own lines, elsewhere in this same batch).
     const destination = next.destinations.find((d) => d.id === entry.destinationId);
-    Object.assign(destination, entry.from);
+    setDestinationFields(destination, entry.from);
     entries.push({
       ...base(), type: 'edit-destination', cause: 'undo', destinationId: entry.destinationId,
       slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,

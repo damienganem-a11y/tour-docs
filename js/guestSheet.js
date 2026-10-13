@@ -15,6 +15,7 @@ import { guestPlace, samePlace, bySlotOrder } from './rules.js';
 import { formatTime } from './time.js';
 import { guestMenuCard } from './menuCard.js';
 import { tripAccent } from './loader.js';
+import { explorerForGuest } from './explorer.js';
 
 // The sheet's own format number: the guest app refuses a sheet it does not understand instead of showing it wrongly.
 export const SHEET_VERSION = 1;
@@ -136,7 +137,7 @@ export function buildGuestSheet(trip, guest, now) {
     // For the passport: each destination with its time zone and the first and last date there (from its half-days), in trip order.
     destinations: [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => {
       const dates = trip.slots.filter((x) => x.destinationId === d.id).map((x) => x.date).sort();
-      return { name: d.name, country: d.country || '', photo: d.photo || '', facts: (d.facts ?? []).slice(0, 6), tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null };
+      return { name: d.name, country: d.country || '', photo: d.photo || '', facts: (d.facts ?? []).slice(0, 6), tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null, ...(explorerForGuest(trip, d) ? { ex: explorerForGuest(trip, d) } : {}) }; // ex: Passport Explorer content, only once the owner validated it
     }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
     theme: tripAccent(trip.branding), // the colour the guest app wears: the company's, else Tour Docs orange

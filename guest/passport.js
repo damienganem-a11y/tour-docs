@@ -9,10 +9,14 @@ export function dayIn(timeZone, now = new Date()) {
 
 // For each destination of the sheet: is its stamp given yet? ("2027-08-29" strings compare in date order.) `now` as for dayIn.
 // Returns [{ ...destination, given: boolean, today: "YYYY-MM-DD" }], in trip order.
-export function passportState(destinations, now = new Date()) {
+// A destination with Passport Explorer content (`ex`) gives its stamp when it is EARNED (progress[key].stamp, kept on the phone: see explorer/state.js), and is
+// open from its travel day (`unlocked`); every other destination keeps the automatic stamp of the first day. `progress` is the guest's progress object.
+export function passportState(destinations, now = new Date(), progress = {}) {
   return (destinations ?? []).map((d) => {
     const today = dayIn(d.tz || 'UTC', now);
-    return { ...d, today, given: today >= d.firstDate };
+    if (!d.ex) return { ...d, today, given: today >= d.firstDate, unlocked: true };
+    const entry = progress?.[`${d.name}|${d.firstDate}`];
+    return { ...d, today, given: Boolean(entry?.stamp), unlocked: dayIn(d.ex.unlockTz || 'UTC', now) >= d.ex.unlockOn, stampDay: entry?.stamp ?? null };
   });
 }
 

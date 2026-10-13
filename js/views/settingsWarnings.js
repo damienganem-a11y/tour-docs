@@ -9,14 +9,15 @@ import { tripWarnings, displayNames } from '../rules.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 
 export function warningsSettingsPage(ctx, trip) {
-  const { overbooked, blank, unknown } = tripWarnings(trip);
+  const { overbooked, blank, unknown, explorer } = tripWarnings(trip);
   const names = displayNames(trip.guests);
-  const total = overbooked.length + blank.length + unknown.length;
+  const total = overbooked.length + blank.length + unknown.length + explorer.length;
 
   const sections = [
     { title: 'Overbooked activities', items: overbooked, row: overbookedRow },
     { title: 'Nothing chosen yet', items: blank, row: (trip_, item) => guestRow(trip_, item, names) },
     { title: 'Unknown activity names', items: unknown, row: (trip_, item) => guestRow(trip_, item, names) },
+    { title: 'Passport Explorer content to fix', items: explorer, row: (trip_, item) => explorerRow(trip_, item) },
   ].filter((s) => s.items.length > 0);
 
   return h('div', {},
@@ -29,6 +30,12 @@ export function warningsSettingsPage(ctx, trip) {
     sections.map((section) => h('div', {},
       h('h3', { class: 'section-title' }, `${section.title} (${section.items.length})`),
       h('ul', { class: 'list' }, section.items.map((item) => section.row(trip, item))))));
+}
+
+// A destination whose Passport Explorer content is incomplete: not tied to a half-day, so it only says what is wrong.
+function explorerRow(trip, { destination, problems }) {
+  return h('li', {}, h('div', { class: 'row' }, h('div', { class: 'row-main' },
+    h('div', { class: 'row-title' }, destination.name), h('div', { class: 'row-sub' }, problems.join('; ')))));
 }
 
 function slotSub(trip, destination, slot) {

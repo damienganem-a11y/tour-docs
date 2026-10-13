@@ -10,6 +10,7 @@ import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { farewellOf, GUEST_LINK_GRACE_DAYS, guestLinkExpiry } from '../guestSheet.js';
 import { NOTIFY_KINDS, notifySettings } from '../notifyRules.js';
+import { explorerProblems } from '../explorer.js';
 
 export function guestAppSettingsPage(ctx, trip) {
   const head = pageHead({
@@ -31,6 +32,21 @@ export function guestAppSettingsPage(ctx, trip) {
     h('div', { class: 'act-name' }, 'Show guests their other options'),
     h('div', { class: 'muted' }, optionsOn ? 'On: a guest sees a button "Other options" under each tour they are booked on.' : 'Off: a guest sees only what they are booked on.'),
     h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => run({ type: 'guest-links', action: optionsOn ? 'options-off' : 'options-on' }, optionsOn ? 'Other options hidden' : 'Other options shown') }, optionsOn ? 'Switch off' : 'Switch on')));
+
+  // Passport Explorer: the games and quiz of each destination that has content. Content stays "draft" (invisible to guests) until the owner switches it on here;
+  // it cannot be switched on while something is missing (the Warnings page says what).
+  const explorerDestinations = trip.destinations.filter((d) => d.explorer).sort((a, b) => a.order - b.order);
+  const explorerCard = explorerDestinations.length === 0 ? null : h('div', { class: 'card team-member' },
+    h('div', { class: 'act-name' }, 'Passport Explorer'),
+    h('div', { class: 'muted' }, 'Guests earn each passport stamp by playing: two games and a five-question quiz per place, opening on the travel day. Switch on the places that are ready. Switched off, the stamp arrives by itself on the first day.'),
+    ...explorerDestinations.map((d) => {
+      const live = d.explorer.status === 'validated';
+      const problems = explorerProblems(d.explorer);
+      const change = (status) => ({ type: 'edit-destination', destinationId: d.id, name: d.name, country: d.country, timeZone: d.timeZone, explorerStatus: status });
+      return h('div', { class: 'check-row' },
+        h('div', {}, h('b', {}, d.name), h('div', { class: 'muted' }, live ? 'On for guests' : problems.length > 0 ? `Not ready: ${problems[0]}` : 'Draft: guests do not see it yet')),
+        h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: !live && problems.length > 0, onclick: () => run(change(live ? 'draft' : 'validated'), live ? `${d.name} switched off` : `${d.name} switched on for guests`) }, live ? 'Switch off' : 'Switch on'));
+    }));
 
   // The message guests read once their link has expired (7 days after the trip's last day): a few sentences and, if wanted, a web address.
   const farewell = farewellOf(trip);
@@ -80,5 +96,5 @@ export function guestAppSettingsPage(ctx, trip) {
         h('div', {}, h('b', {}, m.title), ` ${m.priority === 'important' ? '(important) ' : ''}· ${m.sent} of ${m.audience} phones`), h('div', { class: 'muted' }, `${m.body} · ${new Date(m.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`)))));
   }).catch(() => { reach.lastChild.textContent = 'Not available right now.'; });
 
-  return h('div', {}, head, optionsCard, notifyCard, announceCard, reach, farewellCard);
+  return h('div', {}, head, optionsCard, explorerCard, notifyCard, announceCard, reach, farewellCard);
 }

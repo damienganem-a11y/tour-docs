@@ -10,7 +10,8 @@
 // The app can read nothing else: no trip, no other guest. Read only.
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
-import { passportState, stampSvg, dayIn, wallToInstant } from './passport.js';
+import { passportState, stampSvg, dayIn, wallToInstant, hashOf } from './passport.js';
+import { entryOf, totals } from './explorer/state.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
 
@@ -354,7 +355,11 @@ const stampKey = (d) => `${d.name}|${d.firstDate}`;
 const isSeen = (seen, d) => seen.includes(stampKey(d)) || seen.includes(d.name);
 const seenStamps = () => { try { return JSON.parse(store.get(STAMPS_SEEN_KEY)) ?? []; } catch { return []; } };
 // The stamps of the trip: given when the first day in a place begins THERE (its own time zone), whatever the phone's clock zone says.
-const passportOf = (sheet) => passportState(sheet.destinations, simulatedDate ?? new Date());
+// The guest's Passport Explorer progress lives on THIS phone only (never sent anywhere), under a key made from the link (a short number, not the secret itself).
+const progressKey = () => `tourdocs.guest.explorer.${hashOf(store.get(TOKEN_KEY) ?? '')}`;
+const readProgress = () => { try { return JSON.parse(store.get(progressKey())) ?? {}; } catch { return {}; } };
+const destKey = (d) => `${d.name}|${d.firstDate}`;
+const passportOf = (sheet) => passportState(sheet.destinations, simulatedDate ?? new Date(), readProgress());
 
 function passportView(sheet, offline) {
   const state = passportOf(sheet);
@@ -362,16 +367,73 @@ function passportView(sheet, offline) {
   const tiles = state.map((d, i) => {
     const fresh = d.given && !isSeen(seen, d);
     const tile = h('div', { class: `stamp-tile${d.given ? '' : ' is-locked'}${fresh ? ' is-new' : ''}` });
-    if (d.given) { tile.innerHTML = stampSvg(d, stampDate(d.firstDate), `p${i}`); } // drawn by passport.js from the destination's own name, not typed text
+    const shownDate = d.ex ? (d.stampDay ?? d.firstDate) : d.firstDate;
+    if (d.given) { tile.innerHTML = stampSvg(d, stampDate(shownDate), `p${i}`); } // drawn by passport.js from the destination's own name, not typed text
+    else if (d.ex) tile.append(h('div', { class: 'stamp-ghost stamp-ghost--ex' }, h('span', {}, d.unlocked ? '' : '\u{1F512}'), h('i', { class: 'ex-dots' }, ...progressDots(entryOf(readProgress(), destKey(d))))));
     else tile.append(h('div', { class: 'stamp-ghost' }, h('span', {}, '?')));
-    return h('div', { class: 'stamp-cell' }, tile, h('div', { class: 'stamp-name' }, d.given ? d.name : `Opens ${stampDate(d.firstDate).slice(0, -5)}`), d.given ? h('div', { class: 'stamp-date' }, stampDate(d.firstDate)) : null);
+    const opens = d.ex ? (d.unlocked ? 'Open' : `Opens ${stampDate(d.ex.unlockOn).slice(0, -5)}`) : `Opens ${stampDate(d.firstDate).slice(0, -5)}`;
+    const cell = h('div', { class: `stamp-cell${d.ex ? ' stamp-cell--ex' : ''}` }, tile, h('div', { class: 'stamp-name' }, d.given ? d.name : (d.ex ? `${d.name} · ${opens}` : opens)), d.given ? h('div', { class: 'stamp-date' }, stampDate(shownDate)) : null);
+    if (d.ex) { cell.setAttribute('role', 'button'); cell.tabIndex = 0; cell.onclick = () => go({ dest: i }); cell.onkeydown = (e) => { if (e.key === 'Enter') go({ dest: i }); }; }
+    return cell;
   });
   if (!simulatedDate) { const all = state.filter((d) => d.given).map(stampKey); store.set(STAMPS_SEEN_KEY, JSON.stringify([...new Set([...seen, ...all])])); }
   return [
-    h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Passport'), h('p', {}, `${state.filter((d) => d.given).length} of ${state.length} stamps`)),
+    h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Passport'), h('p', {}, counterText(sheet, state))),
     h('div', { class: 'atl-body' }, offline, h('div', { class: 'stamp-grid' }, tiles),
-      h('p', { class: 'foot' }, 'A stamp arrives on the first day in each place, at the local time there.'), creditsLink(sheet)),
+      h('p', { class: 'foot' }, state.some((d) => d.ex) ? 'In some places you earn the stamp by playing: it opens on the travel day. Elsewhere it arrives on the first day, at the local time there.' : 'A stamp arrives on the first day in each place, at the local time there.'), creditsLink(sheet)),
   ];
+}
+
+// "3 of 12 stamps" (and, when some places have games, the stars won: "★ 4 of 30").
+function counterText(sheet, state) {
+  const base = `${state.filter((d) => d.given).length} of ${state.length} stamps`;
+  const withGames = sheet.destinations.filter((d) => d.ex);
+  if (withGames.length === 0) return base;
+  const { stars } = totals(readProgress(), withGames.map(destKey));
+  return `${base} · \u2605 ${stars} of ${withGames.length * 3}`;
+}
+
+// Three small dots: the two games and the quiz, filled when done (a stamp not earned yet).
+function progressDots(entry) {
+  return [entry.steps[0], entry.steps[1], Boolean(entry.stamp)].map((done) => h('b', { class: done ? 'is-done' : '' }));
+}
+
+// ---------- one destination of the Passport Explorer ----------
+// The page takes on the look of the place: its colors and title typeface (the drawn patterns and scenes come with the themes step). Nothing here is
+// typed by the guest. The three steps open in order once the destination itself is open; the games and the quiz themselves are built in later steps.
+function destinationView(sheet, index, offline) {
+  const d = passportOf(sheet)[index];
+  const ex = d?.ex;
+  if (!ex) return null;
+  const entry = entryOf(readProgress(), destKey(d));
+  const theme = ex.theme ?? {};
+  const style = [['--ex-page', theme.page], ['--ex-card', theme.card], ['--ex-surface', theme.surface], ['--ex-accent', theme.accent], ['--ex-on', theme.onAccent], ['--ex-title', theme.titleFont ? `'${theme.titleFont}', Outfit, sans-serif` : null]]
+    .filter(([, v]) => v).map(([k, v]) => `${k}:${v}`).join(';');
+  const zone = d.tz || 'UTC';
+  const clock = (() => { try { return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: zone }).format(new Date()); } catch { return ''; } })();
+  const steps = [
+    { title: ex.steps[0]?.title, blurb: ex.steps[0]?.blurb, label: 'Step 1' },
+    { title: ex.steps[1]?.title, blurb: ex.steps[1]?.blurb, label: 'Step 2' },
+    { title: 'Local quiz', blurb: `Five questions about ${d.name}. Three right earns your stamp.`, label: 'Quiz' },
+  ];
+  const stepRow = (s, i) => h('div', { class: 'ex-step is-locked' },
+    h('div', { class: 'ex-step-no' }, String(i + 1)),
+    h('div', { class: 'ex-step-text' }, h('small', {}, s.label), h('b', {}, s.title), h('span', {}, s.blurb)),
+    h('div', { class: 'ex-step-state' }, d.unlocked ? 'Coming soon' : 'Locked'));
+  return [h('div', { class: 'ex-page', style },
+    h('button', { class: 'atl-back ex-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '\u2039'),
+    h('header', { class: 'ex-hero' },
+      h('small', {}, d.country),
+      h('h1', {}, d.name),
+      h('p', { class: 'ex-greet' }, h('b', {}, ex.greeting.word), ` · ${ex.greeting.language}`),
+      h('p', { class: 'ex-meaning' }, ex.greeting.meaning),
+      ex.greeting.alt ? h('p', { class: 'ex-meaning' }, h('b', {}, ex.greeting.alt), ` · ${ex.greeting.altLanguage}${ex.greeting.altMeaning ? `: ${ex.greeting.altMeaning}` : ''}`) : null,
+      h('p', { class: 'ex-facts' }, [clock ? `Local time ${clock}` : null, ...ex.facts].filter(Boolean).join(' · '))),
+    h('div', { class: 'ex-body' },
+      offline,
+      d.given ? h('p', { class: 'ex-stamp-line' }, `Stamp earned ${stampDate(d.stampDay ?? d.firstDate)}`) : h('p', { class: 'ex-stamp-line' }, d.unlocked ? 'Finish the three steps to earn your stamp.' : `Opens ${stampDate(ex.unlockOn)}`),
+      ...steps.map(stepRow),
+      d.given && ex.etiquette?.length ? h('section', { class: 'ex-tips' }, h('div', { class: 'atl-label' }, 'Local etiquette'), ...ex.etiquette.map((t) => h('p', {}, t))) : null))];
 }
 
 // ---------- asking for a change, and notifications ----------
@@ -754,6 +816,11 @@ function paintPage() {
   if (tour) {
     app.replaceChildren(...tourView(sheet, tour, offline));
     return;
+  }
+  if (view.dest !== undefined) {
+    const page = destinationView(sheet, view.dest, offline);
+    if (page) { app.replaceChildren(...page); return; }
+    view = { tab: 'passport' };
   }
   const tabs = { today: () => todayView(sheet, offline), trip: () => tripView(sheet, offline), passport: () => passportView(sheet, offline) };
   if (!tabs[view.tab]) view = { tab: 'today' };
