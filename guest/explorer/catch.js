@@ -8,7 +8,7 @@ export const catchGame = function(host, hud, onEnd, sk){
   let W = 0, H = 0, raf = 0, last = 0, playing = false, ended = false, clock = 0;
   let px = 0, target = 0, keys = 0, lives = 3, caught = 0, birds = [], falls = [], fx = [], hurt = 0, nextBird = 0.4;
   const groundY = () => H - 56;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(400, Math.min(520, W * 1.15)));
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(400, Math.min(520, W * 1.15)));
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); if (!px) { px = target = W / 2; } draw(); }
   const setTarget = e => { const b = c.getBoundingClientRect(); target = Math.max(30, Math.min(W - 30, e.clientX - b.left)); };
   c.addEventListener('pointerdown', e => { e.preventDefault(); setTarget(e); });

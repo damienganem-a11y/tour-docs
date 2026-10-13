@@ -15,7 +15,7 @@ export const rhythm = function(host, hud, onEnd, sk){
   let perfect = 0, good = 0, miss = 0;
   const st = { lastHit:-9, lane:0, grade:0, hits:0, n:notes.length, flash:'', flashT:-9 };
   const songT = () => (performance.now() - t0) / 1000 - LEAD;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(420, Math.min(540, W * 1.15))); SH = Math.round(H * 0.44);
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(420, Math.min(540, W * 1.15))); SH = Math.round(H * 0.44);
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw(-LEAD); }
   const laneX = l => sk.lanes === 1 ? W / 2 : (l === 0 ? W * 0.3 : W * 0.7), hitY = () => H - 70;
   function hit(lane){

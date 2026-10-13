@@ -5,7 +5,7 @@ import { canvasIn, circ, ell, plural, setHud, sfx, skyC } from './common.js';
 export const spot = function(host, hud, onEnd, sk){
   const c = canvasIn(host, sk.label), ctx = c.getContext('2d');
   let W = 0, H = 0, raf = 0, last = 0, playing = false, ended = false, ents = [], target = null, count = 0, mist = 0, time = sk.time, msg = '', msgT = 0, flashT = -9, clock = 0;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(360, Math.min(470, W * 0.95)));
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(360, Math.min(470, W * 0.95)));
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw(); }
   function spawn(T){
     T = T || sk.types[Math.floor(Math.random() * sk.types.length)];

@@ -19,7 +19,7 @@ export const maze = function(host, hud, onEnd, sk){
   const decos = cells.map((cl, k) => (!isEnd(k) && !items.has(k) && cl.w.reduce((a, b) => a + b, 0) === 3) ? k : null);
   const c = canvasIn(host, sk.label), ctx = c.getContext('2d');
   let W = 0, H = 0, S = 40, ox = 0, raf = 0, last = 0, playing = false, ended = false, time = TIME, got = 0;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; S = Math.floor(Math.min((W - 16) / COLS, 46)); H = S * ROWS + 16; ox = Math.floor((W - S * COLS) / 2);
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; S = Math.floor(Math.min((W - 16) / COLS, 46)); H = S * ROWS + 16; ox = Math.floor((W - S * COLS) / 2);
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw(); }
   function move(d){
     if (!playing || ended || at(P.c, P.r).w[d]) return;

@@ -8,7 +8,7 @@ export const archery = function(host, hud, onEnd, sk){
   let W = 0, H = 0, raf = 0, last = 0, playing = false, ended = false, clock = 0;
   let shot = 0, score = 0, wind = 0, phase = 'aim', fly = null, marks = [], banner = '', bannerT = -9, danceT = -9, timeoutId = 0;
   const board = () => ({ x:W * 0.5, top:H * 0.18, w:Math.max(72, W * 0.22), h:H * 0.5 }), bull = () => { const b = board(); return { x:b.x, y:b.top + b.h * 0.3 }; };
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(400, Math.min(520, W * 1.15)));
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(400, Math.min(520, W * 1.15)));
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw(); }
   function newWind(){ wind = Math.round((Math.random() * 2 - 1) * 10) / 10; }
   function sight(){ const b = bull(), k = 1 + shot * 0.08; return { x:b.x + Math.sin(clock * 1.25 * k) * W * 0.22 + Math.sin(clock * 3.1) * W * 0.02, y:b.y + Math.sin(clock * 1.9 * k + 1) * H * 0.16 }; }

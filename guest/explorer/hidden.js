@@ -8,7 +8,7 @@ export const hidden = function(host, hud, onEnd, sk){
   for (let tries = 0; spots.length < N + sk.decoys && tries < 4000; tries++) { const x = 0.08 + pr() * 0.84, y = 0.08 + pr() * 0.84; if (spots.every(s => Math.hypot(s.x - x, (s.y - y) * 1.1) > 0.13)) spots.push({ x, y }); }
   const targets = spots.slice(0, N).map((s, i) => ({ ...s, i, found:false })), decoys = spots.slice(N);
   let W = 0, H = 0, S = 1, timer = 0, raf = 0, t0 = 0, playing = false, ended = false, found = 0, miss = 0, hints = 0, marks = [], hintAt = null, msg = '', msgT = 0;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(380, Math.min(540, W * 1.05))); S = Math.min(W, H) / 420;
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(380, Math.min(540, W * 1.05))); S = Math.min(W, H) / 420;
     [c, bgC].forEach(cv => { cv.width = W * dpr; cv.height = H * dpr; }); c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const rnd = mulberry32(seed); sk.bg(bctx, W, H, rnd, S);
     decoys.forEach(d => sk.decoy(bctx, d.x * W, d.y * H, S, rnd)); targets.forEach(t => sk.target(bctx, t.x * W, t.y * H, S, rnd, t.i)); draw(); }

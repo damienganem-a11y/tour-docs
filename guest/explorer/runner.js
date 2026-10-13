@@ -8,7 +8,7 @@ export const runner = function(host, hud, onEnd, sk){
   const GOAL = 9000, L = { y:0, vy:0, ground:true, hurt:0 };
   let obs = [], items = [], dist = 0, speed = 220, lives = 3, got = 0, spawn = 1.6, ispawn = 2.4, raf = 0, last = 0, playing = false, ended = false;
   const lx = () => Math.max(64, W * 0.17), gy = () => H - 46;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(300, Math.min(380, W * 0.75)));
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(300, Math.min(380, W * 0.75)));
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw(); }
   function jump(){ if (!playing || ended) return; if (L.ground) { L.vy = -590; L.ground = false; sfx('jump'); } }
   const onKey = e => { if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); jump(); } };

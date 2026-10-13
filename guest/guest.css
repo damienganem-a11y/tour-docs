@@ -784,3 +784,32 @@ input[type=checkbox] { accent-color: #000; }
 .ex-today small { font: 700 10px Outfit, sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--yellow); }
 .ex-today b { font: 700 18px Outfit, sans-serif; }
 .ex-today span { font-size: 14px; opacity: .85; }
+
+/* v0.99.7: a calmer design (owner's feedback: the pattern repeated over the whole page looked tacky). White pages; the place's pattern lives in a BAND under the
+   picture (and across the top of the game and quiz pages), framed by the main color; the main color also frames the game stage. */
+.ex-page { background: #fff; color: #17171a; padding-bottom: 36px; }
+.ex-band { height: 38px; background: var(--ex-page) var(--ex-pattern); background-size: var(--ex-psize); border-bottom: 3px solid var(--ex-accent); }
+.ex-band--top { height: calc(env(safe-area-inset-top) + 66px); }
+.ex-art { height: 250px; }
+.ex-art--photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ex-art + .ex-band + .ex-hero { margin: 0; padding: 22px 22px 6px; border-radius: 0; background: #fff; color: #17171a; }
+.ex-hero { margin: 0; background: #fff; color: #17171a; border-radius: 0; padding: calc(env(safe-area-inset-top) + 70px) 22px 8px; }
+.ex-hero small { color: var(--ex-accent); opacity: 1; }
+.ex-hero h1 { color: var(--ex-page); font-size: 40px; margin-bottom: 10px; }
+.ex-greet { color: #17171a; }
+.ex-meaning { opacity: .75; }
+.ex-facts { opacity: .6; }
+.ex-body { background: #fff; border-radius: 0; margin-top: 0; padding: 14px 16px 24px; }
+.ex-step { background: #fff; border: 1.5px solid #e9e4d8; }
+.ex-step-no { background: var(--ex-page); color: #fff; }
+.ex-btn, .ex-wide { background: var(--ex-accent); color: var(--ex-on); }
+.ex-back { top: calc(env(safe-area-inset-top) + 12px); }
+.ex-quiz .ex-q, .ex-quiz .ex-result { background: #fff; border: 1.5px solid #e9e4d8; margin: 22px 14px 20px; box-shadow: 0 8px 28px rgba(0, 0, 0, .06); }
+.ex-gamehead { margin: 14px 14px 10px; padding: 0; background: none; color: #17171a; }
+.ex-gamehead small { color: var(--ex-accent); opacity: 1; }
+.ex-gamehead h1 { color: var(--ex-page); }
+.ex-hud .pill { background: var(--ex-surface); }
+.ex-hud .track { background: var(--ex-surface); }
+.ex-hud .muted { color: #55524c; }
+.ex-stage { border: 3px solid var(--ex-page); box-shadow: 0 10px 30px rgba(0, 0, 0, .12); }
+@media (min-width: 700px) { .ex-art { height: 320px; } .ex-art + .ex-band + .ex-hero, .ex-body { max-width: 760px; margin-left: auto; margin-right: auto; } }

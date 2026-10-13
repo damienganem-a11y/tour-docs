@@ -8,7 +8,7 @@ export const flap = function(host, hud, onEnd, sk){
   let W = 0, H = 0, raf = 0, last = 0, playing = false, ended = false, started = false, clock = 0;
   let fy = 0, vy = 0, hurt = 0, lives = 3, passed = 0, gates = [], spawnX = 0, bubbles = [];
   const fx = () => W * 0.28, floor = () => H - 34;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(380, Math.min(500, W * 1.1)));
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(380, Math.min(500, W * 1.1)));
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); if (!started) fy = H * 0.45; draw(); }
   function gapH(){ return Math.max(140, H * (0.42 - Math.min(passed, GOAL) / GOAL * 0.08)); }
   function addGate(x){ const g = gapH(), m = 50; gates.push({ x, top:m + Math.random() * (floor() - g - m * 2), g, done:false, k:Math.random() }); }

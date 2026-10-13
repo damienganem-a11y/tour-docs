@@ -470,7 +470,8 @@ function destinationView(sheet, index, offline) {
     quizOpen ? stepButton(entry.stamp ? 'Play again' : entry.best > 0 ? 'Try again' : 'Start', () => startQuiz(index)) : h('div', { class: 'ex-step-state' }, 'Locked'));
   return [h('div', { class: 'ex-page', style },
     h('button', { class: 'atl-back ex-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '\u2039'),
-    sceneZone(ex.scene),
+    heroZone(d, ex),
+    h('div', { class: 'ex-band' }),
     h('header', { class: 'ex-hero' },
       h('small', {}, d.country),
       h('h1', {}, d.name),
@@ -484,6 +485,12 @@ function destinationView(sheet, index, offline) {
       d.given ? h('p', { class: 'ex-stamp-line' }, `Stamp earned ${stampDate(d.stampDay ?? d.firstDate)}`) : h('p', { class: 'ex-stamp-line' }, d.unlocked ? 'Finish the three steps to earn your stamp.' : `Opens ${stampDate(ex.unlockOn)}`),
       gameRow(0), gameRow(1), quizRow,
       d.given && ex.etiquette?.length ? h('section', { class: 'ex-tips' }, h('div', { class: 'atl-label' }, 'Local etiquette'), ...ex.etiquette.map((t) => h('p', {}, t))) : null))];
+}
+
+// The top picture of a destination page: the real photograph of the place when the trip has one, else the drawn scene. The pattern is only a band under it.
+function heroZone(d, ex) {
+  if (d.photo) { const zone = h('div', { class: 'ex-art ex-art--photo' }); zone.append(picture(d.photo, 'ex-photo', '')); return zone; }
+  return sceneZone(ex.scene);
 }
 
 // The illustrated scene of the place (drawn in explorer/themes.js from the name in the trip file; nothing when the name is unknown).
@@ -533,7 +540,7 @@ function gamePage(sheet, index, stepIndex) {
   }
   // The maze is steered with an arrow pad under the stage (directions: 0 up, 1 right, 2 down, 3 left, as the game expects).
   const pad = step.engine !== 'maze' ? null : h('div', { class: 'ex-dpad', 'aria-label': 'Move' }, ...[['up', 0, '\u2191', 'Up'], ['left', 3, '\u2190', 'Left'], ['down', 2, '\u2193', 'Down'], ['right', 1, '\u2192', 'Right']].map(([cls, dir, label, name]) => h('button', { class: cls, type: 'button', 'data-dir': String(dir), 'aria-label': name }, label)));
-  const nodes = [h('div', { class: 'ex-page ex-gamepage', style: exStyle(d.ex.theme) }, back, soundButton(),
+  const nodes = [h('div', { class: 'ex-page ex-gamepage', style: exStyle(d.ex.theme) }, h('div', { class: 'ex-band ex-band--top' }), back, soundButton(),
     h('div', { class: 'ex-gamehead' }, h('small', {}, `Step ${stepIndex + 1} of 3 \u00b7 ${d.name}`), h('h1', {}, step.title), hud), stage, pad)];
   overlay.append(sheetBox(h('h3', {}, step.title), h('p', {}, step.intro), h('button', { class: 'ex-wide', type: 'button', id: 'ex-go' }, 'Start')));
   const mount = () => {
@@ -602,11 +609,12 @@ function quizPage(sheet, index) {
   const run = quizRun;
   const style = exStyle(d.ex.theme);
   const back = h('button', { class: 'atl-back ex-back', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '‹');
+  const band = h('div', { class: 'ex-band ex-band--top' });
 
   if (run.result) {
     const earned = Boolean(passportOf(sheet)[index].given);
     const entry = entryOf(readProgress(), destKey(d));
-    return [h('div', { class: 'ex-page ex-quiz', style }, back, soundButton(),
+    return [h('div', { class: 'ex-page ex-quiz', style }, band, back, soundButton(),
       h('div', { class: 'ex-result' },
         h('small', {}, `${d.name} quiz`),
         h('h1', {}, `${run.score} of ${QUIZ_LENGTH}`),
@@ -620,7 +628,7 @@ function quizPage(sheet, index) {
   const q = run.quiz[run.i];
   const answered = run.picked !== null;
   const shown = q.options.map((option, i) => ({ option, i })).filter(({ option, i }) => !answered || i === run.picked || option.right);
-  return [h('div', { class: 'ex-page ex-quiz', style }, back, soundButton(),
+  return [h('div', { class: 'ex-page ex-quiz', style }, band, back, soundButton(),
     h('div', { class: 'ex-q' },
       h('small', {}, `Question ${run.i + 1} of ${run.quiz.length} · ${q.category === 'food' ? 'Food & daily life' : q.category.replace(/^./, (c) => c.toUpperCase())}`),
       h('h2', {}, q.q),

@@ -7,7 +7,7 @@ export const carve = function(host, hud, onEnd, sk){
   const actx = art.getContext('2d'), rctx = rock.getContext('2d'), BANDS = 5, TIME = sk.time, CELL = 12;
   let W = 0, H = 0, dpr = 1, raf = 0, t0 = 0, playing = false, ended = false, band = 0, grid = [], cols = 0, rows = 0, F = null, down = false, lastP = null, flash = -9, msgT = -9;
   function size(){
-    dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(420, Math.min(540, W * 1.25)));
+    dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(420, Math.min(540, W * 1.25)));
     [c, art, rock].forEach(cv => { cv.width = W * dpr; cv.height = H * dpr; }); c.style.height = H + 'px';
     [ctx, actx, rctx].forEach(x => x.setTransform(dpr, 0, 0, dpr, 0, 0));
     F = { x:W * 0.14, y:H * 0.05, w:W * 0.72, h:H * 0.9 };

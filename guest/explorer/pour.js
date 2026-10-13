@@ -7,7 +7,7 @@ export const pour = function(host, hud, onEnd, sk){
   let W = 0, H = 0, raf = 0, last = 0, playing = false, ended = false, pourTick = 0;
   let g = 0, level = 0, target = 0.5, foam = 0, lift = 0, pouring = false, phase = 'ready', liftSum = 0, liftT = 0, label = '', points = 0, perfects = 0, timeoutId = 0;
   const maxPts = sk.foam ? 12 : 9;
-  function size(){ const dpr = Math.min(2, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(340, Math.min(430, W * 0.95)));
+  function size(){ const dpr = Math.min(3, window.devicePixelRatio || 1); W = host.clientWidth; H = Math.round(Math.max(340, Math.min(430, W * 0.95)));
     c.width = W * dpr; c.height = H * dpr; c.style.height = H + 'px'; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw(); }
   function newCup(){ level = 0; foam = 0; lift = 0; liftSum = 0; liftT = 0; target = sk.target[0] + Math.random() * (sk.target[1] - sk.target[0]); phase = 'ready'; label = ''; paintHud(); }
   function paintHud(){ setHud(hud, `<span class="pill">${sk.cup} ${Math.min(g + 1, 3)} / 3</span><span class="pill gold">${sk.labels[Math.min(g, 2)]}</span><span class="pill">Points ${points}</span>`); }
