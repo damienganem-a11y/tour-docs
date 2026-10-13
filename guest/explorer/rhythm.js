@@ -1,6 +1,6 @@
 // Passport Explorer game: Rhythm (tap left or right as the beats reach the line). Skins: moai (Easter Island), slap (Samoa), jump (Serengeti).
 // PORTED unchanged in logic and tuning from the owner's prototype (tools/reference/jet-set-explorer-prototype.html); only the imports and exports are new.
-import { canvasIn, circ, setHud, skyC, tone } from './common.js';
+import { canvasIn, circ, setHud, skyC, tone, glow, groundShadow } from './common.js';
 
 export const rhythm = function(host, hud, onEnd, sk){
   const c = canvasIn(host, sk.label), ctx = c.getContext('2d');
@@ -48,13 +48,18 @@ export const rhythm = function(host, hud, onEnd, sk){
     if (!W) return;
     sk.scene(ctx, W, SH, tt, st);
     ctx.fillStyle = sk.road; ctx.fillRect(0, SH, W, H - SH);
-    for (let l = 0; l < sk.lanes; l++) { ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fillRect(laneX(l) - 34, SH, 68, H - SH); }
+    const shade = ctx.createLinearGradient(0, SH, 0, H); shade.addColorStop(0, 'rgba(0,0,0,.28)'); shade.addColorStop(0.5, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(255,255,255,.06)'); ctx.fillStyle = shade; ctx.fillRect(0, SH, W, H - SH);
+    ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(0, SH, W, 2);
+    for (let l = 0; l < sk.lanes; l++) { const lane = ctx.createLinearGradient(0, SH, 0, H); lane.addColorStop(0, 'rgba(255,255,255,.02)'); lane.addColorStop(1, 'rgba(255,255,255,.13)'); ctx.fillStyle = lane; ctx.fillRect(laneX(l) - 34, SH, 68, H - SH); ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(laneX(l) - 34, SH, 1.5, H - SH); ctx.fillRect(laneX(l) + 32.5, SH, 1.5, H - SH); }
     const hy = hitY();
-    for (let l = 0; l < sk.lanes; l++) { const glow = tt - st.lastHit < 0.15 && st.lane === l;
-      ctx.beginPath(); ctx.arc(laneX(l), hy, 28, 0, Math.PI * 2); ctx.lineWidth = glow ? 6 : 3; ctx.strokeStyle = glow ? '#ffd76a' : 'rgba(255,255,255,.7)'; ctx.stroke();
+    for (let l = 0; l < sk.lanes; l++) { const lit = tt - st.lastHit < 0.15 && st.lane === l;
+      if (lit) glow(ctx, laneX(l), hy, 62, '255,215,106', 0.75);
+      ctx.beginPath(); ctx.arc(laneX(l), hy, 28, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fill(); ctx.lineWidth = lit ? 6 : 3; ctx.strokeStyle = lit ? '#ffd76a' : 'rgba(255,255,255,.75)'; ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.font = '600 12px Outfit, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(sk.laneNames[l], laneX(l), H - 18); }
     for (const n of notes) { if (n.j) continue; const y = hy - (n.t - tt) / TRAVEL * (hy - SH - 10); if (y < SH - 24 || y > H + 24) continue;
-      circ(ctx, laneX(n.lane), y, 22, sk.noteColors[n.lane]); ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+      groundShadow(ctx, laneX(n.lane) + 2, y + 22, 20, 5, 0.3); glow(ctx, laneX(n.lane), y, 36, '255,255,255', 0.25);
+      const nb = ctx.createRadialGradient(laneX(n.lane) - 7, y - 8, 2, laneX(n.lane), y, 24); nb.addColorStop(0, 'rgba(255,255,255,.85)'); nb.addColorStop(0.35, sk.noteColors[n.lane]); nb.addColorStop(1, sk.noteColors[n.lane]);
+      ctx.beginPath(); ctx.arc(laneX(n.lane), y, 22, 0, Math.PI * 2); ctx.fillStyle = sk.noteColors[n.lane]; ctx.fill(); ctx.fillStyle = nb; ctx.globalAlpha = 0.55; ctx.fill(); ctx.globalAlpha = 1; ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.font = '800 15px Outfit, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(sk.noteLabel[n.lane], laneX(n.lane), y + 5); }
     ctx.textAlign = 'center';
     if (tt < 0 && tt > -3) { ctx.fillStyle = '#fff'; ctx.font = '800 54px Outfit, sans-serif'; ctx.fillText(String(Math.ceil(-tt)), W / 2, SH + (H - SH) * 0.45); }

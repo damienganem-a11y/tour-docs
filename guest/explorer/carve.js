@@ -47,6 +47,8 @@ export const carve = function(host, hud, onEnd, sk){
   function draw(){
     if (!W) return;
     ctx.clearRect(0, 0, W, H); ctx.drawImage(art, 0, 0, W, H); ctx.drawImage(rock, 0, 0, W, H);
+    // Sunlight from above on the rock face, and a soft shade towards the bottom.
+    const lit = ctx.createLinearGradient(0, 0, 0, H); lit.addColorStop(0, 'rgba(255,226,180,.22)'); lit.addColorStop(0.45, 'rgba(255,226,180,0)'); lit.addColorStop(1, 'rgba(30,8,4,.3)'); ctx.fillStyle = lit; ctx.fillRect(0, 0, W, H);
     if (playing && band < BANDS) {
       const y = bandBottom(band);
       ctx.fillStyle = 'rgba(40,15,12,.35)'; ctx.fillRect(0, y, W, H - y);

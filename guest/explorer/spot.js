@@ -1,6 +1,6 @@
 // Passport Explorer game: Spot (tap the animal named at the top). Skins: safari (Serengeti), himalaya (Kathmandu, new).
 // PORTED unchanged in logic and tuning from the owner's prototype (tools/reference/jet-set-explorer-prototype.html); only the imports and exports are new.
-import { canvasIn, circ, ell, plural, setHud, sfx, skyC } from './common.js';
+import { canvasIn, circ, ell, plural, setHud, sfx, skyC, groundShadow, cloud, glow } from './common.js';
 
 export const spot = function(host, hud, onEnd, sk){
   const c = canvasIn(host, sk.label), ctx = c.getContext('2d');
@@ -40,7 +40,7 @@ export const spot = function(host, hud, onEnd, sk){
   function draw(){
     if (!W) return;
     sk.bg(ctx, W, H, clock);
-    ents.forEach(e => { ctx.save(); ctx.translate(e.x, e.y); ctx.scale(e.s * e.dir, e.s); e.T.draw(ctx, e.ph); ctx.restore(); });
+    ents.forEach(e => { groundShadow(ctx, e.x, e.y + 2, e.T.r * 0.9 * e.s, 5 * e.s, 0.28); ctx.save(); ctx.translate(e.x, e.y); ctx.scale(e.s * e.dir, e.s); e.T.draw(ctx, e.ph); ctx.restore(); });
     if (sk.fg) sk.fg(ctx, W, H, clock);
     if (clock - flashT < 0.2) { ctx.fillStyle = `rgba(255,255,255,${0.7 * (1 - (clock - flashT) / 0.2)})`; ctx.fillRect(0, 0, W, H); }
     if (msg && clock - msgT < 1.2) { ctx.font = '700 18px Outfit, sans-serif'; ctx.textAlign = 'center'; const tw = ctx.measureText(msg).width + 28;
@@ -81,10 +81,11 @@ export const spotSkins = {
   // New in this app (Kathmandu): four animals of the Himalaya, drawn in the style of the safari ones.
   himalaya: {
     label:'Roof of the world: tap the animal the guide calls out', verb:'Find', goal:8, time:50, y:[0.58, 0.95],
-    bg(ctx, W, H){ skyC(ctx, W, H * 0.5, ['#7fa6d6','#f4c9a4','#fbe6cc']);
+    bg(ctx, W, H){ skyC(ctx, W, H * 0.5, ['#6c97cf','#e9b9a4','#f6d9b8','#fbe6cc']); glow(ctx, W * 0.7, H * 0.38, 150, '255,226,180', 0.7); cloud(ctx, W * 0.25, H * 0.12, 0.9, 0.5); cloud(ctx, W * 0.78, H * 0.2, 0.7, 0.4);
       ctx.fillStyle = '#e8eef6'; ctx.beginPath(); ctx.moveTo(0, H * 0.5); ctx.lineTo(W * 0.12, H * 0.26); ctx.lineTo(W * 0.24, H * 0.42); ctx.lineTo(W * 0.4, H * 0.18); ctx.lineTo(W * 0.56, H * 0.4); ctx.lineTo(W * 0.74, H * 0.24); ctx.lineTo(W * 0.88, H * 0.4); ctx.lineTo(W, H * 0.3); ctx.lineTo(W, H * 0.5); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(W * 0.4, H * 0.18); ctx.lineTo(W * 0.35, H * 0.27); ctx.lineTo(W * 0.4, H * 0.25); ctx.lineTo(W * 0.45, H * 0.28); ctx.fill();
-      const g = ctx.createLinearGradient(0, H * 0.5, 0, H); g.addColorStop(0, '#7d9a5a'); g.addColorStop(1, '#5f7a44'); ctx.fillStyle = g; ctx.fillRect(0, H * 0.5, W, H * 0.5);
+      const mist = ctx.createLinearGradient(0, H * 0.4, 0, H * 0.56); mist.addColorStop(0, 'rgba(255,240,225,0)'); mist.addColorStop(1, 'rgba(255,240,225,.75)'); ctx.fillStyle = mist; ctx.fillRect(0, H * 0.4, W, H * 0.16);
+      const g = ctx.createLinearGradient(0, H * 0.5, 0, H); g.addColorStop(0, '#86a463'); g.addColorStop(1, '#5a7541'); ctx.fillStyle = g; ctx.fillRect(0, H * 0.5, W, H * 0.5);
       [[0.1, 0.52], [0.9, 0.52]].forEach(([fx, fy]) => { const x = W * fx, y = H * fy; ctx.fillStyle = '#2f4a37'; ctx.beginPath(); ctx.moveTo(x, y - 60); ctx.lineTo(x + 20, y); ctx.lineTo(x - 20, y); ctx.fill(); }); },
     types:[
       { name:'Yak', r:44, cy:30, speed:[22, 38], draw(ctx, ph){ legs(ctx, [-20, -8, 10, 22], -18, 18, '#2b2420', ph, 7); ell(ctx, 0, -30, 32, 20, '#3a2f29'); ctx.fillStyle = '#2b2420'; ctx.beginPath(); ctx.moveTo(-30, -20); ctx.lineTo(-30, -2); ctx.lineTo(28, -2); ctx.lineTo(30, -20); ctx.fill();
