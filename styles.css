@@ -1106,3 +1106,9 @@ input[type=checkbox] { accent-color: #000; }
 
 /* v0.100.0: a tour with a free seat and guests waiting says so on its closed card, in the orange of the trip */
 .waitlist-flag { margin-top: 6px; display: inline-block; padding: 4px 10px; border-radius: 99px; background: var(--yellow); color: var(--on-yellow, #000); font-size: 13px; font-weight: 700; }
+
+/* v0.103.0: the Send button (the phone's share icon) next to the sync light */
+.send-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; margin-right: 6px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.send-btn .icon svg { width: 24px; height: 24px; }
+.send-btn:active { background: rgba(0, 0, 0, .08); }
+.cog--none { display: inline-block; width: 44px; }

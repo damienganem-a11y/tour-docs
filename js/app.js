@@ -848,7 +848,7 @@ async function enforceDietaryExpiry() {
       if (expiry === null || now.toISOString() < expiry) continue;
       if (dietaryErasureDue(trip, now)) await applyChange(ctx, trip.id, { type: 'erase-dietary' });
       for (const record of ctx.exportsFor(trip.id)) {
-        if (/, with dietary$/.test(record.title)) await ctx.deleteExport(trip.id, record.id);
+        if (/, with dietary( flags)?$/.test(record.title)) await ctx.deleteExport(trip.id, record.id);
       }
     }
   } catch { /* the next check tries again */ }

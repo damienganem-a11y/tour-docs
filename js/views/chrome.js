@@ -109,14 +109,19 @@ function syncDetailsSheet(ctx) {
 // dietary: true adds the "Include dietary needs" switch (reservation sheets only), off every time the
 // sheet opens; run then receives ({ includeDietary }) as its second argument.
 export function exportFormatSheet(run, { dietary = false } = {}) {
-  const box = dietary ? h('input', { type: 'checkbox', 'aria-label': 'Include dietary needs' }) : null;
-  const go = (format) => { closeSheet(); run(format, { includeDietary: Boolean(box?.checked) }); };
+  // Dietary needs (reservation sheets only), asked again at every export: none (default), just a * next to the guests concerned ("ask the tour leader"),
+  // or the needs written out. Only the last one puts the text of an allergy in a file.
+  const choice = dietary ? h('select', { class: 'text-input', 'aria-label': 'Dietary needs on the sheet' },
+    h('option', { value: 'none', selected: true }, 'Nothing about dietary needs'),
+    h('option', { value: 'flag' }, 'A * next to guests with a need (details stay in the app)'),
+    h('option', { value: 'full' }, 'The needs written out (allergies)')) : null;
+  const go = (format) => { closeSheet(); run(format, { includeDietary: choice?.value === 'full', flagDietary: choice?.value === 'flag' }); };
   openSheet({
     title: 'Export as...',
     body: [
       ...(dietary ? [
-        h('label', { class: 'tick-row' }, box, h('span', {}, 'Include dietary needs (allergies)')),
-        h('p', { class: 'muted' }, 'Only for the restaurant. The file is kept in Documents, named “with dietary”.'),
+        h('label', { class: 'form-label' }, 'Dietary needs', choice),
+        h('p', { class: 'muted' }, 'Only for the restaurant. A sheet that mentions them is kept in Documents, named “with dietary”.'),
       ] : []),
       h('button', { class: 'btn', type: 'button', onclick: () => go('pdf') }, 'PDF — for WhatsApp and printing'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => go('xlsx') }, 'Excel (.xlsx) — to edit the list further'),

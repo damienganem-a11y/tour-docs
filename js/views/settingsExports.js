@@ -8,7 +8,10 @@ import { pageHead, exportFormatSheet } from './chrome.js';
 import { openSheet, closeSheet } from '../ui.js';
 import { choiceRow } from './move.js';
 import { bySlotOrder, slotLabel, dinnerCountIn } from '../rules.js';
-import { previewSavedExport, exportName, sameDocument, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards } from '../export.js';
+import { previewSavedExport, exportName, sameDocument, exportFinalTrip, destinationExportDoc, exportAndShare, exportEveningReservations, exportConfirmationCards, sendDirect } from '../export.js';
+
+// `direct` (the Send button, views/sendSheet.js): the file goes straight to the phone's share sheet, not into the viewer.
+const run = (direct, work) => (direct ? sendDirect(work) : work());
 
 // `busy` stops a second tap from starting a second (large) file while the first is still being built.
 let busy = false;
@@ -19,16 +22,7 @@ export function exportsSettingsPage(ctx, trip) {
   const current = records.filter((r) => !r.archivedAt);
   const archived = records.filter((r) => r.archivedAt);
 
-  const finalExportButton = h('button', {
-    class: 'btn', type: 'button',
-    onclick: () => exportFormatSheet(async (format) => {
-      if (busy) return;
-      busy = true;
-      await exportFinalTrip(ctx, trip, format);
-      busy = false;
-      ctx.refresh();
-    }),
-  }, 'Create the final export of the whole trip');
+  const finalExportButton = h('button', { class: 'btn', type: 'button', onclick: () => finalExport(ctx, trip, false) }, 'Create the final export of the whole trip');
 
   const destinationExportButton = h('button', {
     class: 'btn btn--plain', type: 'button',
@@ -64,37 +58,48 @@ export function exportsSettingsPage(ctx, trip) {
     archived.length > 0 ? archivedFolder(ctx, trip, archived) : null);
 }
 
-function pickDestination(ctx, trip) {
+// The final export of the whole trip (also from the Send button, directly).
+export function finalExport(ctx, trip, direct = false) {
+  exportFormatSheet(async (format) => {
+    if (busy) return;
+    busy = true;
+    await run(direct, () => exportFinalTrip(ctx, trip, format));
+    busy = false;
+    ctx.refresh();
+  });
+}
+
+export function pickDestination(ctx, trip, direct = false) {
   openSheet({
     eyebrow: 'Documents', title: 'Export which destination?',
-    body: trip.destinations.map((d) => choiceRow({ title: d.name, onclick: () => pickSlot(ctx, trip, d) })),
+    body: trip.destinations.map((d) => choiceRow({ title: d.name, onclick: () => pickSlot(ctx, trip, d, direct) })),
     cancelLabel: 'Cancel',
   });
 }
 
-function pickSlot(ctx, trip, destination) {
+function pickSlot(ctx, trip, destination, direct) {
   const slots = trip.slots.filter((s) => s.destinationId === destination.id).sort(bySlotOrder);
   const rows = [
-    choiceRow({ title: `All of ${destination.name}`, detail: `${slots.length} half-days, one page each`, onclick: () => runExport(ctx, trip, destination) }),
-    ...slots.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runExport(ctx, trip, destination, s) })),
+    choiceRow({ title: `All of ${destination.name}`, detail: `${slots.length} half-days, one page each`, onclick: () => runExport(ctx, trip, destination, undefined, direct) }),
+    ...slots.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runExport(ctx, trip, destination, s, direct) })),
   ];
   openSheet({ eyebrow: destination.name, title: 'Export which half-day?', body: rows, cancelLabel: 'Cancel' });
 }
 
 // slot omitted: the whole destination, one page per half-day.
-function runExport(ctx, trip, destination, slot) {
+function runExport(ctx, trip, destination, slot, direct = false) {
   exportFormatSheet(async (format) => {
     if (busy) return;
     busy = true;
     const doc = destinationExportDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner');
-    await exportAndShare(ctx, trip, doc, format);
+    await run(direct, () => exportAndShare(ctx, trip, doc, format));
     busy = false;
     ctx.refresh();
   });
 }
 
 // Confirmation cards: pick the evening, and the PDF is built and shared straight away (one tap).
-function pickCardsEvening(ctx, trip) {
+export function pickCardsEvening(ctx, trip, direct = false) {
   const evenings = trip.slots
     .filter((s) => trip.dinnerBookings.some((b) => b.slotId === s.id && dinnerCountIn(trip, b) > 0))
     .sort(bySlotOrder);
@@ -106,7 +111,7 @@ function pickCardsEvening(ctx, trip) {
         closeSheet();
         if (busy) return;
         busy = true;
-        await exportConfirmationCards(ctx, trip, trip.destinations.find((d) => d.id === s.destinationId), s);
+        await run(direct, () => exportConfirmationCards(ctx, trip, trip.destinations.find((d) => d.id === s.destinationId), s));
         busy = false;
         ctx.refresh();
       },
@@ -116,22 +121,22 @@ function pickCardsEvening(ctx, trip) {
 }
 
 // Reservation sheet: pick the evening (every restaurant of that evening is exported together).
-function pickReservationEvening(ctx, trip) {
+export function pickReservationEvening(ctx, trip, direct = false) {
   const withRestaurants = new Set(trip.restaurants.map((r) => r.destinationId));
   const evenings = trip.slots.filter((s) => s.half === 'Evening' && withRestaurants.has(s.destinationId)).sort(bySlotOrder);
   openSheet({
     eyebrow: 'Documents', title: 'Which evening?',
-    body: evenings.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runReservations(ctx, trip, s) })),
+    body: evenings.map((s) => choiceRow({ title: slotLabel(trip, s), onclick: () => runReservations(ctx, trip, s, direct) })),
     cancelLabel: 'Cancel',
   });
 }
 
-function runReservations(ctx, trip, slot) {
+function runReservations(ctx, trip, slot, direct = false) {
   const destination = trip.destinations.find((d) => d.id === slot.destinationId);
-  exportFormatSheet(async (format, { includeDietary }) => {
+  exportFormatSheet(async (format, { includeDietary, flagDietary }) => {
     if (busy) return;
     busy = true;
-    await exportEveningReservations(ctx, trip, destination, slot, format, { includeDietary });
+    await run(direct, () => exportEveningReservations(ctx, trip, destination, slot, format, { includeDietary, flagDietary }));
     busy = false;
     ctx.refresh();
   }, { dietary: true });

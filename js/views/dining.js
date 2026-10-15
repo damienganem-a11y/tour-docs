@@ -234,6 +234,15 @@ function pickSeating(ctx, trip, slot, group, restaurant) {
   });
 }
 
+// Strict restaurant: the table the guests would get is BIGGER than they need (the table of their own size is taken). The leader is asked: take the
+// bigger table (confirmed), or keep a table of their own size on top of the restaurant's list, as a Special request (owner's request, 15 Oct 2026).
+// Returns that bigger table's size, or null when there is nothing to ask.
+function biggerTableOffer(restaurant, preview, count) {
+  if (restaurant.mode !== 'strict' || preview.status !== 'confirmed' || preview.tableIds.length !== 1) return null;
+  const table = restaurant.tables.find((t) => t.id === preview.tableIds[0]);
+  return table && table.size > count ? table.size : null;
+}
+
 function confirmBooking(ctx, trip, slot, group, restaurant, seatingTime) {
   const names = displayNames(trip.guests);
   const who = joinNames(group.map((g) => names.get(g.id)));
@@ -245,12 +254,21 @@ function confirmBooking(ctx, trip, slot, group, restaurant, seatingTime) {
     onclick: () => saveBookDinner(ctx, trip, slot, restaurant, seatingTime, group.map((g) => g.id), null, who),
   }, fits ? 'Confirm' : 'Save as special request');
 
+  const bigger = biggerTableOffer(restaurant, preview, group.length);
+  const asExtra = bigger ? h('button', {
+    class: 'btn btn--plain', type: 'button',
+    onclick: () => saveBookDinner(ctx, trip, slot, restaurant, seatingTime, group.map((g) => g.id), null, who, true),
+  }, `A table for ${group.length} as a Special request`) : null;
+  if (bigger) confirm.textContent = `Put them on the free table for ${bigger}`;
+
   openSheet({
     eyebrow: fits ? 'Confirm booking' : 'No table free right now', title: `${restaurant.name}, ${seatingTime}`,
     subtitle: `${who} · table for ${plural(group.length, 'guest')}`,
     body: [
       fits ? null : notice(`This does not fit right now — it will be saved as a Special request for the local team to sort out.`),
+      bigger ? notice(`The table for ${group.length} is taken at ${seatingTime}. A table for ${bigger} is free.`) : null,
       confirm,
+      asExtra,
     ],
     cancelLabel: 'Cancel',
   });
@@ -346,13 +364,18 @@ function confirmMoveTable(ctx, trip, slot, booking, fromRestaurant, toRestaurant
     class: `btn${fits ? '' : ' btn--danger'}`, type: 'button',
     onclick: () => saveMoveDinnerTable(ctx, trip, booking, toRestaurant, seatingTime, who),
   }, fits ? 'Confirm' : 'Save as special request');
+  const bigger = biggerTableOffer(toRestaurant, preview, guestCount);
+  const asExtra = bigger ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => saveMoveDinnerTable(ctx, trip, booking, toRestaurant, seatingTime, who, true) }, `A table for ${guestCount} as a Special request`) : null;
+  if (bigger) confirm.textContent = `Put them on the free table for ${bigger}`;
 
   openSheet({
     eyebrow: fits ? 'Confirm move' : 'No table free right now', title: `${toRestaurant.name}, ${seatingTime}`,
     subtitle: `${who} · moving from ${fromRestaurant.name}, ${booking.seating}`,
     body: [
       fits ? null : notice('This does not fit right now — it will be saved as a Special request for the local team to sort out.'),
+      bigger ? notice(`The table for ${guestCount} is taken at ${seatingTime}. A table for ${bigger} is free.`) : null,
       confirm,
+      asExtra,
     ],
     cancelLabel: 'Cancel',
   });
@@ -557,10 +580,10 @@ async function saveAddToDinnerTable(ctx, trip, booking, guestIds) {
   }
 }
 
-async function saveMoveDinnerTable(ctx, trip, booking, restaurant, seatingTime, who) {
+async function saveMoveDinnerTable(ctx, trip, booking, restaurant, seatingTime, who, extra = false) {
   if (saving) return;
   saving = true;
-  const result = await applyChange(ctx, trip.id, { type: 'move-dinner-table', bookingId: booking.id, restaurantId: restaurant.id, seating: seatingTime });
+  const result = await applyChange(ctx, trip.id, { type: 'move-dinner-table', bookingId: booking.id, restaurantId: restaurant.id, seating: seatingTime, ...(extra ? { extra: true } : {}) });
   saving = false;
   if (result.ok) {
     closeSheet();

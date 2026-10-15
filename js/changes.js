@@ -66,7 +66,7 @@
 //       the table's status is recomputed fresh from its new total occupancy (dinnerAddFit in rules.js),
 //       which may flip it to or from Special request. Applied alone. Same move()-reuse as book-dinner,
 //       plus one 'add-to-dinner-table' entry recording the status change.
-//   { type: 'move-dinner-table', bookingId, restaurantId, seating, tableId? }
+//   { type: 'move-dinner-table', bookingId, restaurantId, seating, tableId?, extra? }   extra: as for book-dinner (a table of their own size, as a Special request)
 //       Phase 3 step 2c: moves EVERY current guest of one table to a different restaurant and/or
 //       seating, in one action — a table's own "Move table" action. Creates a fresh table at the
 //       destination exactly like book-dinner (same optional tableId for a specific empty table);
@@ -630,7 +630,9 @@ function validateMoveDinnerTable(trip, change) {
   const restaurant = trip.restaurants.find((r) => r.id === change.restaurantId);
   if (!restaurant) return fail('That restaurant does not exist.');
   if (restaurant.destinationId !== slot.destinationId) return fail('That restaurant is not in this destination.');
-  if (!restaurant.seatings.includes(change.seating)) return fail('That is not one of this restaurant\'s seating times.');
+  if (change.extra === true) {
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(change.seating ?? '')) return fail('The time must look like 19:15.');
+  } else if (!restaurant.seatings.includes(change.seating)) return fail('That is not one of this restaurant\'s seating times.');
 
   // A specific table, chosen on the "By table" grid — Strict mode only, and must not already be
   // occupied BY ANOTHER booking (the table being moved is excluded from its own "used" check, so
@@ -1283,10 +1285,11 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     const guestIds = trip.guests
       .filter((g) => !g.leftAt && trip.bookings[g.id]?.[slot.id]?.bookingId === sourceBooking.id)
       .map((g) => g.id);
-    const { status, tableIds } = change.tableId
+    // extra (owner's request, 15 Oct 2026): "keep them on a table of their own size, as a Special request" instead of a bigger free table.
+    const { status, tableIds } = change.extra === true && restaurant.mode === 'strict' ? { status: 'special-request', tableIds: [] } : change.tableId
       ? { status: guestIds.length <= restaurant.tables.find((t) => t.id === change.tableId).size ? 'confirmed' : 'special-request', tableIds: [change.tableId] }
       : dinnerFit(trip, restaurant, slot, change.seating, guestIds.length, sourceBooking.id);
-    const booking = { id: newId(), slotId: slot.id, restaurantId: restaurant.id, seating: change.seating, tableIds, status };
+    const booking = { id: newId(), slotId: slot.id, restaurantId: restaurant.id, seating: change.seating, tableIds, status, ...(change.extra === true ? { extra: true } : {}) };
     next.dinnerBookings.push(booking);
     entries.push({
       ...base(), type: 'move-dinner-table', bookingId: booking.id, restaurantId: restaurant.id,

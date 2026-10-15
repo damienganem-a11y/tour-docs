@@ -441,9 +441,50 @@ export function buildListsPdf(doc) {
 // day-by-day itinerary (guestsDoc: one table per guest, drawn at GUEST_TILE's wider size). Both parts
 // land in the one file, tours first — the tour pages already know to start a fresh page per half-day;
 // the guest pages just flow on continuously, since there is no single "half-day" they belong to.
-export function buildFinalTripPdf(toursDoc, guestsDoc) {
-  const pages = [...bestLayout(toursDoc, ACTIVITY_TILE), ...bestLayout(guestsDoc, GUEST_TILE)];
+export function buildFinalTripPdf(toursDoc, guestsDoc, summary = null) {
+  const pages = [...(summary ? summaryPages(summary) : []), ...bestLayout(toursDoc, ACTIVITY_TILE), ...bestLayout(guestsDoc, GUEST_TILE)];
   return new Blob([serializePdf(pages)], { type: 'application/pdf' });
+}
+
+// The first page of the final export (owner's request, 15 Oct 2026): for every half-day of the trip, how many guests are on each tour, all on ONE page.
+// summary = { title, updatedLine, blocks: [ { heading: "Day 2 · Morning · Lisbon", rows: [ { name: "Old Lyon", count: "18 / 20" } ] } ] }.
+// The blocks flow down columns (as many as fit across the page); the writing is as big as it can be while everything stays on the one page. If the trip is
+// so long that even the smallest readable size does not fit, the summary simply continues on a second page.
+function summaryPages(summary) {
+  const colGap = 14, head = 46; // room for the title and the "Updated" line
+  const top = PAGE_HEIGHT - MARGIN - head;
+  const attempt = (size, cols) => {
+    const rowH = size * 1.35, blockGap = size * 0.9, titleH = size * 1.7;
+    const colW = (USABLE_WIDTH - colGap * (cols - 1)) / cols;
+    const pages = [[]];
+    let col = 0, y = top;
+    const put = (item) => pages.at(-1).push(item);
+    const nextColumn = () => { col += 1; y = top; if (col >= cols) { col = 0; pages.push([]); } };
+    for (const block of summary.blocks) {
+      const height = titleH + block.rows.length * rowH + blockGap;
+      if (y - height < MARGIN && y !== top) nextColumn();
+      const left = MARGIN + col * (colW + colGap);
+      put({ type: 'rect', x: left, y: y - titleH * 0.95, w: colW, h: titleH * 0.95, gray: 0.88 });
+      put({ type: 'text', x: left + 3, y: y - size * 1.15, font: FONT_BOLD, size, gray: 0, text: fitOneLine(block.heading, FONT_BOLD, size, colW - 6) });
+      y -= titleH;
+      for (const row of block.rows) {
+        const countW = textWidth(row.count, FONT_BOLD, size);
+        put({ type: 'text', x: left + 3, y: y - size, font: FONT_REGULAR, size, gray: 0, text: fitOneLine(row.name, FONT_REGULAR, size, colW - countW - 14) });
+        put({ type: 'text', x: left + colW - 3 - countW, y: y - size, font: FONT_BOLD, size, gray: 0, text: row.count });
+        y -= rowH;
+      }
+      y -= blockGap;
+    }
+    return { pages, size };
+  };
+  // The biggest writing that keeps everything on one page; failing that, the smallest size, over as many pages as it takes.
+  let best = null;
+  for (const cols of [3, 4, 5]) for (let size = 11; size >= 5; size -= 0.5) { const r = attempt(size, cols); if (r.pages.length === 1) { if (!best || size > best.size) best = r; break; } }
+  const pages = (best ?? attempt(5, 5)).pages;
+  pages[0].unshift(
+    { type: 'text', x: MARGIN, y: PAGE_HEIGHT - MARGIN - 14, font: FONT_BOLD, size: 15, gray: 0, text: summary.title },
+    { type: 'text', x: MARGIN, y: PAGE_HEIGHT - MARGIN - 30, font: FONT_REGULAR, size: 8.5, gray: 0.45, text: summary.updatedLine });
+  return pages;
 }
 
 // ---------- The evening sheet: every restaurant of one evening, compact ----------

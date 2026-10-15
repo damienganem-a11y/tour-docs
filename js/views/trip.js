@@ -23,6 +23,7 @@ import { partiesSettingsPage } from './settingsParties.js';
 import { guestsSettingsPage } from './settingsGuests.js';
 import { exportsSettingsPage } from './settingsExports.js';
 import { warningsSettingsPage } from './settingsWarnings.js';
+import { sendButton } from './sendSheet.js';
 import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
 import { groupsSettingsPage } from './settingsGroups.js';
@@ -150,7 +151,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
     : h('div', { class: 'top-bar' },
         ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         h('span', { class: 'top-trip' }, trip.ref || trip.name),
-        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true })));
+        h('span', { class: 'top-side' }, ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.

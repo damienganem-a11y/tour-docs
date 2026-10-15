@@ -92,7 +92,7 @@ export function destinationExportDoc(trip, destination, slot, updatedBy) {
 // sheet gives no hint that anybody has a need. On = an asterisk after each affected guest plus their need written out
 // under the block, and the header says the file is for the restaurants only.
 // (A file that carries dietary needs is kept in Documents too, under a title ending ", with dietary" so it is its own document.)
-export function eveningReservationDoc(trip, destination, slot, updatedBy, { includeDietary = false } = {}) {
+export function eveningReservationDoc(trip, destination, slot, updatedBy, { includeDietary = false, flagDietary = false } = {}) {
   const blocks = [];
   const restaurants = trip.restaurants.filter((r) => r.destinationId === destination.id).sort((a, b) => a.name.localeCompare(b.name));
   for (const restaurant of restaurants) {
@@ -106,8 +106,9 @@ export function eveningReservationDoc(trip, destination, slot, updatedBy, { incl
         const guests = dinnerGuests(trip, booking).sort(byName);
         const needs = [];
         const rows = guests.map((guest) => {
-          const hasNeed = includeDietary && Boolean(guest.dietary);
-          if (hasNeed) needs.push({ id: guest.ref, name: `${guest.last}, ${guest.first}`, text: guest.dietary });
+          const hasNeed = (includeDietary || flagDietary) && Boolean(guest.dietary);
+          // flagDietary (owner's decision, 15 Oct 2026): only an asterisk, and "ask the tour leader" under the table. The need itself stays in the app.
+          if (hasNeed) needs.push({ id: guest.ref, name: `${guest.last}, ${guest.first}`, text: includeDietary ? guest.dietary : 'Dietary need: ask the tour leader' });
           return { id: guest.ref, name: `${guest.last}, ${guest.first}${hasNeed ? ' *' : ''}` };
         });
         blocks.push({
@@ -120,8 +121,8 @@ export function eveningReservationDoc(trip, destination, slot, updatedBy, { incl
   }
   const stamp = `Updated ${formatFullMoment(new Date().toISOString(), destination.timeZone)} (${destination.name} time), by ${updatedBy}`;
   return {
-    title: `${destination.name} — Day ${slot.day} · ${slot.half}, restaurant reservations${includeDietary ? ', with dietary' : ''}`,
-    updatedLine: includeDietary ? `${stamp} · Contains dietary information: for the restaurants only` : stamp,
+    title: `${destination.name} — Day ${slot.day} · ${slot.half}, restaurant reservations${includeDietary ? ', with dietary' : flagDietary ? ', with dietary flags' : ''}`,
+    updatedLine: includeDietary ? `${stamp} · Contains dietary information: for the restaurants only` : flagDietary ? `${stamp} · * marks a guest with a dietary need` : stamp,
     blocks,
   };
 }
@@ -292,6 +293,24 @@ export function finalTripToursDoc(trip, updatedBy) {
   };
 }
 
+// The summary that opens the final export: for every half-day, how many guests are on each tour (count / capacity), and At leisure.
+export function finalTripSummary(trip, updatedBy) {
+  const blocks = [...trip.slots].sort(bySlotOrder).map((slot) => {
+    const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+    const { byActivity, leisure } = whoIsWhere(trip, slot);
+    const rows = trip.activities.filter((a) => a.slotId === slot.id).map((a) => ({
+      name: a.name, count: a.cancelled ? 'Cancelled' : capacityInfo((byActivity.get(a.id) ?? []).length, a.capacity).text,
+    }));
+    rows.push({ name: 'At leisure', count: String(leisure.length) });
+    return { heading: `Day ${slot.day} · ${slot.half} · ${destination.name}`, rows };
+  });
+  return {
+    title: `${trip.name} — Guests per tour`,
+    updatedLine: `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`,
+    blocks,
+  };
+}
+
 // Every guest's own day-by-day itinerary, in trip order: the same rule the By guest screen itself
 // uses (guestPlace) to say where someone is in a half-day. Shared by the PDF and Excel builders
 // below, which each lay the same information out differently.
@@ -387,8 +406,8 @@ export async function exportAndShare(ctx, trip, doc, format, { archive = true } 
 }
 
 // The reservation sheet of one whole evening, every restaurant at once (see eveningReservationDoc).
-export async function exportEveningReservations(ctx, trip, destination, slot, format, { includeDietary = false } = {}) {
-  const doc = eveningReservationDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner', { includeDietary });
+export async function exportEveningReservations(ctx, trip, destination, slot, format, { includeDietary = false, flagDietary = false } = {}) {
+  const doc = eveningReservationDoc(trip, destination, slot, ctx.owner?.name ?? 'the owner', { includeDietary, flagDietary });
   if (doc.blocks.length === 0) { showToast('No tables are booked that evening yet.', true); return; }
   await exportAndShare(ctx, trip, doc, format);
 }
@@ -402,8 +421,8 @@ export async function exportFinalTrip(ctx, trip, format) {
   let blob;
   try {
     blob = format === 'pdf'
-      ? buildFinalTripPdf(finalTripToursDoc(trip, updatedBy), finalTripGuestsDocForPdf(trip, updatedBy))
-      : buildFinalTripXlsx(finalTripToursDoc(trip, updatedBy), finalTripGuestsRowsForXlsx(trip), trip.branding ?? {});
+      ? buildFinalTripPdf(finalTripToursDoc(trip, updatedBy), finalTripGuestsDocForPdf(trip, updatedBy), finalTripSummary(trip, updatedBy))
+      : buildFinalTripXlsx(finalTripToursDoc(trip, updatedBy), finalTripGuestsRowsForXlsx(trip), trip.branding ?? {}, finalTripSummary(trip, updatedBy));
   } catch {
     releasePreviewWindow();
     showToast(`Could not build the ${FORMATS[format].label} file.`, true);
@@ -429,8 +448,15 @@ export async function exportFinalTrip(ctx, trip, format) {
 // a tap, but building a file takes a moment, so the window is opened empty at once (reservePreviewWindow) and the file is
 // put in it when ready (showPreview). If no window could be opened at all, the share sheet is offered instead.
 let previewWindow = null;
+// "Send" (the button next to the sync light, owner's request 15 Oct 2026): the finished file goes straight to the phone's share sheet (WhatsApp, Mail,
+// Files...) as a PDF or Excel FILE, never through the viewer, so there is no link to choose by mistake. directMode is on only while `run` works.
+let directMode = false;
+export async function sendDirect(run) {
+  directMode = true;
+  try { await run(); } finally { directMode = false; }
+}
 function reservePreviewWindow(format = 'pdf') {
-  if (format !== 'pdf') return; // a phone cannot show an Excel file in a window: it goes to the share sheet (Files, Excel...)
+  if (directMode || format !== 'pdf') return; // a phone cannot show an Excel file in a window: it goes to the share sheet (Files, Excel...)
   try { previewWindow = window.open('', '_blank'); } catch { previewWindow = null; }
 }
 function releasePreviewWindow() {
@@ -438,7 +464,7 @@ function releasePreviewWindow() {
   previewWindow = null;
 }
 async function showPreview(blob, spec, filename) {
-  if (spec.extension !== 'pdf') { releasePreviewWindow(); await shareOrDownloadFile(blob, filename, spec.mimeType); return; }
+  if (directMode || spec.extension !== 'pdf') { releasePreviewWindow(); await shareOrDownloadFile(blob, filename, spec.mimeType); return; }
   const win = previewWindow;
   previewWindow = null;
   const url = URL.createObjectURL(new Blob([blob], { type: spec.mimeType }));

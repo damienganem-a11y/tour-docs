@@ -314,11 +314,13 @@ export function buildListsXlsx(doc, brand = {}) {
 // The final export of the whole trip (SPEC.md, "5. Export"): every half-day's tours as their own
 // sheet (toursDoc, the same shape buildListsXlsx takes — just spanning every destination), plus one
 // more sheet with every guest's own day-by-day itinerary as a flat table.
-export function buildFinalTripXlsx(toursDoc, guestRows, brand = {}) {
+export function buildFinalTripXlsx(toursDoc, guestRows, brand = {}, summary = null) {
   const usedNames = new Set();
+  // First sheet: the summary (guests per tour for every half-day), one flat row per tour so it sorts and filters.
+  const summarySheets = summary ? [{ name: sheetName('Summary', usedNames), xml: flatSheetXml({ title: summary.title, updatedLine: summary.updatedLine, headers: ['Half-day', 'Tour', 'Guests'], widths: [34, 44, 12], rows: summary.blocks.flatMap((b) => b.rows.map((r) => [b.heading, r.name, r.count])) }) }] : [];
   const tourSheets = toursDoc.groups.map((group) => ({ name: sheetName(group.heading ?? toursDoc.title, usedNames), xml: sheetXml(toursDoc, group) }));
   const guestSheet = { name: sheetName('All guests', usedNames), xml: guestsFlatSheetXml(toursDoc, guestRows) };
-  return assembleWorkbook([...tourSheets, guestSheet], brand.accent);
+  return assembleWorkbook([...summarySheets, ...tourSheets, guestSheet], brand.accent);
 }
 
 // The groups list (Settings > Groups): first one flat sheet with a Group column (one row per guest, so a

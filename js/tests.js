@@ -1371,6 +1371,14 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   const moveRestB = (await applyChange(ctxMT, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Move Test B', seatings: ['19:00', '21:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
   const moveBookA = (await applyChange(ctxMT, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: moveRestA, seating: '19:00', guestIds: [g1.id, g2.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
   const moved = await applyChange(ctxMT, trip.id, { type: 'move-dinner-table', bookingId: moveBookA, restaurantId: moveRestB, seating: '19:00' });
+  const ctxMX = makeCtx();
+  const mxA = (await applyChange(ctxMX, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Extra A', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [4] })).entries[0].restaurantId;
+  const mxB = (await applyChange(ctxMX, trip.id, { type: 'add-restaurant', destinationId: lisbon.id, name: 'Extra B', seatings: ['19:00'], mode: 'strict', seatsPerSeating: null, maxTableSize: null, tableSizes: [2, 4] })).entries[0].restaurantId;
+  const mxBooking = (await applyChange(ctxMX, trip.id, { type: 'book-dinner', slotId: evening.id, restaurantId: mxA, seating: '19:00', guestIds: [g1.id, g2.id] })).entries.find((e) => e.type === 'book-dinner').bookingId;
+  const mxMoved = await applyChange(ctxMX, trip.id, { type: 'move-dinner-table', bookingId: mxBooking, restaurantId: mxB, seating: '19:00', extra: true });
+  const mxNew = ctxMX.state.dinnerBookings.find((b) => b.restaurantId === mxB);
+  check('move-dinner-table "extra": a table of their own size as a Special request (no table assigned), instead of a bigger free table',
+    mxMoved.ok && mxMoved.status === 'special-request' && mxNew.extra === true && mxNew.tableIds.length === 0, mxMoved.error);
   const newBookingId = moved.ok && moved.entries.find((e) => e.type === 'move-dinner-table').bookingId;
   check('move-dinner-table: both guests land on a fresh table at the new restaurant, Confirmed',
     moved.ok && moved.status === 'confirmed'
@@ -2215,6 +2223,15 @@ function readZip(bytes) {
   check('The combined PDF has the tours\' own forced pages (2, one per half-day) plus the guest section\'s own page(s)',
     finalPageCount >= 3, `${finalPageCount} pages`);
   check('Both parts\' own titles and content are in the file', finalText.includes('Every tour') && finalText.includes('Braswell, Anna') && finalText.includes('At leisure'));
+  const smallSummary = { title: 'Test trip — Guests per tour', updatedLine: 'Updated 1 Jan 2027, 09:00, by Tester', blocks: [
+    { heading: 'Day 1 · Morning · Lisbon', rows: [{ name: 'Walk', count: '12 / 20' }, { name: 'At leisure', count: '3' }] },
+    { heading: 'Day 1 · Afternoon · Lisbon', rows: [{ name: 'Tram', count: '16 / 16 · Full' }] },
+  ] };
+  const withSummary = new TextDecoder('iso-8859-1').decode(new Uint8Array(await buildFinalTripPdf(smallTours, smallGuests, smallSummary).arrayBuffer()));
+  check('The final PDF opens with ONE summary page (guests per tour for every half-day): one more page, the summary text in it',
+    [...withSummary.matchAll(/\/Type \/Page /g)].length === finalPageCount + 1 && withSummary.indexOf('Guests per tour') >= 0 && withSummary.indexOf('16 / 16') >= 0 && withSummary.indexOf('Guests per tour') < withSummary.indexOf('Every tour'));
+  const summaryXlsx = readZip(new Uint8Array(await buildFinalTripXlsx(smallTours, [], {}, smallSummary).arrayBuffer()));
+  check('...and the final Excel file opens with a "Summary" sheet', summaryXlsx['xl/workbook.xml'].indexOf('name="Summary"') > 0 && summaryXlsx['xl/workbook.xml'].indexOf('name="Summary"') < summaryXlsx['xl/workbook.xml'].indexOf('name="All guests"'));
 
   const finalXlsxBlob = buildFinalTripXlsx(smallTours, [
     { id: '501', name: 'Braswell, Anna', when: 'Day 1 · Morning', destination: 'Lisbon', what: 'Walk' },
@@ -2598,6 +2615,10 @@ function readZip(bytes) {
   check('...and the header says the file is for the restaurants only', /for the restaurants only/.test(on.updatedLine) && !/for the restaurants only/.test(off.updatedLine));
   check('The sheet with dietary needs has its own title ending ", with dietary" (so it is kept in Documents as a separate document)',
     /, with dietary$/.test(on.title) && !/dietary/i.test(off.title));
+  const flagged = eveningReservationDoc(ctxR.state, lis(), eveR, 'Tester', { flagDietary: true });
+  const flaggedText = JSON.stringify(flagged);
+  check('Evening sheet, "flag only": the guest has a * and the sheet says to ask the tour leader, but the allergy itself is NOT in the file',
+    mine(flagged).some((b) => b.tables[0].rows.some((r) => / \*$/.test(r.name))) && /ask the tour leader/.test(flaggedText) && !/Shellfish/i.test(flaggedText) && /, with dietary flags$/.test(flagged.title));
   check('A guest with a need who is NOT booked that evening never appears, switch on or off',
     !onText.includes(bystander.dietary) && !offText.includes(bystander.dietary));
   check('Every table is its own block with its own count (two tables at 19:00 are NOT read as one group of 6)',
