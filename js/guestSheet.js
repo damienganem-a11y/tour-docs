@@ -38,12 +38,12 @@ export function guestLinkExpiry(trip) {
 
 // Who may join a tour, in plain words (age rules, rules.js eligibilityProblems). Null when there is no rule to tell.
 function whoCanJoin(activity) {
+  // Only a real restriction is written out. "Children are always with an adult" is a rule for every tour (owner's decision, 15 Oct 2026), so it is not repeated.
   const bits = [];
   if (activity.audience === 'adults') bits.push('Adults only (18 and over)');
   else if (activity.audience === 'juniors') bits.push('Children\'s programme (under 18), with a guide');
-  else bits.push('Children under 18 join with an adult of their family');
   if (typeof activity.minAge === 'number') bits.unshift(`Minimum age ${activity.minAge}`);
-  return bits.join('. ');
+  return bits.length > 0 ? bits.join('. ') : null;
 }
 
 // The tours of the trip the guest can read about (the "Tours" tab). Dinners that still exist as activities ("Dinner: ...") are left out: dinners

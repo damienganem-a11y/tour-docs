@@ -64,23 +64,42 @@ function listPage(ctx, trip) {
 function newSplitSheet(ctx, trip) {
   const name = h('input', { class: 'text-input', type: 'text', maxlength: '60', 'aria-label': 'Name of the split' });
   const details = h('input', { class: 'text-input', type: 'text', maxlength: '200', 'aria-label': 'Details' });
-  const groups = h('input', { class: 'text-input', type: 'text', 'aria-label': 'Group names' });
+  // The group names sit one under the other (Bus 1, Bus 2, Bus 3 to start with); "+ Add a group" adds a line, the cross removes one (owner's request).
+  const rows = h('div', { class: 'group-name-rows' });
+  const names = () => [...rows.querySelectorAll('input')].map((i) => i.value.trim()).filter((n) => n !== '');
+  const addRow = (value) => {
+    const input = h('input', { class: 'text-input', type: 'text', maxlength: '60', value, 'aria-label': 'Group name' });
+    const row = h('div', { class: 'group-edit-row' }, input,
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', 'aria-label': 'Remove this group', onclick: () => row.remove() }, '✕'));
+    rows.append(row);
+    return input;
+  };
+  ['Bus 1', 'Bus 2', 'Bus 3'].forEach(addRow);
+  const create = async (spread) => {
+    const list = names().map((n) => ({ name: n, capacity: null }));
+    const result = await save(ctx, trip, { type: 'add-split', name: name.value, details: details.value, groups: list });
+    if (!result) return;
+    if (spread) {
+      // "Auto-create": the guests are spread over the new groups straight away, as many as there are groups.
+      const fresh = ctx.trip(trip.id); const split = fresh.splits.find((x) => x.id === result.splitId);
+      const everyone = activeGuests(fresh).map((g) => g.id);
+      await save(ctx, fresh, { type: 'assign-guests', splitId: split.id, assignments: autoSplitPlan(fresh, split, everyone) }, 'Guests spread over the groups');
+    }
+    ctx.go(`#/trip/${trip.id}/settings/groups/${result.splitId}`);
+  };
   openSheet({
     eyebrow: 'Groups', title: 'New split',
     subtitle: 'You can rename, add and remove groups afterwards.',
     body: [
       field('Name', name, 'For example: Nile transfer'),
       field('Details printed on cards (optional)', details, 'For example: Depart 07:30, hotel lobby'),
-      field('Group names', groups, 'Separate with commas. For example: Bus 1, Bus 2, Bus 3'),
+      h('div', { class: 'form-label' }, 'Groups'), rows,
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => addRow(`Bus ${rows.children.length + 1}`).select() }, '+ Add a group'),
     ],
-    footer: h('button', {
-      class: 'btn', type: 'button',
-      onclick: async () => {
-        const list = groups.value.split(',').map((g) => ({ name: g.trim(), capacity: null })).filter((g) => g.name !== '');
-        const result = await save(ctx, trip, { type: 'add-split', name: name.value, details: details.value, groups: list });
-        if (result) ctx.go(`#/trip/${trip.id}/settings/groups/${result.splitId}`);
-      },
-    }, 'Create'),
+    footer: [
+      h('button', { class: 'btn', type: 'button', onclick: () => create(true) }, 'Create and spread the guests over the groups'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => create(false) }, 'Create empty groups'),
+    ],
   });
 }
 

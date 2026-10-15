@@ -118,10 +118,10 @@ export function requestsSettingsPage(ctx, trip) {
   function colleagueChoices(row) {
     const asWaitlist = row.changes.map((c) => (c?.type === 'move' && c.to?.kind === 'activity' ? { type: 'move', guestId: c.guestId, slotId: c.slotId, to: { kind: 'waitlist', activityId: c.to.activityId } } : c));
     const askSheet = () => {
-      const reason = h('textarea', { class: 'text-input', rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' });
+      const reason = h('textarea', { class: 'text-input', oninput: (e) => e.target.classList.remove('is-missing'), rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' });
       openSheet({ eyebrow: 'Over capacity', title: 'Ask the owner to force it?', subtitle: describeRequest(trip, row.changes, names),
         body: [reason, h('button', { class: 'btn btn--danger', type: 'button', onclick: async () => {
-          if (!reason.value.trim()) { showToast('Write why this move must be forced.', true); return; }
+          if (!reason.value.trim()) { reason.classList.add('is-missing'); reason.placeholder = 'Required: write why this one must be forced'; reason.focus(); return; }
           closeSheet();
           const result = await ctx.askAgain(trip.id, row.changes.map((c) => (c?.type === 'move' && c.to?.kind === 'activity' ? { ...c, force: true, forceReason: reason.value.trim() } : c)));
           showToast(result.ok ? 'Request sent to the owner' : result.error, !result.ok);

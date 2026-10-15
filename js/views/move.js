@@ -388,7 +388,7 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
   const asking = force && ctx.roleFor?.(trip.id) === 'team';
   const approval = force
     ? (asking
-      ? h('textarea', { class: 'text-input approval-input', rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' })
+      ? h('textarea', { class: 'text-input approval-input', oninput: (e) => e.target.classList.remove('is-missing'), rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' })
       : h('input', {
         class: 'text-input approval-input', type: 'text', placeholder: 'Approved by (optional)', 'aria-label': 'Approved by (optional)',
         maxlength: '60', autocomplete: 'off', autocapitalize: 'words', spellcheck: 'false',
@@ -398,7 +398,8 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
   const confirmButton = h('button', {
     class: `btn${danger || force ? ' btn--danger' : ''}`, type: 'button',
     onclick: () => {
-      if (asking && !approval.value.trim()) { showToast('Write why this move must be forced.', true); return; }
+      // The missing reason is shown ON the box (red frame, red words) instead of in a message that disappears.
+      if (asking && !approval.value.trim()) { approval.classList.add('is-missing'); approval.placeholder = 'Required: write why this one must be forced'; approval.focus(); return; }
       saveChanges(
         ctx, trip,
         force ? changes.map((change) => (asking ? { ...change, force: true, forceReason: approval.value.trim() } : { ...change, force: true, approvedBy: approval.value })) : changes,

@@ -8,12 +8,12 @@ import { h } from '../dom.js';
 import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
-import { sendMagicLink } from '../auth.js';
+import { sendMagicLink, existingSession } from '../auth.js';
 import { openSheet } from '../ui.js';
 import { qrSvg } from '../qr.js';
 import { listMembers, inviteMember, removeMember, cleanInviteEmail, MEMBER_ROLES } from '../sync.js';
 
-const ROLE_LABEL = { team: 'Team', viewer: 'View only' };
+const ROLE_LABEL = { team: 'Team', viewer: 'View only', owner: 'Owner (you)' };
 
 // Sends the person the sign-in e-mail (the code and the link that opens the app) so that inviting is one tap for the owner and one
 // tap for them. Returns a sentence saying how it went. (The e-mail is the usual sign-in one: Supabase limits how many it sends per hour.)
@@ -68,8 +68,8 @@ export function memberCard(member, { resend, remove, access, scopeName }) {
     h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · only ${scopeName}` : ''}`),
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: access }, 'QR code'),
-      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Re-send email'),
-      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: remove }, 'Remove')));
+      resend ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Re-send email') : null,
+      remove ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: remove }, 'Remove') : null));
 }
 
 export function teamSettingsPage(ctx, trip) {
@@ -82,6 +82,9 @@ export function teamSettingsPage(ctx, trip) {
   }
 
   const list = h('div', {}, h('p', { class: 'muted count-line' }, 'Loading…'));
+  // The owner's own line, with its own QR code, to sign in on a second phone or tablet of the same account (like every colleague's line).
+  const mine = h('div', {});
+  existingSession().then((me) => { if (me?.email) mine.replaceChildren(memberCard({ email: me.email, role: 'owner' }, { access: () => accessSheet(ctx, trip, { email: me.email, role: 'owner' }) })); }).catch(() => {});
   const message = h('div', { class: 'message', role: 'alert', hidden: true });
   const say = (text) => { message.textContent = text; message.hidden = !text; };
 
@@ -131,6 +134,7 @@ export function teamSettingsPage(ctx, trip) {
   return h('div', {},
     head,
     notice('In this first version, the people you invite can look at the trip and its documents, kept up to date, but cannot change anything yet.'),
+    mine,
     list,
     h('h2', { class: 'section-title' }, 'Invite someone'),
     h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'E-mail address', email), h('div', { class: 'form-hint' }, 'They receive the usual sign-in e-mail (a code, and a link that opens the app). One tap to invite, one tap for them.')),

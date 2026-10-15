@@ -415,12 +415,12 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
     if (candidates.length === 0) { partyPrompt.replaceChildren(); return; }
     const moverNames = joinNames([...candidates].sort(alphabetical(names)).map((c) => names.get(c.id)));
     partyPrompt.replaceChildren(notice(`${names.get(guest.id)} travels with ${moverNames}`),
-      h('div', { class: 'card-actions' },
-        h('button', {
-          class: 'btn btn--small', type: 'button',
-          onclick: () => { for (const c of candidates) checked.add(c.id); partyPrompt.replaceChildren(); fill(); say(); },
-        }, `Add ${moverNames} too`),
-        h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => partyPrompt.replaceChildren() }, 'No')));
+      // Full-size buttons, like the "move them too" question in Touring (owner's request), not small ones.
+      h('button', {
+        class: 'btn', type: 'button',
+        onclick: () => { for (const c of candidates) checked.add(c.id); partyPrompt.replaceChildren(); fill(); say(); },
+      }, `Add ${moverNames} too`),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => partyPrompt.replaceChildren() }, 'No, just them'));
   };
 
   // The search matches by name only, exactly like the ordinary "Add guest" search elsewhere in the

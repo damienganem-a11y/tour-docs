@@ -3409,7 +3409,7 @@ function readZip(bytes) {
   const rnSheet = buildGuestSheet(rn, rn.guests[0], '2027-06-01T00:00:00.000Z');
   const rnWho = (re) => rnSheet.tours.find((t) => re.test(t.name))?.who;
   check('The guest app tells who can join a tour: minimum age, adults only, children\'s programme',
-    /Minimum age 14/.test(rnWho(/Bike/) ?? '') && /Adults only/.test(rnWho(/\(adults\)/) ?? '') && /Children's programme/.test(rnWho(/Juniors Experience/) ?? '') && /Children under 18 join with an adult/.test(rnWho(/Old Lyon/) ?? ''), JSON.stringify(rnSheet.tours.map((t) => t.who)).slice(0, 200));
+    /Minimum age 14/.test(rnWho(/Bike/) ?? '') && /Adults only/.test(rnWho(/\(adults\)/) ?? '') && /Children's programme/.test(rnWho(/Juniors Experience/) ?? '') && rnWho(/Old Lyon/) === null, JSON.stringify(rnSheet.tours.map((t) => t.who)).slice(0, 200));
   check('That text holds no guest name', !rn.guests.some((g) => rnSheet.tours.some((t) => (t.who ?? '').includes(g.first))));
   check('A trip wears orange by default, the colour of its company or its file otherwise (tripAccent)',
     tripAccent(rn.branding) === '#FF8200' && tripAccent({ companyName: 'X', accent: '#336699' }) === '#336699' && tripAccent({ companyName: '', accent: '#336699' }) === '#336699' && tripAccent({ companyName: '', accent: '#1d5c57' }) === '#FF8200');
@@ -3418,6 +3418,11 @@ function readZip(bytes) {
   const fixedLook = structuredClone(rnRaw); const lookTrip = buildTrip(fixedLook);
   check('A trip file with its own colour keeps it (fixed), so the device\'s company look does not replace it', lookTrip.branding.fixed === true && lookTrip.branding.accent === '#FF8200' && !buildTrip({ ...rnRaw, trip: { ...rnRaw.trip, accent: undefined } }).branding.fixed);
   const guestSrc = await (await fetch('./guest/guest.js')).text();
+  check('Only a real restriction is written under "Who can join" (the rule that children are always with an adult is not repeated), and the block comes last',
+    rnSheet.tours.filter((t) => t.who === null).length > 0 && rnSheet.tours.every((t) => t.who === null || /Minimum age|Adults only|Children's programme/.test(t.who))
+    && guestSrc.indexOf("section('Who can join'") > guestSrc.indexOf('levelBlock(info),'));
+  check('Two texts that say the same thing (notes and accessibility) are shown once, and a gentle walking group gets its own sign', /function distinctTexts/.test(guestSrc) && /Gentle walking group/.test(guestSrc));
+  check('"My requests" shows when each request was sent and answered, and a waitlisted guest is told what it means', /requestTimes\(r\)/.test(guestSrc) && /nothing else is planned for you/.test(guestSrc));
   check('The guest app never shows the company name in its headers', !/sheet\.company/.test(guestSrc.replace(/const keep = [^\n]*/, '')));
   const rnCtx = () => { const c = { owner, state: structuredClone(rn), entries: [], trip: (id) => (id === c.state.id ? c.state : undefined), journal: () => c.entries, async commit(next, entries) { c.state = next; c.entries.push(...entries); } }; return c; };
   const parent = rn.guests.find((g) => g.age >= 30 && g.age < 55 && rn.guests.some((k) => k.partyId === g.partyId && k.age < 12));

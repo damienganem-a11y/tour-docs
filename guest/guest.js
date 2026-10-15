@@ -166,6 +166,7 @@ function partView(part, sheet) {
   } else if (part.kind === 'waitlist') {
     lines.push(h('div', { class: 'what' }, part.name));
     lines.push(h('span', { class: 'tag warn' }, 'On the waiting list'));
+    lines.push(h('div', { class: 'line' }, 'No place yet, so nothing else is planned for you this half-day. You will be told if a place opens.'));
   } else {
     cls += ' leisure';
     lines.push(h('div', { class: 'what' }, 'To be confirmed'));
@@ -698,6 +699,11 @@ function askSwitch(sheet, mineIndex, toIndex) {
   });
 }
 
+// When a request was sent, and when it was answered, in the phone's own time (e.g. "Sent Tue, Oct 14, 6:42 PM · answered Wed, Oct 15, 8:05 AM").
+function requestTimes(r) {
+  const at = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return [r.created_at ? `Sent ${at(r.created_at)}` : null, r.decided_at ? `answered ${at(r.decided_at)}` : null].filter(Boolean).join(' · ');
+}
 const REQUEST_STATUS = { pending: 'Waiting for your leader', approved: 'Approved', declined: 'Not possible', cancelled: 'Taken back', failed: 'Not possible' };
 function myRequestsBlock() {
   const recent = myRequests.filter((r) => r.status === 'pending' || Date.now() - Date.parse(r.decided_at || r.created_at) < 3 * 86400000).slice(0, 5);
@@ -706,6 +712,7 @@ function myRequestsBlock() {
     recent.map((r) => h('div', { class: `request request--${r.status}` },
       h('div', { class: 'request-what' }, `Day ${r.payload.day} ${String(r.payload.half).toLowerCase()}: ${r.payload.to}`),
       h('div', { class: 'request-state' }, REQUEST_STATUS[r.status] ?? r.status, r.note ? ` · ${r.note}` : ''),
+      h('div', { class: 'request-when' }, requestTimes(r)),
       r.status === 'pending' ? h('button', { class: 'link-btn', type: 'button', onclick: async () => { try { await callRpc('cancel_guest_request', { p_token: currentToken(), p_id: r.id }); await loadMyRequests(); paint(); } catch { /* offline */ } } }, 'Take it back') : null)));
 }
 
@@ -875,10 +882,32 @@ function creditsView(sheet, offline) {
 // (distance, climb, steps, heat, tight spaces...). Not hidden behind a bubble or an "i".
 // One block at the end of a tour page: how demanding it is AND what a guest with reduced mobility needs to know (owner's request, 4 Oct 2026).
 // The level in words, then the leader's own factual details (distance, steps, lifts, floors), so the guest can decide or come and talk to the leader.
+// Two texts that say nearly the same thing (the short note and the accessibility text often repeat "More than 200 steps... gentle group") are shown once:
+// the longer one. Compared by the words they share.
+function distinctTexts(texts) {
+  const words = (t) => new Set(t.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+  const kept = [];
+  for (const text of texts.filter(Boolean)) {
+    const mine = words(text);
+    const twin = kept.findIndex((k) => { const other = words(k); const shared = [...mine].filter((w) => other.has(w)).length; return shared / new Set([...mine, ...other]).size >= 0.6; });
+    if (twin === -1) kept.push(text); else if (text.length > kept[twin].length) kept[twin] = text;
+  }
+  return kept;
+}
+
+// A small walking-stick sign so a guest sees at a glance that a gentle group is offered (the leader writes it in the tour's notes).
+function offersGentleGroup(info) { return /gentle (walk|group|pace)/i.test(`${info?.difficultyNote ?? ''} ${info?.accessibility ?? ''}`); }
+function gentleChip() {
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('width', '15'); icon.setAttribute('height', '15'); icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = '<circle cx="13" cy="4.5" r="2" fill="currentColor"/><path d="M12 8l-2 5 2 3v5M12 8l3 3 3 1M10 13l-2 7M19 9v12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+  return h('span', { class: 'chip chip--gentle' }, icon, 'Gentle walking group');
+}
+
 function levelBlock(info) {
   const level = info?.difficulty ? DIFFICULTY[info.difficulty] : null;
   if (!level && !info?.accessibility && !info?.difficultyNote) return null;
-  const facts = [info.difficultyNote, info.accessibility].filter(Boolean);
+  const facts = distinctTexts([info.difficultyNote, info.accessibility]);
   return h('section', { class: `atl-section atl-level${level ? ` level--${info.difficulty}` : ''}` },
     h('div', { class: 'atl-label' }, level ? 'Activity level and accessibility' : 'Accessibility'),
     level ? h('div', { class: 'atl-level-name' }, h('i', { class: 'atl-level-dot' }), level.label) : null,
@@ -906,13 +935,14 @@ function tourView(sheet, tour, offline) {
       h('div', { class: 'chips atl-chips' },
         tour.time ? chip(`Leaves ${tour.time}`, 'chip--time') : null,
         tour.meeting ? chip(tour.meeting, 'chip--place') : null,
-        info.duration ? chip(info.duration) : null)),
+        info.duration ? chip(info.duration) : null,
+        offersGentleGroup(info) ? gentleChip() : null)),
     h('div', { class: 'atl-body atl-body--tour' },
       offline,
       section('What happens', info.description, 'atl-story'),
       section('Good to know', info.bring),
-      tour.who ? section('Who can join', tour.who) : null,
-      levelBlock(info)),
+      levelBlock(info),
+      tour.who ? section('Who can join', tour.who) : null), // last, and only when there is a real restriction
   ].filter(Boolean);
 }
 

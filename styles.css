@@ -1093,3 +1093,13 @@ input[type=checkbox] { accent-color: #000; }
 
 /* v0.96.0: a very dark company colour on the black menu: the active tab gets a thin white outline so it stays visible */
 :root[data-dark-company] .bottom-tab.is-active { outline: 2px solid #fff; outline-offset: -3px; }
+
+/* v0.99.11: a Delete button is always white on red, whatever card it sits on (owner's request) */
+.card .btn.btn--danger, .btn.btn--danger.btn--small { background: #c62828; border-color: #c62828; color: #fff; }
+
+/* v0.99.11: a required box left empty turns red, with its hint in red too (owner's request) */
+.text-input.is-missing { border-color: #c62828; background: #fdecea; }
+.text-input.is-missing::placeholder { color: #c62828; opacity: 1; font-weight: 700; }
+
+/* v0.99.11: guests on a waitlist, or in a tour by force, wear the trip's colour with black words (owner's request), never the pale grey of the others */
+.waitlist-section .chip, .chip.chip--forced { background: var(--yellow); border-color: var(--yellow); color: var(--on-yellow, #000); font-weight: 700; opacity: 1; }
