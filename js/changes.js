@@ -973,7 +973,7 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     seq: next.changeCount, n: entries.length, // n = this entry's place inside its action
     who: { id: actor.id, name: actor.name, role: actor.role },
     source: opts.source ?? (opts.request ? 'colleague request' : 'app'),   // later: 'whatsapp'... ('guest request': the owner approved a guest's request)
-    ...(opts.request ? { requestId: opts.request.id, requestedAt: opts.request.at } : {}),
+    ...(opts.request ? { requestId: opts.request.id, requestedAt: opts.request.at, ...(opts.approvedByName ? { approvedBy: opts.approvedByName } : {}) } : {}),
     batchId,
   });
 

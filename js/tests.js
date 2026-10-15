@@ -3090,10 +3090,10 @@ function readZip(bytes) {
   const tr = ctxR.state;
   const act = tr.activities.find((a) => a.name === 'Alfama walking tour');
   const slotR = tr.slots.find((s) => s.id === act.slotId);
-  const row = { id: 'rq1', trip_id: tr.id, status: 'failed', note: `"${act.name}" is full (20 / 20).`, requested_at: '2027-01-01T00:00:00Z', requester_name: 'Ben',
+  const row = { id: 'rq1', trip_id: tr.id, status: 'failed', requested_by: 'u-test', note: `"${act.name}" is full (20 / 20).`, requested_at: '2027-01-01T00:00:00Z', requester_name: 'Ben',
     changes: [{ type: 'move', guestId: tr.guests[0].id, slotId: slotR.id, to: { kind: 'activity', activityId: act.id } }] };
   const { requestsSettingsPage: page } = await import('./views/settingsRequests.js');
-  const base = { requestsFor: () => [row], outboxFor: () => [], guestRequestsFor: () => [], pushState: async () => ({ state: 'off' }), needsOwnerDecision: () => false };
+  const base = { requestsFor: () => [row], outboxFor: () => [], guestRequestsFor: () => [], pushState: async () => ({ state: 'off' }), needsOwnerDecision: () => false, canApprove: () => false, holdReason: () => null, owner: { id: 'u-test' } };
   const asTeam = page({ ...base, roleFor: () => 'team' }, tr).textContent;
   const asOwner = page({ ...base, roleFor: () => 'owner' }, tr).textContent;
   check('A colleague whose request found the tour full can put the guest on the waiting list or ask the owner to force it', /Waiting list instead/.test(asTeam) && /Ask the owner to force/.test(asTeam));

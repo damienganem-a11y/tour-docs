@@ -2,7 +2,7 @@
 // Tapping an item goes straight to the screen that deals with it.
 
 import { h } from '../dom.js';
-import { openSheet, closeSheet } from '../ui.js';
+import { openSheet, closeSheet, showToast } from '../ui.js';
 import { icon } from './icons.js';
 import { inboxCount } from '../inbox.js';
 
@@ -17,7 +17,7 @@ export function inboxButton(ctx, trip) {
 
 function inboxSheet(ctx, trip) {
   const items = ctx.inboxFor(trip.id);
-  const rows = items.map((item) => h('a', { class: `inbox-row${item.unread ? ' is-unread' : ''}`, href: item.href, onclick: () => { ctx.markInboxSeen(trip.id, [item.id]); closeSheet(); } },
+  const rows = items.map((item) => h('a', { class: `inbox-row${item.unread ? ' is-unread' : ''}`, href: item.href, onclick: (event) => { ctx.markInboxSeen(trip.id, [item.id]); closeSheet(); if (item.kind === 'conflict') { event.preventDefault(); conflictSheet(ctx, trip); } } },
     h('div', { class: 'inbox-title' }, item.title), h('div', { class: 'inbox-detail' }, item.detail), item.at ? h('div', { class: 'muted' }, when(item.at)) : null));
   openSheet({
     eyebrow: 'Inbox', title: items.length === 0 ? 'Nothing waiting' : `${inboxCount(items)} waiting`,
@@ -26,5 +26,24 @@ function inboxSheet(ctx, trip) {
       h('a', { class: 'btn btn--plain', href: `#/trip/${trip.id}/settings/messages`, onclick: () => closeSheet() }, 'Open Messages'),
     ],
     cancelLabel: 'Close',
+  });
+}
+
+// The owner chose to keep changes made offline, or the other version. Said plainly, with what is lost either way.
+function conflictSheet(ctx, trip) {
+  const mine = ctx.unsentCount(trip.id);
+  const choose = async (choice) => {
+    closeSheet();
+    try { await ctx.resolveConflict(trip.id, choice); showToast(choice === 'theirs' ? 'The other version is now on this device' : 'Your version was sent'); }
+    catch (error) { showToast(error?.message ?? 'Could not do it. Are you online?', true); }
+  };
+  openSheet({
+    eyebrow: 'Two versions', title: 'Which version do you keep?',
+    subtitle: `This device holds ${mine} change${mine === 1 ? '' : 's'} made while it was offline. Somebody changed the trip elsewhere in the meantime. The two cannot be merged yet.`,
+    body: [
+      h('button', { class: 'btn', type: 'button', onclick: () => choose('theirs') }, 'Keep the other version (the changes made here are dropped)'),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => choose('mine') }, 'Keep this device\'s version (the other changes are overwritten)'),
+    ],
+    cancelLabel: 'Decide later',
   });
 }

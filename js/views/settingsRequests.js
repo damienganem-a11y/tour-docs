@@ -79,8 +79,11 @@ function notificationsCard(ctx) {
 
 export function requestsSettingsPage(ctx, trip) {
   const owner = ctx.roleFor(trip.id) === 'owner';
+  const approver = owner || ctx.roleFor(trip.id) === 'advance'; // an Advance also answers what waits for an OK inside their own destination
   const names = displayNames(trip.guests);
-  const rows = ctx.requestsFor(trip.id);
+  const allRows = ctx.requestsFor(trip.id);
+  const rows = owner ? allRows : allRows.filter((r) => r.requested_by === ctx.owner?.id); // a colleague's own requests
+  const approvable = allRows.filter((r) => ctx.canApprove(r));
   const waiting = ctx.outboxFor(trip.id); // made here, not sent yet (no internet)
   const head = pageHead({
     back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
@@ -90,11 +93,11 @@ export function requestsSettingsPage(ctx, trip) {
 
   const card = (row, actions) => h('div', { class: 'card' },
     h('div', { class: 'act-name' }, describeRequest(trip, row.changes, names) || 'A change'),
-    h('div', { class: 'muted' }, `${owner ? `${row.requester_name || row.requester_email || 'A colleague'} · ` : ''}${when(row.requested_at)}`),
+    h('div', { class: 'muted' }, `${approver && row.requested_by !== ctx.owner?.id ? `${row.requester_name || row.requester_email || 'A colleague'} · ` : ''}${when(row.requested_at)}`),
     row.status === 'failed' && row.note ? h('div', { class: 'notice' }, `It no longer fits: ${row.note}`) : null,
     row.status === 'declined' ? h('div', { class: 'muted' }, row.note ? `Declined: ${row.note}` : 'Declined') : null,
     forcedReason(row) ? h('div', { class: 'quote' }, `Reason: ${forcedReason(row)}`) : null,
-    owner && row.status === 'pending' && holdWords[ctx.holdReason(row)] ? h('div', { class: 'muted' }, holdWords[ctx.holdReason(row)]) : null,
+    approver && row.status === 'pending' && holdWords[ctx.holdReason(row)] ? h('div', { class: 'muted' }, holdWords[ctx.holdReason(row)]) : null,
     actions ? h('div', { class: 'card-actions' }, actions) : null);
 
   const forcedReason = (row) => (Array.isArray(row.changes) ? row.changes.find((c) => c?.force)?.forceReason ?? null : null);
@@ -174,7 +177,7 @@ export function requestsSettingsPage(ctx, trip) {
       ? notice('Your devices apply a colleague\'s request by themselves when it fits. Here wait the ones that need your OK (a forced move, a colleague set to "review", a change outside their destination) and the ones that no longer fit.')
       : notice('A change you make is sent to the owner\'s device and applied there, once that device is open. Some changes (outside your destination, or if the owner wants to approve everything) wait for the owner\'s OK. You can take back a request that is still waiting.'),
     owner ? notificationsCard(ctx) : null,
-    owner ? section('Waiting for your OK', wantsForce.map((r) => card(r, decideForce(r)))) : null,
+    approver ? section('Waiting for your OK', approvable.map((r) => card(r, decideForce(r)))) : null,
     guestSection,
     nothing && !owner ? h('p', { class: 'empty' }, 'No requests yet.') : null,
     section('Waiting to be sent', waiting.map((r) => h('div', { class: 'card' }, h('div', { class: 'act-name' }, describeRequest(trip, r.changes, names) || 'A change'), h('div', { class: 'muted' }, `${when(r.requestedAt)} · it will be sent as soon as you are online`),

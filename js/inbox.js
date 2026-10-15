@@ -14,7 +14,7 @@ const THREE_DAYS = 3 * 86400000;
 
 // ctx-free input: { trip, role, userId, requests (rows of this trip), guestRequests (rows of this trip), messages (rows of this trip),
 //   holdsFor(row) -> true when a pending request waits for the owner's OK, seen: Set of item ids, now }
-export function inboxItems({ trip, role, userId, requests = [], guestRequests = [], messages = [], holdsFor = () => false, seen = new Set(), now = Date.now() }) {
+export function inboxItems({ trip, role, userId, requests = [], guestRequests = [], messages = [], holdsFor = () => false, conflict = false, seen = new Set(), now = Date.now() }) {
   const names = displayNames(trip.guests);
   const base = `#/trip/${trip.id}/settings`;
   const items = [];
@@ -23,19 +23,26 @@ export function inboxItems({ trip, role, userId, requests = [], guestRequests = 
     for (const row of guestRequests.filter((r) => r.status === 'pending')) {
       items.push({ id: `g:${row.id}`, kind: 'guest-request', todo: true, title: 'Guest request', detail: describeGuestRequest(trip, row, names), at: row.created_at, href: `${base}/requests` });
     }
-    for (const row of requests.filter((r) => r.status === 'pending' && holdsFor(r))) {
-      items.push({ id: `h:${row.id}`, kind: 'approval', todo: true, title: 'Waiting for your OK', detail: `${row.requester_name || row.requester_email || 'A colleague'}: ${describeRequest(trip, row.changes, names) || 'a change'}`, at: row.requested_at, href: `${base}/requests` });
-    }
     for (const row of requests.filter((r) => r.status === 'failed')) {
       items.push({ id: `f:${row.id}`, kind: 'failed', todo: true, title: 'A request no longer fits', detail: `${row.requester_name || row.requester_email || 'A colleague'}: ${describeRequest(trip, row.changes, names) || 'a change'}`, at: row.decided_at ?? row.requested_at, href: `${base}/requests` });
     }
-  } else {
-    // A colleague: what became of their own requests lately.
+  }
+  // What waits for this person's OK: the owner's, or an Advance's for their own destination (holdsFor says which).
+  if (role === 'owner' || role === 'advance') {
+    for (const row of requests.filter((r) => r.status === 'pending' && holdsFor(r))) {
+      items.push({ id: `h:${row.id}`, kind: 'approval', todo: true, title: 'Waiting for your OK', detail: `${row.requester_name || row.requester_email || 'A colleague'}: ${describeRequest(trip, row.changes, names) || 'a change'}`, at: row.requested_at, href: `${base}/requests` });
+    }
+  }
+  if (role !== 'owner') {
+    // A colleague (Jet Staff, Advance): what became of their own requests lately.
     for (const row of requests.filter((r) => r.requested_by === userId && ['applied', 'declined', 'failed'].includes(r.status) && now - Date.parse(r.decided_at ?? r.requested_at) < THREE_DAYS)) {
       const word = row.status === 'applied' ? 'Done' : row.status === 'declined' ? 'Declined' : 'Did not fit';
       items.push({ id: `a:${row.id}:${row.status}`, kind: 'answer', todo: false, title: `Your request: ${word}`, detail: `${describeRequest(trip, row.changes, names) || 'a change'}${row.note ? `. ${row.note}` : ''}`, at: row.decided_at ?? row.requested_at, href: `${base}/requests` });
     }
   }
+
+  // Two versions of the trip (this device was offline while somebody changed it): the owner chooses which to keep.
+  if (conflict) items.push({ id: `c:${trip.id}`, kind: 'conflict', todo: true, title: 'Two versions of this trip', detail: 'Changes were made on this device while it was offline, and the trip was changed elsewhere meanwhile. Choose which one to keep.', at: null, href: '#' });
 
   for (const w of tripWarnings(trip).waitlistRoom) {
     items.push({ id: `w:${w.activity.id}:${w.free}:${w.waiting}`, kind: 'waitlist', todo: true, title: 'A seat is free', detail: `${w.activity.name}: ${w.waiting} waiting${w.free === null ? '' : `, ${w.free} seat${w.free === 1 ? '' : 's'} free`}`, at: null, href: `#/trip/${trip.id}/use/destination/${w.destination.id}/${w.slot.id}` });

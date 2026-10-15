@@ -338,7 +338,7 @@ export async function sendRequestRemote(request) {
 export async function pullRequests() {
   const supabase = await getClient();
   const { data, error } = await supabase.from('requests')
-    .select('id, trip_id, requested_by, requester_email, requester_name, changes, requested_at, status, note, decided_at')
+    .select('*') // '*': requester_role / requester_scope / requester_approval exist once migration 0018 is applied
     .order('requested_at', { ascending: true }).limit(300);
   if (error) throw error;
   return data;

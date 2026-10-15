@@ -61,6 +61,8 @@ const tripApprovals = new Map(); // tripId -> 'review' when the owner wants to a
 // Live editing: how far each trip is known to match the server on THIS device (the same number the database keeps in syncState, kept in memory so a
 // screen can ask at once). A device whose copy is behind this number has changes the server has not seen: it must not write live.
 const knownPushed = new Map();
+// Trips whose two versions diverged (changes made here while offline, and somebody else changed the trip meanwhile): the owner chooses which to keep.
+const conflictTrips = new Set();
 async function markPushed(tripId, count) { await bumpPushedChangeCount(tripId, count); knownPushed.set(tripId, Math.max(knownPushed.get(tripId) ?? -1, count)); }
 
 // Owner only: "Preview as View only / Team" (views/preview.js). While it is on, every screen is drawn as that role would see it, and nothing
@@ -120,6 +122,16 @@ async function checkSession() {
   if (state.owner) renderQuiet();
 }
 
+// Do this device and the server hold the SAME last action of a trip? (The lines of the journal with the trip's latest number, compared by id.)
+async function sameHistory(tripId) {
+  const n = state.trips.get(tripId)?.changeCount ?? 0;
+  if (n === 0) return true;
+  const mine = ctx.journal(tripId).filter((e) => e.seq === n).map((e) => e.id).sort();
+  const theirs = (await pullJournalEntries(tripId, n - 1)).filter((e) => e.seq === n).map((e) => e.id).sort();
+  return mine.length === theirs.length && mine.every((id, i) => id === theirs[i]);
+}
+
+
 // Pushes a trip (and, once accepted, its journal entries) and records how far this push actually
 // got confirmed (Phase 2, step 2b) — the watermark pullSync uses to tell "server is just ahead, safe
 // to auto-pull" apart from "this phone has its own unconfirmed changes, don't overwrite them". Only
@@ -135,7 +147,7 @@ async function pushAndTrack(trip, entries = []) {
     if (base >= 0 && base < (trip.changeCount ?? 0)) {
       const unsent = ctx.journal(trip.id).filter((e) => (e.seq ?? 0) > base);
       const result = await applyTripUpdate(trip, base, unsent);
-      if (result.stale) syncInfo.lastError = 'Another device changed this trip while this one was offline: the two versions are not merged yet.';
+      if (result.stale) { syncInfo.lastError = 'Another device changed this trip while this one was offline: choose which version to keep (inbox).'; if (!conflictTrips.has(trip.id)) { conflictTrips.add(trip.id); renderQuiet(); } }
       else if (result.missing) accepted = (await pushTrip(trip)).accepted && (await pushJournalEntries(trip.id, ctx.journal(trip.id)), true);
       else accepted = result.accepted;
     } else if (base < 0) {
@@ -339,6 +351,34 @@ const ctx = {
   waitlistForcedRequest: (id) => decideForcedRequest(id, 'waitlist'),
   declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
   needsOwnerDecision: (row) => needsOwnerDecision(row),
+  // Two versions of a trip (this device offline vs somebody else): how many unsent changes this device holds, and the owner's choice.
+  conflictFor: (tripId) => conflictTrips.has(tripId) && ctx.roleFor(tripId) === 'owner',
+  unsentCount: (tripId) => new Set(ctx.journal(tripId).filter((e) => (e.seq ?? 0) > (knownPushed.get(tripId) ?? -1)).map((e) => e.batchId)).size,
+  // 'theirs': take the server's version, and forget the changes made here (they were never sent). 'mine': keep this device's version and send it over the other.
+  async resolveConflict(tripId, choice) {
+    await enqueue(async () => {
+      const unsent = ctx.journal(tripId).filter((e) => (e.seq ?? 0) > (knownPushed.get(tripId) ?? -1));
+      if (choice === 'theirs') {
+        for (const e of unsent) await dbDelete('journal', e.id);
+        state.journal.set(tripId, ctx.journal(tripId).filter((e) => !unsent.includes(e)));
+        await refreshTripNow(tripId, { announce: false });
+      } else {
+        const local = state.trips.get(tripId);
+        const remote = await pullTrip(tripId);
+        const serverCount = remote?.change_count ?? 0;
+        const trip = structuredClone(local);
+        trip.changeCount = Math.max(local.changeCount ?? 0, serverCount) + 1;
+        const result = await applyTripUpdate(trip, serverCount, unsent);
+        if (!result.accepted) throw new Error('The trip changed again in the meantime. Try once more.');
+        await saveTripAndJournal(trip, []);
+        state.trips.set(tripId, trip);
+        await markPushed(tripId, trip.changeCount);
+        trackPush(sendGuestSheets(trip)).catch(() => {});
+      }
+      conflictTrips.delete(tripId);
+    });
+    render({ keepScroll: true });
+  },
   // The staff inbox and the team's messages (inbox.js, views/inbox.js, views/messages.js).
   teamMessagesFor: (tripId) => teamMessageRows.get(tripId) ?? [],
   async sendTeamMessage(tripId, body) {
@@ -352,7 +392,7 @@ const ctx = {
     return inboxItems({
       trip, role: ctx.roleFor(tripId), userId: state.owner?.id,
       requests: requestRows.filter((r) => r.trip_id === tripId), guestRequests: guestRequestRows.filter((r) => r.trip_id === tripId),
-      messages: teamMessageRows.get(tripId) ?? [], holdsFor: (row) => needsOwnerDecision(row), seen: new Set(inboxSeen[tripId] ?? []),
+      messages: teamMessageRows.get(tripId) ?? [], holdsFor: (row) => canApprove(row), conflict: ctx.conflictFor(tripId), seen: new Set(inboxSeen[tripId] ?? []),
     });
   },
   async markInboxSeen(tripId, ids) {
@@ -360,6 +400,7 @@ const ctx = {
     await dbPut('settings', inboxSeen, 'inboxSeen');
   },
   holdReason: (row) => holdReason(row),
+  canApprove: (row) => canApprove(row),
   // A colleague takes back a request that is still waiting: either not sent yet (still in the outbox) or waiting for the owner.
   async takeBackRequest(id) {
     if (outbox.some((r) => r.id === id)) { outbox = outbox.filter((r) => r.id !== id); await dbPut('settings', outbox, 'outbox'); render({ keepScroll: true }); return true; }
@@ -710,6 +751,9 @@ async function backfillPush() {
         // never retried by anything else, so check for that gap here.
         const pushed = await getPushedChangeCount(trip.id);
         if ((pushed ?? -1) < (trip.changeCount ?? 0)) {
+          // Same number of changes on both sides is NOT proof they are the same changes (two devices may each have made one): the last action's
+          // journal lines must be the same on the server. If not, the two versions diverged: the owner chooses (inbox).
+          if (serverCount === (trip.changeCount ?? 0) && !(await sameHistory(trip.id))) { if (!conflictTrips.has(trip.id)) { conflictTrips.add(trip.id); renderQuiet(); } continue; }
           await pushJournalEntries(trip.id, ctx.journal(trip.id));
           await markPushed(trip.id, trip.changeCount ?? 0);
         }
@@ -811,7 +855,9 @@ async function loadMemberRules(tripId) {
   const members = await listMembers(tripId);
   memberRules.set(tripId, new Map(members.map((m) => [String(m.email).toLowerCase(), { role: m.role, scope: m.role === 'advance' ? (m.destination_id ?? null) : null, approval: m.approval === 'review' ? 'review' : 'direct' }])));
 }
-const ruleOf = (row) => memberRules.get(row.trip_id)?.get(String(row.requester_email ?? '').toLowerCase()) ?? { role: 'team', scope: null, approval: 'direct' };
+// The owner's device reads the team list; an Advance's device cannot, so it relies on what the server wrote on the request itself (migration 0018).
+const ruleOf = (row) => memberRules.get(row.trip_id)?.get(String(row.requester_email ?? '').toLowerCase())
+  ?? { role: row.requester_role ?? 'team', scope: row.requester_role === 'advance' ? (row.requester_scope ?? null) : null, approval: row.requester_approval === 'review' ? 'review' : 'direct' };
 
 // A request the owner's device never applies by itself: it asks to FORCE a move into a full tour; or this colleague is on "review" (every request waits
 // for the owner's OK); or it changes something outside the colleague's own destination. Those wait in Settings > Requests for the owner's decision.
@@ -827,6 +873,16 @@ function holdReason(row) {
   return null;
 }
 const needsOwnerDecision = (row) => holdReason(row) !== null;
+// May THIS person answer a request that waits for an OK? The owner: every one. An Advance: the ones that wait, whose every change is inside their own
+// destination (a colleague's forced move there, a request from another destination for there...), never their own.
+function canApprove(row) {
+  if (row.status !== 'pending' || !needsOwnerDecision(row) || !Array.isArray(row.changes)) return false;
+  const role = ctx.roleFor(row.trip_id);
+  if (role === 'owner') return true;
+  const trip = state.trips.get(row.trip_id);
+  const scope = tripScopes.get(row.trip_id);
+  return role === 'advance' && Boolean(trip && scope) && row.requested_by !== state.owner?.id && !row.changes.some((c) => outsideScope(trip, scope, c));
+}
 // An Advance forcing a move inside their own destination: it is applied at once, and the journal names them as the one who decided.
 const isAdvanceForce = (row) => ruleOf(row).role === 'advance' && Array.isArray(row.changes) && row.changes.some((c) => c?.force === true);
 
@@ -834,7 +890,10 @@ const isAdvanceForce = (row) => ruleOf(row).role === 'advance' && Array.isArray(
 // on the tour's waiting list instead (a full tour only), or decline with a word for the colleague.
 async function decideForcedRequest(id, how, note = null) {
   const row = requestRows.find((r) => r.id === id);
-  if (!row || !['pending', 'failed'].includes(row.status) || ctx.roleFor(row.trip_id) !== 'owner') return;
+  const owner = ctx.roleFor(row?.trip_id) === 'owner';
+  if (!row || !['pending', 'failed'].includes(row.status) || (!owner && !canApprove(row))) return;
+  // An Advance writes the trip from their own device: it must be online and in step with the server, or the change would stay on this device only.
+  if (!owner && how !== 'decline' && !ctx.liveFor(row.trip_id)) { showToast('Go online (and wait for the sync light to be green) to approve.', true); return; }
   if (how === 'decline') { await finishRequest(id, 'declined', note || null); await processRequests(); render({ keepScroll: true }); return; }
   if (row.status === 'failed') await reopenRequest(id); // a request that "no longer fits" (the tour filled up) can still be forced or put on the waiting list by the owner
   if (!(await claimRequest(id))) return;
@@ -846,7 +905,7 @@ async function decideForcedRequest(id, how, note = null) {
     ? row.changes.map((c) => (intoTour(c) ? { type: 'move', guestId: c.guestId, slotId: c.slotId, to: { kind: 'waitlist', activityId: c.to.activityId } } : c))
     : row.changes.map((c) => (intoTour(c) && asked ? { ...c, force: true } : c));
   let result;
-  try { result = await applyChange(ctx, row.trip_id, changes, { as, request: { id: row.id, at: row.requested_at }, forceApproved: how === 'approve' && asked ? { by: state.owner.name } : undefined }); }
+  try { result = await applyChange(ctx, row.trip_id, changes, { as, request: { id: row.id, at: row.requested_at }, approvedByName: state.owner.name, forceApproved: how === 'approve' && asked ? { by: state.owner.name } : undefined }); }
   catch { result = { ok: false, error: 'It could not be applied.' }; }
   await finishRequest(id, result.ok ? 'applied' : 'failed', result.ok ? null : result.error);
   await processRequests(); render({ keepScroll: true });
@@ -1022,13 +1081,16 @@ async function pullOneTrip(tripId, serverChangeCount) {
     ? decideSync({ localChangeCount: local.changeCount ?? 0, pushedChangeCount: await getPushedChangeCount(tripId), serverChangeCount })
     : 'pull'; // no local copy at all: a genuinely new trip for this phone, nothing to lose
 
-  if (decision === 'conflict') return; // both sides diverged; no automatic resolution built yet (SPEC.md)
+  if (decision === 'conflict') { if (!conflictTrips.has(tripId)) { conflictTrips.add(tripId); renderQuiet(); } return; } // both sides diverged: the owner chooses (inbox)
+  conflictTrips.delete(tripId);
   if (decision === 'in-sync') {
     // This phone already matches the server. That equality is proof enough to record the watermark
     // right here, without waiting for this phone's own next push to confirm it independently.
     const pushed = await getPushedChangeCount(tripId);
     if ((local.changeCount ?? 0) === serverChangeCount && (pushed ?? -1) < (local.changeCount ?? 0)) {
-      await markPushed(tripId, local.changeCount ?? 0);
+      // (Only when the last action's journal lines are the same on the server: the same count alone could be two different changes.)
+      if (shared || await sameHistory(tripId)) await markPushed(tripId, local.changeCount ?? 0);
+      else if (!conflictTrips.has(tripId)) { conflictTrips.add(tripId); renderQuiet(); }
     }
     return;
   }
