@@ -1141,27 +1141,21 @@ input[type=checkbox] { accent-color: #000; }
    company colour (--yellow, set by applyLook) used as soft tints and one solid button instead of flat vivid blocks, no pure black, lighter titles.
    This is the last layer: it wins over everything above. Every tint is worked out from --yellow, so a different company gives a different, equally calm look. */
 :root {
-  --bg: #f6f2ec; --card: #fffdfa; --soft: #efe9df; --track: #e6dfd3; --line: #e4ddd2; --ink: #34302b; --muted: #7d766b;
-  --shadow: none; --atl-shadow: 0 1px 2px rgba(70, 52, 30, .07);
-  /* fallbacks first (orange); the real, company-coloured values follow where the phone can mix colours */
-  --sand-tint: #fbe9d6; --sand-sel: #f1d7ba; --sand-ink: #8f4a10; --sand-sel-ink: #5a2e08; --sand-btn: #c46605; --sand-warn: #f6d9c8; --sand-warn-ink: #8a3a1c;
-}
-@supports (background: color-mix(in srgb, red, blue)) {
-  :root {
-    --sand-tint: color-mix(in srgb, var(--yellow) 15%, #fffdfa);
-    --sand-sel: color-mix(in srgb, var(--yellow) 28%, #fffdfa);
-    --sand-ink: color-mix(in srgb, var(--yellow) 48%, #2a1a0a);
-    --sand-sel-ink: color-mix(in srgb, var(--yellow) 30%, #25170a);
-    --sand-btn: color-mix(in srgb, var(--yellow) 72%, #3a2410);
-  }
+  --bg: #f9efdc; --card: #fffaf0; --soft: #f1e6cf; --track: #eadcc0; --line: #e6d6b6; --ink: #1d2d2e; --muted: #5f736f;
+  --shadow: none; --atl-shadow: 0 1px 2px rgba(70, 52, 30, .08);
+  /* v0.111.0 "Sand and sea" (owner's choice, jade green): jade is the colour of what is active and of the main button; orange and red are kept for
+     what needs attention (full tours, forced moves, waiting requests, problems), so they stand out. */
+  --sand-tint: #cfeadf; --sand-sel: #1f8f6b; --sand-sel-ink: #ffffff; --sand-ink: #0c6648; --sand-btn: #1f8f6b;
+  --sand-warn: #ffd6bb; --sand-warn-ink: #7d3314; --sand-alert: #d4602a;
+  --warn-bg: #fff0dc; --warn-line: #e08a3c; --warn-ink: #7d3314;
 }
 body { background: var(--bg); color: var(--ink); }
 .title { font-weight: 650; }
 .title em { font-weight: 650; }
 .act-name, .card-title { font-weight: 600; }
 .card { border: 1px solid var(--line); box-shadow: var(--atl-shadow); background: var(--card); }
-.card--soft { background: transparent; border: 1px dashed #d6cdbf; box-shadow: none; }
-.card--warn { border: 1.5px solid var(--sand-btn); box-shadow: none; }
+.card--soft { background: transparent; border: 1px dashed #d9c9a4; box-shadow: none; }
+.card--warn { border: 1.5px solid var(--sand-alert); box-shadow: none; }
 .tile, .seat-card, .entry { border: 1px solid var(--line); box-shadow: var(--atl-shadow); background: var(--card); }
 .entry--muted { background: transparent; border-style: dashed; }
 .screen .menu { background: var(--card); border: 1px solid var(--line); }
@@ -1177,8 +1171,8 @@ body { background: var(--bg); color: var(--ink); }
 .cog--home .icon svg circle[fill='#fff'] { fill: var(--sand-tint); }
 .eyebrow::before { background: var(--sand-btn); }
 .eyebrow { color: var(--sand-ink); }
-.tile-badge { background: var(--sand-btn); color: #fff; border: 0; border-radius: 99px; }
-.quote { border-left-color: var(--sand-btn); }
+.tile-badge { background: var(--sand-alert); color: #fff; border: 0; border-radius: 99px; }
+.quote { border-left-color: var(--sand-alert); }
 .pull-indicator--ready { background: var(--sand-tint); color: var(--sand-ink); }
 
 /* what is active: a tint with dark writing (not a black pill) */
@@ -1198,23 +1192,23 @@ body { background: var(--bg); color: var(--ink); }
 .btn--danger, .card .btn.btn--danger, .btn.btn--danger.btn--small { background: #b04a3a; border-color: #b04a3a; color: #fff; }
 .undo-btn { background: transparent; border: 1px solid var(--line); color: var(--muted); }
 .chip { background: var(--soft); color: var(--ink); }
-.waitlist-section .chip, .chip.chip--forced { background: var(--sand-sel); border: 0; color: var(--sand-sel-ink); font-weight: 600; }
-.waitlist-flag { background: var(--sand-sel); color: var(--sand-sel-ink); }
-.bubble--mine { background: var(--sand-sel); color: var(--sand-sel-ink); }
-.text-input { border: 1px solid #d8cfc1; background: var(--card); }
-.text-input:focus { border-color: var(--sand-btn); outline: 2px solid var(--sand-sel); }
+.waitlist-section .chip, .chip.chip--forced { background: var(--sand-warn); border: 0; color: var(--sand-warn-ink); font-weight: 600; } /* forced or waiting: needs attention, so the warm colour */
+.waitlist-flag { background: var(--sand-warn); color: var(--sand-warn-ink); }
+.bubble--mine { background: var(--sand-tint); color: var(--sand-ink); }
+.text-input { border: 1px solid #dccdac; background: var(--card); }
+.text-input:focus { border-color: var(--sand-btn); outline: 2px solid var(--sand-tint); }
 input[type=checkbox] { accent-color: var(--sand-btn); }
 .cog { background: var(--soft); }
 .dest-menu { background: var(--card); border: 1px solid var(--line); }
 .send-btn:active { background: var(--soft); }
 
 /* messages at the bottom: soft dark brown, never black */
-.toast { background: #3b362f; color: #f6f2ec; }
+.toast { background: #24393a; color: #f9efdc; }
 .toast--error { background: #a8402f; }
 .sheet { background: var(--bg); }
 /* the page ground reaches the bottom of the screen; the sync light is a real green / amber / red (not black) */
 html { background: var(--bg); }
-:root { --sand-ok: #5f9a6e; }
+:root { --sand-ok: #2f9a6c; }
 .sync-light--synced { background: var(--sand-ok); }
 .sync-light--pending { background: #d9962e; }
 .sync-lights-label--synced { color: var(--sand-ok); }
