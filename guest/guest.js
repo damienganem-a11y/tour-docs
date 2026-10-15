@@ -56,10 +56,15 @@ const store = {
 };
 
 // iPhone/iPad: an app put on the Home Screen has its own memory, empty at first, and it opens the manifest's start address (without the secret).
-// Without a manifest, iOS puts the CURRENT address (with the secret after the #) on the Home Screen, so the app opens straight on the programme.
+// Without a manifest, iOS puts the CURRENT address (with the secret after the #) on the Home Screen, so the app opens straight on the programme: the
+// guest types the code once, in the browser, THEN adds the app to the Home Screen and it opens already unlocked (owner's request, 16 Oct 2026).
+// So the manifest is never in the page for iOS (it is added by this script only on the other phones; removing it afterwards was not enough on some iOS versions).
 // Android keeps one shared memory between browser and app, so it keeps the manifest.
-if (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-  document.querySelector('link[rel="manifest"]')?.remove();
+if (!(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))) {
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = 'manifest.webmanifest';
+  document.head.append(link);
 }
 
 // The secret: from the link if there is one, else the one remembered. A link replaces what was remembered.
@@ -1184,6 +1189,8 @@ async function refresh() {
   if (PREVIEW) { showPreview(); return 'preview'; }
   const token = currentToken();
   if (!token) { showNoLink(); return 'none'; }
+  // The address always carries the secret (also when it came from a typed code or from memory), so adding the app to the Home Screen keeps it.
+  if (window.location.hash.replace(/^#/, '') !== token) { try { history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}#${token}`); } catch { /* the address stays as it is */ } }
   const kept = (() => { try { return JSON.parse(store.get(SHEET_KEY)); } catch { return null; } })();
   if (kept && kept.v === SUPPORTED_SHEET && !app.querySelector('.pass, .dest')) render(kept, { offline: !navigator.onLine });
   const result = await fetchSheet(token);

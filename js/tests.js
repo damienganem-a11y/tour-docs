@@ -3490,6 +3490,9 @@ function readZip(bytes) {
     && guestSrc.indexOf("section('Who can join'") > guestSrc.indexOf('levelBlock(info),'));
   check('Two texts that say the same thing (notes and accessibility) are shown once, and a gentle walking group gets its own sign', /function distinctTexts/.test(guestSrc) && /Gentle walking group/.test(guestSrc));
   check('"My requests" shows when each request was sent and answered, and a waitlisted guest is told what it means', /requestTimes\(r\)/.test(guestSrc) && /nothing else is planned for you/.test(guestSrc));
+  const guestIndex = await (await fetch('./guest/index.html')).text();
+  check('The guest page has no manifest of its own in the page (iPhone then keeps the address with the secret on the Home Screen); the script adds it on the other phones, and the address always carries the secret',
+    !guestIndex.includes('rel="manifest"') && /link\.rel = 'manifest'/.test(guestSrc) && /history\.replaceState\(history\.state, '', `\$\{window\.location\.pathname\}/.test(guestSrc));
   check('The guest app never shows the company name in its headers', !/sheet\.company/.test(guestSrc.replace(/const keep = [^\n]*/, '')));
   const rnCtx = () => { const c = { owner, state: structuredClone(rn), entries: [], trip: (id) => (id === c.state.id ? c.state : undefined), journal: () => c.entries, async commit(next, entries) { c.state = next; c.entries.push(...entries); } }; return c; };
   const parent = rn.guests.find((g) => g.age >= 30 && g.age < 55 && rn.guests.some((k) => k.partyId === g.partyId && k.age < 12));
