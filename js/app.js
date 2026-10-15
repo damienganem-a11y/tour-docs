@@ -28,9 +28,9 @@ import {
   pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
-  pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
+  pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
-import { enqueue, applyChange } from './changes.js';
+import { enqueue, applyChange, outsideScope } from './changes.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
@@ -310,6 +310,14 @@ const ctx = {
   waitlistForcedRequest: (id) => decideForcedRequest(id, 'waitlist'),
   declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
   needsOwnerDecision: (row) => needsOwnerDecision(row),
+  holdReason: (row) => holdReason(row),
+  // A colleague takes back a request that is still waiting: either not sent yet (still in the outbox) or waiting for the owner.
+  async takeBackRequest(id) {
+    if (outbox.some((r) => r.id === id)) { outbox = outbox.filter((r) => r.id !== id); await dbPut('settings', outbox, 'outbox'); render({ keepScroll: true }); return true; }
+    const done = await cancelRequestRemote(id);
+    await processRequests(); render({ keepScroll: true });
+    return done;
+  },
   async retryRequest(id) { await reopenRequest(id); await processRequests(); render({ keepScroll: true }); },
   exportsFor: (tripId) => (state.exports.get(tripId) ?? []).filter((r) => !r.deletedAt), // a document deleted here waits, hidden, until the server has been told
   go(hash) { location.hash = hash; },
@@ -705,32 +713,45 @@ function syncAutoMessagesSoon(tripId) {
   autoTimers.set(tripId, setTimeout(() => syncAutoMessages(tripId), 4000));
 }
 
-// The destination a colleague is tied to, asked from the server's member list (the owner's device is the one that applies requests, so it decides).
-// If the list cannot be read, the request is NOT applied this round (it stays waiting): it never falls back to "the whole trip".
-async function scopeOfRequester(row) {
-  const members = await listMembers(row.trip_id);
-  const member = members.find((m) => String(m.email).toLowerCase() === String(row.requester_email ?? '').toLowerCase());
-  return member?.destination_id ?? null;
+// What the owner decided for one colleague (Settings > Team): the destination they work in, and how much control the owner keeps ('direct': requests are
+// applied as soon as they fit; 'review': every request waits for the owner's OK). Asked from the server's member list, once per round and trip. If the
+// list cannot be read, the request is NOT applied this round (it stays waiting): it never falls back to "the whole trip, no control".
+const memberRules = new Map(); // tripId -> Map(lower-case e-mail -> { scope, approval })
+async function loadMemberRules(tripId) {
+  const members = await listMembers(tripId);
+  memberRules.set(tripId, new Map(members.map((m) => [String(m.email).toLowerCase(), { scope: m.destination_id ?? null, approval: m.approval === 'review' ? 'review' : 'direct' }])));
 }
+const ruleOf = (row) => memberRules.get(row.trip_id)?.get(String(row.requester_email ?? '').toLowerCase()) ?? { scope: null, approval: 'direct' };
 
-// A request that asks to force a move into a full tour is never applied by itself: it waits for the owner's decision.
-const needsOwnerDecision = (row) => Array.isArray(row.changes) && row.changes.some((c) => c?.force === true);
+// A request the owner's device never applies by itself: it asks to FORCE a move into a full tour; or this colleague is on "review" (every request waits
+// for the owner's OK); or it changes something outside the colleague's own destination. Those wait in Settings > Requests for the owner's decision.
+function holdReason(row) {
+  if (!Array.isArray(row.changes)) return null;
+  if (row.changes.some((c) => c?.force === true)) return 'force';
+  if (ruleOf(row).approval === 'review') return 'review';
+  const trip = state.trips.get(row.trip_id);
+  if (trip && row.changes.some((c) => outsideScope(trip, ruleOf(row).scope, c))) return 'elsewhere';
+  return null;
+}
+const needsOwnerDecision = (row) => holdReason(row) !== null;
 
-// The owner's three answers to such a request: approve (the move is made, forced, journaled with the colleague's reason and the owner's name),
-// put the guest on the tour's waiting list instead, or decline with a word for the colleague.
+// The owner's answers to such a request: approve (the move is made, with the colleague's reason and the owner's name if it was a forced one), put the guest
+// on the tour's waiting list instead (a full tour only), or decline with a word for the colleague.
 async function decideForcedRequest(id, how, note = null) {
   const row = requestRows.find((r) => r.id === id);
   if (!row || !['pending', 'failed'].includes(row.status) || ctx.roleFor(row.trip_id) !== 'owner') return;
   if (how === 'decline') { await finishRequest(id, 'declined', note || null); await processRequests(); render({ keepScroll: true }); return; }
   if (row.status === 'failed') await reopenRequest(id); // a request that "no longer fits" (the tour filled up) can still be forced or put on the waiting list by the owner
   if (!(await claimRequest(id))) return;
-  const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: await scopeOfRequester(row) };
+  // The owner's OK covers the destination limit too, so the colleague's own destination does not block this one (scope: null).
+  const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: null };
   const intoTour = (c) => c?.type === 'move' && c.to?.kind === 'activity';
+  const asked = row.changes.some((c) => c?.force === true);
   const changes = how === 'waitlist'
     ? row.changes.map((c) => (intoTour(c) ? { type: 'move', guestId: c.guestId, slotId: c.slotId, to: { kind: 'waitlist', activityId: c.to.activityId } } : c))
-    : row.changes.map((c) => (intoTour(c) ? { ...c, force: true } : c));
+    : row.changes.map((c) => (intoTour(c) && asked ? { ...c, force: true } : c));
   let result;
-  try { result = await applyChange(ctx, row.trip_id, changes, { as, request: { id: row.id, at: row.requested_at }, forceApproved: how === 'approve' ? { by: state.owner.name } : undefined }); }
+  try { result = await applyChange(ctx, row.trip_id, changes, { as, request: { id: row.id, at: row.requested_at }, forceApproved: how === 'approve' && asked ? { by: state.owner.name } : undefined }); }
   catch { result = { ok: false, error: 'It could not be applied.' }; }
   await finishRequest(id, result.ok ? 'applied' : 'failed', result.ok ? null : result.error);
   await processRequests(); render({ keepScroll: true });
@@ -742,12 +763,14 @@ async function processRequests() {
   processing = true;
   try {
     requestRows = await pullRequests();
+    const known = new Set(); // trips whose member rules were read this round
     for (const row of requestRows) {
       // only the owner's own devices apply requests, and only for trips they have; oldest first, so the earlier request wins
       if (row.status !== 'pending' || ctx.roleFor(row.trip_id) !== 'owner' || !state.trips.has(row.trip_id)) continue;
-      if (needsOwnerDecision(row)) continue; // a colleague asked to FORCE a move: only the owner decides (Settings > Requests)
+      if (!known.has(row.trip_id)) { try { await loadMemberRules(row.trip_id); known.add(row.trip_id); } catch { continue; /* rules unknown: it waits */ } }
+      if (needsOwnerDecision(row)) continue; // forced, on review, or elsewhere: only the owner decides (Settings > Requests)
       if (!(await claimRequest(row.id))) continue; // another of the owner's devices has it
-      const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: await scopeOfRequester(row) };
+      const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: ruleOf(row).scope };
       let result;
       try { result = await applyChange(ctx, row.trip_id, row.changes, { as, request: { id: row.id, at: row.requested_at } }); }
       catch { result = { ok: false, error: 'It could not be applied.' }; }

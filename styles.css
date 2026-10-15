@@ -1103,3 +1103,6 @@ input[type=checkbox] { accent-color: #000; }
 
 /* v0.99.11: guests on a waitlist, or in a tour by force, wear the trip's colour with black words (owner's request), never the pale grey of the others */
 .waitlist-section .chip, .chip.chip--forced { background: var(--yellow); border-color: var(--yellow); color: var(--on-yellow, #000); font-weight: 700; opacity: 1; }
+
+/* v0.100.0: a tour with a free seat and guests waiting says so on its closed card, in the orange of the trip */
+.waitlist-flag { margin-top: 6px; display: inline-block; padding: 4px 10px; border-radius: 99px; background: var(--yellow); color: var(--on-yellow, #000); font-size: 13px; font-weight: 700; }

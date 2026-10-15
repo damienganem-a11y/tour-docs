@@ -178,9 +178,21 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
       h('div', { class: `count${bad ? ' count--bad' : ''}` }, countText)),
     detail ? h('div', { class: 'muted' }, detail) : null,
     // A tour with someone in it by force says so on the closed card, so it is not missed.
-    sorted.some(isForced) ? h('div', { class: 'forced-note' }, 'Someone is here by force') : null);
+    sorted.some(isForced) ? h('div', { class: 'forced-note' }, 'Someone is here by force') : null,
+    // Guests are waiting for this tour: said on the closed card, and louder when a seat has freed up (like a tour over capacity is flagged).
+    waitlistNote(trip, waitlist));
 
   return h('div', { class: `card${soft ? ' card--soft' : ''}${cancelled ? ' card--cancelled' : ''}` }, head);
+}
+
+// "2 on the waiting list", or, once a seat is free, "A seat is free: 2 waiting" in the warning colour. Null when nobody waits.
+function waitlistNote(trip, waitlist) {
+  if (!waitlist || waitlist.waiting.length === 0) return null;
+  const { activity, waiting } = waitlist;
+  const hasRoom = activity.capacity === null || countIn(trip, activity) < activity.capacity;
+  return hasRoom
+    ? h('div', { class: 'waitlist-flag' }, `A seat is free: ${waiting.length} waiting. Tap to promote.`)
+    : h('div', { class: 'muted' }, `${waiting.length} on the waiting list`);
 }
 
 // Who is waiting for a full tour, in the order they joined, rendered INSIDE that tour's own card

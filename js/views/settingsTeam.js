@@ -5,7 +5,7 @@
 // kept up to date. The owner can remove someone at any moment. Needs the trip to be on the server (signed in online).
 
 import { h } from '../dom.js';
-import { showToast } from '../ui.js';
+import { showToast, closeSheet } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { sendMagicLink, existingSession } from '../auth.js';
@@ -61,12 +61,47 @@ async function accessSheet(ctx, trip, member) {
   }
 }
 
+// The two things the owner decides about a Team colleague besides the role: where they work directly, and how much control the owner keeps.
+function controlFields(trip, current = {}) {
+  const where = h('select', { class: 'text-input', 'aria-label': 'Where they work directly' }, h('option', { value: '' }, 'Everywhere on the trip'), [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => h('option', { value: d.id, selected: current.destination_id === d.id }, `Directly in ${d.name} only`)));
+  const approval = h('select', { class: 'text-input', 'aria-label': 'Control' },
+    h('option', { value: 'direct', selected: current.approval !== 'review' }, 'Apply their requests as soon as they fit'),
+    h('option', { value: 'review', selected: current.approval === 'review' }, 'I approve every request first'));
+  const fields = [
+    h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Where they work directly', where),
+      h('div', { class: 'form-hint' }, 'They can ask for a change in any destination (a guest may talk to the person of the next stop). Outside this place, you approve first.')),
+    h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Control', approval),
+      h('div', { class: 'form-hint' }, 'Requests are applied by your device, so it must be open. A request that forces a move into a full tour always waits for you.')),
+  ];
+  return { where, approval, fields };
+}
+
+// Changes a person's role, place and control without deleting and re-inviting them (same e-mail, no new sign-in e-mail).
+function editAccessSheet(ctx, trip, member, reload) {
+  const role = h('select', { class: 'text-input', 'aria-label': 'Role' }, MEMBER_ROLES.map((r) => h('option', { value: r, selected: member.role === r }, ROLE_LABEL[r])));
+  const control = controlFields(trip, member);
+  const team = h('div', {}, ...control.fields);
+  const sync = () => { team.hidden = role.value !== 'team'; };
+  sync(); role.addEventListener('change', sync);
+  openSheet({
+    eyebrow: 'Access', title: member.email, subtitle: 'The change applies the next time they open the app.',
+    body: [h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Role', role)), team],
+    footer: h('button', { class: 'btn', type: 'button', onclick: async () => {
+      try {
+        await inviteMember(trip.id, member.email, role.value, role.value === 'team' && control.where.value ? control.where.value : null, control.approval.value);
+        closeSheet(); showToast('Access updated'); reload();
+      } catch { showToast('Could not save. Are you online? (The "approval" choice needs the latest server update.)', true); }
+    } }, 'Save'),
+  });
+}
+
 // One person of the team: the e-mail address (wraps, however long) with the role under it, then the two buttons side by side.
-export function memberCard(member, { resend, remove, access, scopeName }) {
+export function memberCard(member, { resend, remove, access, scopeName, edit }) {
   return h('div', { class: 'card team-member' },
     h('div', { class: 'act-name team-email' }, member.email),
-    h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · only ${scopeName}` : ''}`),
+    h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · works directly in ${scopeName}` : ''}${member.role === 'team' ? ` · ${member.approval === 'review' ? 'you approve every request' : 'requests applied when they fit'}` : ''}`),
     h('div', { class: 'card-actions' },
+      edit ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: edit }, 'Access') : null,
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: access }, 'QR code'),
       resend ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Re-send email') : null,
       remove ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: remove }, 'Remove') : null));
@@ -96,6 +131,7 @@ export function teamSettingsPage(ctx, trip) {
         : members.map((m) => memberCard(m, {
             scopeName: m.destination_id ? (trip.destinations.find((d) => d.id === m.destination_id)?.name ?? 'one destination') : null,
             access: () => accessSheet(ctx, trip, m),
+            edit: () => editAccessSheet(ctx, trip, m, load),
             resend: async () => showToast(await sendSignInEmail(m.email)),
             remove: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
           }))));
@@ -106,10 +142,9 @@ export function teamSettingsPage(ctx, trip) {
 
   const email = h('input', { class: 'text-input', type: 'email', inputmode: 'email', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'E-mail address of the person' });
   const role = h('select', { class: 'text-input', 'aria-label': 'Role' }, MEMBER_ROLES.map((r) => h('option', { value: r }, ROLE_LABEL[r])));
-  // A Team colleague can be tied to ONE destination (a local team member): they see the whole trip but can only change things there.
-  const whereField = h('div', { class: 'form-field' });
-  const where = h('select', { class: 'text-input', 'aria-label': 'Where they can work' }, h('option', { value: '' }, 'Everywhere on the trip'), [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => h('option', { value: d.id }, `Only ${d.name}`)));
-  whereField.append(h('label', { class: 'form-label' }, 'Where they can work', where), h('div', { class: 'form-hint' }, 'A local team member can be tied to one destination: they still see the whole trip, but can only change things there.'));
+  // A Team colleague can be tied to ONE destination (where they work directly) and given a control level; only shown for the Team role.
+  const control = controlFields(trip);
+  const whereField = h('div', {}, ...control.fields);
   const syncWhere = () => { whereField.hidden = role.value !== 'team'; };
   syncWhere();
   role.addEventListener('change', syncWhere);
@@ -120,7 +155,7 @@ export function teamSettingsPage(ctx, trip) {
       const address = cleanInviteEmail(email.value);
       if (!address) { say('That does not look like an e-mail address.'); return; }
       try {
-        await inviteMember(trip.id, address, role.value, role.value === 'team' && where.value ? where.value : null);
+        await inviteMember(trip.id, address, role.value, role.value === 'team' && control.where.value ? control.where.value : null, control.approval.value);
         email.value = '';
         load();
         showToast(await sendSignInEmail(address)); // one tap: invited AND e-mailed

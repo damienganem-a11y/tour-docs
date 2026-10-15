@@ -274,13 +274,18 @@ export async function pullMyAccess() {
 
 export async function listMembers(tripId) {
   const supabase = await getClient();
-  const { data, error } = await supabase.from('trip_members').select('email, role, destination_id, created_at').eq('trip_id', tripId).order('created_at', { ascending: true });
+  // select('*'): the "approval" column exists once migration 0014 is applied; until then the list still works.
+  const { data, error } = await supabase.from('trip_members').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
   if (error) throw error;
   return data;
 }
-export async function inviteMember(tripId, email, role, destinationId = null) {
+// approval: 'direct' (the colleague's requests are applied as soon as they fit) or 'review' (every request waits for the owner's OK).
+export async function inviteMember(tripId, email, role, destinationId = null, approval = 'direct') {
   const supabase = await getClient();
-  const { error } = await supabase.from('trip_members').upsert({ trip_id: tripId, email, role, destination_id: role === 'team' ? destinationId : null }, { onConflict: 'trip_id,email' });
+  const row = { trip_id: tripId, email, role, destination_id: role === 'team' ? destinationId : null, approval: role === 'team' ? approval : 'direct' };
+  let { error } = await supabase.from('trip_members').upsert(row, { onConflict: 'trip_id,email' });
+  // Before migration 0014 the column does not exist: "direct" is what the server does anyway, so it is saved without it.
+  if (error && /approval/i.test(error.message) && row.approval === 'direct') { delete row.approval; ({ error } = await supabase.from('trip_members').upsert(row, { onConflict: 'trip_id,email' })); }
   if (error) throw error;
 }
 export async function removeMember(tripId, email) {
@@ -329,6 +334,14 @@ export async function finishRequest(id, status, note = null) {
   const supabase = await getClient();
   const { error } = await supabase.from('requests').update({ status, note, decided_at: new Date().toISOString() }).eq('id', id);
   if (error) throw error;
+}
+
+// A colleague takes back a request that is still waiting (nothing happens if the owner's device already took it).
+export async function cancelRequestRemote(id) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('requests').update({ status: 'cancelled' }).eq('id', id).eq('status', 'pending').select('id');
+  if (error) throw error;
+  return data.length > 0;
 }
 
 // The owner asks for another go at a request that no longer fitted.

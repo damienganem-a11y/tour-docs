@@ -50,7 +50,7 @@ export function rollCallView(ctx, tripId, activityId) {
 
   const mode = rollCall.endedAt ? 'ended' : 'departure';
   // An archived trip has no roll call: this screen only looks, whatever state the roll call was left in.
-  const readOnly = Boolean(trip.archivedAt);
+  const archived = Boolean(trip.archivedAt);
   const key = `${rollCall.id}|${mode}`;
   const names = displayNames(trip.guests);
   const inOrder = alphabetical(names);
@@ -65,9 +65,11 @@ export function rollCallView(ctx, tripId, activityId) {
   // Who runs this roll call: the person who started it, or the owner who took it over. Only that person (and the owner) can change it.
   const me = ctx.userFor ? ctx.userFor(trip.id) : ctx.owner;
   const runner = rollCall.runBy ?? rollCall.startedBy;
-  const runnerNotice = readOnly || !runner || runner.id === me.id ? null : h('div', { class: 'card team-member' },
-    h('div', { class: 'act-name' }, `${runner.name} is running this roll call`),
-    h('div', { class: 'muted' }, me.role === 'owner' ? 'You can take it over: from then on only you can change it.' : `Only ${runner.name} (or the owner, by taking it over) can change it. You can look.`),
+  // A colleague who is not the one running it only LOOKS (who is in which vehicle, how full they are): no tap checks anyone in, so there is no error to find out about later.
+  const readOnly = archived || (Boolean(runner) && runner.id !== me.id && me.role === 'team');
+  const runnerNotice = archived || !runner || runner.id === me.id ? null : h('div', { class: 'card team-member' },
+    h('div', { class: 'act-name' }, `${runner.name} started this roll call`),
+    h('div', { class: 'muted' }, me.role === 'owner' ? 'You can take it over: from then on only you can change it.' : `You can see the vehicles and who is inside, but only ${runner.name} (or the owner, by taking it over) can check people in.`),
     me.role === 'owner' ? h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { const result = await applyChange(ctx, trip.id, { type: 'rollcall-takeover', activityId: activity.id }); if (result.ok) { showToast('You are running this roll call now'); ctx.refresh(); } else showToast(result.error, true); } }, 'Take over')) : null);
 
   // Makes one change (or several together); if it works the screen is redrawn (keeping its place), if not a message says why.
@@ -272,7 +274,7 @@ export function rollCallView(ctx, tripId, activityId) {
         h('div', { class: 'vehicles' }, vehicleButtons),
         readOnly ? null : undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
         readOnly ? null : h('button', { class: 'btn', type: 'button', onclick: async () => { await reopenRollCall(ctx, trip.id, activity); } }, 'Re-open roll call'),
-        h('p', { class: 'muted footer-note' }, readOnly
+        h('p', { class: 'muted footer-note' }, archived
           ? 'This trip is archived: read-only. Tap a vehicle to see who was inside.'
           : 'The vehicles and who was in them are kept. Tap a vehicle to see who is inside. Re-open roll call puts back on the tour the guests End roll call moved to At leisure.')),
     };

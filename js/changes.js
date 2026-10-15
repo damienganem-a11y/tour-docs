@@ -490,7 +490,7 @@ function setDestinationFields(destination, fields) {
 }
 
 // What a Team colleague may NOT do even among the things Team can do (SPEC.md, "Team: one destination, one person per roll call"):
-//   - a colleague tied to one destination (user.scope) changes nothing outside it;
+//   (a colleague tied to one destination may ask for changes elsewhere too: the owner approves those, see outsideScope);
 //   - a roll call is run by ONE person (the one who started it, or the owner who took it over): the others cannot change it.
 // Returns a sentence, or null.
 export function slotOfChange(trip, change) {
@@ -501,15 +501,14 @@ export function slotOfChange(trip, change) {
   if (booking) return trip.slots.find((s) => s.id === booking.slotId) ?? null;
   return null;
 }
+// A change outside the colleague's own destination is NOT refused any more (owner's decision, 15 Oct 2026: guests often talk to the person of the next
+// destination): the owner's device holds it for the owner's OK instead (app.js). True when `change` falls outside `scope` (a destination id).
+export function outsideScope(trip, scope, change) {
+  if (!scope) return false;
+  const slot = slotOfChange(trip, change);
+  return !slot || slot.destinationId !== scope;
+}
 function teamLimit(trip, user, change) {
-  if (user.scope) {
-    const slot = slotOfChange(trip, change);
-    if (!slot) return 'This change cannot be placed in a destination, so only the owner can make it.';
-    if (slot.destinationId !== user.scope) {
-      const mine = trip.destinations.find((d) => d.id === user.scope)?.name ?? 'your destination';
-      return `You work in ${mine}: you can only change things there.`;
-    }
-  }
   if (ROLLCALL_TYPES.has(change.type) && change.type !== 'rollcall-start') {
     const rollCall = findRollCall(trip, change.activityId);
     const runner = rollCall && (rollCall.runBy ?? rollCall.startedBy);

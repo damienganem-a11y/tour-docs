@@ -465,6 +465,17 @@ export function tripWarnings(trip) {
     }
   }
 
+  // A seat is free on a tour that has guests waiting for it: said in Warnings so it is not missed (the owner decides who gets the seat).
+  const waitlistRoom = [];
+  for (const slot of trip.slots) {
+    const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+    const { waitlisted } = whoIsWhere(trip, slot);
+    for (const activity of trip.activities.filter((a) => a.slotId === slot.id && !a.cancelled)) {
+      const waiting = waitlisted.get(activity.id)?.length ?? 0;
+      if (waiting > 0 && (activity.capacity === null || countIn(trip, activity) < activity.capacity)) waitlistRoom.push({ activity, slot, destination, waiting, free: activity.capacity === null ? null : activity.capacity - countIn(trip, activity) });
+    }
+  }
+
   // Passport Explorer content that is not good enough (missing answers, metric units...): said in plain words, one line per destination.
   const explorer = [];
   for (const destination of trip.destinations) {
@@ -472,7 +483,7 @@ export function tripWarnings(trip) {
     if (problems.length > 0) explorer.push({ destination, problems });
   }
 
-  return { overbooked, blank, unknown, explorer };
+  return { overbooked, blank, unknown, explorer, waitlistRoom };
 }
 
 // ---------- Allergies and dietary needs: when they are erased (Phase 3, owner's rule) ----------

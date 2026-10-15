@@ -8,7 +8,7 @@ import { ENGINES, SKINS, hasGame } from '../guest/explorer/games.js';
 import { entryOf, emptyEntry, explorerOpen, stepOpen, finishStep, finishQuiz, totals, drawQuiz } from '../guest/explorer/state.js';
 import { tripAccent, buildTrip, brandingFromLook, defaultBranding } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
-import { applyChange, validateChanges, enqueue } from './changes.js';
+import { applyChange, validateChanges, enqueue, outsideScope } from './changes.js';
 import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
@@ -2443,6 +2443,8 @@ function readZip(bytes) {
   await applyChange(promo, trip.id, moveOf(p2.ref, 'S01', toWaitlist('S01-1'))); // joins second
   await applyChange(promo, trip.id, moveOf(leaver.ref, 'S01', { kind: 'leisure' })); // frees exactly 1 seat
   check('A seat freed up: the tour has room for exactly one more (19 / 20)', countIn(promo.state, alfama) === 19);
+  const roomWarn = tripWarnings(promo.state).waitlistRoom.find((w) => w.activity.id === alfama.id);
+  check('Warnings says a seat is free and two guests are waiting (and says nothing while the tour is full)', roomWarn?.waiting === 2 && roomWarn.free === 1 && !tripWarnings(fifo.state).waitlistRoom.some((w) => w.activity.id === alfama.id));
   const promoteR = await applyChange(promo, trip.id, moveOf(p1.ref, 'S01', toActivity('S01-1')));
   check('Promoting the first-in-line guest is an ordinary move — never forced — and fills the tour (20 / 20)',
     promoteR.ok && promoteR.entries[0].forced === false && countIn(promo.state, alfama) === 20 && placeNow(promo, p1.ref, 'S01').kind === 'activity');
@@ -2973,7 +2975,9 @@ function readZip(bytes) {
   const booked = t.guests.find((g) => t.bookings[g.id]?.[slot.id]?.activityId === act.id);
   const moveAt = (s) => [{ type: 'move', guestId: booked.id, slotId: s.id, to: { kind: 'leisure' } }];
   const outside = validateChanges(t, anna, moveAt(elsewhere));
-  check('A colleague tied to one destination cannot change another one (and is told which one is theirs)', !outside.ok && /You work in/.test(outside.error) && validateChanges(t, anna, moveAt(slot)).ok && validateChanges(t, ben, moveAt(elsewhere)).ok);
+  check('A colleague tied to one destination may ask for a change elsewhere too, and outsideScope says it needs the owner\'s OK',
+    outside.ok && validateChanges(t, anna, moveAt(slot)).ok && validateChanges(t, ben, moveAt(elsewhere)).ok
+    && outsideScope(t, anna.scope, moveAt(elsewhere)[0]) && !outsideScope(t, anna.scope, moveAt(slot)[0]) && !outsideScope(t, null, moveAt(elsewhere)[0]));
   const started = await applyChange(ctxT, t.id, { type: 'rollcall-start', activityId: act.id }, { as: anna });
   const rollCall = ctxT.state.rollCalls.find((r) => r.activityId === act.id);
   check('The colleague who asks to start a roll call is the one running it (not the owner whose device applied it)', started.ok && rollCall.startedBy.id === 'u-anna' && rollCall.startedBy.name === 'Anna Team');

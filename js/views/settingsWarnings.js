@@ -9,12 +9,13 @@ import { tripWarnings, displayNames } from '../rules.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
 
 export function warningsSettingsPage(ctx, trip) {
-  const { overbooked, blank, unknown, explorer } = tripWarnings(trip);
+  const { overbooked, blank, unknown, explorer, waitlistRoom } = tripWarnings(trip);
   const names = displayNames(trip.guests);
-  const total = overbooked.length + blank.length + unknown.length + explorer.length;
+  const total = overbooked.length + blank.length + unknown.length + explorer.length + waitlistRoom.length;
 
   const sections = [
     { title: 'Overbooked activities', items: overbooked, row: overbookedRow },
+    { title: 'A seat is free and guests are waiting', items: waitlistRoom, row: waitlistRoomRow },
     { title: 'Nothing chosen yet', items: blank, row: (trip_, item) => guestRow(trip_, item, names) },
     { title: 'Unknown activity names', items: unknown, row: (trip_, item) => guestRow(trip_, item, names) },
     { title: 'Passport Explorer content to fix', items: explorer, row: (trip_, item) => explorerRow(trip_, item) },
@@ -56,6 +57,12 @@ function overbookedRow(trip, item) {
   const time = activity.startsAt ? formatTime(activity.startsAt, destination.timeZone) : '';
   const title = `${activity.name} — ${count} / ${activity.capacity} (over by ${count - activity.capacity})`;
   return warningRow(trip, item, title, [slotSub(trip, destination, slot), time].filter(Boolean).join(' · '));
+}
+
+function waitlistRoomRow(trip, item) {
+  const { activity, slot, destination, waiting, free } = item;
+  const title = `${activity.name} — ${waiting} waiting${free === null ? '' : `, ${free} seat${free === 1 ? '' : 's'} free`}`;
+  return warningRow(trip, item, title, slotSub(trip, destination, slot));
 }
 
 function guestRow(trip, item, names) {

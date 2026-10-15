@@ -94,6 +94,7 @@ export function requestsSettingsPage(ctx, trip) {
     row.status === 'failed' && row.note ? h('div', { class: 'notice' }, `It no longer fits: ${row.note}`) : null,
     row.status === 'declined' ? h('div', { class: 'muted' }, row.note ? `Declined: ${row.note}` : 'Declined') : null,
     forcedReason(row) ? h('div', { class: 'quote' }, `Reason: ${forcedReason(row)}`) : null,
+    owner && row.status === 'pending' && holdWords[ctx.holdReason(row)] ? h('div', { class: 'muted' }, holdWords[ctx.holdReason(row)]) : null,
     actions ? h('div', { class: 'card-actions' }, actions) : null);
 
   const forcedReason = (row) => (Array.isArray(row.changes) ? row.changes.find((c) => c?.force)?.forceReason ?? null : null);
@@ -139,11 +140,17 @@ export function requestsSettingsPage(ctx, trip) {
     openSheet({ eyebrow: 'Request', title: 'Decline this request?', subtitle: describeRequest(trip, row.changes, names),
       body: [reason, h('button', { class: 'btn', type: 'button', onclick: async () => { closeSheet(); await ctx.declineForcedRequest(row.id, reason.value.trim()); showToast('Declined'); } }, 'Decline and tell them')], cancelLabel: 'Cancel' });
   }
-  const decideForce = (row) => [
+  // What the owner can do with a request that is held for the owner's OK. A forced one has its three answers; any other (a colleague on "review", or a change
+  // outside their destination) is simply approved or declined.
+  const decideForce = (row) => (ctx.holdReason(row) === 'force' ? [
     h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { await ctx.approveForcedRequest(row.id); showToast('Approved: the guest was moved (forced)'); } }, 'Approve and force'),
     h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => { await ctx.waitlistForcedRequest(row.id); showToast('The guest is on the waiting list'); } }, 'Waiting list instead'),
     h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => declineSheet2(row) }, 'Decline...'),
-  ];
+  ] : [
+    h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { await ctx.approveForcedRequest(row.id); showToast('Approved: the change was made'); } }, 'Approve'),
+    h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => declineSheet2(row) }, 'Decline...'),
+  ]);
+  const holdWords = { review: 'Waiting for your OK (you chose to approve this colleague\'s requests)', elsewhere: 'Waiting for your OK (outside their own destination)' };
 
   // Requests from guests: only the owner decides.
   const guestRows = owner ? ctx.guestRequestsFor(trip.id) : [];
@@ -157,18 +164,22 @@ export function requestsSettingsPage(ctx, trip) {
     guestDone.length ? h('div', {}, h('h2', { class: 'section-title' }, 'Answered lately'), ...guestDone.map((r) => h('div', { class: 'card card--soft' }, h('div', { class: 'act-name' }, describeGuestRequest(trip, r, names)), h('div', { class: 'muted' }, `${statusWord[r.status] ?? r.status}${r.note ? `: ${r.note}` : ''} · ${when(r.decided_at ?? r.created_at)}`)))) : null,
     h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => ctx.refreshGuestRequests() }, 'Check for new requests')) : null;
 
+  // A colleague can take back a request that is still waiting (it was not applied yet), so a mistake is not stuck until the owner answers.
+  const takeBack = (id) => h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => { const done = await ctx.takeBackRequest(id); showToast(done === false ? 'Too late: the owner\'s device already took it' : 'Request taken back', done === false); } }, 'Take it back');
+
   const nothing = rows.length === 0 && waiting.length === 0;
   return h('div', {},
     head,
     owner
-      ? notice('Your devices apply a colleague\'s request by themselves when it fits. Only the ones that no longer fit wait here for you.')
-      : notice('A change you make is sent to the owner\'s device and applied there, usually within seconds. It then shows up in your copy of the trip.'),
+      ? notice('Your devices apply a colleague\'s request by themselves when it fits. Here wait the ones that need your OK (a forced move, a colleague set to "review", a change outside their destination) and the ones that no longer fit.')
+      : notice('A change you make is sent to the owner\'s device and applied there, once that device is open. Some changes (outside your destination, or if the owner wants to approve everything) wait for the owner\'s OK. You can take back a request that is still waiting.'),
     owner ? notificationsCard(ctx) : null,
-    owner ? section('Wants to force: your decision', wantsForce.map((r) => card(r, decideForce(r)))) : null,
+    owner ? section('Waiting for your OK', wantsForce.map((r) => card(r, decideForce(r)))) : null,
     guestSection,
     nothing && !owner ? h('p', { class: 'empty' }, 'No requests yet.') : null,
-    section('Waiting to be sent', waiting.map((r) => h('div', { class: 'card' }, h('div', { class: 'act-name' }, describeRequest(trip, r.changes, names) || 'A change'), h('div', { class: 'muted' }, `${when(r.requestedAt)} · it will be sent as soon as you are online`)))),
+    section('Waiting to be sent', waiting.map((r) => h('div', { class: 'card' }, h('div', { class: 'act-name' }, describeRequest(trip, r.changes, names) || 'A change'), h('div', { class: 'muted' }, `${when(r.requestedAt)} · it will be sent as soon as you are online`),
+      h('div', { class: 'card-actions' }, takeBack(r.id))))),
     section(owner ? 'Needs your attention' : 'Did not fit', failed.map((r) => card(r, owner ? decide(r) : (fullTour(r) ? colleagueChoices(r) : null)))),
-    section(owner ? 'Waiting' : 'Waiting for the owner', [...(owner ? [] : wantsForce), ...pending].map((r) => card(r, null))),
+    section(owner ? 'Waiting' : 'Waiting for the owner', [...(owner ? [] : wantsForce), ...pending].map((r) => card(r, owner || r.status !== 'pending' ? null : takeBack(r.id)))),
     section('Done', done.map((r) => card(r, null))));
 }
