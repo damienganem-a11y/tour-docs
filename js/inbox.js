@@ -12,7 +12,7 @@ import { tripWarnings, displayNames } from './rules.js';
 
 const THREE_DAYS = 3 * 86400000;
 const A_WEEK = 7 * 86400000;
-const MAX_MESSAGES = 15; // the most recent messages from the team; the whole conversation is in Messages
+const MAX_MESSAGES = 15; // the most recent messages from the team; Messages shows the latest 100
 
 // ctx-free input: { trip, role, userId, requests (rows of this trip), guestRequests (rows of this trip), messages (rows of this trip),
 //   holdsFor(row) -> true when a pending request waits for the owner's OK, seen: Set of item ids, now }

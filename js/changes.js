@@ -184,6 +184,8 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
     if (!opts.live) return fail('Only the owner of the trip can undo from here.');
     const last = lastUndoable(journal, changes[0].scope);
     if (last && last.entries[0]?.who?.id !== user.id) return fail('The last action was not yours: only its author (or the owner) can undo it.');
+    // An Advance cannot undo, on their own, an action that was done outside their destination (the owner approved it for them).
+    if (last && user.scope && last.entries.some((e) => e.slotId && trip.slots.find((x) => x.id === e.slotId)?.destinationId !== user.scope)) return fail('That action was outside your destination: ask the owner to undo it.');
   }
   if (user?.role === 'team' && Array.isArray(changes) && !colleagueUndo && !changes.every((c) => TEAM_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
   if (user?.role === 'advance' && Array.isArray(changes)) {
@@ -972,6 +974,7 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     id: newId(), tripId: trip.id, at,
     seq: next.changeCount, n: entries.length, // n = this entry's place inside its action
     who: { id: actor.id, name: actor.name, role: actor.role },
+    byOwnerDevice: ctx.roleFor ? ctx.roleFor(tripId) === 'owner' : true, // written on an owner's device: that device told the guests already (a pulling device must not)
     source: opts.source ?? (opts.request ? 'colleague request' : 'app'),   // later: 'whatsapp'... ('guest request': the owner approved a guest's request)
     ...(opts.request ? { requestId: opts.request.id, requestedAt: opts.request.at, ...(opts.approvedByName ? { approvedBy: opts.approvedByName } : {}) } : {}),
     batchId,

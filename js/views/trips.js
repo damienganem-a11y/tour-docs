@@ -212,8 +212,12 @@ export function tripsView(ctx) {
       subtitle: 'The demo trip (exactly "Rhône River Cruise, Lyon to Arles (fictional)") is erased from this phone and from the server, then loaded again as it was at the start. Any other trip, even with a similar name, is not touched.',
       body: [h('button', { class: 'btn btn--danger', type: 'button', onclick: async () => {
         closeSheet();
+        // Online first: the server's copy is erased too, otherwise it would come back at the next sync.
+        if (!navigator.onLine) { showError('Go online first: the demo is erased on the server too.'); return; }
         // The sample's own name, read from the sample file: only a trip with exactly that name is erased.
-        try { const sample = await (await fetch(RHONE_SAMPLE_URL)).json(); await ctx.eraseTripsNamed(sample.trip.name); } catch { showError('Could not reach the sample. Nothing was erased.'); return; }
+        let name;
+        try { name = (await (await fetch(RHONE_SAMPLE_URL)).json()).trip.name; } catch { showError('Could not reach the sample. Nothing was erased.'); return; }
+        try { await ctx.eraseTripsNamed(name); } catch (error) { showError(`Erasing stopped (${error?.message ?? 'a storage error'}). Check Trips, then try again.`); return; }
         await loadRhoneSample();
       } }, 'Erase and load it again')],
       cancelLabel: 'Cancel',

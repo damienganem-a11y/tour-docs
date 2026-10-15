@@ -3052,6 +3052,16 @@ function readZip(bytes) {
   await applyChange(advCtx, t.id, moveAt(slot), { as: advHere, live: true });
   const advUndo = await applyChange(advCtx, t.id, { type: 'undo' }, { as: advHere, live: true });
   check('An Advance with a destination can undo their own last action, and an undo is never held for the owner', advUndo.ok && !holdsForOwner(t, advHere, [{ type: 'undo' }]) && !outsideScope(t, advHere.scope, { type: 'undo' }), advUndo.error);
+  // Who told the guests: a line written on a colleague's device says so (an owner's device already told them for its own lines)
+  const roleCtx = makeCtx(); roleCtx.roleFor = () => 'team';
+  const byColleague = await applyChange(roleCtx, t.id, moveAt(slot), { as: ben, live: true });
+  const byOwner = await applyChange(makeCtx(), t.id, moveAt(slot));
+  check('A journal line records whether it was written on an owner\'s device (so a pulling device tells the guests only about a colleague\'s lines)', byColleague.ok && byColleague.entries.every((e) => e.byOwnerDevice === false) && byOwner.entries.every((e) => e.byOwnerDevice === true));
+  // An Advance cannot undo, alone, something done outside their destination
+  const outCtx = makeCtx();
+  await applyChange(outCtx, t.id, moveAt(elsewhere), { as: advHere, request: { id: 'rq', at: new Date().toISOString() }, forceApproved: { by: 'Owner' } });
+  const outUndo = await applyChange(outCtx, t.id, { type: 'undo' }, { as: { ...advHere, id: advHere.id }, live: true });
+  check('...and an Advance cannot undo on their own an action that was done outside their destination', !outUndo.ok && /outside your destination/.test(outUndo.error ?? ''), outUndo.error);
   const staleCtx = makeCtx(); const realCommit = staleCtx.commit; let commits = 0;
   staleCtx.commit = async (next, entries) => { commits += 1; if (commits === 1) throw new StaleTripError(); return realCommit.call(staleCtx, next, entries); };
   const retried = await applyChange(staleCtx, t.id, moveAt(slot));

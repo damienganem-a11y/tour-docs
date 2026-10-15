@@ -138,10 +138,17 @@ async function sameHistory(tripId) {
 // to auto-pull" apart from "this phone has its own unconfirmed changes, don't overwrite them". Only
 // bumped on accepted:true: a rejected push means the server already had this changeCount or newer
 // from elsewhere, so THIS push never actually landed and nothing here should be trusted as pushed.
+// A push that never answers must not block the ones behind it for the whole session.
+const withTimeoutMs = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('The server did not answer in time.')), ms))]);
+
 // Pushes are made ONE AFTER THE OTHER (two quick changes, or a push and the 5-second check, must never write from the same starting version).
 let pushChain = Promise.resolve();
 function pushAndTrack(trip, entries = []) {
-  const run = () => pushOnce(state.trips.get(trip.id) ?? trip, entries); // always the newest copy: it holds every earlier change too
+  const run = () => {
+    const latest = state.trips.get(trip.id); // always the newest copy: it holds every earlier change too
+    if (!latest) return Promise.resolve(); // the trip was erased meanwhile (Reset the demo): never send it back to the server
+    return withTimeoutMs(pushOnce(latest, entries), 60000);
+  };
   const result = pushChain.then(run, run);
   pushChain = result.catch(() => {});
   return result;
@@ -168,7 +175,7 @@ async function pushOnce(trip, entries) {
       else accepted = result.accepted;
     } else if (base < 0) {
       accepted = (await pushTrip(trip)).accepted;
-      if (accepted && entries.length > 0) await pushJournalEntries(trip.id, entries);
+      if (accepted) await pushJournalEntries(trip.id, ctx.journal(trip.id)); // the whole journal, not only this call's lines: an earlier push may have failed
     }
     if (accepted) await markPushed(trip.id, trip.changeCount ?? 0);
     if (accepted || trip.guestLinks) await sendGuestSheets(trip); // never throws: see below
@@ -596,7 +603,10 @@ const ctx = {
       catch (error) {
         if (ctx.roleFor(trip.id) !== 'owner') {
           // Said as it is: no right any more, or no connection (an owner just saves here and sends it later).
-          throw new Error(/not allowed|permission|row-level/i.test(String(error?.message)) ? 'You no longer have the right to change this trip. Ask the owner.' : 'No connection to the server, so nothing was changed. Try again when you are online.');
+          const said = String(error?.message ?? '');
+          if (/not allowed|permission|row-level/i.test(said)) throw new Error('You no longer have the right to change this trip. Ask the owner.');
+          if (/fetch|network|timeout|offline|load failed/i.test(said)) throw new Error('No connection to the server, so nothing was changed. Try again when you are online.');
+          throw new Error(`The server refused the change (${said.slice(0, 80)}). Nothing was changed.`);
         }
       }
       if (result && !result.accepted) { await refreshTripNow(trip.id); throw new StaleTripError(); }
@@ -606,7 +616,7 @@ const ctx = {
       await saveTripAndJournal(trip, entries);
     } catch (error) {
       // The server already has the change: do not say "nothing was changed". The phone takes the server's copy back, so the screen and the server agree.
-      if (sent) { await refreshTripNow(trip.id).catch(() => {}); return; }
+      if (sent) { await refreshTripNow(trip.id).catch(() => {}); notifyAfterChange(trip, entries); return; }
       throw error;
     }
     state.trips.set(trip.id, trip);
@@ -851,7 +861,13 @@ async function flushOutbox() {
 
 // The team's messages of every trip this person is on (a missing table, before the database update, or no internet simply leaves them as they were).
 // A message from somebody else that was not there before is announced, unless the Messages page is open.
+const loadingMessages = new Set(); // a trip whose messages are being fetched right now: a second call waits for the next round
 async function loadTeamMessages(tripId) {
+  if (loadingMessages.has(tripId)) return false;
+  loadingMessages.add(tripId);
+  try { return await loadTeamMessagesOnce(tripId); } finally { loadingMessages.delete(tripId); }
+}
+async function loadTeamMessagesOnce(tripId) {
   const before = teamMessageRows.get(tripId);
   // Only what is newer than the last message already known (the first time: the latest 100).
   const newer = await listTeamMessages(tripId, before?.at(-1)?.created_at);
@@ -1209,8 +1225,9 @@ async function refreshTripNow(tripId, { announce = false } = {}) {
   // notifications from here, as soon as this device sees it.
   if (freshLocal && newEntries.length > 0 && ctx.roleFor(tripId) === 'owner') {
     trackPush(sendGuestSheets(trip)).catch(() => {});
-    // Only what a COLLEAGUE did: what the owner did on another of their own phones was already told to the guests by that phone.
-    const colleagues = newEntries.filter((e) => e.who?.id !== state.owner?.id);
+    // Only what was written on a COLLEAGUE's device (a live change, or an Advance's approval): an owner's device (this person's other phone included)
+    // already told the guests when it wrote the line. (Lines from before this field existed are not told again.)
+    const colleagues = newEntries.filter((e) => e.byOwnerDevice === false);
     if (colleagues.length > 0) notifyAfterChange(trip, colleagues);
   }
   if (announce && freshLocal && newEntries.length > 0 && location.hash.startsWith(`#/trip/${tripId}/`)) {

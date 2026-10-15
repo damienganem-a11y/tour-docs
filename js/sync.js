@@ -207,7 +207,7 @@ export async function listTeamMessages(tripId, after = null) {
   const supabase = await getClient();
   let query = supabase.from('team_messages').select('*').eq('trip_id', tripId);
   if (after) query = query.gt('created_at', after);
-  const { data, error } = await query.order('created_at', { ascending: !after ? false : true }).limit(100);
+  const { data, error } = await query.order('created_at', { ascending: Boolean(after) }).limit(100);
   if (error) throw error;
   return after ? data : [...data].reverse(); // oldest first either way
 }
