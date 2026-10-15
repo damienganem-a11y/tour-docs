@@ -8,8 +8,9 @@ export const makeOwner = (id, name) => ({ id, name, role: 'owner' });
 
 const PERMISSIONS = {
   owner: ['change', 'force'], // can change anyone's bookings directly, and force a move into a full tour
-  team: ['change'],    // invited to work on a trip: asks for changes (sent as requests, applied by the owner's device: see changes.js)
-  viewer: [],          // invited to look only
+  team: ['change'],    // "Jet Staff", invited to work on the whole trip: asks for changes (sent as requests, applied by the owner's device: see changes.js)
+  advance: ['change'], // the local contact of one destination: the owner's authority there (forcing too), requests elsewhere (changes.js)
+  viewer: [],          // "Expert": invited to look only
   colleague: [],       // (old name, kept so nothing breaks)
   guest: [],           // later
 };

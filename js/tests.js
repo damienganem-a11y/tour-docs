@@ -2978,6 +2978,15 @@ function readZip(bytes) {
   check('A colleague tied to one destination may ask for a change elsewhere too, and outsideScope says it needs the owner\'s OK',
     outside.ok && validateChanges(t, anna, moveAt(slot)).ok && validateChanges(t, ben, moveAt(elsewhere)).ok
     && outsideScope(t, anna.scope, moveAt(elsewhere)[0]) && !outsideScope(t, anna.scope, moveAt(slot)[0]) && !outsideScope(t, null, moveAt(elsewhere)[0]));
+  // Advance: the owner's authority in their own destination (settings of that destination, forcing), requests elsewhere
+  const advHere = { id: 'u-adv', name: 'Ada Advance', role: 'advance', scope: slot.destinationId };
+  const editHere = { type: 'edit-activity', activityId: act.id, name: act.name, meeting: act.meeting ?? '', startTime: '', capacity: 30, short: '', info: undefined };
+  const editElsewhere = (() => { const other = t.activities.find((a) => t.slots.find((s) => s.id === a.slotId).destinationId !== slot.destinationId); return { ...editHere, activityId: other.id, name: other.name }; })();
+  check('An Advance may edit a tour of their own destination, but not of another; Jet Staff and Expert may not edit tours at all',
+    validateChanges(t, advHere, [editHere]).ok && !validateChanges(t, advHere, [editElsewhere]).ok && !validateChanges(t, ben, [editHere]).ok && !validateChanges(t, { id: 'u-x', name: 'X', role: 'viewer' }, [editHere]).ok);
+  check('An Advance may not touch what is trip-wide (guests, groups)', !validateChanges(t, advHere, [{ type: 'add-split', name: 'X', groups: [{ name: 'A', capacity: null }] }]).ok);
+  const forceHere = [{ type: 'move', guestId: booked.id, slotId: slot.id, to: { kind: 'leisure' }, force: true }];
+  check('An Advance forcing in their own destination needs no reason; Jet Staff must give one (and is a special request)', validateChanges(t, advHere, forceHere, [], { filing: true }).ok && !validateChanges(t, ben, forceHere, [], { filing: true }).ok);
   const started = await applyChange(ctxT, t.id, { type: 'rollcall-start', activityId: act.id }, { as: anna });
   const rollCall = ctxT.state.rollCalls.find((r) => r.activityId === act.id);
   check('The colleague who asks to start a roll call is the one running it (not the owner whose device applied it)', started.ok && rollCall.startedBy.id === 'u-anna' && rollCall.startedBy.name === 'Anna Team');
@@ -2985,7 +2994,7 @@ function readZip(bytes) {
   const blocked = tap(ben);
   check('Another colleague cannot change a roll call someone else runs; the runner can', !blocked.ok && /Anna Team is running this roll call/.test(blocked.error) && tap(anna).ok);
   check('Nobody can start a roll call twice', !validateChanges(ctxT.state, ben, [{ type: 'rollcall-start', activityId: act.id }]).ok);
-  check('A colleague cannot take over; the owner can, and then Anna is locked out', !validateChanges(ctxT.state, anna, [{ type: 'rollcall-takeover', activityId: act.id }]).ok);
+  check('Anyone can take a roll call over (another colleague too), but not the one who already runs it', validateChanges(ctxT.state, ben, [{ type: 'rollcall-takeover', activityId: act.id }]).ok && !validateChanges(ctxT.state, anna, [{ type: 'rollcall-takeover', activityId: act.id }]).ok);
   const took = await applyChange(ctxT, t.id, { type: 'rollcall-takeover', activityId: act.id });
   const afterTake = ctxT.state.rollCalls.find((r) => r.activityId === act.id);
   check('The owner takes the roll call over: the journal says so, and the earlier runner can no longer change it', took.ok && afterTake.runBy.id === ctxT.owner.id && !tap(anna).ok && groupBatches(ctxT.entries).map(summarize).some((x) => /took over the roll call from Anna Team/.test(x)));

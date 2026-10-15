@@ -247,7 +247,8 @@ export function decideDocument(local, server) {
 // The owner of a trip invites people by e-mail address; they sign in with that address and see the trip. Roles: 'team' and 'viewer'
 // (both view-only in this first version). The owner is whoever owns the trip. Server side: supabase/team.sql.
 
-export const MEMBER_ROLES = ['team', 'viewer'];
+// 'team' is shown as Jet Staff, 'advance' as Advance (one destination), 'viewer' as Expert (looks only). The names inside stay as they were.
+export const MEMBER_ROLES = ['team', 'advance', 'viewer'];
 
 // The address as it will be stored (lowercase, no spaces), or null when it cannot be an e-mail address.
 export function cleanInviteEmail(text) {
@@ -282,7 +283,7 @@ export async function listMembers(tripId) {
 // approval: 'direct' (the colleague's requests are applied as soon as they fit) or 'review' (every request waits for the owner's OK).
 export async function inviteMember(tripId, email, role, destinationId = null, approval = 'direct') {
   const supabase = await getClient();
-  const row = { trip_id: tripId, email, role, destination_id: role === 'team' ? destinationId : null, approval: role === 'team' ? approval : 'direct' };
+  const row = { trip_id: tripId, email, role, destination_id: role === 'advance' ? destinationId : null, approval: role === 'team' || role === 'advance' ? approval : 'direct' };
   let { error } = await supabase.from('trip_members').upsert(row, { onConflict: 'trip_id,email' });
   // Before migration 0014 the column does not exist: "direct" is what the server does anyway, so it is saved without it.
   if (error && /approval/i.test(error.message) && row.approval === 'direct') { delete row.approval; ({ error } = await supabase.from('trip_members').upsert(row, { onConflict: 'trip_id,email' })); }

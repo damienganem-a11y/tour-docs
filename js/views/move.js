@@ -9,7 +9,7 @@
 
 import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
-import { applyChange } from '../changes.js';
+import { applyChange, outsideScope } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
 import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, eligibilityProblems, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
 
@@ -385,7 +385,10 @@ async function saveChanges(ctx, trip, changes, done) {
 // who approved it ("Approved by Sam"); it is saved in the journal with the move.
 function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, forceEyebrow = 'Over capacity', cancelLabel, changes, done, secondary = null }) {
   // The owner may write who approved it (optional). A Team colleague cannot force: they ASK, with a reason the owner reads, and the owner decides.
-  const asking = force && ctx.roleFor?.(trip.id) === 'team';
+  // A Jet Staff colleague, or an Advance outside their own destination, ASKS; an Advance in their own destination decides (the owner's authority there).
+  const role = ctx.roleFor?.(trip.id);
+  const advanceHere = role === 'advance' && changes.every((c) => !outsideScope(trip, ctx.scopeFor?.(trip.id), c));
+  const asking = force && (role === 'team' || (role === 'advance' && !advanceHere));
   const approval = force
     ? (asking
       ? h('textarea', { class: 'text-input approval-input', oninput: (e) => e.target.classList.remove('is-missing'), rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' })

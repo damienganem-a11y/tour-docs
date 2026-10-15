@@ -66,11 +66,12 @@ export function rollCallView(ctx, tripId, activityId) {
   const me = ctx.userFor ? ctx.userFor(trip.id) : ctx.owner;
   const runner = rollCall.runBy ?? rollCall.startedBy;
   // A colleague who is not the one running it only LOOKS (who is in which vehicle, how full they are): no tap checks anyone in, so there is no error to find out about later.
-  const readOnly = archived || (Boolean(runner) && runner.id !== me.id && me.role === 'team');
+  // Anyone (but an Expert, who only looks) may take a roll call over; until a colleague does, they only look at the vehicles and who is inside.
+  const readOnly = archived || me.role === 'viewer' || (me.role !== 'owner' && Boolean(runner) && runner.id !== me.id);
   const runnerNotice = archived || !runner || runner.id === me.id ? null : h('div', { class: 'card team-member' },
     h('div', { class: 'act-name' }, `${runner.name} started this roll call`),
-    h('div', { class: 'muted' }, me.role === 'owner' ? 'You can take it over: from then on only you can change it.' : `You can see the vehicles and who is inside, but only ${runner.name} (or the owner, by taking it over) can check people in.`),
-    me.role === 'owner' ? h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { const result = await applyChange(ctx, trip.id, { type: 'rollcall-takeover', activityId: activity.id }); if (result.ok) { showToast('You are running this roll call now'); ctx.refresh(); } else showToast(result.error, true); } }, 'Take over')) : null);
+    h('div', { class: 'muted' }, me.role === 'viewer' ? 'You can see the vehicles and who is inside.' : 'You can take it over: from then on only you can change it.'),
+    me.role !== 'viewer' ? h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: async () => { const result = await applyChange(ctx, trip.id, { type: 'rollcall-takeover', activityId: activity.id }); if (result.ok) { showToast('You are running this roll call now'); ctx.refresh(); } else showToast(result.error, true); } }, 'Take over')) : null);
 
   // Makes one change (or several together); if it works the screen is redrawn (keeping its place), if not a message says why.
   async function change(changes) {

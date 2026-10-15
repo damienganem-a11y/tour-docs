@@ -719,21 +719,26 @@ function syncAutoMessagesSoon(tripId) {
 const memberRules = new Map(); // tripId -> Map(lower-case e-mail -> { scope, approval })
 async function loadMemberRules(tripId) {
   const members = await listMembers(tripId);
-  memberRules.set(tripId, new Map(members.map((m) => [String(m.email).toLowerCase(), { scope: m.destination_id ?? null, approval: m.approval === 'review' ? 'review' : 'direct' }])));
+  memberRules.set(tripId, new Map(members.map((m) => [String(m.email).toLowerCase(), { role: m.role, scope: m.role === 'advance' ? (m.destination_id ?? null) : null, approval: m.approval === 'review' ? 'review' : 'direct' }])));
 }
-const ruleOf = (row) => memberRules.get(row.trip_id)?.get(String(row.requester_email ?? '').toLowerCase()) ?? { scope: null, approval: 'direct' };
+const ruleOf = (row) => memberRules.get(row.trip_id)?.get(String(row.requester_email ?? '').toLowerCase()) ?? { role: 'team', scope: null, approval: 'direct' };
 
 // A request the owner's device never applies by itself: it asks to FORCE a move into a full tour; or this colleague is on "review" (every request waits
 // for the owner's OK); or it changes something outside the colleague's own destination. Those wait in Settings > Requests for the owner's decision.
 function holdReason(row) {
   if (!Array.isArray(row.changes)) return null;
-  if (row.changes.some((c) => c?.force === true)) return 'force';
-  if (ruleOf(row).approval === 'review') return 'review';
+  const rule = ruleOf(row);
   const trip = state.trips.get(row.trip_id);
-  if (trip && row.changes.some((c) => outsideScope(trip, ruleOf(row).scope, c))) return 'elsewhere';
+  const elsewhere = (c) => Boolean(trip) && outsideScope(trip, rule.scope, c);
+  // A forced move is a "special request": it waits for the owner. Except for an Advance IN their own destination: there they have the owner's authority.
+  if (row.changes.some((c) => c?.force === true && !(rule.role === 'advance' && !elsewhere(c)))) return 'force';
+  if (rule.approval === 'review') return 'review';
+  if (rule.role === 'advance' && row.changes.some(elsewhere)) return 'elsewhere';
   return null;
 }
 const needsOwnerDecision = (row) => holdReason(row) !== null;
+// An Advance forcing a move inside their own destination: it is applied at once, and the journal names them as the one who decided.
+const isAdvanceForce = (row) => ruleOf(row).role === 'advance' && Array.isArray(row.changes) && row.changes.some((c) => c?.force === true);
 
 // The owner's answers to such a request: approve (the move is made, with the colleague's reason and the owner's name if it was a forced one), put the guest
 // on the tour's waiting list instead (a full tour only), or decline with a word for the colleague.
@@ -744,7 +749,7 @@ async function decideForcedRequest(id, how, note = null) {
   if (row.status === 'failed') await reopenRequest(id); // a request that "no longer fits" (the tour filled up) can still be forced or put on the waiting list by the owner
   if (!(await claimRequest(id))) return;
   // The owner's OK covers the destination limit too, so the colleague's own destination does not block this one (scope: null).
-  const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: null };
+  const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: ruleOf(row).role, scope: null };
   const intoTour = (c) => c?.type === 'move' && c.to?.kind === 'activity';
   const asked = row.changes.some((c) => c?.force === true);
   const changes = how === 'waitlist'
@@ -770,9 +775,10 @@ async function processRequests() {
       if (!known.has(row.trip_id)) { try { await loadMemberRules(row.trip_id); known.add(row.trip_id); } catch { continue; /* rules unknown: it waits */ } }
       if (needsOwnerDecision(row)) continue; // forced, on review, or elsewhere: only the owner decides (Settings > Requests)
       if (!(await claimRequest(row.id))) continue; // another of the owner's devices has it
-      const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: 'team', scope: ruleOf(row).scope };
+      const as = { id: row.requested_by, name: row.requester_name || row.requester_email || 'A colleague', role: ruleOf(row).role, scope: ruleOf(row).scope };
+      const advanceForce = isAdvanceForce(row);
       let result;
-      try { result = await applyChange(ctx, row.trip_id, row.changes, { as, request: { id: row.id, at: row.requested_at } }); }
+      try { result = await applyChange(ctx, row.trip_id, row.changes, { as, request: { id: row.id, at: row.requested_at }, forceApproved: advanceForce ? { by: as.name } : undefined }); }
       catch { result = { ok: false, error: 'It could not be applied.' }; }
       await finishRequest(row.id, result.ok ? 'applied' : 'failed', result.ok ? null : result.error);
     }

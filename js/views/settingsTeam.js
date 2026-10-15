@@ -13,7 +13,13 @@ import { openSheet } from '../ui.js';
 import { qrSvg } from '../qr.js';
 import { listMembers, inviteMember, removeMember, cleanInviteEmail, MEMBER_ROLES } from '../sync.js';
 
-const ROLE_LABEL = { team: 'Team', viewer: 'View only', owner: 'Owner (you)' };
+// What each role is called and what it does (the names inside the database are team, advance and viewer).
+const ROLE_LABEL = { team: 'Jet Staff', advance: 'Advance', viewer: 'Expert', owner: 'Owner (you)' };
+const ROLE_HELP = {
+  team: 'Works on the whole trip and changes things directly. A special request (forcing a full tour) waits for you.',
+  advance: 'The local contact of ONE destination: your authority there, including forcing. Anything elsewhere goes to you as a request.',
+  viewer: 'Sees everything (tours, days, times, who is where, allergies) but changes nothing and has no settings.',
+};
 
 // Sends the person the sign-in e-mail (the code and the link that opens the app) so that inviting is one tap for the owner and one
 // tap for them. Returns a sentence saying how it went. (The e-mail is the usual sign-in one: Supabase limits how many it sends per hour.)
@@ -61,19 +67,17 @@ async function accessSheet(ctx, trip, member) {
   }
 }
 
-// The two things the owner decides about a Team colleague besides the role: where they work directly, and how much control the owner keeps.
+// What the owner decides about a colleague besides the role: for an Advance, which destination; for Jet Staff and Advance, one box to keep more control.
 function controlFields(trip, current = {}) {
-  const where = h('select', { class: 'text-input', 'aria-label': 'Where they work directly' }, h('option', { value: '' }, 'Everywhere on the trip'), [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => h('option', { value: d.id, selected: current.destination_id === d.id }, `Directly in ${d.name} only`)));
-  const approval = h('select', { class: 'text-input', 'aria-label': 'Control' },
-    h('option', { value: 'direct', selected: current.approval !== 'review' }, 'Apply their requests as soon as they fit'),
-    h('option', { value: 'review', selected: current.approval === 'review' }, 'I approve every request first'));
-  const fields = [
-    h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Where they work directly', where),
-      h('div', { class: 'form-hint' }, 'They can ask for a change in any destination (a guest may talk to the person of the next stop). Outside this place, you approve first.')),
-    h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Control', approval),
-      h('div', { class: 'form-hint' }, 'Requests are applied by your device, so it must be open. A request that forces a move into a full tour always waits for you.')),
-  ];
-  return { where, approval, fields };
+  const where = h('select', { class: 'text-input', 'aria-label': 'Destination' }, h('option', { value: '' }, 'Choose a destination'), [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => h('option', { value: d.id, selected: current.destination_id === d.id }, d.name)));
+  const approval = h('input', { type: 'checkbox', checked: current.approval === 'review', 'aria-label': 'Ask me before applying their changes' });
+  const whereField = h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Their destination', where),
+    h('div', { class: 'form-hint' }, 'There they have your authority. Anything in another destination is sent to you as a request.'));
+  const approvalField = h('label', { class: 'tick-row' }, approval, h('span', {}, 'Ask me before applying their changes'));
+  const help = h('p', { class: 'muted' }, '');
+  // Shows only what the chosen role needs.
+  const show = (role) => { whereField.hidden = role !== 'advance'; approvalField.hidden = role === 'viewer'; help.textContent = ROLE_HELP[role] ?? ''; };
+  return { where, approval, fields: [help, whereField, approvalField], show };
 }
 
 // Changes a person's role, place and control without deleting and re-inviting them (same e-mail, no new sign-in e-mail).
@@ -81,14 +85,15 @@ function editAccessSheet(ctx, trip, member, reload) {
   const role = h('select', { class: 'text-input', 'aria-label': 'Role' }, MEMBER_ROLES.map((r) => h('option', { value: r, selected: member.role === r }, ROLE_LABEL[r])));
   const control = controlFields(trip, member);
   const team = h('div', {}, ...control.fields);
-  const sync = () => { team.hidden = role.value !== 'team'; };
+  const sync = () => control.show(role.value);
   sync(); role.addEventListener('change', sync);
   openSheet({
     eyebrow: 'Access', title: member.email, subtitle: 'The change applies the next time they open the app.',
     body: [h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Role', role)), team],
     footer: h('button', { class: 'btn', type: 'button', onclick: async () => {
       try {
-        await inviteMember(trip.id, member.email, role.value, role.value === 'team' && control.where.value ? control.where.value : null, control.approval.value);
+        if (role.value === 'advance' && !control.where.value) { showToast('Choose the destination of this Advance.', true); return; }
+        await inviteMember(trip.id, member.email, role.value, control.where.value || null, control.approval.checked ? 'review' : 'direct');
         closeSheet(); showToast('Access updated'); reload();
       } catch { showToast('Could not save. Are you online? (The "approval" choice needs the latest server update.)', true); }
     } }, 'Save'),
@@ -99,7 +104,7 @@ function editAccessSheet(ctx, trip, member, reload) {
 export function memberCard(member, { resend, remove, access, scopeName, edit }) {
   return h('div', { class: 'card team-member' },
     h('div', { class: 'act-name team-email' }, member.email),
-    h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · works directly in ${scopeName}` : ''}${member.role === 'team' ? ` · ${member.approval === 'review' ? 'you approve every request' : 'requests applied when they fit'}` : ''}`),
+    h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · ${scopeName}` : ''}${member.role === 'team' || member.role === 'advance' ? ` · ${member.approval === 'review' ? 'you approve their changes first' : 'changes applied when they fit'}` : ''}`),
     h('div', { class: 'card-actions' },
       edit ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: edit }, 'Access') : null,
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: access }, 'QR code'),
@@ -142,10 +147,10 @@ export function teamSettingsPage(ctx, trip) {
 
   const email = h('input', { class: 'text-input', type: 'email', inputmode: 'email', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'E-mail address of the person' });
   const role = h('select', { class: 'text-input', 'aria-label': 'Role' }, MEMBER_ROLES.map((r) => h('option', { value: r }, ROLE_LABEL[r])));
-  // A Team colleague can be tied to ONE destination (where they work directly) and given a control level; only shown for the Team role.
+  // An Advance is tied to ONE destination; Jet Staff and Advance can be given a control level (the box). Only what the chosen role needs is shown.
   const control = controlFields(trip);
   const whereField = h('div', {}, ...control.fields);
-  const syncWhere = () => { whereField.hidden = role.value !== 'team'; };
+  const syncWhere = () => control.show(role.value);
   syncWhere();
   role.addEventListener('change', syncWhere);
   const invite = h('button', {
@@ -154,8 +159,9 @@ export function teamSettingsPage(ctx, trip) {
       say('');
       const address = cleanInviteEmail(email.value);
       if (!address) { say('That does not look like an e-mail address.'); return; }
+      if (role.value === 'advance' && !control.where.value) { say('Choose the destination of this Advance.'); return; }
       try {
-        await inviteMember(trip.id, address, role.value, role.value === 'team' && control.where.value ? control.where.value : null, control.approval.value);
+        await inviteMember(trip.id, address, role.value, control.where.value || null, control.approval.checked ? 'review' : 'direct');
         email.value = '';
         load();
         showToast(await sendSignInEmail(address)); // one tap: invited AND e-mailed
@@ -168,7 +174,7 @@ export function teamSettingsPage(ctx, trip) {
   load();
   return h('div', {},
     head,
-    notice('In this first version, the people you invite can look at the trip and its documents, kept up to date, but cannot change anything yet.'),
+    notice('Jet Staff work on the whole trip. An Advance is the local contact of one destination (your authority there). An Expert only looks. Their changes are applied by your device, so keep it open when you expect requests.'),
     mine,
     list,
     h('h2', { class: 'section-title' }, 'Invite someone'),

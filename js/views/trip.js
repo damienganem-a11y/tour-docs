@@ -87,6 +87,10 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   }
 
   // Each Settings screen beyond the menu is its own page.
+  // An Expert has no access to any setting (not even by typing the address).
+  if (mode === 'settings' && ctx.roleFor(trip.id) === 'viewer') {
+    return { node: h('div', { class: 'screen' }, notice('Experts have no settings: you can look at the tours, the days, the times and who is where.'), h('a', { class: 'btn', href: `#/trip/${trip.id}/use` }, 'Back to the trip')) };
+  }
   if (mode === 'settings' && page === 'journal') {
     return { node: h('div', { class: 'screen' }, journalPage(ctx, trip)) };
   }
@@ -144,7 +148,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
         h('span', { class: 'top-trip' }, 'Settings'),
         h('span', { class: 'top-side' }, syncDot(ctx, { compact: true })))
     : h('div', { class: 'top-bar' },
-        h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
+        ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         h('span', { class: 'top-trip' }, trip.ref || trip.name),
         h('span', { class: 'top-side' }, syncDot(ctx, { compact: true })));
 
@@ -153,10 +157,12 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   const readOnlyNotice = trip.archivedAt
     ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes again.')
     : ctx.roleFor(trip.id) === 'viewer'
-      ? notice('You can look at this trip, but only its owner can change it.')
+      ? notice('You are an Expert on this trip: you can look at everything, but nothing can be changed.')
       : ctx.roleFor(trip.id) === 'team'
-        ? notice('You are on the team: the changes you make are sent to the owner as requests, and applied there.')
-        : null;
+        ? notice('You are Jet Staff: your changes are sent to the owner\'s device and applied there. A forced move waits for the owner.')
+        : ctx.roleFor(trip.id) === 'advance'
+          ? notice('You are Advance: in your own destination you have the owner\'s authority. Anything elsewhere is sent as a request.')
+          : null;
 
   // Settings: the full trip heading and the menu.
   if (mode === 'settings') {

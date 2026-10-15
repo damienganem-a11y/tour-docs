@@ -24,7 +24,7 @@
 //   Roll call (see rollcall.js), each one on its own:
 //   { type: 'rollcall-start', activityId }
 //   { type: 'rollcall-end', activityId, moveGuestIds }       End roll call: those guests go to At leisure ("moved by End roll call")
-//   { type: 'rollcall-takeover', activityId }                The OWNER takes over a roll call that a colleague runs (only the person running a roll call can change it; the owner always can)
+//   { type: 'rollcall-takeover', activityId }                Anyone (not an Expert) takes over a roll call that someone else runs (only the person running a roll call can change it; the owner always can)
 //   { type: 'rollcall-reopen', activityId }                  Re-open roll call: the guests End roll call moved to At leisure go back on the tour
 //   { type: 'checkin', activityId, guestId, vehicleId }      the guest goes into that vehicle (or moves to it)
 //   { type: 'checkout', activityId, guestId }                the guest comes out of the vehicle: back on the list
@@ -143,7 +143,10 @@ const TRIP_INFO_TYPES = new Set(['rename-trip']);
 const BRANDING_TYPES = new Set(['set-branding']);
 // What a Team colleague may ask for: moving guests, roll call, and dinner tables. Everything else (settings, guests, groups, branding, the trip
 // itself, undo) stays with the owner.
-const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+// What an Advance (the local contact of ONE destination) may do inside their destination on top of that: the destination's own settings, its tours and
+// its restaurants. Everything trip-wide (guests, groups, branding, the trip itself) stays with the owner.
+const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity', 'edit-activity', 'cancel-tour', 'add-restaurant', 'edit-restaurant', 'restaurant-card']);
 // Erasing every guest's allergy and dietary information (automatic, after the trip's last dinner; see rules.js's dietaryExpiry).
 // Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
 const DIETARY_TYPES = new Set(['erase-dietary']);
@@ -162,7 +165,12 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   if (!canUser(user, 'change')) return fail('You do not have permission to change bookings.');
   if (!trip) return fail('This trip is not on this phone.');
   if (user?.role === 'team' && Array.isArray(changes) && !changes.every((c) => TEAM_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
-  if (user?.role === 'team' && Array.isArray(changes)) {
+  if (user?.role === 'advance' && Array.isArray(changes)) {
+    if (!changes.every((c) => ADVANCE_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
+    // The destination's own settings are for that destination only; a booking change elsewhere is allowed, as a request the owner approves.
+    for (const c of changes) if (!TEAM_TYPES.has(c.type) && outsideScope(trip, user.scope, c)) return fail('That is outside your destination: only the owner can change it.');
+  }
+  if ((user?.role === 'team' || user?.role === 'advance') && Array.isArray(changes)) {
     for (const c of changes) { const limit = teamLimit(trip, user, c); if (limit) return fail(limit); }
   }
   // Archived trips are read-only, except for undoing and the archive/delete actions themselves (so
@@ -223,8 +231,10 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
     if (!slot) return fail('That half-day is not in this trip.');
     // Forcing a move into a full tour is the owner's decision. A Team colleague can ASK for it (opts.filing: the request is being filed, with a reason
     // that the owner reads); the owner's device never applies it by itself: only after the owner approves it (opts.forceApproved).
-    if (change.force && !canUser(user, 'force') && !opts.forceApproved) {
-      if (!opts.filing || user?.role !== 'team') return fail('You do not have permission to force a move.');
+    // An Advance has the owner's authority in their own destination: no reason asked there.
+    const advanceHere = user?.role === 'advance' && !outsideScope(trip, user.scope, change);
+    if (change.force && !canUser(user, 'force') && !opts.forceApproved && !advanceHere) {
+      if (!opts.filing || (user?.role !== 'team' && user?.role !== 'advance')) return fail('You do not have permission to force a move.');
       const reason = String(change.forceReason ?? '').trim();
       if (!reason) return fail('Tell the owner why this move must be forced.');
       if (reason.length > 200) return fail('The reason must be 200 letters or fewer.');
@@ -506,10 +516,11 @@ export function slotOfChange(trip, change) {
 export function outsideScope(trip, scope, change) {
   if (!scope) return false;
   const slot = slotOfChange(trip, change);
-  return !slot || slot.destinationId !== scope;
+  const destinationId = slot?.destinationId ?? change.destinationId ?? (change.restaurantId ? (trip.restaurants ?? []).find((r) => r.id === change.restaurantId)?.destinationId : undefined);
+  return destinationId === undefined || destinationId !== scope;
 }
 function teamLimit(trip, user, change) {
-  if (ROLLCALL_TYPES.has(change.type) && change.type !== 'rollcall-start') {
+  if (ROLLCALL_TYPES.has(change.type) && change.type !== 'rollcall-start' && change.type !== 'rollcall-takeover') {
     const rollCall = findRollCall(trip, change.activityId);
     const runner = rollCall && (rollCall.runBy ?? rollCall.startedBy);
     if (runner && runner.id !== user.id) return `${runner.name} is running this roll call. Only ${runner.name} (or the owner, by taking over) can change it.`;
@@ -860,7 +871,7 @@ export function applyChange(ctx, tripId, changes, opts = {}) {
   }
   // A Team colleague never changes the trip themselves: the change is checked against their copy, then sent as a request
   // that the owner's device applies (SPEC.md, Team step B).
-  if (!opts.as && ctx.roleFor?.(tripId) === 'team') return requestChange(ctx, tripId, list);
+  if (!opts.as && (ctx.roleFor?.(tripId) === 'team' || ctx.roleFor?.(tripId) === 'advance')) return requestChange(ctx, tripId, list);
   return enqueue(() => doApply(ctx, tripId, list, opts));
 }
 
