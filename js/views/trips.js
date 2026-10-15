@@ -106,7 +106,15 @@ export function tripsView(ctx) {
   // A tiny fictional trip that starts today, to try the reminders and alerts in real time (rehearsal.js).
   async function loadRehearsal() {
     try {
-      const trip = await useTrip(JSON.stringify(rehearsalTrip()));
+      // The rehearsal trip also carries a Passport Explorer destination, already switched on (Cusco's games, under the rehearsal city's name), so the games, the
+      // quiz and the stamp can be tried at once on a phone: its games are open from today.
+      const raw = rehearsalTrip();
+      try {
+        const jet = await (await fetch(JET_SAMPLE_URL)).json();
+        const cusco = jet.destinations.find((d) => d.name === 'Cusco')?.explorer;
+        if (cusco && raw.destinations[0]) raw.destinations[0].explorer = { ...cusco, status: 'validated' };
+      } catch { /* offline and not cached: the rehearsal still works, without the games */ }
+      const trip = await useTrip(JSON.stringify(raw));
       if (trip) await seedSampleDining(trip, 'Rehearsal City', ['Chez Test', 'Bistro Rehearsal']);
     } catch (error) {
       showError(`Could not load the rehearsal trip (${error.message}).`);
