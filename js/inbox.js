@@ -11,6 +11,8 @@ import { describeGuestRequest } from './guestRequests.js';
 import { tripWarnings, displayNames } from './rules.js';
 
 const THREE_DAYS = 3 * 86400000;
+const A_WEEK = 7 * 86400000;
+const MAX_MESSAGES = 15; // the most recent messages from the team; the whole conversation is in Messages
 
 // ctx-free input: { trip, role, userId, requests (rows of this trip), guestRequests (rows of this trip), messages (rows of this trip),
 //   holdsFor(row) -> true when a pending request waits for the owner's OK, seen: Set of item ids, now }
@@ -23,7 +25,7 @@ export function inboxItems({ trip, role, userId, requests = [], guestRequests = 
     for (const row of guestRequests.filter((r) => r.status === 'pending')) {
       items.push({ id: `g:${row.id}`, kind: 'guest-request', todo: true, title: 'Guest request', detail: describeGuestRequest(trip, row, names), at: row.created_at, href: `${base}/requests` });
     }
-    for (const row of requests.filter((r) => r.status === 'failed')) {
+    for (const row of requests.filter((r) => r.status === 'failed' && now - Date.parse(r.decided_at ?? r.requested_at) < 2 * A_WEEK)) { // older ones stay in Settings > Requests
       items.push({ id: `f:${row.id}`, kind: 'failed', todo: true, title: 'A request no longer fits', detail: `${row.requester_name || row.requester_email || 'A colleague'}: ${describeRequest(trip, row.changes, names) || 'a change'}`, at: row.decided_at ?? row.requested_at, href: `${base}/requests` });
     }
   }
@@ -48,7 +50,7 @@ export function inboxItems({ trip, role, userId, requests = [], guestRequests = 
     items.push({ id: `w:${w.activity.id}:${w.free}:${w.waiting}`, kind: 'waitlist', todo: true, title: 'A seat is free', detail: `${w.activity.name}: ${w.waiting} waiting${w.free === null ? '' : `, ${w.free} seat${w.free === 1 ? '' : 's'} free`}`, at: null, href: `#/trip/${trip.id}/use/destination/${w.destination.id}/${w.slot.id}` });
   }
 
-  for (const m of messages.filter((x) => x.sender_id !== userId)) {
+  for (const m of messages.filter((x) => x.sender_id !== userId && now - Date.parse(x.created_at) < A_WEEK).slice(-MAX_MESSAGES)) {
     items.push({ id: `m:${m.id}`, kind: 'message', todo: false, title: m.sender_name, detail: m.body, at: m.created_at, href: `${base}/messages` });
   }
 

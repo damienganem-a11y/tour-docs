@@ -3026,11 +3026,11 @@ function readZip(bytes) {
   // --- The staff inbox ---
   const inboxTrip = makeCtx().state;
   const msg = (id, from, text) => ({ id, sender_id: from, sender_name: `User ${from}`, body: text, created_at: '2026-10-15T10:00:00Z' });
-  const asOwner = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', messages: [msg('1', 'other', 'Bus 2 is late'), msg('2', 'me', 'ok')], seen: new Set() });
+  const asOwner = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', messages: [msg('1', 'other', 'Bus 2 is late'), msg('2', 'me', 'ok')], seen: new Set(), now: Date.parse('2026-10-16T00:00:00Z') });
   check('Inbox: a team message from somebody else is an unread item; my own message is not listed', asOwner.filter((i) => i.kind === 'message').length === 1 && asOwner.find((i) => i.kind === 'message').unread);
-  const seenMsg = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', messages: [msg('1', 'other', 'Bus 2 is late')], seen: new Set(['m:1']) });
+  const seenMsg = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', messages: [msg('1', 'other', 'Bus 2 is late')], seen: new Set(['m:1']), now: Date.parse('2026-10-16T00:00:00Z') });
   check('...and once seen it no longer counts', inboxCount(seenMsg) === 0 || seenMsg.every((i) => i.todo || !i.unread));
-  const held = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', requests: [{ id: 'r1', status: 'pending', requester_name: 'Mr Porter', requested_at: '2026-10-15T09:00:00Z', changes: [{ type: 'move', guestId: inboxTrip.guests[0].id, slotId: inboxTrip.slots[0].id, to: { kind: 'leisure' } }] }], holdsFor: () => true });
+  const held = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', requests: [{ id: 'r1', status: 'pending', requester_name: 'Mr Porter', requested_at: '2026-10-15T09:00:00Z', changes: [{ type: 'move', guestId: inboxTrip.guests[0].id, slotId: inboxTrip.slots[0].id, to: { kind: 'leisure' } }] }], holdsFor: () => true, now: Date.parse('2026-10-16T00:00:00Z') });
   check('Inbox: a request waiting for the owner\'s OK is a to-do item that stays until dealt with, and names who asked', held.some((i) => i.kind === 'approval' && i.todo && /Mr Porter/.test(i.detail)));
   const answered = inboxItems({ trip: inboxTrip, role: 'team', userId: 'u1', requests: [{ id: 'r2', status: 'declined', requested_by: 'u1', note: 'Tour is full', decided_at: new Date().toISOString(), requested_at: new Date().toISOString(), changes: [] }], now: Date.now() });
   check('Inbox: a colleague sees the answer to their own request, with the owner\'s word', answered.some((i) => i.kind === 'answer' && /Declined/.test(i.title) && /Tour is full/.test(i.detail)));
@@ -3047,6 +3047,11 @@ function readZip(bytes) {
   await applyChange(liveCtx, t.id, moveAt(slot).map((c) => ({ ...c, to: { kind: 'activity', activityId: act.id } })));
   const undoOthers = await applyChange(liveCtx, t.id, { type: 'undo' }, { as: anna, live: true });
   check('...but not an action of somebody else; and never off the live path', !undoOthers.ok && /not yours/.test(undoOthers.error) && !validateChanges(liveCtx.state, anna, [{ type: 'undo' }], liveCtx.entries).ok);
+  // An Advance can undo their own last action (the review found the undo was refused as "outside your destination")
+  const advCtx = makeCtx();
+  await applyChange(advCtx, t.id, moveAt(slot), { as: advHere, live: true });
+  const advUndo = await applyChange(advCtx, t.id, { type: 'undo' }, { as: advHere, live: true });
+  check('An Advance with a destination can undo their own last action, and an undo is never held for the owner', advUndo.ok && !holdsForOwner(t, advHere, [{ type: 'undo' }]) && !outsideScope(t, advHere.scope, { type: 'undo' }), advUndo.error);
   const staleCtx = makeCtx(); const realCommit = staleCtx.commit; let commits = 0;
   staleCtx.commit = async (next, entries) => { commits += 1; if (commits === 1) throw new StaleTripError(); return realCommit.call(staleCtx, next, entries); };
   const retried = await applyChange(staleCtx, t.id, moveAt(slot));

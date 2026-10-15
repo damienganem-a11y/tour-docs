@@ -535,7 +535,7 @@ export function slotOfChange(trip, change) {
 // A change outside the colleague's own destination is NOT refused any more (owner's decision, 15 Oct 2026: guests often talk to the person of the next
 // destination): the owner's device holds it for the owner's OK instead (app.js). True when `change` falls outside `scope` (a destination id).
 export function outsideScope(trip, scope, change) {
-  if (!scope) return false;
+  if (!scope || change.type === 'undo') return false; // an undo belongs to whoever did the action (checked in validateChanges), not to a place
   const slot = slotOfChange(trip, change);
   const destinationId = slot?.destinationId ?? change.destinationId ?? (change.restaurantId ? (trip.restaurants ?? []).find((r) => r.id === change.restaurantId)?.destinationId : undefined);
   return destinationId === undefined || destinationId !== scope;

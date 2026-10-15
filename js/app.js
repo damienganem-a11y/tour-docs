@@ -138,7 +138,16 @@ async function sameHistory(tripId) {
 // to auto-pull" apart from "this phone has its own unconfirmed changes, don't overwrite them". Only
 // bumped on accepted:true: a rejected push means the server already had this changeCount or newer
 // from elsewhere, so THIS push never actually landed and nothing here should be trusted as pushed.
-async function pushAndTrack(trip, entries = []) {
+// Pushes are made ONE AFTER THE OTHER (two quick changes, or a push and the 5-second check, must never write from the same starting version).
+let pushChain = Promise.resolve();
+function pushAndTrack(trip, entries = []) {
+  const run = () => pushOnce(state.trips.get(trip.id) ?? trip, entries); // always the newest copy: it holds every earlier change too
+  const result = pushChain.then(run, run);
+  pushChain = result.catch(() => {});
+  return result;
+}
+
+async function pushOnce(trip, entries) {
   if (ctx.roleFor(trip.id) !== 'owner') return; // a trip shared WITH this person is only ever read from the server
   try {
     // A trip already on the server is written ONLY from the version this device last saw there (so a colleague's live change can never be overwritten
@@ -148,8 +157,14 @@ async function pushAndTrack(trip, entries = []) {
     if (base >= 0 && base < (trip.changeCount ?? 0)) {
       const unsent = ctx.journal(trip.id).filter((e) => (e.seq ?? 0) > base);
       const result = await applyTripUpdate(trip, base, unsent);
-      if (result.stale) { syncInfo.lastError = 'Another device changed this trip while this one was offline: choose which version to keep (inbox).'; if (!conflictTrips.has(trip.id)) { conflictTrips.add(trip.id); renderQuiet(); } }
-      else if (result.missing) accepted = (await pushTrip(trip)).accepted && (await pushJournalEntries(trip.id, ctx.journal(trip.id)), true);
+      if (result.stale) {
+        // "Stale" is also what an earlier push of THIS device looks like if it landed first: then the server already has our last action.
+        if (await sameHistory(trip.id)) accepted = true;
+        else {
+          syncInfo.lastError = 'Another device changed this trip while this one was offline: choose which version to keep (inbox).';
+          if (!conflictTrips.has(trip.id)) { conflictTrips.add(trip.id); renderQuiet(); }
+        }
+      } else if (result.missing) accepted = (await pushTrip(trip)).accepted && (await pushJournalEntries(trip.id, ctx.journal(trip.id)), true);
       else accepted = result.accepted;
     } else if (base < 0) {
       accepted = (await pushTrip(trip)).accepted;
@@ -353,8 +368,9 @@ const ctx = {
   declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
   needsOwnerDecision: (row) => needsOwnerDecision(row),
   // Reset a demo trip (Trips > account > "Reset the demo"): the sample's own trips (by name) are erased here and on the server, ready to be loaded again fresh.
-  async eraseTripsNamed(namePart) {
-    for (const trip of [...state.trips.values()].filter((t) => t.name.includes(namePart) && ctx.roleFor(t.id) === 'owner')) await eraseTripEverywhere(trip);
+  async eraseTripsNamed(exactName) {
+    // The EXACT name of the sample, never a part of it: a real trip with a similar name is never touched.
+    for (const trip of [...state.trips.values()].filter((t) => t.name === exactName && ctx.roleFor(t.id) === 'owner')) await eraseTripEverywhere(trip);
     render();
   },
   // "Check this phone" (Settings > Control): what works and what does not, in plain words, for the person using this device.
@@ -575,16 +591,24 @@ const ctx = {
     const base = state.trips.get(trip.id)?.changeCount ?? 0;
     let sent = false;
     if (ctx.liveFor(trip.id)) {
-      try {
-        const result = await applyTripUpdate(trip, base, entries);
-        if (!result.accepted) { await refreshTripNow(trip.id); throw new StaleTripError(); }
-        sent = true;
-      } catch (error) {
-        if (error?.stale) throw error;
-        if (ctx.roleFor(trip.id) !== 'owner') throw new Error('No connection to the server, so nothing was changed. Try again when you are online.');
+      let result = null;
+      try { result = await applyTripUpdate(trip, base, entries); }
+      catch (error) {
+        if (ctx.roleFor(trip.id) !== 'owner') {
+          // Said as it is: no right any more, or no connection (an owner just saves here and sends it later).
+          throw new Error(/not allowed|permission|row-level/i.test(String(error?.message)) ? 'You no longer have the right to change this trip. Ask the owner.' : 'No connection to the server, so nothing was changed. Try again when you are online.');
+        }
       }
+      if (result && !result.accepted) { await refreshTripNow(trip.id); throw new StaleTripError(); }
+      sent = Boolean(result?.accepted);
     }
-    await saveTripAndJournal(trip, entries);
+    try {
+      await saveTripAndJournal(trip, entries);
+    } catch (error) {
+      // The server already has the change: do not say "nothing was changed". The phone takes the server's copy back, so the screen and the server agree.
+      if (sent) { await refreshTripNow(trip.id).catch(() => {}); return; }
+      throw error;
+    }
     state.trips.set(trip.id, trip);
     state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
     if (sent) {
@@ -828,21 +852,28 @@ async function flushOutbox() {
 // The team's messages of every trip this person is on (a missing table, before the database update, or no internet simply leaves them as they were).
 // A message from somebody else that was not there before is announced, unless the Messages page is open.
 async function loadTeamMessages(tripId) {
-  const rows = await listTeamMessages(tripId);
   const before = teamMessageRows.get(tripId);
+  // Only what is newer than the last message already known (the first time: the latest 100).
+  const newer = await listTeamMessages(tripId, before?.at(-1)?.created_at);
+  const known = new Set((before ?? []).map((r) => r.id));
+  const added = newer.filter((r) => !known.has(r.id));
+  const rows = [...(before ?? []), ...added];
   teamMessageRows.set(tripId, rows);
   if (!before) return rows.length > 0; // the first load only fills the list (and redraws the bell if there is something)
-  const fresh = rows.filter((r) => r.sender_id !== state.owner?.id && !before.some((b) => b.id === r.id));
+  const fresh = added.filter((r) => r.sender_id !== state.owner?.id);
   if (fresh.length > 0 && !location.hash.endsWith('/messages')) {
     const last = fresh.at(-1);
     showToast(`${last.sender_name}: ${last.body.slice(0, 70)}`);
   }
-  return fresh.length > 0 || rows.length !== before.length;
+  return added.length > 0;
 }
 async function loadAllTeamMessages() {
   if (!state.owner || hasSession !== true || !navigator.onLine) return;
   let changed = false;
-  for (const id of [...state.trips.keys()]) { try { changed = (await loadTeamMessages(id)) || changed; } catch { /* the table may not exist yet: nothing to show */ } }
+  for (const trip of state.trips.values()) {
+    if (trip.archivedAt || trip.deletedAt) continue; // finished trips are not followed
+    try { changed = (await loadTeamMessages(trip.id)) || changed; } catch { /* the table may not exist yet: nothing to show */ }
+  }
   if (changed && !document.body.classList.contains('sheet-open')) renderQuiet();
 }
 
@@ -1178,7 +1209,9 @@ async function refreshTripNow(tripId, { announce = false } = {}) {
   // notifications from here, as soon as this device sees it.
   if (freshLocal && newEntries.length > 0 && ctx.roleFor(tripId) === 'owner') {
     trackPush(sendGuestSheets(trip)).catch(() => {});
-    notifyAfterChange(trip, newEntries);
+    // Only what a COLLEAGUE did: what the owner did on another of their own phones was already told to the guests by that phone.
+    const colleagues = newEntries.filter((e) => e.who?.id !== state.owner?.id);
+    if (colleagues.length > 0) notifyAfterChange(trip, colleagues);
   }
   if (announce && freshLocal && newEntries.length > 0 && location.hash.startsWith(`#/trip/${tripId}/`)) {
     const who = newEntries.find((e) => e.who?.id !== state.owner?.id)?.who?.name;

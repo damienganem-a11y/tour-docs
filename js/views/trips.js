@@ -209,8 +209,13 @@ export function tripsView(ctx) {
   function resetDemoSheet() {
     openSheet({
       eyebrow: 'Demo', title: 'Reset the Rhône River Cruise?',
-      subtitle: 'It is erased from this phone and from the server, then loaded again as it was at the start. Your other trips are not touched.',
-      body: [h('button', { class: 'btn btn--danger', type: 'button', onclick: async () => { closeSheet(); await ctx.eraseTripsNamed('Rhône River Cruise'); await loadRhoneSample(); } }, 'Erase and load it again')],
+      subtitle: 'The demo trip (exactly "Rhône River Cruise, Lyon to Arles (fictional)") is erased from this phone and from the server, then loaded again as it was at the start. Any other trip, even with a similar name, is not touched.',
+      body: [h('button', { class: 'btn btn--danger', type: 'button', onclick: async () => {
+        closeSheet();
+        // The sample's own name, read from the sample file: only a trip with exactly that name is erased.
+        try { const sample = await (await fetch(RHONE_SAMPLE_URL)).json(); await ctx.eraseTripsNamed(sample.trip.name); } catch { showError('Could not reach the sample. Nothing was erased.'); return; }
+        await loadRhoneSample();
+      } }, 'Erase and load it again')],
       cancelLabel: 'Cancel',
     });
   }

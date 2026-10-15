@@ -202,11 +202,14 @@ export async function probeServerFeatures() {
 }
 
 // ---------- Messages between the people working on a trip (migration 0017) ----------
-export async function listTeamMessages(tripId) {
+// after (an ISO moment): only the messages written later than that. Without it, the latest 100 of the conversation.
+export async function listTeamMessages(tripId, after = null) {
   const supabase = await getClient();
-  const { data, error } = await supabase.from('team_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true }).limit(300);
+  let query = supabase.from('team_messages').select('*').eq('trip_id', tripId);
+  if (after) query = query.gt('created_at', after);
+  const { data, error } = await query.order('created_at', { ascending: !after ? false : true }).limit(100);
   if (error) throw error;
-  return data;
+  return after ? data : [...data].reverse(); // oldest first either way
 }
 export async function sendTeamMessage(tripId, senderName, body) {
   const supabase = await getClient();
