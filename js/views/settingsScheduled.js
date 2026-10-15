@@ -16,7 +16,7 @@ import { AUTO_KINDS, MESSAGE_TEMPLATES, audienceGuestIds, autoNotifySettings, cl
 const field = (label, input, hint) => h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, label, input), hint ? h('div', { class: 'form-hint' }, hint) : null);
 const phoneZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-export function scheduledSettingsPage(ctx, trip) {
+export function scheduledSettingsPage(ctx, trip, { embedded = false } = {}) {
   const head = pageHead({
     back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
     eyebrow: 'Scheduled messages', title: 'Scheduled messages', subtitle: 'Messages sent at a time you choose, reminders and alerts for you.',
@@ -125,7 +125,7 @@ export function scheduledSettingsPage(ctx, trip) {
         if (result.ok) { showToast(event.target.checked ? 'Turned on' : 'Turned off'); ctx.refreshAutoMessages?.(trip.id)?.then?.(() => loadWaiting()); } else showToast(result.error, true);
       } }), ` ${kind.label}`)));
 
-  return h('div', {}, head, timerLine,
-    h('button', { class: 'btn', type: 'button', onclick: () => newMessageSheet() }, 'New message'),
+  return h('div', {}, embedded ? null : head, timerLine,
+    h('button', { class: 'btn', type: 'button', onclick: () => newMessageSheet() }, 'Schedule a message'),
     proposalsBlock, h('h3', { class: 'section-title' }, 'Waiting to be sent'), waiting, autoCard);
 }

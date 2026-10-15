@@ -31,6 +31,7 @@ import { APP_VERSION } from './version.js';
 import { tourShort, PART_CODE } from './rules.js';
 import { passportState, dayIn, stampSvg, wallToInstant } from '../guest/passport.js';
 import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds, eligibilityProblems } from './rules.js';
+import { inboxItems, inboxCount } from './inbox.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
 import { destinationExportDoc, eveningReservationDoc, confirmationCards, groupsExportData, groupCards, nextVersion, sameDocument, finalTripToursDoc, finalTripGuestsDocForPdf, finalTripGuestsRowsForXlsx } from './export.js';
@@ -3022,6 +3023,17 @@ function readZip(bytes) {
   const back = await applyChange(ctxT, t.id, { type: 'undo' });
   check('Undo of a take-over gives the roll call back to Anna', back.ok && !ctxT.state.rollCalls.find((r) => r.activityId === act.id).runBy && tap(anna).ok);
 
+  // --- The staff inbox ---
+  const inboxTrip = makeCtx().state;
+  const msg = (id, from, text) => ({ id, sender_id: from, sender_name: `User ${from}`, body: text, created_at: '2026-10-15T10:00:00Z' });
+  const asOwner = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', messages: [msg('1', 'other', 'Bus 2 is late'), msg('2', 'me', 'ok')], seen: new Set() });
+  check('Inbox: a team message from somebody else is an unread item; my own message is not listed', asOwner.filter((i) => i.kind === 'message').length === 1 && asOwner.find((i) => i.kind === 'message').unread);
+  const seenMsg = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', messages: [msg('1', 'other', 'Bus 2 is late')], seen: new Set(['m:1']) });
+  check('...and once seen it no longer counts', inboxCount(seenMsg) === 0 || seenMsg.every((i) => i.todo || !i.unread));
+  const held = inboxItems({ trip: inboxTrip, role: 'owner', userId: 'me', requests: [{ id: 'r1', status: 'pending', requester_name: 'Mr Porter', requested_at: '2026-10-15T09:00:00Z', changes: [{ type: 'move', guestId: inboxTrip.guests[0].id, slotId: inboxTrip.slots[0].id, to: { kind: 'leisure' } }] }], holdsFor: () => true });
+  check('Inbox: a request waiting for the owner\'s OK is a to-do item that stays until dealt with, and names who asked', held.some((i) => i.kind === 'approval' && i.todo && /Mr Porter/.test(i.detail)));
+  const answered = inboxItems({ trip: inboxTrip, role: 'team', userId: 'u1', requests: [{ id: 'r2', status: 'declined', requested_by: 'u1', note: 'Tour is full', decided_at: new Date().toISOString(), requested_at: new Date().toISOString(), changes: [] }], now: Date.now() });
+  check('Inbox: a colleague sees the answer to their own request, with the owner\'s word', answered.some((i) => i.kind === 'answer' && /Declined/.test(i.title) && /Tour is full/.test(i.detail)));
   // --- Live editing: a colleague's change is applied on their own device, checked against the server's version ---
   check('What waits for the owner on the live path: a forced move (Jet Staff), an Advance outside their destination; not an Advance forcing at home',
     holdsForOwner(t, ben, [{ type: 'move', guestId: booked.id, slotId: slot.id, to: { kind: 'leisure' }, force: true }])

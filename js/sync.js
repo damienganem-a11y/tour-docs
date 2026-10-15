@@ -181,7 +181,21 @@ export async function watchServerChanges(onChange, onStatus) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_requests' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'team_messages' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
+}
+
+// ---------- Messages between the people working on a trip (migration 0017) ----------
+export async function listTeamMessages(tripId) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('team_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true }).limit(300);
+  if (error) throw error;
+  return data;
+}
+export async function sendTeamMessage(tripId, senderName, body) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('team_messages').insert({ trip_id: tripId, sender_name: senderName, body });
+  if (error) throw error;
 }
 
 // ---------- Documents (Settings > Documents), shared like trips (owner's request, 1 Oct 2026) ----------

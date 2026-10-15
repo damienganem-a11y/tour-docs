@@ -24,6 +24,8 @@ import { guestsSettingsPage } from './settingsGuests.js';
 import { exportsSettingsPage } from './settingsExports.js';
 import { warningsSettingsPage } from './settingsWarnings.js';
 import { sendButton } from './sendSheet.js';
+import { inboxButton } from './inbox.js';
+import { messagesSettingsPage } from './messages.js';
 import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
 import { groupsSettingsPage } from './settingsGroups.js';
@@ -50,7 +52,7 @@ const SETTINGS_SECTIONS = [
     { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
-    { label: 'Scheduled messages', page: 'scheduled', ownerOnly: true, hint: 'Messages sent at a time you choose, reminders, alerts for you' },
+    { label: 'Messages', page: 'messages', hint: 'The team, the guests, scheduled messages and reminders' },
   ] },
   { key: 'documents', icon: 'documents', title: 'Documents and look', blurb: 'Exports and brand', items: [
     { label: 'Documents', page: 'exports', hint: 'Create lists, cards and sheets, and find every one already made' },
@@ -128,6 +130,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   if (mode === 'settings' && page === 'section') {
     return { node: h('div', { class: 'screen' }, settingsSection(ctx, trip, first)) };
   }
+  if (mode === 'settings' && page === 'messages') {
+    return { node: h('div', { class: 'screen' }, messagesSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'scheduled') {
     return { node: h('div', { class: 'screen' }, scheduledSettingsPage(ctx, trip)) };
   }
@@ -151,7 +156,7 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
     : h('div', { class: 'top-bar' },
         ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         h('span', { class: 'top-trip' }, trip.ref || trip.name),
-        h('span', { class: 'top-side' }, ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
+        h('span', { class: 'top-side' }, inboxButton(ctx, trip), ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.

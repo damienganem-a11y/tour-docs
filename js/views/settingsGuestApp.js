@@ -12,6 +12,25 @@ import { farewellOf, GUEST_LINK_GRACE_DAYS, guestLinkExpiry } from '../guestShee
 import { NOTIFY_KINDS, notifySettings } from '../notifyRules.js';
 import { explorerProblems } from '../explorer.js';
 
+// A short message to every guest who turned notifications on in their app (needs the one-time setup of supabase/PUSH_SETUP.md). Shown in Messages.
+export function announceCard(ctx, trip) {
+  // A short message to every guest who turned notifications on in their app (needs the one-time setup of supabase/PUSH_SETUP.md).
+    const title = h('input', { class: 'text-input', type: 'text', maxlength: '80', placeholder: 'Title, e.g. Change of plan', 'aria-label': 'Notification title' });
+    const body = h('textarea', { class: 'text-input', rows: '3', maxlength: '200', placeholder: 'Message (200 letters at most)', 'aria-label': 'Notification message' });
+    const important = h('input', { type: 'checkbox', 'aria-label': 'Important' });
+    return h('div', { class: 'card team-member' },
+      h('div', { class: 'act-name' }, 'Send a message to the guests now'),
+      h('div', { class: 'muted' }, 'It arrives as a notification on the phones of the guests who turned notifications on in their app.'),
+      title, body,
+      h('label', { class: 'check-row' }, important, ' Important: arrives with sound, even during the guest\'s quiet night hours'),
+      h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: async () => {
+        if (!title.value.trim() || !body.value.trim()) { showToast('Write a title and a message.', true); return; }
+        try { const r = await ctx.notifyAllGuests(trip.id, title.value.trim(), body.value.trim(), important.checked); showToast(r?.sent > 0 ? `Sent to ${plural(r.sent, 'phone')}` : 'No guest has notifications on yet, or the setup is not done (supabase/PUSH_SETUP.md).', !(r?.sent > 0)); if (r?.sent > 0) { title.value = ''; body.value = ''; } }
+        catch { showToast('Could not send. Are you online and signed in?', true); }
+      } }, 'Send now')));
+
+}
+
 export function guestAppSettingsPage(ctx, trip) {
   const head = pageHead({
     back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
@@ -61,23 +80,6 @@ export function guestAppSettingsPage(ctx, trip) {
       h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: () => run({ type: 'guest-links', action: 'farewell', text: text.value, website: website.value }, 'Message saved') }, 'Save the message')));
   })();
 
-  // A short message to every guest who turned notifications on in their app (needs the one-time setup of supabase/PUSH_SETUP.md).
-  const announceCard = (() => {
-    const title = h('input', { class: 'text-input', type: 'text', maxlength: '80', placeholder: 'Title, e.g. Change of plan', 'aria-label': 'Notification title' });
-    const body = h('textarea', { class: 'text-input', rows: '3', maxlength: '200', placeholder: 'Message (200 letters at most)', 'aria-label': 'Notification message' });
-    const important = h('input', { type: 'checkbox', 'aria-label': 'Important' });
-    return h('div', { class: 'card team-member' },
-      h('div', { class: 'act-name' }, 'Send a message to the guests'),
-      h('div', { class: 'muted' }, 'It arrives as a notification on the phones of the guests who turned notifications on in their app.'),
-      title, body,
-      h('label', { class: 'check-row' }, important, ' Important: arrives with sound, even during the guest\'s quiet night hours'),
-      h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', onclick: async () => {
-        if (!title.value.trim() || !body.value.trim()) { showToast('Write a title and a message.', true); return; }
-        try { const r = await ctx.notifyAllGuests(trip.id, title.value.trim(), body.value.trim(), important.checked); showToast(r?.sent > 0 ? `Sent to ${plural(r.sent, 'phone')}` : 'No guest has notifications on yet, or the setup is not done (supabase/PUSH_SETUP.md).', !(r?.sent > 0)); if (r?.sent > 0) { title.value = ''; body.value = ''; } }
-        catch { showToast('Could not send. Are you online and signed in?', true); }
-      } }, 'Send now')));
-  })();
-
   // Which changes tell the guests by themselves (all on by default). Each switch is saved at once.
   const notifyOn = notifySettings(trip);
   const notifyCard = h('div', { class: 'card team-member' },
@@ -96,5 +98,5 @@ export function guestAppSettingsPage(ctx, trip) {
         h('div', {}, h('b', {}, m.title), ` ${m.priority === 'important' ? '(important) ' : ''}· ${m.sent} of ${m.audience} phones`), h('div', { class: 'muted' }, `${m.body} · ${new Date(m.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`)))));
   }).catch(() => { reach.lastChild.textContent = 'Not available right now.'; });
 
-  return h('div', {}, head, optionsCard, explorerCard, notifyCard, announceCard, reach, farewellCard);
+  return h('div', {}, head, notice('Messages to the guests (now or scheduled) are in Messages.'), optionsCard, explorerCard, notifyCard, reach, farewellCard);
 }

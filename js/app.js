@@ -28,9 +28,10 @@ import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
-  pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
+  pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
+import { inboxItems } from './inbox.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
@@ -70,6 +71,9 @@ let requestRows = [];
 // Requests from GUESTS (their app's "Ask to switch to this tour"): what the server last said. Never applied by themselves: the owner decides.
 let guestRequestRows = [];
 let outbox = [];
+// The team's conversation (Messages) and what the person has already seen in their inbox (kept on the device).
+const teamMessageRows = new Map(); // tripId -> rows, oldest first
+let inboxSeen = {}; // tripId -> ids of the inbox items already seen
 // Does this browser hold a live online login? true / false, or null while unknown (not checked yet, or
 // offline so it cannot be checked). Only `false` changes what the sync light says (see syncStatus).
 let hasSession = null;
@@ -335,6 +339,26 @@ const ctx = {
   waitlistForcedRequest: (id) => decideForcedRequest(id, 'waitlist'),
   declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
   needsOwnerDecision: (row) => needsOwnerDecision(row),
+  // The staff inbox and the team's messages (inbox.js, views/inbox.js, views/messages.js).
+  teamMessagesFor: (tripId) => teamMessageRows.get(tripId) ?? [],
+  async sendTeamMessage(tripId, body) {
+    await sendTeamMessage(tripId, state.owner.name, body);
+    await loadTeamMessages(tripId);
+    render({ keepScroll: true });
+  },
+  inboxFor(tripId) {
+    const trip = state.trips.get(tripId);
+    if (!trip) return [];
+    return inboxItems({
+      trip, role: ctx.roleFor(tripId), userId: state.owner?.id,
+      requests: requestRows.filter((r) => r.trip_id === tripId), guestRequests: guestRequestRows.filter((r) => r.trip_id === tripId),
+      messages: teamMessageRows.get(tripId) ?? [], holdsFor: (row) => needsOwnerDecision(row), seen: new Set(inboxSeen[tripId] ?? []),
+    });
+  },
+  async markInboxSeen(tripId, ids) {
+    inboxSeen[tripId] = [...new Set([...(inboxSeen[tripId] ?? []), ...ids])].slice(-300);
+    await dbPut('settings', inboxSeen, 'inboxSeen');
+  },
   holdReason: (row) => holdReason(row),
   // A colleague takes back a request that is still waiting: either not sent yet (still in the outbox) or waiting for the owner.
   async takeBackRequest(id) {
@@ -611,6 +635,7 @@ async function start() {
     for (const [id, scope] of Object.entries((await dbGet('settings', 'tripScopes')) ?? {})) tripScopes.set(id, scope);
     for (const [id, approval] of Object.entries((await dbGet('settings', 'tripApprovals')) ?? {})) tripApprovals.set(id, approval);
     outbox = (await dbGet('settings', 'outbox')) ?? [];
+    inboxSeen = (await dbGet('settings', 'inboxSeen')) ?? {};
     for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); knownPushed.set(trip.id, (await getPushedChangeCount(trip.id)) ?? -1); }
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
@@ -710,6 +735,27 @@ async function flushOutbox() {
       } catch { break; /* the next round tries again */ }
     }
   } finally { flushing = false; }
+}
+
+// The team's messages of every trip this person is on (a missing table, before the database update, or no internet simply leaves them as they were).
+// A message from somebody else that was not there before is announced, unless the Messages page is open.
+async function loadTeamMessages(tripId) {
+  const rows = await listTeamMessages(tripId);
+  const before = teamMessageRows.get(tripId);
+  teamMessageRows.set(tripId, rows);
+  if (!before) return rows.length > 0; // the first load only fills the list (and redraws the bell if there is something)
+  const fresh = rows.filter((r) => r.sender_id !== state.owner?.id && !before.some((b) => b.id === r.id));
+  if (fresh.length > 0 && !location.hash.endsWith('/messages')) {
+    const last = fresh.at(-1);
+    showToast(`${last.sender_name}: ${last.body.slice(0, 70)}`);
+  }
+  return fresh.length > 0 || rows.length !== before.length;
+}
+async function loadAllTeamMessages() {
+  if (!state.owner || hasSession !== true || !navigator.onLine) return;
+  let changed = false;
+  for (const id of [...state.trips.keys()]) { try { changed = (await loadTeamMessages(id)) || changed; } catch { /* the table may not exist yet: nothing to show */ } }
+  if (changed && !document.body.classList.contains('sheet-open')) renderQuiet();
 }
 
 // Fetches the guests' requests (a missing table, before the database update, or no internet simply leaves the list as it was).
@@ -1056,7 +1102,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }
