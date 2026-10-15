@@ -17,6 +17,16 @@ export async function pushTrip(trip) {
   return { accepted: data.length > 0 };
 }
 
+// Live editing: writes the trip AND its new journal entries in one step, but only if the server is still at the version this device started from
+// (`base`). Returns { accepted: true }, or { accepted: false, stale: true } when somebody else wrote in between (the caller refreshes and tries again).
+// Throws when the server cannot be reached, or when this person is not allowed to write (an Expert, or a removed colleague).
+export async function applyTripUpdate(trip, base, entries) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc('apply_trip_update', { p_id: trip.id, p_data: trip, p_base: base, p_new: trip.changeCount, p_entries: entries });
+  if (error) throw error;
+  return { accepted: data?.accepted === true, stale: data?.reason === 'stale', missing: data?.reason === 'missing' };
+}
+
 // Entries are immutable and already have a globally-unique client-generated id (see ids.js), so
 // re-pushing ones the server already has is always safe: ignored, not duplicated.
 export async function pushJournalEntries(tripId, entries) {
@@ -267,10 +277,13 @@ export function roleOf(ownerId, userId, invitedAs) {
 export async function pullMyAccess() {
   const supabase = await getClient();
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { userId: null, invitations: new Map(), scopes: new Map() };
-  const { data, error } = await supabase.from('trip_members').select('trip_id, role, destination_id').ilike('email', session.user.email ?? '');
+  if (!session) return { userId: null, invitations: new Map(), scopes: new Map(), approvals: new Map() };
+  const { data, error } = await supabase.from('trip_members').select('*').ilike('email', session.user.email ?? ''); // '*': "approval" exists once migration 0014 is applied
   if (error) throw error;
-  return { userId: session.user.id, invitations: new Map(data.map((row) => [row.trip_id, row.role])), scopes: new Map(data.filter((row) => row.destination_id).map((row) => [row.trip_id, row.destination_id])) };
+  return {
+    userId: session.user.id, invitations: new Map(data.map((row) => [row.trip_id, row.role])), scopes: new Map(data.filter((row) => row.destination_id).map((row) => [row.trip_id, row.destination_id])),
+    approvals: new Map(data.map((row) => [row.trip_id, row.approval === 'review' ? 'review' : 'direct'])),
+  };
 }
 
 export async function listMembers(tripId) {

@@ -8,7 +8,7 @@ import { ENGINES, SKINS, hasGame } from '../guest/explorer/games.js';
 import { entryOf, emptyEntry, explorerOpen, stepOpen, finishStep, finishQuiz, totals, drawQuiz } from '../guest/explorer/state.js';
 import { tripAccent, buildTrip, brandingFromLook, defaultBranding } from './loader.js';
 import { dbGet, dbPut, dbAll, dbDelete, withStores, saveTripAndJournal, getPushedChangeCount, bumpPushedChangeCount } from './db.js';
-import { applyChange, validateChanges, enqueue, outsideScope } from './changes.js';
+import { applyChange, validateChanges, enqueue, outsideScope, holdsForOwner, StaleTripError } from './changes.js';
 import { decideSync, diagnoseSync, plainSyncError } from './sync.js';
 import { makeOwner } from './users.js';
 import { newId } from './ids.js';
@@ -3000,6 +3000,27 @@ function readZip(bytes) {
   check('The owner takes the roll call over: the journal says so, and the earlier runner can no longer change it', took.ok && afterTake.runBy.id === ctxT.owner.id && !tap(anna).ok && groupBatches(ctxT.entries).map(summarize).some((x) => /took over the roll call from Anna Team/.test(x)));
   const back = await applyChange(ctxT, t.id, { type: 'undo' });
   check('Undo of a take-over gives the roll call back to Anna', back.ok && !ctxT.state.rollCalls.find((r) => r.activityId === act.id).runBy && tap(anna).ok);
+
+  // --- Live editing: a colleague's change is applied on their own device, checked against the server's version ---
+  check('What waits for the owner on the live path: a forced move (Jet Staff), an Advance outside their destination; not an Advance forcing at home',
+    holdsForOwner(t, ben, [{ type: 'move', guestId: booked.id, slotId: slot.id, to: { kind: 'leisure' }, force: true }])
+    && holdsForOwner(t, advHere, moveAt(elsewhere)) && !holdsForOwner(t, advHere, moveAt(slot)) && !holdsForOwner(t, ben, moveAt(elsewhere))
+    && !holdsForOwner(t, advHere, [{ type: 'move', guestId: booked.id, slotId: slot.id, to: { kind: 'leisure' }, force: true }]));
+  const liveCtx = makeCtx();
+  const mine = await applyChange(liveCtx, t.id, moveAt(slot), { as: anna, live: true });
+  const undoMine = await applyChange(liveCtx, t.id, { type: 'undo' }, { as: anna, live: true });
+  check('A colleague can undo their own last action on the live path', mine.ok && undoMine.ok);
+  await applyChange(liveCtx, t.id, moveAt(slot), { as: anna, live: true });
+  await applyChange(liveCtx, t.id, moveAt(slot).map((c) => ({ ...c, to: { kind: 'activity', activityId: act.id } })));
+  const undoOthers = await applyChange(liveCtx, t.id, { type: 'undo' }, { as: anna, live: true });
+  check('...but not an action of somebody else; and never off the live path', !undoOthers.ok && /not yours/.test(undoOthers.error) && !validateChanges(liveCtx.state, anna, [{ type: 'undo' }], liveCtx.entries).ok);
+  const staleCtx = makeCtx(); const realCommit = staleCtx.commit; let commits = 0;
+  staleCtx.commit = async (next, entries) => { commits += 1; if (commits === 1) throw new StaleTripError(); return realCommit.call(staleCtx, next, entries); };
+  const retried = await applyChange(staleCtx, t.id, moveAt(slot));
+  check('When the server had moved on, the change is checked again on the refreshed trip and applied once', retried.ok && commits === 2 && staleCtx.entries.filter((e) => e.type === 'move').length === 1);
+  const alwaysStale = makeCtx(); alwaysStale.commit = async () => { throw new StaleTripError(); };
+  const gaveUp = await applyChange(alwaysStale, t.id, moveAt(slot));
+  check('After three tries it gives up with a plain message, and changes nothing', !gaveUp.ok && /same moment/.test(gaveUp.error));
 }
 
 // --- A colleague asks to FORCE a move: the owner decides ---

@@ -156,6 +156,19 @@ const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-
 
 const fail = (error) => ({ ok: false, error });
 
+// Thrown by ctx.commit when, on the live path, the server had already moved on (somebody else changed the trip a moment ago). The device has refreshed
+// its copy by then; doApply simply starts again from the fresh trip, so the change is checked again against what is really there.
+export class StaleTripError extends Error { constructor() { super('The trip changed elsewhere.'); this.stale = true; } }
+
+// Must these changes, made by this colleague, wait for the owner's OK (a request) instead of being applied at once? Same rule the owner's device uses
+// for a request (app.js holdReason): a forced move is a special request (except an Advance in their own destination), and an Advance's change outside
+// their destination waits too. (The owner-chosen box "Ask me before applying their changes" is checked by the caller.)
+export function holdsForOwner(trip, user, changes) {
+  const elsewhere = (c) => user?.role === 'advance' && outsideScope(trip, user.scope, c);
+  if (changes.some((c) => c?.force === true && !(user?.role === 'advance' && !elsewhere(c)))) return true;
+  return changes.some(elsewhere);
+}
+
 // ---------- 1. Checking changes (changes nothing) ----------
 
 // Returns { ok: true } or { ok: false, error: 'plain-language reason' }.
@@ -164,13 +177,21 @@ const fail = (error) => ({ ok: false, error });
 export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   if (!canUser(user, 'change')) return fail('You do not have permission to change bookings.');
   if (!trip) return fail('This trip is not on this phone.');
-  if (user?.role === 'team' && Array.isArray(changes) && !changes.every((c) => TEAM_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
+  // A colleague may Undo, but only on the live path and only their OWN last action (never somebody else's).
+  const colleague = user?.role === 'team' || user?.role === 'advance';
+  const colleagueUndo = colleague && Array.isArray(changes) && changes.length === 1 && changes[0].type === 'undo';
+  if (colleagueUndo) {
+    if (!opts.live) return fail('Only the owner of the trip can undo from here.');
+    const last = lastUndoable(journal, changes[0].scope);
+    if (last && last.entries[0]?.who?.id !== user.id) return fail('The last action was not yours: only its author (or the owner) can undo it.');
+  }
+  if (user?.role === 'team' && Array.isArray(changes) && !colleagueUndo && !changes.every((c) => TEAM_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
   if (user?.role === 'advance' && Array.isArray(changes)) {
-    if (!changes.every((c) => ADVANCE_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
+    if (!colleagueUndo && !changes.every((c) => ADVANCE_TYPES.has(c.type))) return fail('Only the owner of the trip can change this.');
     // The destination's own settings are for that destination only; a booking change elsewhere is allowed, as a request the owner approves.
     for (const c of changes) if (!TEAM_TYPES.has(c.type) && outsideScope(trip, user.scope, c)) return fail('That is outside your destination: only the owner can change it.');
   }
-  if ((user?.role === 'team' || user?.role === 'advance') && Array.isArray(changes)) {
+  if (colleague && !colleagueUndo && Array.isArray(changes)) {
     for (const c of changes) { const limit = teamLimit(trip, user, c); if (limit) return fail(limit); }
   }
   // Archived trips are read-only, except for undoing and the archive/delete actions themselves (so
@@ -871,7 +892,15 @@ export function applyChange(ctx, tripId, changes, opts = {}) {
   }
   // A Team colleague never changes the trip themselves: the change is checked against their copy, then sent as a request
   // that the owner's device applies (SPEC.md, Team step B).
-  if (!opts.as && (ctx.roleFor?.(tripId) === 'team' || ctx.roleFor?.(tripId) === 'advance')) return requestChange(ctx, tripId, list);
+  // A Jet Staff or Advance colleague: when this device is online and in step with the server, and nothing makes the change wait for the owner (a special
+  // request, a place outside their destination, or the owner's "ask me first" box), the change is applied RIGHT HERE, live, and reaches every other device
+  // at once. Otherwise it is sent as a request, as before (it works offline too: the owner's device applies it later).
+  if (!opts.as && (ctx.roleFor?.(tripId) === 'team' || ctx.roleFor?.(tripId) === 'advance')) {
+    const trip = ctx.trip(tripId);
+    const user = ctx.userFor(tripId);
+    if (trip && ctx.liveFor?.(tripId) && !holdsForOwner(trip, user, list)) return enqueue(() => doApply(ctx, tripId, list, { ...opts, live: true }));
+    return requestChange(ctx, tripId, list);
+  }
   return enqueue(() => doApply(ctx, tripId, list, opts));
 }
 
@@ -883,10 +912,18 @@ async function requestChange(ctx, tripId, list) {
 }
 
 async function doApply(ctx, tripId, changes, opts = {}) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await doApplyOnce(ctx, tripId, changes, opts); }
+    catch (error) { if (!error?.stale) throw error; /* somebody else wrote first: the trip was refreshed, check and apply again */ }
+  }
+  return fail('Somebody else was changing the trip at the same moment. Please try again.');
+}
+
+async function doApplyOnce(ctx, tripId, changes, opts = {}) {
   const trip = ctx.trip(tripId);
   const journal = ctx.journal(tripId);
   const actor = opts.as ?? (ctx.userFor ? ctx.userFor(tripId) : ctx.owner); // the person, with the role they have ON THIS TRIP
-  const check = validateChanges(trip, actor, changes, journal, { forceApproved: opts.forceApproved });
+  const check = validateChanges(trip, actor, changes, journal, { forceApproved: opts.forceApproved, live: opts.live });
   if (!check.ok) return check;
 
   // Work on a copy. The real trip is only replaced once the copy is safely saved, so a failed
@@ -1729,6 +1766,7 @@ async function save(ctx, next, entries, extra) {
   try {
     await ctx.commit(next, entries);
   } catch (error) {
+    if (error?.stale) throw error; // the live path: doApply starts again from the refreshed trip
     return fail(`Could not save on this phone (${error.message}). Nothing was changed.`);
   }
   return { ok: true, entries, ...extra };

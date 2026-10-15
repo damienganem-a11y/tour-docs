@@ -159,9 +159,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
     : ctx.roleFor(trip.id) === 'viewer'
       ? notice('You are an Expert on this trip: you can look at everything, but nothing can be changed.')
       : ctx.roleFor(trip.id) === 'team'
-        ? notice('You are Jet Staff: your changes are sent to the owner\'s device and applied there. A forced move waits for the owner.')
+        ? notice('You are Jet Staff: your changes are applied at once, and every device sees them. A forced move waits for the owner. Offline, or if the owner wants to approve first, your change is sent as a request.')
         : ctx.roleFor(trip.id) === 'advance'
-          ? notice('You are Advance: in your own destination you have the owner\'s authority. Anything elsewhere is sent as a request.')
+          ? notice('You are Advance: in your own destination you have the owner\'s authority and your changes are applied at once. Anything elsewhere is sent as a request.')
           : null;
 
   // Settings: the full trip heading and the menu.

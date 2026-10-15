@@ -25,12 +25,12 @@ import { makeOwner } from './users.js';
 import { closeSheet, showToast, onSheetClosed } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
 import {
-  pushTrip, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
+  pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
-import { enqueue, applyChange, outsideScope } from './changes.js';
+import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
@@ -55,7 +55,12 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // The person's role on each trip that is shared with them: 'owner', 'team' or 'viewer' (SPEC.md, Team). A trip that is not in
 // this list is the person's own (a local trip, or one created here), so they are its owner. Kept on the device so it works offline.
 const tripRoles = new Map();
-const tripScopes = new Map(); // tripId -> the one destination a Team colleague is tied to (absent = the whole trip)
+const tripScopes = new Map(); // tripId -> the one destination an Advance is tied to (absent = the whole trip)
+const tripApprovals = new Map(); // tripId -> 'review' when the owner wants to approve this person's changes first (absent = direct)
+// Live editing: how far each trip is known to match the server on THIS device (the same number the database keeps in syncState, kept in memory so a
+// screen can ask at once). A device whose copy is behind this number has changes the server has not seen: it must not write live.
+const knownPushed = new Map();
+async function markPushed(tripId, count) { await bumpPushedChangeCount(tripId, count); knownPushed.set(tripId, Math.max(knownPushed.get(tripId) ?? -1, count)); }
 
 // Owner only: "Preview as View only / Team" (views/preview.js). While it is on, every screen is drawn as that role would see it, and nothing
 // can be changed or sent. Kept per browser tab (sessionStorage), so closing the app always ends it.
@@ -119,13 +124,23 @@ async function checkSession() {
 async function pushAndTrack(trip, entries = []) {
   if (ctx.roleFor(trip.id) !== 'owner') return; // a trip shared WITH this person is only ever read from the server
   try {
-    const { accepted } = await pushTrip(trip);
-    if (accepted) {
-      if (entries.length > 0) await pushJournalEntries(trip.id, entries);
-      await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
+    // A trip already on the server is written ONLY from the version this device last saw there (so a colleague's live change can never be overwritten
+    // by an older copy), together with every journal line the server has not got yet. A trip not on the server yet is simply sent.
+    const base = knownPushed.get(trip.id) ?? -1;
+    let accepted = false;
+    if (base >= 0 && base < (trip.changeCount ?? 0)) {
+      const unsent = ctx.journal(trip.id).filter((e) => (e.seq ?? 0) > base);
+      const result = await applyTripUpdate(trip, base, unsent);
+      if (result.stale) syncInfo.lastError = 'Another device changed this trip while this one was offline: the two versions are not merged yet.';
+      else if (result.missing) accepted = (await pushTrip(trip)).accepted && (await pushJournalEntries(trip.id, ctx.journal(trip.id)), true);
+      else accepted = result.accepted;
+    } else if (base < 0) {
+      accepted = (await pushTrip(trip)).accepted;
+      if (accepted && entries.length > 0) await pushJournalEntries(trip.id, entries);
     }
+    if (accepted) await markPushed(trip.id, trip.changeCount ?? 0);
     if (accepted || trip.guestLinks) await sendGuestSheets(trip); // never throws: see below
-    noteSyncOk();
+    if (accepted) noteSyncOk();
   } catch (error) {
     noteSyncProblem(error);
     throw error;
@@ -213,6 +228,16 @@ const ctx = {
   // The role on this trip, and the person with that role: what the one change function checks (a viewer cannot change anything).
   roleFor: (tripId) => previewRole ?? tripRoles.get(tripId) ?? 'owner',
   scopeFor: (tripId) => (previewRole ? null : tripScopes.get(tripId) ?? null),
+  // Live editing (SPEC.md, "Live editing"): may a change made on this device be written to the server at once, ahead of the other devices?
+  // Needs: a live login, no preview, nothing unsent on this device, and, for a colleague, no "ask me first" from the owner. An Expert never writes.
+  liveFor(tripId) {
+    if (previewRole || !navigator.onLine || hasSession !== true) return false;
+    const trip = state.trips.get(tripId);
+    if (!trip || (knownPushed.get(tripId) ?? -1) < (trip.changeCount ?? 0)) return false;
+    const role = ctx.roleFor(tripId);
+    if (role === 'owner') return true;
+    return (role === 'team' || role === 'advance') && tripApprovals.get(tripId) !== 'review';
+  },
   get previewRole() { return previewRole; },
   setPreview(role) {
     previewRole = role === 'viewer' || role === 'team' ? role : null;
@@ -436,10 +461,28 @@ const ctx = {
   // the LOCAL save above completes, same as before this step, so a slow or absent connection never
   // makes changes.js's own change queue wait on the network (offline-first stays intact).
   async commit(trip, entries) {
+    // Live path: the server is asked FIRST, with the version this change started from. If somebody else wrote in between, nothing is saved here:
+    // this device refreshes its copy and doApply starts again on it. (An owner who cannot reach the server just saves here and sends it later.)
+    const base = state.trips.get(trip.id)?.changeCount ?? 0;
+    let sent = false;
+    if (ctx.liveFor(trip.id)) {
+      try {
+        const result = await applyTripUpdate(trip, base, entries);
+        if (!result.accepted) { await refreshTripNow(trip.id); throw new StaleTripError(); }
+        sent = true;
+      } catch (error) {
+        if (error?.stale) throw error;
+        if (ctx.roleFor(trip.id) !== 'owner') throw new Error('No connection to the server, so nothing was changed. Try again when you are online.');
+      }
+    }
     await saveTripAndJournal(trip, entries);
     state.trips.set(trip.id, trip);
     state.journal.set(trip.id, [...ctx.journal(trip.id), ...entries]);
-    trackPush(pushAndTrack(trip, entries)).catch(() => {});
+    if (sent) {
+      await markPushed(trip.id, trip.changeCount ?? 0);
+      if (ctx.roleFor(trip.id) === 'owner') trackPush(sendGuestSheets(trip)).catch(() => {});
+      noteSyncOk();
+    } else trackPush(pushAndTrack(trip, entries)).catch(() => {});
     notifyAfterChange(trip, entries);
     syncAutoMessagesSoon(trip.id);
   },
@@ -566,8 +609,9 @@ async function start() {
     companyLookAsked = Boolean(await dbGet('settings', 'companyLookAsked'));
     for (const [id, role] of Object.entries((await dbGet('settings', 'tripRoles')) ?? {})) tripRoles.set(id, role);
     for (const [id, scope] of Object.entries((await dbGet('settings', 'tripScopes')) ?? {})) tripScopes.set(id, scope);
+    for (const [id, approval] of Object.entries((await dbGet('settings', 'tripApprovals')) ?? {})) tripApprovals.set(id, approval);
     outbox = (await dbGet('settings', 'outbox')) ?? [];
-    for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); }
+    for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); knownPushed.set(trip.id, (await getPushedChangeCount(trip.id)) ?? -1); }
     for (const entry of await dbAll('journal')) {
       state.journal.set(entry.tripId, [...(state.journal.get(entry.tripId) ?? []), entry]);
     }
@@ -642,7 +686,7 @@ async function backfillPush() {
         const pushed = await getPushedChangeCount(trip.id);
         if ((pushed ?? -1) < (trip.changeCount ?? 0)) {
           await pushJournalEntries(trip.id, ctx.journal(trip.id));
-          await bumpPushedChangeCount(trip.id, trip.changeCount ?? 0);
+          await markPushed(trip.id, trip.changeCount ?? 0);
         }
         await sendGuestSheets(trip); // once per boot, for the guests' links
       }
@@ -898,14 +942,16 @@ function pullSync() {
 // invited to), and remembers it on the device. Never blocks the pull: if it cannot be asked, the roles already known stay.
 async function learnRoles(remote) {
   try {
-    const { userId, invitations, scopes } = await pullMyAccess();
+    const { userId, invitations, scopes, approvals } = await pullMyAccess();
     if (!userId) return;
     for (const row of remote) {
       tripRoles.set(row.id, roleOf(row.owner_id, userId, invitations.get(row.id)));
       if (scopes.has(row.id)) tripScopes.set(row.id, scopes.get(row.id)); else tripScopes.delete(row.id);
+      if (approvals.get(row.id) === 'review') tripApprovals.set(row.id, 'review'); else tripApprovals.delete(row.id);
     }
     await dbPut('settings', Object.fromEntries(tripRoles), 'tripRoles');
     await dbPut('settings', Object.fromEntries(tripScopes), 'tripScopes');
+    await dbPut('settings', Object.fromEntries(tripApprovals), 'tripApprovals');
   } catch { /* keep what is known */ }
 }
 
@@ -936,7 +982,7 @@ async function pullOneTrip(tripId, serverChangeCount) {
     // right here, without waiting for this phone's own next push to confirm it independently.
     const pushed = await getPushedChangeCount(tripId);
     if ((local.changeCount ?? 0) === serverChangeCount && (pushed ?? -1) < (local.changeCount ?? 0)) {
-      await bumpPushedChangeCount(tripId, local.changeCount ?? 0);
+      await markPushed(tripId, local.changeCount ?? 0);
     }
     return;
   }
@@ -956,25 +1002,40 @@ async function pullOneTrip(tripId, serverChangeCount) {
       if (freshDecision !== 'pull') return;
     }
 
-    const remoteTrip = await pullTrip(tripId);
-    if (!remoteTrip) return; // deleted on the server since the list was fetched
-    const trip = migrateTrip(remoteTrip.data);
-    const afterSeq = freshLocal ? Math.max(0, ...ctx.journal(tripId).map((e) => e.seq ?? 0)) : 0;
-    const newEntries = await pullJournalEntries(tripId, afterSeq);
-    const priorEntries = freshLocal ? ctx.journal(tripId) : [];
-
-    await saveTripAndJournal(trip, newEntries); // only the NEW entries need writing; earlier ones are already stored
-    state.trips.set(tripId, trip);
-    state.journal.set(tripId, [...priorEntries, ...newEntries]);
-    await bumpPushedChangeCount(tripId, trip.changeCount ?? 0);
-
-    if (freshLocal && newEntries.length > 0 && location.hash.startsWith(`#/trip/${tripId}/`)) {
-      showToast('Updated from your other phone');
-    }
-    // A refresh that happens on its own must never wipe a sheet the owner is filling in: if one is open,
-    // the new data is already in place and simply shows at the next redraw.
-    if (!document.body.classList.contains('sheet-open')) render({ keepScroll: true });
+    await refreshTripNow(tripId, { announce: true });
   });
+}
+
+// Replaces this device's copy of a trip with the server's (and fetches the journal lines it lacks). Used by the pull above, and by the live path when the
+// server had moved on. It must run inside the change queue (the caller is already in it). Returns false if the trip no longer exists on the server.
+async function refreshTripNow(tripId, { announce = false } = {}) {
+  const freshLocal = state.trips.get(tripId);
+  const remoteTrip = await pullTrip(tripId);
+  if (!remoteTrip) return false; // deleted on the server since the list was fetched
+  const trip = migrateTrip(remoteTrip.data);
+  const afterSeq = freshLocal ? Math.max(0, ...ctx.journal(tripId).map((e) => e.seq ?? 0)) : 0;
+  const newEntries = await pullJournalEntries(tripId, afterSeq);
+  const priorEntries = freshLocal ? ctx.journal(tripId) : [];
+
+  await saveTripAndJournal(trip, newEntries); // only the NEW entries need writing; earlier ones are already stored
+  state.trips.set(tripId, trip);
+  state.journal.set(tripId, [...priorEntries, ...newEntries]);
+  await markPushed(tripId, trip.changeCount ?? 0);
+
+  // The owner's device is the one that tells the guests: a colleague's live change (made on another device) reaches the guests' sheets and
+  // notifications from here, as soon as this device sees it.
+  if (freshLocal && newEntries.length > 0 && ctx.roleFor(tripId) === 'owner') {
+    trackPush(sendGuestSheets(trip)).catch(() => {});
+    notifyAfterChange(trip, newEntries);
+  }
+  if (announce && freshLocal && newEntries.length > 0 && location.hash.startsWith(`#/trip/${tripId}/`)) {
+    const who = newEntries.find((e) => e.who?.id !== state.owner?.id)?.who?.name;
+    showToast(who ? `Updated by ${who}` : 'Updated from your other phone');
+  }
+  // A refresh that happens on its own must never wipe a sheet the owner is filling in: if one is open,
+  // the new data is already in place and simply shows at the next redraw.
+  if (announce && !document.body.classList.contains('sheet-open')) render({ keepScroll: true });
+  return true;
 }
 
 // Keeps this phone up to date with the owner's other devices without anyone asking (owner's request,
