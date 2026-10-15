@@ -1125,3 +1125,13 @@ input[type=checkbox] { accent-color: #000; }
 .bubble--mine { align-self: flex-end; background: var(--yellow); color: var(--on-yellow, #000); }
 .bubble-who { font-size: 12px; opacity: .7; }
 .bubble-text { font-size: 16px; white-space: pre-wrap; }
+
+/* v0.107.0: Check this phone */
+.check-line { display: flex; gap: 12px; align-items: flex-start; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.check-mark { flex: 0 0 24px; height: 24px; border-radius: 50%; text-align: center; font-weight: 800; line-height: 24px; color: #fff; }
+.check-line--ok .check-mark { background: #2e8b57; }
+.check-line--warn .check-mark { background: #e08a00; }
+.check-line--bad .check-mark { background: #c62828; }
+
+/* v0.107.0: the company logo in the top bar */
+.top-logo { height: 22px; width: auto; max-width: 70px; margin-right: 8px; vertical-align: middle; object-fit: contain; border-radius: 4px; }

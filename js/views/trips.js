@@ -205,6 +205,16 @@ export function tripsView(ctx) {
     });
   }
 
+  // Reset the demo (before a presentation): the Rhône River Cruise sample is erased (here and on the server) and loaded again, clean.
+  function resetDemoSheet() {
+    openSheet({
+      eyebrow: 'Demo', title: 'Reset the Rhône River Cruise?',
+      subtitle: 'It is erased from this phone and from the server, then loaded again as it was at the start. Your other trips are not touched.',
+      body: [h('button', { class: 'btn btn--danger', type: 'button', onclick: async () => { closeSheet(); await ctx.eraseTripsNamed('Rhône River Cruise'); await loadRhoneSample(); } }, 'Erase and load it again')],
+      cancelLabel: 'Cancel',
+    });
+  }
+
   // "Account": what belongs to this phone and this person, not to a trip.
   function openAccountSheet() {
     const faceId = !ctx.biometricAvailable ? null
@@ -221,6 +231,7 @@ export function tripsView(ctx) {
           row('Company look', ctx.companyLook?.companyName || 'Logo and colour for new trips', () => { closeSheet(); openCompanyLookSheet(ctx); }),
           faceId,
           ctx.previewRole ? null : row('Preview as…', 'View only, Team or Guest', () => { closeSheet(); openPreviewSheet(ctx); }),
+          row('Reset the demo', 'Erase the Rhône River Cruise and load it fresh', () => { closeSheet(); resetDemoSheet(); }),
           row('Sign out', null, () => { closeSheet(); ctx.signOut(); })),
         // So you can see at once which version is on the phone, and whether it can work offline.
         h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION} · ${offlineStatus()}`),

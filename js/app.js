@@ -28,10 +28,11 @@ import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
   pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
-  pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
+  pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
 import { inboxItems } from './inbox.js';
+import { APP_VERSION } from './version.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
@@ -351,6 +352,49 @@ const ctx = {
   waitlistForcedRequest: (id) => decideForcedRequest(id, 'waitlist'),
   declineForcedRequest: (id, note) => decideForcedRequest(id, 'decline', note),
   needsOwnerDecision: (row) => needsOwnerDecision(row),
+  // Reset a demo trip (Trips > account > "Reset the demo"): the sample's own trips (by name) are erased here and on the server, ready to be loaded again fresh.
+  async eraseTripsNamed(namePart) {
+    for (const trip of [...state.trips.values()].filter((t) => t.name.includes(namePart) && ctx.roleFor(t.id) === 'owner')) await eraseTripEverywhere(trip);
+    render();
+  },
+  // "Check this phone" (Settings > Control): what works and what does not, in plain words, for the person using this device.
+  async checkPhone() {
+    const rows = [];
+    const add = (label, status, detail) => rows.push({ label, status, detail });
+    // The version running, and the newest one on the web (asked without the phone's cache).
+    add('App version', 'ok', APP_VERSION);
+    if (navigator.onLine) {
+      try {
+        const text = await (await fetch(`./js/version.js?check=${Date.now()}`, { cache: 'no-store' })).text();
+        const latest = text.match(/APP_VERSION = '([^']+)'/)?.[1];
+        add('Newest version on the web', latest === APP_VERSION ? 'ok' : 'warn', latest === APP_VERSION ? 'This phone is up to date.' : `${latest}: close the app completely and open it again (twice if needed).`);
+      } catch { add('Newest version on the web', 'warn', 'Could not be checked.'); }
+    }
+    const standalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+    add('Opened as an app', standalone ? 'ok' : 'warn', standalone ? 'Yes (from the Home Screen).' : 'No: in a browser tab. Add it to the Home Screen so it keeps its memory and works offline.');
+    add('Internet', navigator.onLine ? 'ok' : 'bad', navigator.onLine ? 'Online.' : 'Offline: changes are kept on this phone and sent later.');
+    add('Signed in online', hasSession === true ? 'ok' : 'bad', hasSession === true ? `Yes (${state.owner?.name ?? ''}).` : 'No: open the sync light, then "Sign in online". Nothing is shared until you do.');
+    if (navigator.onLine && hasSession === true) {
+      try {
+        const f = await probeServerFeatures();
+        add('Server: live editing', f.liveFunction ? 'ok' : 'bad', f.liveFunction ? 'Ready.' : 'Missing: the database update 0016 is not applied.');
+        add('Server: control levels and roles', f.controlLevels && f.requesterColumns ? 'ok' : 'bad', f.controlLevels && f.requesterColumns ? 'Ready.' : 'Missing: the database updates 0014 to 0018 are not all applied.');
+        add('Server: team messages', f.teamMessages ? 'ok' : 'bad', f.teamMessages ? 'Ready.' : 'Missing: the database update 0017 is not applied.');
+      } catch (error) { add('Server', 'bad', `Could not be asked (${error?.message ?? 'no answer'}).`); }
+    }
+    try { const { state: push } = await ctx.pushState(); add('Notifications on this phone', push === 'on' ? 'ok' : 'warn', { on: 'On.', off: 'Off: turn them on in Settings > Requests.', denied: 'Blocked in the phone\'s settings.', install: 'Add the app to the Home Screen first.', unsupported: 'Not supported by this browser.' }[push] ?? push); } catch { /* not asked */ }
+    try { const kept = await navigator.storage?.persisted?.(); if (kept !== undefined) add('Memory of the app', kept ? 'ok' : 'warn', kept ? 'Kept by the phone.' : 'The phone may clear it if it runs out of space: keep a backup (Settings > Backup).'); } catch { /* not supported */ }
+    for (const trip of state.trips.values()) {
+      const role = ctx.roleFor(trip.id);
+      const scope = tripScopes.get(trip.id);
+      const place = scope ? ` · ${trip.destinations.find((d) => d.id === scope)?.name ?? 'one destination'}` : '';
+      const behind = (knownPushed.get(trip.id) ?? -1) < (trip.changeCount ?? 0);
+      const detail = `${{ owner: 'Owner', team: 'Jet Staff', advance: 'Advance', viewer: 'Expert' }[role] ?? role}${place}${tripApprovals.get(trip.id) === 'review' ? ' · you ask before applying' : ''}. ${trip.changeCount ?? 0} changes. ${conflictTrips.has(trip.id) ? 'TWO VERSIONS: open the inbox.' : behind ? 'Changes not sent yet.' : 'In step with the server.'}`;
+      add(`Trip ${trip.ref || trip.name}`, conflictTrips.has(trip.id) ? 'bad' : behind ? 'warn' : 'ok', detail);
+      if (role !== 'viewer') add(`  Live editing on ${trip.ref || trip.name}`, ctx.liveFor(trip.id) ? 'ok' : 'warn', ctx.liveFor(trip.id) ? 'Your changes are applied at once.' : 'Not now (offline, not in step, or you ask before applying): your changes will go as requests or be sent later.');
+    }
+    return rows;
+  },
   // Two versions of a trip (this device offline vs somebody else): how many unsent changes this device holds, and the owner's choice.
   conflictFor: (tripId) => conflictTrips.has(tripId) && ctx.roleFor(tripId) === 'owner',
   unsentCount: (tripId) => new Set(ctx.journal(tripId).filter((e) => (e.seq ?? 0) > (knownPushed.get(tripId) ?? -1)).map((e) => e.batchId)).size,
@@ -1201,6 +1245,23 @@ let liveChannel = null;
 // Supabase backend (owner's decision, 26 Sep 2026) — otherwise another phone on the account would
 // pull a "permanently deleted" trip right back from the dead the next time it syncs.
 const PURGE_AFTER_DAYS = 30;
+
+// Erases a trip from this device (and, for its owner, from the server) at once: used to reset a demo trip. The same erasure the 30-day purge does.
+async function eraseTripEverywhere(trip) {
+  const journalKeys = await withStores(['journal'], 'readonly', (s) => s.journal.index('tripId').getAllKeys(trip.id));
+  const exportKeys = await withStores(['exports'], 'readonly', (s) => s.exports.index('tripId').getAllKeys(trip.id));
+  await withStores(['trips', 'journal', 'exports', 'syncState'], 'readwrite', (s) => {
+    s.trips.delete(trip.id);
+    for (const key of journalKeys) s.journal.delete(key);
+    for (const key of exportKeys) s.exports.delete(key);
+    s.syncState.delete(trip.id);
+  });
+  state.trips.delete(trip.id);
+  state.journal.delete(trip.id);
+  state.exports.delete(trip.id);
+  knownPushed.delete(trip.id);
+  if (ctx.roleFor(trip.id) === 'owner') await deleteTripRemote(trip.id).catch(() => {});
+}
 
 async function purgeExpiredTrips() {
   const cutoff = Date.now() - PURGE_AFTER_DAYS * 24 * 60 * 60 * 1000;

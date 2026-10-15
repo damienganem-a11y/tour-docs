@@ -185,6 +185,22 @@ export async function watchServerChanges(onChange, onStatus) {
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
 }
 
+// "Check this phone" (Settings > Control): does the server have everything this version of the app needs? Each answer is yes or no, never an error.
+// The live function is asked about a trip that does not exist: it answers "missing" when it is there (and nothing is written).
+export async function probeServerFeatures() {
+  const supabase = await getClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { email: null };
+  const worked = (answer) => !answer.error;
+  const [members, messages, requests, live] = await Promise.all([
+    supabase.from('trip_members').select('approval').limit(1),
+    supabase.from('team_messages').select('id').limit(1),
+    supabase.from('requests').select('requester_role').limit(1),
+    supabase.rpc('apply_trip_update', { p_id: crypto.randomUUID(), p_data: {}, p_base: 0, p_new: 1, p_entries: [] }),
+  ]);
+  return { email: session.user.email, controlLevels: worked(members), teamMessages: worked(messages), requesterColumns: worked(requests), liveFunction: worked(live) && live.data?.reason === 'missing' };
+}
+
 // ---------- Messages between the people working on a trip (migration 0017) ----------
 export async function listTeamMessages(tripId) {
   const supabase = await getClient();

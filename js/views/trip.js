@@ -26,6 +26,7 @@ import { warningsSettingsPage } from './settingsWarnings.js';
 import { sendButton } from './sendSheet.js';
 import { inboxButton } from './inbox.js';
 import { messagesSettingsPage } from './messages.js';
+import { checkSettingsPage } from './settingsCheck.js';
 import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
 import { groupsSettingsPage } from './settingsGroups.js';
@@ -62,6 +63,7 @@ const SETTINGS_SECTIONS = [
     { label: 'Warnings', page: 'warnings', hint: 'Anything that needs your attention' },
     { label: 'Journal', page: 'journal', ownerOnly: true, hint: 'Every change, with who and when' },
     { label: 'Backup', page: 'backup', hint: 'Save or restore the whole trip' },
+    { label: 'Check this phone', page: 'check', hint: 'What works on this device and what does not' },
     { label: 'Preview as…', preview: true, ownerOnly: true, hint: 'See what a view-only person, a colleague or a guest sees' },
   ] },
 ];
@@ -130,6 +132,9 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   if (mode === 'settings' && page === 'section') {
     return { node: h('div', { class: 'screen' }, settingsSection(ctx, trip, first)) };
   }
+  if (mode === 'settings' && page === 'check') {
+    return { node: h('div', { class: 'screen' }, checkSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'messages') {
     return { node: h('div', { class: 'screen' }, messagesSettingsPage(ctx, trip)) };
   }
@@ -155,7 +160,8 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
         h('span', { class: 'top-side' }, syncDot(ctx, { compact: true })))
     : h('div', { class: 'top-bar' },
         ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
-        h('span', { class: 'top-trip' }, trip.ref || trip.name),
+        // The company's logo (Settings > Company look) next to the trip's code, when there is one.
+        h('span', { class: 'top-trip' }, trip.branding?.logo ? h('img', { class: 'top-logo', src: trip.branding.logo, alt: '' }) : null, trip.ref || trip.name),
         h('span', { class: 'top-side' }, inboxButton(ctx, trip), ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
