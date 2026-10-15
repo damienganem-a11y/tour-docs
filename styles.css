@@ -1135,3 +1135,89 @@ input[type=checkbox] { accent-color: #000; }
 
 /* v0.107.0: the company logo in the top bar */
 .top-logo { height: 22px; width: auto; max-width: 70px; margin-right: 8px; vertical-align: middle; object-fit: contain; border-radius: 4px; }
+
+/* =====================================================================================================================================
+   v0.110.0: "Sand" look for the leader's app (owner's choice, 16 Oct 2026, from three proposals). Warm paper page, white cards with a fine outline, the
+   company colour (--yellow, set by applyLook) used as soft tints and one solid button instead of flat vivid blocks, no pure black, lighter titles.
+   This is the last layer: it wins over everything above. Every tint is worked out from --yellow, so a different company gives a different, equally calm look. */
+:root {
+  --bg: #f6f2ec; --card: #fffdfa; --soft: #efe9df; --track: #e6dfd3; --line: #e4ddd2; --ink: #34302b; --muted: #7d766b;
+  --shadow: none; --atl-shadow: 0 1px 2px rgba(70, 52, 30, .07);
+  /* fallbacks first (orange); the real, company-coloured values follow where the phone can mix colours */
+  --sand-tint: #fbe9d6; --sand-sel: #f1d7ba; --sand-ink: #8f4a10; --sand-sel-ink: #5a2e08; --sand-btn: #c46605; --sand-warn: #f6d9c8; --sand-warn-ink: #8a3a1c;
+}
+@supports (background: color-mix(in srgb, red, blue)) {
+  :root {
+    --sand-tint: color-mix(in srgb, var(--yellow) 15%, #fffdfa);
+    --sand-sel: color-mix(in srgb, var(--yellow) 28%, #fffdfa);
+    --sand-ink: color-mix(in srgb, var(--yellow) 48%, #2a1a0a);
+    --sand-sel-ink: color-mix(in srgb, var(--yellow) 30%, #25170a);
+    --sand-btn: color-mix(in srgb, var(--yellow) 72%, #3a2410);
+  }
+}
+body { background: var(--bg); color: var(--ink); }
+.title { font-weight: 650; }
+.title em { font-weight: 650; }
+.act-name, .card-title { font-weight: 600; }
+.card { border: 1px solid var(--line); box-shadow: var(--atl-shadow); background: var(--card); }
+.card--soft { background: transparent; border: 1px dashed #d6cdbf; box-shadow: none; }
+.card--warn { border: 1.5px solid var(--sand-btn); box-shadow: none; }
+.tile, .seat-card, .entry { border: 1px solid var(--line); box-shadow: var(--atl-shadow); background: var(--card); }
+.entry--muted { background: transparent; border-style: dashed; }
+.screen .menu { background: var(--card); border: 1px solid var(--line); }
+.menu-row { border-bottom-color: var(--line); }
+.choice { background: var(--card); border: 1px solid var(--line); }
+.choice:active { background: var(--sand-tint); }
+
+/* the company colour as a soft tint */
+.count { background: var(--sand-tint); color: var(--sand-ink); font-weight: 600; }
+.count--bad { background: var(--sand-warn); color: var(--sand-warn-ink); }
+.card--soft .count { background: var(--soft); color: var(--muted); }
+.tile-icon, .tile--access .tile-icon, .tile--documents .tile-icon, .tile--control .tile-icon, .cog--home, .avatar, .dest-menu-pin, .fold-count { background: var(--sand-tint); color: var(--sand-ink); }
+.cog--home .icon svg circle[fill='#fff'] { fill: var(--sand-tint); }
+.eyebrow::before { background: var(--sand-btn); }
+.eyebrow { color: var(--sand-ink); }
+.tile-badge { background: var(--sand-btn); color: #fff; border: 0; border-radius: 99px; }
+.quote { border-left-color: var(--sand-btn); }
+.pull-indicator--ready { background: var(--sand-tint); color: var(--sand-ink); }
+
+/* what is active: a tint with dark writing (not a black pill) */
+.switch-item.is-active { background: var(--sand-sel); color: var(--sand-sel-ink); }
+.strip-item { background: transparent; border: 1px solid var(--line); color: var(--ink); font-weight: 500; }
+.strip-item.is-active, button.strip-item.is-active { background: var(--sand-sel); border-color: var(--sand-sel); color: var(--sand-sel-ink); font-weight: 600; }
+.switch { background: var(--soft); }
+.bottom-tabs { background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(70, 52, 30, .14); }
+.bottom-tab { color: var(--muted); }
+.bottom-tab.is-active { background: var(--sand-sel); color: var(--sand-sel-ink); }
+:root[data-dark-company] .bottom-tab.is-active { outline: 0; }
+
+/* buttons: one solid colour for the main action, soft everywhere else */
+.btn { background: var(--sand-btn); color: #fff; font-weight: 600; letter-spacing: .01em; }
+.btn--plain, .screen .btn--small.btn--plain, .card .btn--small.btn--plain { background: var(--soft); color: var(--ink); }
+.card .btn--small:not(.btn--plain) { background: var(--sand-btn); color: #fff; }
+.btn--danger, .card .btn.btn--danger, .btn.btn--danger.btn--small { background: #b04a3a; border-color: #b04a3a; color: #fff; }
+.undo-btn { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.chip { background: var(--soft); color: var(--ink); }
+.waitlist-section .chip, .chip.chip--forced { background: var(--sand-sel); border: 0; color: var(--sand-sel-ink); font-weight: 600; }
+.waitlist-flag { background: var(--sand-sel); color: var(--sand-sel-ink); }
+.bubble--mine { background: var(--sand-sel); color: var(--sand-sel-ink); }
+.text-input { border: 1px solid #d8cfc1; background: var(--card); }
+.text-input:focus { border-color: var(--sand-btn); outline: 2px solid var(--sand-sel); }
+input[type=checkbox] { accent-color: var(--sand-btn); }
+.cog { background: var(--soft); }
+.dest-menu { background: var(--card); border: 1px solid var(--line); }
+.send-btn:active { background: var(--soft); }
+
+/* messages at the bottom: soft dark brown, never black */
+.toast { background: #3b362f; color: #f6f2ec; }
+.toast--error { background: #a8402f; }
+.sheet { background: var(--bg); }
+/* the page ground reaches the bottom of the screen; the sync light is a real green / amber / red (not black) */
+html { background: var(--bg); }
+:root { --sand-ok: #5f9a6e; }
+.sync-light--synced { background: var(--sand-ok); }
+.sync-light--pending { background: #d9962e; }
+.sync-lights-label--synced { color: var(--sand-ok); }
+.pull-indicator { border-radius: 99px; background: var(--card); color: var(--ink); border: 1px solid var(--line); text-transform: none; letter-spacing: .02em; font-weight: 600; }
+.dest-menu-name { color: var(--ink); font-weight: 600; }
+.cog, .send-btn, .inbox-btn { color: var(--ink); }

@@ -707,8 +707,8 @@ function render({ keepScroll = false } = {}) {
 // whichever reads better, so any company colour stays readable. A trip with no company name wears Tour Docs orange.
 function applyLook(trip) {
   const root = document.documentElement.style;
-  // Outside a trip (the Trips list): neutral, near-black with white text. Inside a trip: the trip's colour (company colour, else orange).
-  const accent = trip ? tripAccent(trip.branding) : '#1a1a1a';
+  // Outside a trip (the Trips list): neutral, a warm taupe. Inside a trip: the trip's colour (company colour, else orange).
+  const accent = trip ? tripAccent(trip.branding) : '#8a7a66'; // outside a trip: a neutral warm taupe (the Sand look makes soft tints of it)
   document.documentElement.removeAttribute('data-dark-company');
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
   root.setProperty('--yellow', accent);
