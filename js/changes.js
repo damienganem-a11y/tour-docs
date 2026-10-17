@@ -252,6 +252,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
     const slot = trip.slots.find((s) => s.id === change.slotId);
     if (!guest) return fail('That guest is not in this trip.');
     if (!slot) return fail('That half-day is not in this trip.');
+    if (guest.leftAt) return fail(`${guest.first} ${guest.last} has left the trip.`);
     // Forcing a move into a full tour is the owner's decision. A Team colleague can ASK for it (opts.filing: the request is being filed, with a reason
     // that the owner reads); the owner's device never applies it by itself: only after the owner approves it (opts.forceApproved).
     // An Advance has the owner's authority in their own destination: no reason asked there.
@@ -364,6 +365,8 @@ function validateUndo(trip, journal, scope) {
     }
     if (entry.type === 'add-restaurant') {
       if (!trip.restaurants.some((r) => r.id === entry.restaurantId)) return fail('This action cannot be undone: the restaurant no longer exists.');
+      // Removing a restaurant that already has guests booked would leave their tables pointing at nothing.
+      if (trip.dinnerBookings.some((b) => b.restaurantId === entry.restaurantId && dinnerCountIn(trip, b) > 0)) return fail(`This action cannot be undone: guests are booked at "${entry.restaurantLabel}" now.`);
     }
     if (entry.type === 'restaurant-card') {
       const restaurant = trip.restaurants.find((r) => r.id === entry.restaurantId);

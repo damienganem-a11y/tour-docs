@@ -39,6 +39,7 @@ import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
 import { openPreviewSheet } from './preview.js';
 import { icon } from './icons.js';
+import { isSimpleMode } from '../theme.js';
 
 // The Settings menu, in four groups so it reads at a glance. `hint` is the one line under each name. `page` is the screen it opens.
 const SETTINGS_SECTIONS = [
@@ -211,7 +212,9 @@ export function tripView(ctx, tripId, mode, page = 'today', first, second, third
 function visibleItems(ctx, trip, section) {
   const role = ctx.roleFor(trip.id);
   const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
-  return section.items.filter(visible);
+  // Simple mode hides what a colleague rarely needs (it is a choice of this phone, see theme.js).
+  const simpleHides = (item) => isSimpleMode() && (item.page === 'journal' || item.page === 'guestlinks' || item.preview);
+  return section.items.filter((item) => visible(item) && !simpleHides(item));
 }
 
 // The Settings home: four big tiles (a picture and a word each); a tap opens that group's list.

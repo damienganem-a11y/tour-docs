@@ -1566,6 +1566,7 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
   check('Their travel party partner is no longer offered as a "also move" party mover', partyMovers(ctx2.state, guest('G002'), s).every((g) => g.id !== guest('G001').id));
   check('partyLabel now reads Priya S. as travelling solo (their only party-mate left)', partyLabel(ctx2.state, guest('G002'), displayNames(ctx2.state.guests)) === 'Travelling solo');
   check('Refused: marking somebody as left twice', !(await applyChange(ctx2, trip.id, { type: 'guest-left', guestId: guest('G001').id })).ok);
+  check('Refused: moving a guest who has left the trip', !(await applyChange(ctx2, trip.id, { type: 'move', guestId: guest('G001').id, slotId: s.id, to: { kind: 'leisure' } })).ok);
   check('Only the owner can mark a guest as having left', !(await applyChange(makeCtx({ id: 'x', name: 'Guest', role: 'guest' }), trip.id, { type: 'guest-left', guestId: guest('G001').id })).ok);
 
   // Bring them back

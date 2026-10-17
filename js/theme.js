@@ -23,3 +23,13 @@ export function setTheme(theme) {
   try { if (theme === 'auto') localStorage.removeItem(KEY); else localStorage.setItem(KEY, theme); } catch { /* the choice just is not kept */ }
   applyTheme();
 }
+
+// Simple mode (owner's plan, 17 Oct 2026): hides the rarely used parts (Groups, Journal, Guest links, Preview) on THIS phone, for a colleague
+// who is not at ease. Nothing is removed or turned off: the screens still open by their address, and the owner can switch it back any time.
+const SIMPLE_KEY = 'td-simple';
+export function isSimpleMode() {
+  try { return localStorage.getItem(SIMPLE_KEY) === '1'; } catch { return false; }
+}
+export function setSimpleMode(on) {
+  try { if (on) localStorage.setItem(SIMPLE_KEY, '1'); else localStorage.removeItem(SIMPLE_KEY); } catch { /* the choice just is not kept */ }
+}

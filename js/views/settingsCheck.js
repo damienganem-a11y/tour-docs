@@ -5,7 +5,7 @@
 import { h } from '../dom.js';
 import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
-import { THEMES, getTheme, setTheme } from '../theme.js';
+import { THEMES, getTheme, setTheme, isSimpleMode, setSimpleMode } from '../theme.js';
 
 const MARK = { ok: '✓', warn: '!', bad: '✗' };
 
@@ -35,6 +35,10 @@ export function checkSettingsPage(ctx, trip) {
   return h('div', {},
     pageHead({ back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Control', title: 'Check this phone', subtitle: 'What works on this device, and what does not.' }),
     h('p', { class: 'muted' }, 'Appearance of this phone'), looks,
+    // Simple mode: for a colleague who wants fewer buttons. Only this phone is affected.
+    h('label', { class: 'check-row' },
+      h('input', { type: 'checkbox', id: 'simple-mode', checked: isSimpleMode(), onchange: (e) => { setSimpleMode(e.target.checked); showToast(e.target.checked ? 'Simple mode on' : 'Simple mode off'); } }),
+      h('span', {}, ' Simple mode: hide Groups, Journal, Guest links and Preview on this phone')),
     list,
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small', type: 'button', onclick: run }, 'Check again'),
