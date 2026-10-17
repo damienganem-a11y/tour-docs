@@ -399,8 +399,8 @@ const ctx = {
     add('Signed in online', hasSession === true ? 'ok' : 'bad', hasSession === true ? `Yes (${state.owner?.name ?? ''}).` : 'No: open the sync light, then "Sign in online". Nothing is shared until you do.');
     if (navigator.onLine && hasSession === true) {
       try {
-        const f = await probeServerFeatures();
-        add('Server: live editing', f.liveFunction ? 'ok' : 'bad', f.liveFunction ? 'Ready.' : 'Missing: the database update 0016 is not applied.');
+        const f = await probeServerFeatures([...state.trips.keys()][0] ?? null);
+        add('Server: live editing', f.liveFunction ? 'ok' : 'bad', f.liveFunction ? 'Ready.' : 'Not working: the database updates 0016 to 0021 are not all applied.');
         add('Server: control levels and roles', f.controlLevels && f.requesterColumns ? 'ok' : 'bad', f.controlLevels && f.requesterColumns ? 'Ready.' : 'Missing: the database updates 0014 to 0018 are not all applied.');
         add('Server: team messages', f.teamMessages ? 'ok' : 'bad', f.teamMessages ? 'Ready.' : 'Missing: the database update 0017 is not applied.');
       } catch (error) { add('Server', 'bad', `Could not be asked (${error?.message ?? 'no answer'}).`); }

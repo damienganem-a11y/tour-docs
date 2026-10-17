@@ -187,7 +187,9 @@ export async function watchServerChanges(onChange, onStatus) {
 
 // "Check this phone" (Settings > Control): does the server have everything this version of the app needs? Each answer is yes or no, never an error.
 // The live function is asked about a trip that does not exist: it answers "missing" when it is there (and nothing is written).
-export async function probeServerFeatures() {
+// tripId: a trip this person can reach. With it the check goes through the REAL permission code of the live function
+// (a made-up trip would answer "missing" before any permission is looked at, which hid a real bug once).
+export async function probeServerFeatures(tripId = null) {
   const supabase = await getClient();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { email: null };
@@ -196,9 +198,12 @@ export async function probeServerFeatures() {
     supabase.from('trip_members').select('approval').limit(1),
     supabase.from('team_messages').select('id').limit(1),
     supabase.from('requests').select('requester_role').limit(1),
-    supabase.rpc('apply_trip_update', { p_id: crypto.randomUUID(), p_data: {}, p_base: 0, p_new: 1, p_entries: [] }),
+    supabase.rpc('apply_trip_update', { p_id: tripId ?? crypto.randomUUID(), p_data: {}, p_base: 0, p_new: tripId ? 0 : 1, p_entries: [] }),
   ]);
-  return { email: session.user.email, controlLevels: worked(members), teamMessages: worked(messages), requesterColumns: worked(requests), liveFunction: worked(live) && live.data?.reason === 'missing' };
+  // With a real trip, passing the permission check ends in the 'bad version' refusal (nothing is ever written);
+  // a trip not on the server yet answers 'missing', which still proves the function exists.
+  const liveOk = tripId ? /bad version/.test(live.error?.message ?? '') || (worked(live) && live.data?.reason === 'missing') : worked(live) && live.data?.reason === 'missing';
+  return { email: session.user.email, controlLevels: worked(members), teamMessages: worked(messages), requesterColumns: worked(requests), liveFunction: liveOk };
 }
 
 // ---------- Messages between the people working on a trip (migration 0017) ----------
