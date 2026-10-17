@@ -1,5 +1,5 @@
 // Inside a trip. Two spaces, chosen with the switch at the top:
-//   Use       the day-to-day screens (bottom tabs: Touring, Dining, By guest)
+//   Use       the day-to-day screens (bottom tabs: Today, Tours, Guests, More)
 //   Settings  setup and control (owner only)
 //
 // Touring and Dining are two clearly separate places to work in (owner's call, 24 Sep 2026): not
@@ -16,6 +16,7 @@ import { pageHead, syncDot } from './chrome.js';
 import { destinationPage } from './destination.js';
 import { diningPage } from './dining.js';
 import { guestPage } from './guest.js';
+import { todayPage } from './today.js';
 import { journalPage } from './journal.js';
 import { touringSettingsPage } from './settingsTouring.js';
 import { diningSettingsPage } from './settingsDining.js';
@@ -41,37 +42,38 @@ import { icon } from './icons.js';
 
 // The Settings menu, in four groups so it reads at a glance. `hint` is the one line under each name. `page` is the screen it opens.
 const SETTINGS_SECTIONS = [
-  { key: 'setup', icon: 'setup', title: 'Trip set-up', blurb: 'Tours, dining, guests and groups', items: [
+  { key: 'setup', icon: 'setup', title: 'Trip set-up', blurb: 'Tours, dining and guests', items: [
     { label: 'Touring', page: 'touring', hint: 'Destinations, tours, times, meeting points, guest information' },
     { label: 'Dining', page: 'dining', hint: 'Restaurants, seatings and tables' },
-    { label: 'Guests', page: 'guests', hint: 'Names, travel parties, who left the trip' },
-    { label: 'Travel parties', page: 'parties', hint: 'Who travels together' },
-    { label: 'Groups', page: 'groups', hint: 'Bus groups, boats, guided tours' },
+    { label: 'Guests', page: 'guests', hint: 'Names, travel parties, groups, who left the trip' },
   ] },
   { key: 'access', icon: 'people', title: 'People and access', blurb: 'Team, requests and guest links', items: [
     { label: 'Team', page: 'team', ownerOnly: true, hint: 'Colleagues, their role, test access' },
     { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
-    { label: 'Messages', page: 'messages', hint: 'The team, the guests, scheduled messages and reminders' },
   ] },
-  { key: 'documents', icon: 'documents', title: 'Documents and look', blurb: 'Exports and brand', items: [
+  { key: 'documents', icon: 'documents', title: 'Documents and look', blurb: 'Exports, brand and the rest', items: [
     { label: 'Documents', page: 'exports', hint: 'Create lists, cards and sheets, and find every one already made' },
     { label: 'Company look', page: 'brand', hint: 'Company name, logo and colour on documents and in the guest app' },
+    { label: 'Advanced', page: 'section/advanced', hint: 'Warnings, journal, backup, check this phone, preview' },
   ] },
-  { key: 'control', icon: 'control', title: 'Control', blurb: 'Warnings, journal and backup', items: [
+  // Not a tile of its own: reached from "Advanced".
+  { key: 'advanced', icon: 'control', title: 'Advanced', blurb: 'Warnings, journal and backup', hidden: true, items: [
     { label: 'Warnings', page: 'warnings', hint: 'Anything that needs your attention' },
     { label: 'Journal', page: 'journal', ownerOnly: true, hint: 'Every change, with who and when' },
     { label: 'Backup', page: 'backup', hint: 'Save or restore the whole trip' },
-    { label: 'Check this phone', page: 'check', hint: 'What works on this device and what does not' },
+    { label: 'Check this phone', page: 'check', hint: 'What works on this device and what does not, and its look' },
     { label: 'Preview as…', preview: true, ownerOnly: true, hint: 'See what a view-only person, a colleague or a guest sees' },
   ] },
 ];
 
+// Four tabs (owner's plan, 17 Oct 2026): Today, Tours (Touring and Dining, with a switch at the top), Guests, and More (the Settings menu; not for an Expert).
 const USE_TABS = [
-  { page: 'destination', label: 'Touring' },
-  { page: 'dining', label: 'Dining' },
-  { page: 'guest', label: 'By guest' },
+  { tab: 'today', pages: ['today'], label: 'Today', href: (id) => `#/trip/${id}/use/today` },
+  { tab: 'tours', pages: ['destination', 'dining'], label: 'Tours', href: (id) => `#/trip/${id}/use/destination` },
+  { tab: 'guest', pages: ['guest'], label: 'Guests', href: (id) => `#/trip/${id}/use/guest` },
+  { tab: 'more', pages: [], label: 'More', href: (id) => `#/trip/${id}/settings`, notViewer: true },
 ];
 
 // Routes:  #/trip/<id>/use/destination/<destinationId>/<slotId>
@@ -81,7 +83,7 @@ const USE_TABS = [
 //          #/trip/<id>/settings/journal
 // `first` and `second` are the parts after the page name (they may be missing); Dining alone also
 // takes `third`/`fourth` (a restaurant and seating, for its "By table" grid).
-export function tripView(ctx, tripId, mode, page = 'destination', first, second, third, fourth) {
+export function tripView(ctx, tripId, mode, page = 'today', first, second, third, fourth) {
   const trip = ctx.trip(tripId);
   if (!trip) {
     return {
@@ -187,15 +189,22 @@ export function tripView(ctx, tripId, mode, page = 'destination', first, second,
   }
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
-  const content = page === 'guest' ? guestPage(ctx, trip, first)
-    : page === 'dining' ? diningPage(ctx, trip, first, second, third, fourth)
-    : destinationPage(ctx, trip, first, second);
-  const activePage = page === 'guest' ? 'guest' : page === 'dining' ? 'dining' : 'destination';
+  const activePage = page === 'guest' ? 'guest' : page === 'dining' ? 'dining' : page === 'destination' ? 'destination' : 'today';
+  const content = activePage === 'guest' ? guestPage(ctx, trip, first)
+    : activePage === 'dining' ? diningPage(ctx, trip, first, second, third, fourth)
+    : activePage === 'destination' ? destinationPage(ctx, trip, first, second)
+    : todayPage(ctx, trip);
+  // Touring and Dining share the Tours tab: a small switch at the top moves between them.
+  const toursSwitch = activePage === 'destination' || activePage === 'dining'
+    ? h('div', { class: 'switch', role: 'group', 'aria-label': 'Tours or dining' },
+        [['destination', 'Touring'], ['dining', 'Dining']].map(([p, label]) =>
+          h('a', { class: `switch-item${p === activePage ? ' is-active' : ''}`, href: `#/trip/${trip.id}/use/${p}` }, label)))
+    : null;
   const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },
-    USE_TABS.map((t) =>
-      h('a', { class: `bottom-tab${t.page === activePage ? ' is-active' : ''}`, href: `#/trip/${trip.id}/use/${t.page}` }, t.label)));
+    USE_TABS.filter((t) => !(t.notViewer && ctx.roleFor(trip.id) === 'viewer')).map((t) =>
+      h('a', { class: `bottom-tab${t.pages.includes(activePage) ? ' is-active' : ''}`, href: t.href(trip.id) }, t.label)));
 
-  return { node: h('div', { class: 'screen' }, topBar, readOnlyNotice, content, tabs) };
+  return { node: h('div', { class: 'screen' }, topBar, readOnlyNotice, toursSwitch, content, tabs) };
 }
 
 // Which Settings entries this person may open (owner-only ones are hidden from everybody else).
@@ -209,7 +218,8 @@ function visibleItems(ctx, trip, section) {
 function settingsMenu(ctx, trip) {
   const role = ctx.roleFor(trip.id);
   return h('div', {},
-    h('div', { class: 'tiles' }, SETTINGS_SECTIONS.map((section) => {
+    h('a', { class: 'btn btn--plain', href: `#/trip/${trip.id}/settings/messages`, style: 'margin-bottom: 12px;' }, 'Messages: the team, the guests, reminders'),
+    h('div', { class: 'tiles' }, SETTINGS_SECTIONS.filter((section) => !section.hidden).map((section) => {
       const items = visibleItems(ctx, trip, section);
       if (items.length === 0) return null;
       const waitingGuests = section.key === 'access' && role === 'owner' ? ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length : 0;

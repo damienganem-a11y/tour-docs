@@ -53,6 +53,10 @@ function listPage(ctx, trip) {
 
   return h('div', {},
     pageHead({ back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Settings', title: 'Guests', subtitle: `${active.length} on the trip` }),
+    // Travel parties and Groups used to be menu entries of their own; they live here now (owner's plan, 17 Oct 2026).
+    h('div', { class: 'card-actions' },
+      h('a', { class: 'btn btn--small btn--plain', href: `#/trip/${trip.id}/settings/parties` }, 'Travel parties'),
+      h('a', { class: 'btn btn--small btn--plain', href: `#/trip/${trip.id}/settings/groups` }, 'Groups')),
     h('ul', { class: 'list' }, active.map((g) => h('li', {}, row(g)))),
     left.length > 0
       ? h('div', {},

@@ -23,6 +23,7 @@ import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryErasureDue } from './rules.js';
+import { nextTour } from './views/today.js';
 import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
 import { signInAddress } from './views/settingsTeam.js';
 import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.js';
@@ -2732,6 +2733,16 @@ function readZip(bytes) {
   check('Excel: the styles part has the two fixed first fills, a full border and the Normal cell style',
     /<fills count="4"><fill><patternFill patternType="none"\/><\/fill><fill><patternFill patternType="gray125"\/>/.test(styles)
     && /<border><left\/><right\/><top\/><bottom\/><diagonal\/><\/border>/.test(styles) && /cellStyle name="Normal"/.test(styles));
+}
+
+// --- The Today screen: the next tour ---
+{
+  const ctxT = makeCtx();
+  const timed = ctxT.state.activities.filter((a) => a.startsAt && !a.cancelled).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const first = timed[0]; const second = timed.find((a) => a.startsAt > first.startsAt);
+  check('The next tour is the earliest one that has not started yet', nextTour(ctxT.state, new Date(first.startsAt.slice(0, 10) + 'T00:00:00Z'))?.id === first.id);
+  check('A moment after the first tour starts, the next one is a later tour', nextTour(ctxT.state, new Date(Date.parse(first.startsAt) + 1000))?.startsAt >= second.startsAt);
+  check('After the last tour there is none', nextTour(ctxT.state, new Date('2100-01-01')) === null);
 }
 
 // --- Allergies and dietary needs are erased when the trip is archived ---
