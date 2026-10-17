@@ -261,7 +261,7 @@ export function eligibilityProblems(trip, activity, joiningIds, leavingIds = new
     else if (audience === 'all' && guest.age < ADULT_AGE) {
       const adultThere = trip.guests.some((o) => o.id !== guest.id && !o.leftAt && o.partyId === guest.partyId && typeof o.age === 'number' && o.age >= ADULT_AGE
         && (joining.has(o.id) || (!leavingIds.has(o.id) && trip.bookings[o.id]?.[activity.slotId]?.kind === 'activity' && trip.bookings[o.id][activity.slotId].activityId === activity.id)));
-      if (!adultThere) found.push({ guestId: guest.id, text: `${who} is a child: no adult of their travel party is on "${activity.name}"` });
+      if (!adultThere) found.push({ guestId: guest.id, kind: 'child-alone', text: `${who} is a child: no adult of their travel party is on "${activity.name}"` });
     }
   }
   return found;
@@ -486,22 +486,9 @@ export function tripWarnings(trip) {
   return { overbooked, blank, unknown, explorer, waitlistRoom };
 }
 
-// ---------- Allergies and dietary needs: when they are erased (Phase 3, owner's rule) ----------
-// They are deleted automatically once the trip's last dinner is over: the moment the day after the last evening that has a
-// dinner booked begins, in that destination's time zone. (No dinner booked at all: the trip's last evening; no evening: the
-// trip's last half-day.) Returns that exact moment, or null if the trip has no half-days.
-export function dietaryExpiry(trip) {
-  const withDinner = new Set(trip.dinnerBookings.map((b) => b.slotId));
-  const latest = (slots) => slots.reduce((best, s) => (!best || s.date > best.date ? s : best), null);
-  const evenings = trip.slots.filter((s) => s.half === 'Evening');
-  const last = latest(evenings.filter((s) => withDinner.has(s.id))) ?? latest(evenings) ?? latest(trip.slots);
-  if (!last) return null;
-  const destination = trip.destinations.find((d) => d.id === last.destinationId);
-  return localToInstant(addDays(last.date, 1), '00:00', destination?.timeZone ?? 'UTC');
-}
-
-// True when it is time to erase this trip's dietary information (and there is some left to erase).
-export function dietaryErasureDue(trip, now = new Date()) {
-  const expiry = dietaryExpiry(trip);
-  return expiry !== null && now.toISOString() >= expiry && trip.guests.some((g) => g.dietary);
+// ---------- Allergies and dietary needs: when they are erased (owner's rule, 17 Oct 2026) ----------
+// They are deleted when the trip is archived (this replaces the earlier "after the last dinner" rule). True when this trip is
+// archived and some guest still has dietary text to erase.
+export function dietaryErasureDue(trip) {
+  return Boolean(trip.archivedAt) && trip.guests.some((g) => g.dietary);
 }

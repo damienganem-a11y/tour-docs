@@ -351,6 +351,7 @@ function archiveConfirm(ctx, trip) {
     eyebrow: 'Trips screen', title: `Archive "${trip.name}"?`,
     body: [
       h('p', { class: 'muted' }, 'An archived trip becomes read-only: no booking changes, no roll call. Views, the journal and exports still work. Un-archive it any time to change it again.'),
+      h('p', { class: 'notice' }, 'Archiving erases every guest\'s allergies and dietary needs, for good. Un-archiving does not bring them back.'),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => exportFormatSheet((format) => exportFinalTrip(ctx, trip, format)) }, 'Export the whole trip first'),
       h('button', { class: 'btn', type: 'button', onclick: () => save(ctx, trip.id, { type: 'archive-trip' }, `"${trip.name}" archived`) }, 'Archive trip'),
     ],

@@ -273,7 +273,7 @@ function replaceDestination(ctx, trip, destination) {
     eyebrow: 'Rare change', title: `Replace ${destination.name} with a different place?`,
     subtitle: 'For the rare case a whole destination changes, for example a city that turns out to be impossible to visit.',
     body: [
-      notice(`All of ${destination.name}'s activities will be cancelled and every guest on them will be moved to At leisure`
+      notice(`All of ${destination.name}'s activities will be cancelled and every guest on them, or booked on one of its dinners, will be moved to At leisure`
         + `${activeTours.length > 0 ? ` (${plural(activeTours.length, 'tour')}, ${plural(bookedCount, 'guest')})` : ''}. `
         + 'You then create the new tours for the new place, one by one, with "+ Add activity".'),
       nameInput, countryInput, zoneInput, confirm,

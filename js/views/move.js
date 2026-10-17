@@ -298,7 +298,10 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
   const ageProblems = target.kind === 'activity' ? eligibilityProblems(trip, target.activity, group.map((g) => g.id)) : [];
   const needsForce = overCapacity || ageProblems.length > 0;
 
-  for (const problem of ageProblems) warnings.push(`${problem.text}. Moving them needs FORCE, with a reason.`);
+  // A child without an adult of their own party is a warning, never a wall: the owner can confirm that another adult takes charge
+  // (for example a friend's mother) and write who. Other age problems keep the plain FORCE wording.
+  const childAlone = ageProblems.length > 0 && !overCapacity && ageProblems.every((p) => p.kind === 'child-alone');
+  for (const problem of ageProblems) warnings.push(problem.kind === 'child-alone' ? `${problem.text}. A child cannot go without an adult: only continue if another adult takes charge of them.` : `${problem.text}. Moving them needs FORCE, with a reason.`);
   if (overCapacity) {
     const now = countIn(trip, target.activity);
     warnings.push(`"${target.activity.name}" is full (${now} / ${target.activity.capacity}). Forcing this makes it ${now + group.length} / ${target.activity.capacity}.`);
@@ -330,7 +333,7 @@ function confirmMove(ctx, trip, guest, slot, target, movers, options = {}) {
 
   confirmSheet(ctx, trip, {
     title: `Move ${who}${from} to ${to}?`, detail, warnings,
-    confirmLabel: needsForce ? 'Force move' : 'Confirm', force: needsForce, forceEyebrow: overCapacity ? 'Over capacity' : 'Needs a decision', changes, done, secondary,
+    confirmLabel: childAlone ? 'An adult takes charge: confirm' : (needsForce ? 'Force move' : 'Confirm'), force: needsForce, forceEyebrow: overCapacity ? 'Over capacity' : 'Needs a decision', approvalHint: childAlone ? 'Which adult takes charge? (optional)' : null, changes, done, secondary,
   });
 }
 
@@ -383,7 +386,7 @@ async function saveChanges(ctx, trip, changes, done) {
 // A tour cancellation or a forced move has its own red button, so there the Cancel button stays plain.
 // force: the move goes into a full tour. The button says "Force move", and an optional box lets you write
 // who approved it ("Approved by Sam"); it is saved in the journal with the move.
-function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, forceEyebrow = 'Over capacity', cancelLabel, changes, done, secondary = null }) {
+function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger = false, force = false, forceEyebrow = 'Over capacity', approvalHint = null, cancelLabel, changes, done, secondary = null }) {
   // The owner may write who approved it (optional). A Team colleague cannot force: they ASK, with a reason the owner reads, and the owner decides.
   // A Jet Staff colleague, or an Advance outside their own destination, ASKS; an Advance in their own destination decides (the owner's authority there).
   const role = ctx.roleFor?.(trip.id);
@@ -393,7 +396,7 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
     ? (asking
       ? h('textarea', { class: 'text-input approval-input', oninput: (e) => e.target.classList.remove('is-missing'), rows: '3', maxlength: '200', placeholder: 'Why must this one be forced? (required)', 'aria-label': 'Why must this one be forced?' })
       : h('input', {
-        class: 'text-input approval-input', type: 'text', placeholder: 'Approved by (optional)', 'aria-label': 'Approved by (optional)',
+        class: 'text-input approval-input', type: 'text', placeholder: approvalHint ?? 'Approved by (optional)', 'aria-label': approvalHint ?? 'Approved by (optional)',
         maxlength: '60', autocomplete: 'off', autocapitalize: 'words', spellcheck: 'false',
       }))
     : null;

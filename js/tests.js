@@ -22,7 +22,7 @@ import { PASSCODE_CONFIG } from './passcode-config.js';
 import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
-import { dietaryExpiry, dietaryErasureDue } from './rules.js';
+import { dietaryErasureDue } from './rules.js';
 import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
 import { signInAddress } from './views/settingsTeam.js';
 import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.js';
@@ -988,6 +988,19 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
 {
   const lisbon = trip.destinations.find((d) => d.name === 'Lisbon');
   const s = slot('S01'); // a Lisbon half-day
+
+  // --- A new time zone keeps the clock times as typed (the exact moments are worked out again); Undo puts the old moments back ---
+  {
+    const ctxZ = makeCtx();
+    const tourZ = ctxZ.state.activities.find((a) => a.startsAt && ctxZ.state.slots.find((x) => x.id === a.slotId).destinationId === lisbon.id);
+    const clockBefore = formatTime(tourZ.startsAt, lisbon.timeZone);
+    const momentBefore = tourZ.startsAt;
+    const zoned = await applyChange(ctxZ, trip.id, { type: 'edit-destination', destinationId: lisbon.id, name: lisbon.name, country: lisbon.country ?? '', timeZone: 'Asia/Tokyo' });
+    const tourAfter = ctxZ.state.activities.find((a) => a.id === tourZ.id);
+    check('A new time zone keeps the tour at the same clock time, with another exact moment', zoned.ok && formatTime(tourAfter.startsAt, 'Asia/Tokyo') === clockBefore && tourAfter.startsAt !== momentBefore);
+    await applyChange(ctxZ, trip.id, { type: 'undo' });
+    check('Undo of a time zone change puts the old exact moment back', ctxZ.state.activities.find((a) => a.id === tourZ.id).startsAt === momentBefore);
+  }
 
   // --- Edit a destination's own details ---
   const ctx = makeCtx();
@@ -2721,22 +2734,18 @@ function readZip(bytes) {
     && /<border><left\/><right\/><top\/><bottom\/><diagonal\/><\/border>/.test(styles) && /cellStyle name="Normal"/.test(styles));
 }
 
-// --- Allergies and dietary needs are erased after the trip's last dinner ---
+// --- Allergies and dietary needs are erased when the trip is archived ---
 {
   const ctxD = makeCtx();
-  const expiry = dietaryExpiry(ctxD.state);
-  const lastEvening = ctxD.state.slots.filter((s) => s.half === 'Evening').map((s) => s.date).sort().at(-1);
-  check('The erasing moment is the start of the day after the last evening, an exact instant',
-    typeof expiry === 'string' && /Z$/.test(expiry) && expiry.slice(0, 10) >= lastEvening && expiry.slice(0, 10) <= addDays(lastEvening, 2), `${expiry} vs ${lastEvening}`);
-  check('Before that moment nothing is due; after it, it is due while there is anything left to erase',
-    !dietaryErasureDue(ctxD.state, new Date('2000-01-01')) && dietaryErasureDue(ctxD.state, new Date('2100-01-01')));
+  check('Before archiving nothing is due; once archived it is due while there is anything left to erase',
+    !dietaryErasureDue(ctxD.state) && dietaryErasureDue({ ...ctxD.state, archivedAt: '2026-10-17T10:00:00.000Z' }));
   const before = ctxD.state.guests.filter((g) => g.dietary).length;
   const erased = await applyChange(ctxD, trip.id, { type: 'erase-dietary' });
   check('Erasing clears every guest\'s dietary text', before > 0 && erased.ok && ctxD.state.guests.every((g) => !g.dietary));
   const journalText = JSON.stringify(ctxD.entries);
   check('The journal says only how many guests were erased, never what was written',
     ctxD.entries[0].type === 'erase-dietary' && ctxD.entries[0].count === before && !/shellfish|allerg|gluten|vegan|nut/i.test(journalText.replace(/Erased the allergy and dietary information/g, '')) && /Erased the allergy/.test(summarize(groupBatches(ctxD.entries)[0])));
-  check('Once erased, nothing is due any more', !dietaryErasureDue(ctxD.state, new Date('2100-01-01')));
+  check('Once erased, nothing is due any more', !dietaryErasureDue({ ...ctxD.state, archivedAt: '2026-10-17T10:00:00.000Z' }));
   const undoErase = await applyChange(ctxD, trip.id, { type: 'undo' });
   check('Erasing can never be undone (what was erased must not come back)', !undoErase.ok && ctxD.state.guests.every((g) => !g.dietary));
   const arcD = makeCtx();

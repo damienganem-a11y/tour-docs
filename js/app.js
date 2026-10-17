@@ -42,7 +42,8 @@ import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate
 import * as biometrics from './biometrics.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { sameDocument } from './export.js';
-import { dietaryErasureDue, dietaryExpiry } from './rules.js';
+import { dietaryErasureDue } from './rules.js';
+import { applyTheme } from './theme.js';
 import { passcodeView } from './views/passcode.js';
 import { previewBar } from './views/preview.js';
 import { welcomeView } from './views/welcome.js';
@@ -746,6 +747,8 @@ function migrateTrip(trip) {
 // It is replaced by the real screen the moment start() below is ready — no artificial wait.
 
 async function start() {
+  applyTheme(); // light / dark look of this phone
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
   try {
     state.owner = await dbGet('settings', 'owner');
     companyLook = (await dbGet('settings', 'companyLook')) ?? null;
@@ -793,7 +796,7 @@ async function start() {
   window.addEventListener('offline', () => { if (state.owner) renderQuiet(); });
   setInterval(() => refreshFromServer(), REFRESH_EVERY_MS);
   enablePullToRefresh(refreshByHand);
-  setInterval(enforceDietaryExpiry, 60000); // erasing allergy information after the last dinner works offline too
+  setInterval(enforceDietaryExpiry, 60000); // erasing allergy information of archived trips works offline too
   document.addEventListener('visibilitychange', () => refreshFromServer({ force: true }));
   window.addEventListener('focus', () => refreshFromServer({ force: true }));
   render();
@@ -1028,7 +1031,7 @@ async function processRequests() {
   if (/\/settings\/requests/.test(location.hash) && !document.body.classList.contains('sheet-open')) render({ keepScroll: true });
 }
 
-// ---------- Allergies and dietary needs are erased after the trip's last dinner (owner's rule) ----------
+// ---------- Allergies and dietary needs are erased when the trip is archived (owner's rule) ----------
 // Checked when the app opens, whenever it comes to the front, and after each pull from the server. Erases the text on every guest of
 // the trip (through the one change function, so it syncs to the other devices), and deletes the "with dietary" documents of that trip
 // (on every device, through the shared documents). Files already shared with, or backed up by, someone else are outside the app.
@@ -1037,12 +1040,10 @@ async function enforceDietaryExpiry() {
   if (erasing || !state.owner) return;
   erasing = true;
   try {
-    const now = new Date();
     for (const trip of [...state.trips.values()]) {
       if (ctx.roleFor(trip.id) !== 'owner') continue; // the owner's devices erase, and it reaches this one through the sync
-      const expiry = dietaryExpiry(trip);
-      if (expiry === null || now.toISOString() < expiry) continue;
-      if (dietaryErasureDue(trip, now)) await applyChange(ctx, trip.id, { type: 'erase-dietary' });
+      if (!trip.archivedAt) continue;
+      if (dietaryErasureDue(trip)) await applyChange(ctx, trip.id, { type: 'erase-dietary' });
       for (const record of ctx.exportsFor(trip.id)) {
         if (/, with dietary( flags)?$/.test(record.title)) await ctx.deleteExport(trip.id, record.id);
       }

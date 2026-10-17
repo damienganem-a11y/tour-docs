@@ -219,7 +219,7 @@ export function summarize(batch) {
   }
   if (batch.kind === 'erase-dietary') {
     const { count } = batch.entries[0];
-    return `Erased the allergy and dietary information of ${plural(count, 'guest')} (after the trip's last dinner)`;
+    return `Erased the allergy and dietary information of ${plural(count, 'guest')} (the trip was archived)`;
   }
   if (batch.kind === 'guest-links') {
     const { action, count, guestName } = batch.entries[0];

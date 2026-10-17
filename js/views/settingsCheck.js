@@ -5,6 +5,7 @@
 import { h } from '../dom.js';
 import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
+import { THEMES, getTheme, setTheme } from '../theme.js';
 
 const MARK = { ok: '✓', warn: '!', bad: '✗' };
 
@@ -24,8 +25,16 @@ export function checkSettingsPage(ctx, trip) {
     const text = ['Check this phone', ...report.map((r) => `${MARK[r.status]} ${r.label}: ${r.detail}`)].join('\n');
     try { await navigator.clipboard.writeText(text); showToast('Report copied'); } catch { showToast('Could not copy here.', true); }
   };
+  // Appearance: a choice of this phone only (the owner's other devices keep their own).
+  const looks = h('div', { class: 'switch', role: 'group', 'aria-label': 'Appearance' });
+  const drawLooks = () => looks.replaceChildren(...THEMES.map(([id, label]) => h('button', {
+    class: `switch-item${getTheme() === id ? ' is-active' : ''}`, type: 'button', 'aria-pressed': String(getTheme() === id),
+    onclick: () => { setTheme(id); drawLooks(); },
+  }, label)));
+  drawLooks();
   return h('div', {},
     pageHead({ back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Control', title: 'Check this phone', subtitle: 'What works on this device, and what does not.' }),
+    h('p', { class: 'muted' }, 'Appearance of this phone'), looks,
     list,
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small', type: 'button', onclick: run }, 'Check again'),

@@ -38,7 +38,7 @@
 //   { type: 'edit-activity', activityId, name, meeting, startTime, capacity, short, info }
 //       info (optional, see tourInfo.js): what a guest reads about the tour. Left out on an edit = unchanged. Photos left out = kept.
 //   { type: 'replace-destination', destinationId, name, country, timeZone }  a rare fix: the destination becomes a
-//       different place. Its tours are cancelled and everybody on them goes to At leisure, in the same one action.
+//       different place. Its tours are cancelled and everybody on them (and on its dinners) goes to At leisure, in the same one action.
 //   { type: 'add-restaurant', destinationId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes }
 //       Settings only. seatings: array of "HH:MM" strings (at least one). mode: 'flexible'
 //       (seatsPerSeating + maxTableSize set) or 'strict' (tableSizes set, the other two null).
@@ -100,7 +100,7 @@
 //   { type: 'delete-split', splitId }
 //   { type: 'assign-guests', splitId, assignments: [{ guestId, groupId | null }] }   puts guests in a group of a
 //       split, or (groupId null) takes them out of it — one action for one Undo
-//   { type: 'erase-dietary' }  erase all allergy/dietary text (automatic, after the last dinner); never undoable
+//   { type: 'erase-dietary' }  erase all allergy/dietary text (automatic, when the trip is archived); never undoable
 //   { type: 'set-branding', companyName, accent, cardNote, logo }  the look of the confirmation cards (Settings > Brand);
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'guest-links', action, guestIds: [id, ...] }      the personal links of the guest app (Settings > Guest links), owner only.
@@ -117,7 +117,7 @@ import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { explorerProblems } from './explorer.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn, eligibilityProblems } from './rules.js';
-import { isValidTimeZone, localToInstant } from './time.js';
+import { isValidTimeZone, localToInstant, formatTime } from './time.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
 import { menuCardError, cleanMenuCard } from './menuCard.js';
 import { notifySettingsError } from './notifyRules.js';
@@ -147,7 +147,7 @@ const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-
 // What an Advance (the local contact of ONE destination) may do inside their destination on top of that: the destination's own settings, its tours and
 // its restaurants. Everything trip-wide (guests, groups, branding, the trip itself) stays with the owner.
 const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity', 'edit-activity', 'cancel-tour', 'add-restaurant', 'edit-restaurant', 'restaurant-card']);
-// Erasing every guest's allergy and dietary information (automatic, after the trip's last dinner; see rules.js's dietaryExpiry).
+// Erasing every guest's allergy and dietary information (automatic, when the trip is archived; see rules.js's dietaryErasureDue).
 // Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
 const DIETARY_TYPES = new Set(['erase-dietary']);
 // The guest app's personal links (Settings > Guest links): owner only (not in TEAM_TYPES), on their own, never undoable.
@@ -1215,9 +1215,32 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
         movedCount += swept.length;
         for (const guest of swept) move(guest, slot, { kind: 'leisure' }, 'replace-destination');
       }
+      // Dinners of the old place are no longer right either (owner's decision, 17 Oct 2026): everybody booked on one goes to At leisure
+      // (the emptied tables disappear by themselves, and Undo puts everyone back through these same moves).
+      for (const slotId of slotIds) {
+        const slot = trip.slots.find((s) => s.id === slotId);
+        for (const guest of trip.guests) {
+          if (guest.leftAt || trip.bookings[guest.id]?.[slotId]?.kind !== 'dinner') continue;
+          move(guest, slot, { kind: 'leisure' }, 'replace-destination');
+          movedCount += 1;
+        }
+      }
       entries.push({ ...base(), type: 'replace-destination', destinationId: destination.id, from, to, cancelledCount, movedCount, ...destWhere });
     } else {
       entries.push({ ...base(), type: 'edit-destination', destinationId: destination.id, from, to, ...destWhere });
+    }
+    // A new time zone keeps the clock times as they were typed (owner's decision, 17 Oct 2026): a tour at 08:00 stays 08:00 on the
+    // wall of the destination, so its exact moment is worked out again. The old moments are kept in the entry for Undo.
+    const retimed = [];
+    if (to.timeZone !== from.timeZone) {
+      for (const activity of next.activities) {
+        const slot = trip.slots.find((s) => s.id === activity.slotId);
+        if (slot?.destinationId !== destination.id || !activity.startsAt) continue;
+        const startsAt = localToInstant(slot.date, formatTime(activity.startsAt, from.timeZone), to.timeZone);
+        retimed.push({ activityId: activity.id, from: activity.startsAt, to: startsAt });
+        activity.startsAt = startsAt;
+      }
+      entries[entries.length - 1].retimed = retimed;
     }
     setDestinationFields(destination, to);
     return save(ctx, next, entries, {});
@@ -1640,6 +1663,7 @@ function undoEntry(next, entry, base, entries) {
     // back by their own lines, elsewhere in this same batch).
     const destination = next.destinations.find((d) => d.id === entry.destinationId);
     setDestinationFields(destination, entry.from);
+    for (const r of entry.retimed ?? []) { const a = next.activities.find((x) => x.id === r.activityId); if (a) a.startsAt = r.from; }
     entries.push({
       ...base(), type: 'edit-destination', cause: 'undo', destinationId: entry.destinationId,
       slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
