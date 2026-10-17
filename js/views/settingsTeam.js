@@ -74,10 +74,13 @@ function controlFields(trip, current = {}) {
   const whereField = h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, 'Their destination', where),
     h('div', { class: 'form-hint' }, 'There they have your authority. Anything in another destination is sent to you as a request.'));
   const approvalField = h('label', { class: 'tick-row' }, approval, h('span', {}, 'Ask me before applying their changes'));
+  // Simple or full version of the app for this person (the default is simple).
+  const full = h('input', { type: 'checkbox', checked: current.ui_mode === 'full', 'aria-label': 'Full version of the app' });
+  const fullField = h('label', { class: 'tick-row' }, full, h('span', {}, 'Full version of the app (unticked: the simple one, with Requests, Messages, Documents and Warnings in Settings)'));
   const help = h('p', { class: 'muted' }, '');
   // Shows only what the chosen role needs.
-  const show = (role) => { whereField.hidden = role !== 'advance'; approvalField.hidden = role === 'viewer'; help.textContent = ROLE_HELP[role] ?? ''; };
-  return { where, approval, fields: [help, whereField, approvalField], show };
+  const show = (role) => { whereField.hidden = role !== 'advance'; approvalField.hidden = role === 'viewer'; fullField.hidden = role === 'viewer'; help.textContent = ROLE_HELP[role] ?? ''; };
+  return { where, approval, full, fields: [help, whereField, approvalField, fullField], show };
 }
 
 // Changes a person's role, place and control without deleting and re-inviting them (same e-mail, no new sign-in e-mail).
@@ -93,7 +96,7 @@ function editAccessSheet(ctx, trip, member, reload) {
     footer: h('button', { class: 'btn', type: 'button', onclick: async () => {
       try {
         if (role.value === 'advance' && !control.where.value) { showToast('Choose the destination of this Advance.', true); return; }
-        await inviteMember(trip.id, member.email, role.value, control.where.value || null, control.approval.checked ? 'review' : 'direct');
+        await inviteMember(trip.id, member.email, role.value, control.where.value || null, control.approval.checked ? 'review' : 'direct', control.full.checked ? 'full' : 'simple');
         closeSheet(); showToast('Access updated'); reload();
       } catch { showToast('Could not save. Are you online? (The "approval" choice needs the latest server update.)', true); }
     } }, 'Save'),
@@ -104,7 +107,7 @@ function editAccessSheet(ctx, trip, member, reload) {
 export function memberCard(member, { resend, remove, access, scopeName, edit }) {
   return h('div', { class: 'card team-member' },
     h('div', { class: 'act-name team-email' }, member.email),
-    h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · ${scopeName}` : ''}${member.role === 'team' || member.role === 'advance' ? ` · ${member.approval === 'review' ? 'you approve their changes first' : 'changes applied when they fit'}` : ''}`),
+    h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · ${scopeName}` : ''}${member.role === 'team' || member.role === 'advance' ? ` · ${member.approval === 'review' ? 'you approve their changes first' : 'changes applied when they fit'} · ${member.ui_mode === 'full' ? 'full version' : 'simple version'}` : ''}`),
     h('div', { class: 'card-actions' },
       edit ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: edit }, 'Access') : null,
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: access }, 'QR code'),
@@ -161,7 +164,7 @@ export function teamSettingsPage(ctx, trip) {
       if (!address) { say('That does not look like an e-mail address.'); return; }
       if (role.value === 'advance' && !control.where.value) { say('Choose the destination of this Advance.'); return; }
       try {
-        await inviteMember(trip.id, address, role.value, control.where.value || null, control.approval.checked ? 'review' : 'direct');
+        await inviteMember(trip.id, address, role.value, control.where.value || null, control.approval.checked ? 'review' : 'direct', control.full.checked ? 'full' : 'simple');
         email.value = '';
         load();
         showToast(await sendSignInEmail(address)); // one tap: invited AND e-mailed

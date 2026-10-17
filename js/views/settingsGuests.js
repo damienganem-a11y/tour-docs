@@ -12,7 +12,6 @@
 // Every change here goes through the one change function (changes.js), so it is in the Journal and Undo works.
 
 import { h } from '../dom.js';
-import { isSimpleMode } from '../theme.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { alphabetical, displayNames, partyLabel, plain, plural } from '../rules.js';
@@ -57,7 +56,7 @@ function listPage(ctx, trip) {
     // Travel parties and Groups used to be menu entries of their own; they live here now (owner's plan, 17 Oct 2026).
     h('div', { class: 'card-actions' },
       h('a', { class: 'btn btn--small btn--plain', href: `#/trip/${trip.id}/settings/parties` }, 'Travel parties'),
-      isSimpleMode() ? null : h('a', { class: 'btn btn--small btn--plain', href: `#/trip/${trip.id}/settings/groups` }, 'Groups')),
+      h('a', { class: 'btn btn--small btn--plain', href: `#/trip/${trip.id}/settings/groups` }, 'Groups')),
     h('ul', { class: 'list' }, active.map((g) => h('li', {}, row(g)))),
     left.length > 0
       ? h('div', {},

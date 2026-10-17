@@ -40,7 +40,6 @@ import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
 import { openPreviewSheet } from './preview.js';
 import { icon } from './icons.js';
-import { isSimpleMode } from '../theme.js';
 
 // The Settings menu, in four groups so it reads at a glance. `hint` is the one line under each name. `page` is the screen it opens.
 const SETTINGS_SECTIONS = [
@@ -216,8 +215,9 @@ export function tripView(ctx, tripId, mode, page = 'today', first, second, third
 function visibleItems(ctx, trip, section) {
   const role = ctx.roleFor(trip.id);
   const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
-  // Simple mode hides what a colleague rarely needs (it is a choice of this phone, see theme.js).
-  const simpleHides = (item) => isSimpleMode() && (item.page === 'journal' || item.page === 'guestlinks' || item.preview);
+  // The simple version (the owner decides per person, Settings > Team) keeps only Requests, Documents, Warnings and Check this phone (and the Advanced list that holds them).
+  const simpleKeeps = ['requests', 'exports', 'warnings', 'check', 'section/advanced'];
+  const simpleHides = (item) => ctx.simpleFor(trip.id) && !simpleKeeps.includes(item.page);
   return section.items.filter((item) => visible(item) && !simpleHides(item));
 }
 

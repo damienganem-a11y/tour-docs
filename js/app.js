@@ -59,6 +59,7 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // this list is the person's own (a local trip, or one created here), so they are its owner. Kept on the device so it works offline.
 const tripRoles = new Map();
 const tripScopes = new Map(); // tripId -> the one destination an Advance is tied to (absent = the whole trip)
+const tripModes = new Map(); // tripId -> 'full' when the owner unlocked this person (absent = simple version)
 const tripApprovals = new Map(); // tripId -> 'review' when the owner wants to approve this person's changes first (absent = direct)
 // Live editing: how far each trip is known to match the server on THIS device (the same number the database keeps in syncState, kept in memory so a
 // screen can ask at once). A device whose copy is behind this number has changes the server has not seen: it must not write live.
@@ -278,6 +279,11 @@ const ctx = {
     if (role === 'owner') return true;
     return (role === 'team' || role === 'advance') && tripApprovals.get(tripId) !== 'review';
   },
+  // The simple version of the app: for a colleague (Jet Staff or Advance) until the owner unlocks them (Settings > Team). The owner always has the full app.
+  simpleFor(tripId) {
+    const role = ctx.roleFor(tripId);
+    return (role === 'team' || role === 'advance' || role === 'viewer') && tripModes.get(tripId) !== 'full';
+  },
   get previewRole() { return previewRole; },
   setPreview(role) {
     previewRole = role === 'viewer' || role === 'team' ? role : null;
@@ -403,6 +409,7 @@ const ctx = {
         const f = await probeServerFeatures([...state.trips.keys()][0] ?? null);
         add('Server: live editing', f.liveFunction ? 'ok' : 'bad', f.liveFunction ? 'Ready.' : 'Not working: the database updates 0016 to 0021 are not all applied.');
         add('Server: control levels and roles', f.controlLevels && f.requesterColumns ? 'ok' : 'bad', f.controlLevels && f.requesterColumns ? 'Ready.' : 'Missing: the database updates 0014 to 0018 are not all applied.');
+        add('Server: simple and full versions', f.simpleFull ? 'ok' : 'warn', f.simpleFull ? 'Ready.' : 'Missing: the database update 0022 is not applied yet (everybody stays on the full version until then).');
         add('Server: team messages', f.teamMessages ? 'ok' : 'bad', f.teamMessages ? 'Ready.' : 'Missing: the database update 0017 is not applied.');
       } catch (error) { add('Server', 'bad', `Could not be asked (${error?.message ?? 'no answer'}).`); }
     }
@@ -757,6 +764,7 @@ async function start() {
     for (const [id, role] of Object.entries((await dbGet('settings', 'tripRoles')) ?? {})) tripRoles.set(id, role);
     for (const [id, scope] of Object.entries((await dbGet('settings', 'tripScopes')) ?? {})) tripScopes.set(id, scope);
     for (const [id, approval] of Object.entries((await dbGet('settings', 'tripApprovals')) ?? {})) tripApprovals.set(id, approval);
+    for (const [id, mode] of Object.entries((await dbGet('settings', 'tripModes')) ?? {})) tripModes.set(id, mode);
     outbox = (await dbGet('settings', 'outbox')) ?? [];
     inboxSeen = (await dbGet('settings', 'inboxSeen')) ?? {};
     for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); knownPushed.set(trip.id, (await getPushedChangeCount(trip.id)) ?? -1); }
@@ -1140,16 +1148,18 @@ function pullSync() {
 // invited to), and remembers it on the device. Never blocks the pull: if it cannot be asked, the roles already known stay.
 async function learnRoles(remote) {
   try {
-    const { userId, invitations, scopes, approvals } = await pullMyAccess();
+    const { userId, invitations, scopes, approvals, modes } = await pullMyAccess();
     if (!userId) return;
     for (const row of remote) {
       tripRoles.set(row.id, roleOf(row.owner_id, userId, invitations.get(row.id)));
       if (scopes.has(row.id)) tripScopes.set(row.id, scopes.get(row.id)); else tripScopes.delete(row.id);
       if (approvals.get(row.id) === 'review') tripApprovals.set(row.id, 'review'); else tripApprovals.delete(row.id);
+      if (modes?.get(row.id) === 'full') tripModes.set(row.id, 'full'); else tripModes.delete(row.id);
     }
     await dbPut('settings', Object.fromEntries(tripRoles), 'tripRoles');
     await dbPut('settings', Object.fromEntries(tripScopes), 'tripScopes');
     await dbPut('settings', Object.fromEntries(tripApprovals), 'tripApprovals');
+    await dbPut('settings', Object.fromEntries(tripModes), 'tripModes');
   } catch { /* keep what is known */ }
 }
 

@@ -199,16 +199,17 @@ export async function probeServerFeatures(tripId = null) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { email: null };
   const worked = (answer) => !answer.error;
-  const [members, messages, requests, live] = await Promise.all([
+  const [members, messages, requests, live, modes] = await Promise.all([
     supabase.from('trip_members').select('approval').limit(1),
     supabase.from('team_messages').select('id').limit(1),
     supabase.from('requests').select('requester_role').limit(1),
     supabase.rpc('apply_trip_update', { p_id: tripId ?? crypto.randomUUID(), p_data: {}, p_base: 0, p_new: tripId ? 0 : 1, p_entries: [] }),
+    supabase.from('trip_members').select('ui_mode').limit(1),
   ]);
   // With a real trip, passing the permission check ends in the 'bad version' refusal (nothing is ever written);
   // a trip not on the server yet answers 'missing', which still proves the function exists.
   const liveOk = tripId ? /bad version/.test(live.error?.message ?? '') || (worked(live) && live.data?.reason === 'missing') : worked(live) && live.data?.reason === 'missing';
-  return { email: session.user.email, controlLevels: worked(members), teamMessages: worked(messages), requesterColumns: worked(requests), liveFunction: liveOk };
+  return { email: session.user.email, controlLevels: worked(members), teamMessages: worked(messages), requesterColumns: worked(requests), liveFunction: liveOk, simpleFull: worked(modes) };
 }
 
 // ---------- Messages between the people working on a trip (migration 0017) ----------
@@ -326,6 +327,7 @@ export async function pullMyAccess() {
   return {
     userId: session.user.id, invitations: new Map(data.map((row) => [row.trip_id, row.role])), scopes: new Map(data.filter((row) => row.destination_id).map((row) => [row.trip_id, row.destination_id])),
     approvals: new Map(data.map((row) => [row.trip_id, row.approval === 'review' ? 'review' : 'direct'])),
+    modes: new Map(data.map((row) => [row.trip_id, row.ui_mode === undefined || row.ui_mode === 'full' ? 'full' : 'simple'])), // 'simple' until the owner unlocks the person; no column yet (migration 0022 not applied): full
   };
 }
 
@@ -337,11 +339,13 @@ export async function listMembers(tripId) {
   return data;
 }
 // approval: 'direct' (the colleague's requests are applied as soon as they fit) or 'review' (every request waits for the owner's OK).
-export async function inviteMember(tripId, email, role, destinationId = null, approval = 'direct') {
+// uiMode: 'simple' (the default) or 'full': whether the colleague sees the full app or the simple one (migration 0022).
+export async function inviteMember(tripId, email, role, destinationId = null, approval = 'direct', uiMode = 'simple') {
   const supabase = await getClient();
-  const row = { trip_id: tripId, email, role, destination_id: role === 'advance' ? destinationId : null, approval: role === 'team' || role === 'advance' ? approval : 'direct' };
+  const row = { trip_id: tripId, email, role, destination_id: role === 'advance' ? destinationId : null, approval: role === 'team' || role === 'advance' ? approval : 'direct', ui_mode: uiMode === 'full' ? 'full' : 'simple' };
   let { error } = await supabase.from('trip_members').upsert(row, { onConflict: 'trip_id,email' });
   // Before migration 0014 the column does not exist: "direct" is what the server does anyway, so it is saved without it.
+  if (error && /ui_mode/i.test(error.message)) { delete row.ui_mode; ({ error } = await supabase.from('trip_members').upsert(row, { onConflict: 'trip_id,email' })); } // the server does not know migration 0022 yet
   if (error && /approval/i.test(error.message) && row.approval === 'direct') { delete row.approval; ({ error } = await supabase.from('trip_members').upsert(row, { onConflict: 'trip_id,email' })); }
   if (error) throw error;
 }
