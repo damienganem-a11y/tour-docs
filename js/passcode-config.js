@@ -6,7 +6,7 @@
 // It contains a scrambled version of the code, never the code itself.
 
 export const PASSCODE_CONFIG = {
-  salt: '882747f650b76d3216466d9f98e2eee0',
-  hash: 'b01d7aa96d35b5eb943205c53ba236729a897acbe66b8b5c4b62f85e25f64596',
+  salt: '8de7e1c3c2683f6f903731fb6b1b57c6',
+  hash: '4ba539e34a2d8fb624b2b6e17020871169f6627386731c69367623f4a39a1259',
   iterations: 150000,
 };
