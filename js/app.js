@@ -405,6 +405,7 @@ const ctx = {
     add('Opened as an app', standalone ? 'ok' : 'warn', standalone ? 'Yes (from the Home Screen).' : 'No: in a browser tab. Add it to the Home Screen so it keeps its memory and works offline.');
     add('Internet', navigator.onLine ? 'ok' : 'bad', navigator.onLine ? 'Online.' : 'Offline: changes are kept on this phone and sent later.');
     add('Signed in online', hasSession === true ? 'ok' : 'bad', hasSession === true ? `Yes (${state.owner?.name ?? ''}).` : 'No: open the sync light, then "Sign in online". Nothing is shared until you do.');
+    if (navigator.onLine && hasSession !== true) add('Server', 'warn', 'Not checked: sign in online first (the sync light, top right). Live editing, control levels and the simple / full versions are checked after that.');
     if (navigator.onLine && hasSession === true) {
       try {
         const f = await probeServerFeatures([...state.trips.keys()][0] ?? null);
@@ -414,8 +415,8 @@ const ctx = {
         add('Server: team messages', f.teamMessages ? 'ok' : 'bad', f.teamMessages ? 'Ready.' : 'Missing: the database update 0017 is not applied.');
       } catch (error) { add('Server', 'bad', `Could not be asked (${error?.message ?? 'no answer'}).`); }
     }
-    try { const { state: push } = await ctx.pushState(); add('Notifications on this phone', push === 'on' ? 'ok' : 'warn', { on: 'On.', off: 'Off: turn them on in Settings > Requests.', denied: 'Blocked in the phone\'s settings.', install: 'Add the app to the Home Screen first.', unsupported: 'Not supported by this browser.' }[push] ?? push); } catch { /* not asked */ }
-    try { const kept = await navigator.storage?.persisted?.(); if (kept !== undefined) add('Memory of the app', kept ? 'ok' : 'warn', kept ? 'Kept by the phone.' : 'The phone may clear it if it runs out of space: keep a backup (Settings > Backup).'); } catch { /* not supported */ }
+    try { const { state: push } = await ctx.pushState(); add('Notifications on this phone', push === 'on' ? 'ok' : 'warn', { on: 'On.', off: 'Off: turn them on in More > This phone > Notifications.', denied: 'Blocked in the phone\'s settings.', install: 'Add the app to the Home Screen first.', unsupported: 'Not supported by this browser.' }[push] ?? push); } catch { /* not asked */ }
+    try { const kept = await navigator.storage?.persisted?.(); if (kept !== undefined) add('Memory of the app', kept ? 'ok' : 'warn', kept ? 'Kept by the phone.' : 'The phone has not promised to keep it (usual on an iPhone). It is safe if you open the app now and then and keep a backup (More > Advanced > Backup).'); } catch { /* not supported */ }
     for (const trip of state.trips.values()) {
       const role = ctx.roleFor(trip.id);
       const scope = tripScopes.get(trip.id);
