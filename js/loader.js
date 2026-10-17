@@ -219,6 +219,7 @@ export function buildTrip(raw) {
     splits: [],                                     // Settings > Groups: named splits of the guests (bus groups, boat groups...)
     branding: { ...defaultBranding(), ...(/^#[0-9a-f]{6}$/i.test(raw.trip.accent ?? '') ? { accent: raw.trip.accent, fixed: true } : {}) }, // fixed: the file's own colour wins over the device's company look; Settings > Brand: the look of the confirmation cards; the file may bring a colour (trip.accent)
     restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
+    program: [],                                    // daily program of each destination (program.js)
     dinnerBookings: [],                             // Phase 3 step 2a: tables, booked one at a time in Use > Dining
     rollCalls: [],                                 // one per activity, once its roll call has been started (see rollcall.js)
     archivedAt: null,                               // set by "Archive" (Trips screen, step 9): the trip becomes read-only

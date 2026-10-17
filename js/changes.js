@@ -49,6 +49,7 @@
 //       up to how many people, so Strict mode always fits on exactly one table or becomes a Special
 //       request — never two joined tables).
 //   { type: 'edit-restaurant', restaurantId, name, seatings, mode, seatsPerSeating, maxTableSize, tableSizes }
+//   { type: 'set-program', destinationId, days }   the daily program of a destination, replaced as a whole (program.js: days with their items, times as typed)
 //   { type: 'restaurant-card', restaurantId, card }   the restaurant's presentation and menu (menuCard.js); card null removes it
 //   { type: 'book-dinner', slotId, restaurantId, seating, guestIds: [id, ...], tableId?, extra? }   extra: a table the restaurant gives on top of its list
 //       (Dining > "+ New table"): the seating may be ANY time like 19:15; in a Strict restaurant it has no assigned table, so it is a Special request
@@ -120,6 +121,7 @@ import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, din
 import { isValidTimeZone, localToInstant, formatTime } from './time.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
 import { menuCardError, cleanMenuCard } from './menuCard.js';
+import { programError, cleanProgram, programOf, retimeProgram } from './program.js';
 import { notifySettingsError } from './notifyRules.js';
 import { autoNotifyError } from './scheduledMessages.js';
 import { lastUndoable, summarize } from './journal.js';
@@ -128,7 +130,7 @@ import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 // The changes that belong to a roll call. Each one is made on its own (never mixed with others).
 const ROLLCALL_TYPES = new Set(['rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // Settings changes (step 7): each is made on its own, like cancel-tour and undo.
-const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant', 'restaurant-card']);
+const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activity', 'replace-destination', 'add-restaurant', 'edit-restaurant', 'restaurant-card', 'set-program']);
 // Booking a dinner table, or adding to an existing one (Phase 3 step 2a/2b): also made on its own,
 // like cancel-tour.
 const DINING_BOOKING_TYPES = new Set(['book-dinner', 'add-to-dinner-table', 'move-dinner-table']);
@@ -146,7 +148,7 @@ const BRANDING_TYPES = new Set(['set-branding']);
 const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // What an Advance (the local contact of ONE destination) may do inside their destination on top of that: the destination's own settings, its tours and
 // its restaurants. Everything trip-wide (guests, groups, branding, the trip itself) stays with the owner.
-const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity', 'edit-activity', 'cancel-tour', 'add-restaurant', 'edit-restaurant', 'restaurant-card']);
+const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity', 'edit-activity', 'cancel-tour', 'add-restaurant', 'edit-restaurant', 'restaurant-card', 'set-program']);
 // Erasing every guest's allergy and dietary information (automatic, when the trip is archived; see rules.js's dietaryErasureDue).
 // Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
 const DIETARY_TYPES = new Set(['erase-dietary']);
@@ -368,6 +370,9 @@ function validateUndo(trip, journal, scope) {
       // Removing a restaurant that already has guests booked would leave their tables pointing at nothing.
       if (trip.dinnerBookings.some((b) => b.restaurantId === entry.restaurantId && dinnerCountIn(trip, b) > 0)) return fail(`This action cannot be undone: guests are booked at "${entry.restaurantLabel}" now.`);
     }
+    if (entry.type === 'set-program') {
+      if (JSON.stringify(programOf(trip, entry.destinationId)) !== JSON.stringify(entry.to.days)) return fail(`This action cannot be undone: the program of ${entry.slotLabel} has changed since.`);
+    }
     if (entry.type === 'restaurant-card') {
       const restaurant = trip.restaurants.find((r) => r.id === entry.restaurantId);
       if (!restaurant) return fail('This action cannot be undone: the restaurant no longer exists.');
@@ -497,6 +502,11 @@ function validateSettingsChange(trip, change) {
   if (change.type === 'edit-restaurant') {
     if (!trip.restaurants.some((r) => r.id === change.restaurantId)) return fail('That restaurant does not exist.');
     return validateRestaurantFields(change);
+  }
+  if (change.type === 'set-program') {
+    if (!trip.destinations.some((d) => d.id === change.destinationId)) return fail('That destination does not exist.');
+    const problem = programError(change.days);
+    return problem ? fail(problem) : { ok: true };
   }
   if (change.type === 'restaurant-card') {
     if (!trip.restaurants.some((r) => r.id === change.restaurantId)) return fail('That restaurant does not exist.');
@@ -1151,6 +1161,18 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
       return save(ctx, next, entries, {});
     }
 
+    if (change.type === 'set-program') {
+      const destination = trip.destinations.find((d) => d.id === change.destinationId);
+      const from = { days: structuredClone(programOf(trip, destination.id)) };
+      const to = { days: cleanProgram(destination, change.days) };
+      next.program = [...(next.program ?? []).filter((d) => d.destinationId !== destination.id), ...to.days];
+      entries.push({
+        ...base(), type: 'set-program', destinationId: destination.id, slotId: null, slotLabel: destination.name,
+        place: { name: destination.name, timeZone: destination.timeZone }, from, to,
+      });
+      return save(ctx, next, entries, {});
+    }
+
     if (change.type === 'restaurant-card') {
       const restaurant = next.restaurants.find((r) => r.id === change.restaurantId);
       const destination = trip.destinations.find((d) => d.id === restaurant.destinationId);
@@ -1244,6 +1266,12 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
         activity.startsAt = startsAt;
       }
       entries[entries.length - 1].retimed = retimed;
+      // The daily program keeps its clock times too; the old moments are kept for Undo.
+      const days = programOf(trip, destination.id);
+      if (days.length > 0) {
+        entries[entries.length - 1].programBefore = structuredClone(days);
+        next.program = [...(next.program ?? []).filter((d) => d.destinationId !== destination.id), ...retimeProgram(days, from.timeZone, to.timeZone)];
+      }
     }
     setDestinationFields(destination, to);
     return save(ctx, next, entries, {});
@@ -1667,6 +1695,7 @@ function undoEntry(next, entry, base, entries) {
     const destination = next.destinations.find((d) => d.id === entry.destinationId);
     setDestinationFields(destination, entry.from);
     for (const r of entry.retimed ?? []) { const a = next.activities.find((x) => x.id === r.activityId); if (a) a.startsAt = r.from; }
+    if (entry.programBefore) next.program = [...(next.program ?? []).filter((d) => d.destinationId !== entry.destinationId), ...structuredClone(entry.programBefore)];
     entries.push({
       ...base(), type: 'edit-destination', cause: 'undo', destinationId: entry.destinationId,
       slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
@@ -1690,6 +1719,13 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'add-restaurant') {
     next.restaurants = next.restaurants.filter((r) => r.id !== entry.restaurantId); // as if it was never added
     entries.push({ ...base(), type: 'restaurant-remove', cause: 'undo', restaurantId: entry.restaurantId, restaurantLabel: entry.restaurantLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'set-program') {
+    next.program = [...(next.program ?? []).filter((d) => d.destinationId !== entry.destinationId), ...structuredClone(entry.from.days)];
+    entries.push({
+      ...base(), type: 'set-program', cause: 'undo', destinationId: entry.destinationId, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, from: entry.to, to: entry.from,
+    });
     return;
   }
   if (entry.type === 'restaurant-card') {

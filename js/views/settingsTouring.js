@@ -95,6 +95,7 @@ function detailPage(ctx, trip, destination) {
       class: 'btn btn--plain btn--small', type: 'button', disabled: Boolean(trip.archivedAt),
       onclick: () => editDestination(ctx, trip, destination),
     }, 'Edit details'),
+    h('a', { class: 'btn btn--plain btn--small', href: `#/trip/${trip.id}/settings/program/${destination.id}` }, 'Daily program'),
     h('h3', { class: 'section-title' }, 'Activities'),
     active.length === 0
       ? h('p', { class: 'empty' }, cancelled.length > 0 ? 'No active tours.' : 'No activities yet in this destination.')

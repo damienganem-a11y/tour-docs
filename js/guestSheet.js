@@ -16,6 +16,7 @@ import { formatTime } from './time.js';
 import { guestMenuCard } from './menuCard.js';
 import { tripAccent } from './loader.js';
 import { explorerForGuest } from './explorer.js';
+import { programOf } from './program.js';
 
 // The sheet's own format number: the guest app refuses a sheet it does not understand instead of showing it wrongly.
 export const SHEET_VERSION = 1;
@@ -97,6 +98,24 @@ function partOf(trip, guest, slot, destination, tours, restaurants) {
   return { kind: 'open' };
 }
 
+// The daily program (program.js): the same for every guest, times as clock times in each destination's own time zone. Nothing personal in it.
+function programForSheet(trip) {
+  const days = [];
+  for (const destination of [...trip.destinations].sort((a, b) => a.order - b.order)) {
+    for (const day of programOf(trip, destination.id)) {
+      if (day.items.length === 0 && day.notes.length === 0 && !day.title) continue;
+      days.push({
+        destination: destination.name, date: day.date, title: day.title, notes: day.notes,
+        items: day.items.map((i) => ({
+          time: i.startsAt ? formatTime(i.startsAt, destination.timeZone) : null, endTime: i.endsAt ? formatTime(i.endsAt, destination.timeZone) : null,
+          kind: i.kind, title: i.title, place: i.place || null, text: i.text || null, lines: i.lines,
+        })),
+      });
+    }
+  }
+  return days;
+}
+
 // Builds the sheet for one guest. `now` is passed in (an ISO moment) so the result is the same for the same trip.
 export function buildGuestSheet(trip, guest, now) {
   const days = [];
@@ -134,6 +153,7 @@ export function buildGuestSheet(trip, guest, now) {
     last: guest.last || '', // the guest's own full name, for the initials and the profile in their app
     updatedAt: now,
     days,
+    program: programForSheet(trip), // the daily program of each destination (the guest app merges the guest's own tours and dinner into it)
     // For the passport: each destination with its time zone and the first and last date there (from its half-days), in trip order.
     destinations: [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => {
       const dates = trip.slots.filter((x) => x.destinationId === d.id).map((x) => x.date).sort();

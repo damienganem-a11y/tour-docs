@@ -23,7 +23,8 @@ import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryErasureDue } from './rules.js';
-import { nextTour } from './views/today.js';
+import { nextTour, programToday } from './views/today.js';
+import { programError, programOf, programForEditing } from './program.js';
 import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
 import { signInAddress } from './views/settingsTeam.js';
 import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.js';
@@ -2734,6 +2735,38 @@ function readZip(bytes) {
   check('Excel: the styles part has the two fixed first fills, a full border and the Normal cell style',
     /<fills count="4"><fill><patternFill patternType="none"\/><\/fill><fill><patternFill patternType="gray125"\/>/.test(styles)
     && /<border><left\/><right\/><top\/><bottom\/><diagonal\/><\/border>/.test(styles) && /cellStyle name="Normal"/.test(styles));
+}
+
+// --- The daily program of a destination ---
+{
+  const ctxP = makeCtx();
+  const lisbonP = ctxP.state.destinations[0];
+  const slotP = ctxP.state.slots.find((x) => x.destinationId === lisbonP.id);
+  const days = [{ date: slotP.date, title: 'Welcome!', notes: ['Wi-Fi is free'], items: [
+    { time: '09:00', endTime: '17:00', kind: 'event', title: 'Welcome desk', place: 'Lobby', text: 'Bring your passport', lines: [] },
+    { time: '07:15', kind: 'transfer', title: 'Airport transfer', lines: ['Group 1 departs 07:15', 'Group 2 departs 07:30'] },
+    { kind: 'note', title: 'Please charge your devices' },
+  ] }];
+  const saved = await applyChange(ctxP, trip.id, { type: 'set-program', destinationId: lisbonP.id, days });
+  const stored = programOf(ctxP.state, lisbonP.id);
+  check('Program: saving a day stores its items in the owner\'s order, with exact moments', saved.ok && stored.length === 1 && stored[0].items.map((i) => i.title).join('|') === 'Welcome desk|Airport transfer|Please charge your devices'
+    && /Z$/.test(stored[0].items[0].startsAt) && stored[0].items[2].startsAt === null, saved.error);
+  const sheetP = buildGuestSheet(ctxP.state, ctxP.state.guests[0], '2027-01-01T00:00:00.000Z');
+  check('Program: the guest sheet carries the days, with clock times and nothing personal', sheetP.program.length === 1 && sheetP.program[0].items[0].time === '09:00' && sheetP.program[0].items[0].endTime === '17:00' && sheetP.program[0].items[2].time === null && !JSON.stringify(sheetP.program).includes('"id"'));
+  check('Program: the staff Today screen finds the day that is today in the destination\'s zone', programToday(ctxP.state, new Date(`${slotP.date}T12:00:00Z`)).length === 1 && programToday(ctxP.state, new Date('2100-01-01T12:00:00Z')).length === 0);
+  check('Program: the times read back as typed in the destination\'s zone', programForEditing(stored, lisbonP.timeZone)[0].items[0].time === '09:00');
+  check('Program: the journal says how many days and items', /Daily program of .* saved \(1 day, 3 items\)/.test(summarize(groupBatches(ctxP.entries).at(-1))), summarize(groupBatches(ctxP.entries).at(-1)));
+  check('Program: refused when a time is malformed, a kind is unknown, a date is twice, or an end has no start',
+    programError([{ date: slotP.date, items: [{ title: 'x', time: '9am' }] }]) !== null && programError([{ date: slotP.date, items: [{ title: 'x', kind: 'party' }] }]) !== null
+    && programError([{ date: slotP.date }, { date: slotP.date }]) !== null && programError([{ date: slotP.date, items: [{ title: 'x', endTime: '10:00' }] }]) !== null);
+  check('Program: refused for a destination that does not exist', !(await applyChange(ctxP, trip.id, { type: 'set-program', destinationId: 'nope', days: [] })).ok);
+  const zoned = await applyChange(ctxP, trip.id, { type: 'edit-destination', destinationId: lisbonP.id, name: lisbonP.name, country: lisbonP.country ?? '', timeZone: 'Asia/Tokyo' });
+  check('Program: a new time zone keeps the clock times', zoned.ok && programForEditing(programOf(ctxP.state, lisbonP.id), 'Asia/Tokyo')[0].items[0].time === '09:00');
+  await applyChange(ctxP, trip.id, { type: 'undo' });
+  check('Program: undoing the time zone change puts the old moments back', JSON.stringify(programOf(ctxP.state, lisbonP.id)) === JSON.stringify(stored));
+  const undone = await applyChange(ctxP, trip.id, { type: 'undo' });
+  check('Program: undo takes the saved program back', undone.ok && programOf(ctxP.state, lisbonP.id).length === 0, undone.error);
+  check('Program: a Jet Staff colleague cannot change it', !(await applyChange(makeCtx({ id: 'j', name: 'Jet', role: 'team' }), trip.id, { type: 'set-program', destinationId: lisbonP.id, days })).ok);
 }
 
 // --- The Today screen: the next tour ---

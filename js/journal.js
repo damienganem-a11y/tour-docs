@@ -49,6 +49,7 @@ export function groupBatches(entries) {
         : types.has('add-restaurant') ? 'add-restaurant'
         : types.has('edit-restaurant') ? 'edit-restaurant'
         : types.has('restaurant-card') ? 'restaurant-card'
+        : types.has('set-program') ? 'set-program'
         // A book-dinner, add-to-dinner-table or move-dinner-table batch also contains one 'move'
         // entry per guest — must classify by its own kind, not fall through to 'move' below.
         : types.has('book-dinner') ? 'book-dinner'
@@ -85,6 +86,7 @@ export function groupBatches(entries) {
 // offers to take back something that belongs there.
 export const USE_UNDO_SCOPE = ['move', 'cancel-tour'];                // By destination, By guest
 export const DESTINATION_UNDO_SCOPE = ['edit-destination', 'replace-destination', 'add-activity', 'edit-activity']; // Settings > Touring
+export const PROGRAM_UNDO_SCOPE = ['set-program']; // the daily program editor
 export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant', 'restaurant-card']; // Settings > Dining
 // Use > Dining's own Undo (Phase 3 step 2a/2b). A guest later moved off a table through the ordinary
 // Move sheet is a plain 'move' batch — undoable from Touring/By guest's own Undo, not this one; a
@@ -184,6 +186,12 @@ export function summarize(batch) {
   if (batch.kind === 'edit-activity') return summarizeEditActivity(batch.entries[0]);
   if (batch.kind === 'add-restaurant') { const e = batch.entries[0]; return `Added "${e.restaurantLabel}" (${e.slotLabel})`; }
   if (batch.kind === 'edit-restaurant') return summarizeEditRestaurant(batch.entries[0]);
+  if (batch.kind === 'set-program') {
+    const e = batch.entries[0];
+    const count = (days) => ({ days: days.length, items: days.reduce((n, d) => n + d.items.length, 0) });
+    const c = count(e.to.days);
+    return `Daily program of ${e.slotLabel} saved (${plural(c.days, 'day')}, ${plural(c.items, 'item')})`;
+  }
   if (batch.kind === 'restaurant-card') {
     const e = batch.entries[0];
     const dishes = (card) => (card?.sections ?? []).reduce((n, s) => n + s.items.length, 0);

@@ -2,7 +2,8 @@
 // often looked for. Everything here is only READ from the trip, nothing is changed from this screen.
 
 import { h } from '../dom.js';
-import { tripDates, formatTime, formatWeekdayDate } from '../time.js';
+import { tripDates, formatTime, formatWeekdayDate, localDateNow } from '../time.js';
+import { programOf } from '../program.js';
 import { tripWarnings, countIn } from '../rules.js';
 import { pageHead } from './chrome.js';
 
@@ -11,6 +12,16 @@ export function nextTour(trip, now = new Date()) {
   const upcoming = trip.activities.filter((a) => !a.cancelled && a.startsAt && a.startsAt >= now.toISOString());
   upcoming.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
   return upcoming[0] ?? null;
+}
+
+// The program days that are today, each judged in its own destination's time zone (a trip can cross zones). Usually one.
+export function programToday(trip, now = new Date()) {
+  const found = [];
+  for (const destination of trip.destinations) {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: destination.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    for (const day of programOf(trip, destination.id)) if (day.date === today) found.push({ destination, day });
+  }
+  return found;
 }
 
 export function todayPage(ctx, trip) {
@@ -41,12 +52,20 @@ export function todayPage(ctx, trip) {
       `${formatWeekdayDate(slot.date)} · ${formatTime(tour.startsAt, destination.timeZone)} · ${destination.name}${tour.meeting ? ` · ${tour.meeting}` : ''} · ${count}${tour.capacity ? ` / ${tour.capacity}` : ''} booked`));
   }
 
+  // 3. Today's daily program (what the guests are given), when there is one.
+  const program = programToday(trip).map(({ destination, day }) => h('div', { class: 'menu' },
+    row(`${base}/settings/program/${destination.id}/${day.date}`, day.title || formatWeekdayDate(day.date), `${destination.name} · ${day.items.length} item${day.items.length === 1 ? '' : 's'}`),
+    ...day.items.map((i) => h('div', { class: 'menu-row' }, h('span', { class: 'menu-text' },
+      h('span', { class: 'menu-label' }, `${i.startsAt ? `${formatTime(i.startsAt, destination.timeZone)} · ` : ''}${i.title}`), i.place ? h('span', { class: 'menu-hint' }, i.place) : null)))));
+
   return h('div', {},
     pageHead({ eyebrow: 'Today', title: trip.name, subtitle: `${tripDates(trip.start, trip.days)} · ${trip.guests.length} guests` }),
     h('h3', { class: 'section-title' }, 'Needs attention'),
     attention.length > 0 ? h('div', { class: 'menu' }, attention) : h('p', { class: 'muted' }, 'Nothing needs your attention.'),
     h('h3', { class: 'section-title' }, 'Next up'),
     next,
+    program.length > 0 ? h('h3', { class: 'section-title' }, 'Program of the day') : null,
+    ...program,
     h('h3', { class: 'section-title' }, 'Quick links'),
     h('div', { class: 'menu' },
       row(`${base}/settings/messages`, 'Messages', 'The team, the guests, reminders'),

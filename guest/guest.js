@@ -312,12 +312,64 @@ function tripView(sheet, offline) {
     h('div', { class: 'atl-body' }, offline, staleNotice(sheet), ...programmeView(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
+// ---------- the daily program (owner's request, 17 Oct 2026): step after step, with the guest's own tours and dinner in it ----------
+let programDate = null; // the day chosen in the Program tab (null: today, or the nearest day with a program)
+const KIND_NAME = { event: '', meal: 'Meal', lecture: 'Lecture', transfer: 'Transfer', flight: 'Flight', note: 'Note' };
+function programDayShown(sheet) {
+  const days = sheet.program ?? [];
+  if (programDate && days.some((d) => d.date === programDate)) return days.find((d) => d.date === programDate);
+  const today = (d) => todayAt(sheet, d.destination);
+  return days.find((d) => d.date === today(d)) ?? days.find((d) => d.date > today(d)) ?? days[days.length - 1];
+}
+// What the guest has chosen or been given that day (their tours and their dinner), as rows to merge into the program by time.
+function myRowsFor(sheet, programDay) {
+  const rows = [];
+  for (const day of sheet.days.filter((d) => d.date === programDay.date && d.destination === programDay.destination)) {
+    for (const part of day.parts) {
+      if (part.kind === 'activity' && !part.cancelled) rows.push({ mine: true, time: part.time, title: part.name, text: part.meeting ? `Meet: ${part.meeting}` : null, tag: 'Your tour', open: part.tour >= 0 ? () => openTour(part.tour) : null });
+      if (part.kind === 'dinner') rows.push({ mine: true, time: part.seating, title: `Dinner at ${part.restaurant}`, text: part.confirmed ? null : 'Being confirmed', tag: 'Your table', open: part.rest >= 0 ? () => openRestaurant(part.rest) : null });
+    }
+  }
+  return rows;
+}
+function programView(sheet, offline) {
+  const day = programDayShown(sheet);
+  const rows = [...day.items.map((i) => ({ ...i, clock: [i.time, i.endTime].filter(Boolean).join(' – ') }))];
+  for (const mine of myRowsFor(sheet, day)) {
+    const at = mine.time ? rows.findIndex((r) => r.time && r.time > mine.time) : -1;
+    rows.splice(at === -1 ? rows.length : at, 0, { ...mine, clock: mine.time ?? '' });
+  }
+  const pills = h('div', { class: 'prog-days', role: 'tablist', 'aria-label': 'Days' }, sheet.program.map((d) => h('button', {
+    class: `prog-day${d.date === day.date ? ' on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(d.date === day.date),
+    onclick: () => { programDate = d.date; paint(); },
+  }, h('small', {}, new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${d.date}T00:00:00Z`))), String(Number(d.date.slice(8))))));
+  const line = (r) => {
+    const node = h('div', { class: `prog-row${r.mine ? ' mine' : ''}${r.kind === 'note' ? ' note' : ''}` },
+      h('div', { class: 'prog-time' }, r.clock || ''),
+      h('div', { class: 'prog-what' },
+        r.tag ? h('span', { class: 'tag' }, r.tag) : (KIND_NAME[r.kind] ? h('span', { class: 'prog-kind' }, KIND_NAME[r.kind]) : null),
+        h('div', { class: 'what' }, r.title),
+        r.place ? h('div', { class: 'line' }, r.place) : null,
+        r.text ? h('div', { class: 'line prog-text' }, r.text) : null,
+        ...(r.lines ?? []).map((l) => h('div', { class: 'line' }, l)),
+        r.open ? h('div', { class: 'more' }, 'Details ›') : null));
+    if (r.open) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.addEventListener('click', r.open); }
+    return node;
+  };
+  return [h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Program'), h('p', {}, `${day.destination} · ${dayDate(day.date)}`)),
+    h('div', { class: 'atl-body' }, offline, staleNotice(sheet), pills,
+      day.title ? h('h2', { class: 'prog-title' }, day.title) : null,
+      h('div', { class: 'prog-list' }, rows.length ? rows.map(line) : h('p', { class: 'line' }, 'No program for this day yet.')),
+      day.notes.length ? h('div', { class: 'prog-notes' }, h('div', { class: 'block-title' }, 'Notes'), ...day.notes.map((n) => h('p', {}, n))) : null,
+      updatedRow(sheet))];
+}
+
 // The bottom menu: Today, Trip, Passport. A small dot on Passport when a new stamp has arrived.
 function tabBar(sheet) {
   const fresh = passportOf(sheet).some((d) => d.given && !isSeen(seenStamps(), d));
   const tab = (key, text) => h('button', { class: `atl-tab${view.tab === key ? ' on' : ''}`, type: 'button', 'aria-current': view.tab === key ? 'page' : null, onclick: () => { if (view.tab !== key) go({ tab: key }); else window.scrollTo({ top: 0, behavior: 'smooth' }); } },
     text, key === 'passport' && fresh ? h('i', { class: 'atl-new', 'aria-label': 'New stamp' }) : null);
-  return h('nav', { class: 'atl-tabs', 'aria-label': 'Main menu' }, tab('today', 'Today'), tab('trip', 'Trip'), tab('passport', 'Passport'));
+  return h('nav', { class: 'atl-tabs', 'aria-label': 'Main menu' }, tab('today', 'Today'), sheet.program?.length ? tab('program', 'Program') : null, tab('trip', 'Trip'), tab('passport', 'Passport'));
 }
 
 // The programme is folded by destination: tap Lisbon to open its days. Consecutive days in the same place form one group. Everything starts
@@ -1074,8 +1126,8 @@ function paintPage() {
     if (page) { app.replaceChildren(...page); return; }
     view = { tab: 'passport' };
   }
-  const tabs = { today: () => todayView(sheet, offline), trip: () => tripView(sheet, offline), passport: () => passportView(sheet, offline) };
-  if (!tabs[view.tab]) view = { tab: 'today' };
+  const tabs = { today: () => todayView(sheet, offline), program: () => programView(sheet, offline), trip: () => tripView(sheet, offline), passport: () => passportView(sheet, offline) };
+  if (!tabs[view.tab] || (view.tab === 'program' && !sheet.program?.length)) view = { tab: 'today' };
   app.replaceChildren(...tabs[view.tab](), tabBar(sheet));
 }
 

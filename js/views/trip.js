@@ -17,6 +17,7 @@ import { destinationPage } from './destination.js';
 import { diningPage } from './dining.js';
 import { guestPage } from './guest.js';
 import { todayPage } from './today.js';
+import { programSettingsPage } from './settingsProgram.js';
 import { journalPage } from './journal.js';
 import { touringSettingsPage } from './settingsTouring.js';
 import { diningSettingsPage } from './settingsDining.js';
@@ -104,6 +105,9 @@ export function tripView(ctx, tripId, mode, page = 'today', first, second, third
   }
   if (mode === 'settings' && page === 'touring') {
     return { node: h('div', { class: 'screen' }, touringSettingsPage(ctx, trip, first)) };
+  }
+  if (mode === 'settings' && page === 'program') {
+    return { node: h('div', { class: 'screen' }, programSettingsPage(ctx, trip, first, second)) };
   }
   if (mode === 'settings' && page === 'dining') {
     return { node: h('div', { class: 'screen' }, diningSettingsPage(ctx, trip)) };

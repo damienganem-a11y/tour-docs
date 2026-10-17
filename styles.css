@@ -1251,3 +1251,4 @@ html { background: var(--bg); }
 
 /* a visible frame for keyboard and switch users (v0.114.0) */
 :focus-visible { outline: 3px solid var(--sand-sel); outline-offset: 2px; }
+.row-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

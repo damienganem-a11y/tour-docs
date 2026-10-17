@@ -732,6 +732,7 @@ function migrateTrip(trip) {
   trip.branding ??= defaultBranding(); // confirmation cards (30 Sep 2026): a trip saved before then has none
   trip.restaurants ??= [];
   trip.dinnerBookings ??= [];
+  trip.program ??= []; // daily program (17 Oct 2026): a trip saved before then has none
   for (const r of trip.restaurants) {
     if (r.mode === 'strict' && !r.tables && r.tableSizes) {
       r.tables = r.tableSizes.map((size) => ({ id: newId(), size }));
