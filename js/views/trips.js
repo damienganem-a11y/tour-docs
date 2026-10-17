@@ -4,7 +4,7 @@
 import { h } from '../dom.js';
 import { buildTrip } from '../loader.js';
 import { openCompanyLookChooser } from './companyLook.js';
-import { notificationsCard } from './settingsRequests.js';
+import { avatarButton } from './accountSheet.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { tripDates } from '../time.js';
@@ -13,7 +13,6 @@ import { exportFinalTrip } from '../export.js';
 import { readXlsx, tripRawFromWorkbook } from '../xlsxImport.js';
 import { buildTemplateXlsx } from '../xlsx.js';
 import { shareOrDownloadFile } from '../ui.js';
-import { openPreviewSheet } from './preview.js';
 import { pageHead, exportFormatSheet, syncDot } from './chrome.js';
 import { SAMPLE_CARDS } from '../sampleMenus.js';
 import { rehearsalTrip } from '../rehearsal.js';
@@ -218,34 +217,8 @@ export function tripsView(ctx) {
     });
   }
 
-  // Notifications of this phone (turn on / off, test), the same card as in Settings.
-  function notificationsSheet() {
-    openSheet({ eyebrow: 'This phone', title: 'Notifications', body: [notificationsCard(ctx)], cancelLabel: 'Close' });
-  }
-
-  // "Account": what belongs to this phone and this person, not to a trip.
-  function openAccountSheet() {
-    const faceId = !ctx.biometricAvailable ? null
-      : ctx.biometricOn
-        ? row('Face ID / Touch ID', 'On: asked every time the app is reopened', async () => { await ctx.disableBiometric(); closeSheet(); }, h('span', { class: 'muted' }, 'Turn off'))
-        : row('Face ID / Touch ID', 'Off', async () => {
-          try { await ctx.enableBiometric(); closeSheet(); showToast('Face ID / Touch ID is on: it will be offered every time the app is reopened.'); }
-          catch (error) { showToast(`Could not turn on Face ID / Touch ID (${error.message}).`, true); }
-        }, h('span', { class: 'muted' }, 'Turn on'));
-    openSheet({
-      eyebrow: 'Account', title: ctx.owner.name, subtitle: 'This phone', cancelLabel: 'Close',
-      body: [
-        h('div', { class: 'menu' },
-          row('Notifications', 'Turn them on, send a test', () => { closeSheet(); notificationsSheet(); }),
-          faceId,
-          ctx.previewRole ? null : row('Preview as…', 'View only, Team or Guest', () => { closeSheet(); openPreviewSheet(ctx); }),
-          row('Reset the demo', 'Erase the Rhône River Cruise and load it fresh', () => { closeSheet(); resetDemoSheet(); }),
-          row('Sign out', null, () => { closeSheet(); ctx.signOut(); })),
-        // So you can see at once which version is on the phone, and whether it can work offline.
-        h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION} · ${offlineStatus()}`),
-      ],
-    });
-  }
+  // The account sheet is shared with the Settings screens (accountSheet.js); here it also offers to reset the demo.
+  const accountExtras = [{ title: 'Reset the demo', hint: 'Erase the Rhône River Cruise and load it fresh', run: resetDemoSheet }];
 
   const foldRow = (open, label, count, toggle) => h('button', { class: 'fold-row', type: 'button', onclick: toggle },
     h('span', {}, `${open ? '▾' : '▸'} ${label}`), h('span', { class: 'fold-count' }, String(count)));
@@ -255,7 +228,7 @@ export function tripsView(ctx) {
       pageHead({
         eyebrow: 'Tour Docs', title: 'Your trips', subtitle: `Hello ${ctx.owner.name}`,
         action: h('span', { class: 'head-tools' }, syncDot(ctx),
-          h('button', { class: 'avatar', type: 'button', 'aria-label': 'Account', onclick: openAccountSheet }, (ctx.owner.name || '?').trim().slice(0, 1).toUpperCase())),
+          avatarButton(ctx, accountExtras)),
       }),
       activeSection,
       h('button', { class: 'btn', type: 'button', onclick: openAddSheet }, '+ Add a trip'),
@@ -273,12 +246,6 @@ export function tripsView(ctx) {
       h('p', { class: 'muted footer-note' }, `Tour Docs ${APP_VERSION}`)
     ),
   };
-}
-
-// Can the app open without internet? (Yes once its files are saved on the phone: after one visit with internet.)
-function offlineStatus() {
-  if (!('serviceWorker' in navigator)) return 'offline needs https';
-  return navigator.serviceWorker.controller ? 'works offline' : 'open it once more to work offline';
 }
 
 const loadedOn = (trip) =>

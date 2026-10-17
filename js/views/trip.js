@@ -19,6 +19,7 @@ import { guestPage } from './guest.js';
 import { todayPage } from './today.js';
 import { programSettingsPage } from './settingsProgram.js';
 import { notificationsPage, appearancePage } from './settingsPhone.js';
+import { avatarButton } from './accountSheet.js';
 import { journalPage } from './journal.js';
 import { touringSettingsPage } from './settingsTouring.js';
 import { diningSettingsPage } from './settingsDining.js';
@@ -188,7 +189,7 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
     ? h('div', { class: 'top-bar' },
         h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup')),
         h('span', { class: 'top-trip' }, 'Settings'),
-        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true })))
+        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true }), avatarButton(ctx)))
     : h('div', { class: 'top-bar' },
         ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         // The company's logo (Settings > Company look) next to the trip's code, when there is one.
