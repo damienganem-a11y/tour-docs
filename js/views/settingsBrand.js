@@ -1,6 +1,6 @@
 // Settings > Brand: the look of ONE trip's printed documents (confirmation cards, group lists): the
-// company's name, logo and colour, plus an optional note printed on every card. New trips start with the
-// company look set under Trips > My company (see companyLook.js); this page is where one trip can differ.
+// company's name, logo and colour, plus an optional note printed on every card. The looks of your companies are saved on the
+// phone (see companyLook.js) and chosen when a trip is added; this page is where one trip can differ.
 // Saved through the one change function, so it is journaled and the Undo button here takes it back.
 
 import { h } from '../dom.js';
@@ -27,10 +27,13 @@ export function brandSettingsPage(ctx, trip) {
     },
   }, 'Save');
 
-  // Only when a company look exists: fills the form from it (name, colour, logo; the note stays).
-  const useCompany = ctx.companyLook
-    ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => form.fill(brandingFromLook(ctx.companyLook)) }, 'Use my company look')
-    : null;
+  // The looks saved on this device: one tap fills the form from it (name, colour, logo; the note stays), then Save applies it to this trip.
+  const saved = ctx.companyLooks.map((look) => h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => form.fill(brandingFromLook(look)) }, `Use ${look.companyName || 'a saved look'}`));
+  // And what is on the form can be kept for other trips.
+  const keep = h('button', {
+    class: 'btn btn--plain btn--small', type: 'button',
+    onclick: async () => { const { companyName, accent, logo } = form.read(); await ctx.saveCompanyLook({ companyName: companyName.trim(), accent, logo }); ctx.refresh(); showToast('Kept for other trips'); },
+  }, 'Keep this look for other trips');
 
   return h('div', {},
     pageHead({
@@ -39,5 +42,6 @@ export function brandSettingsPage(ctx, trip) {
       subtitle: 'How this trip\'s printed documents look.',
       action: undoButton(ctx, trip, { scope: BRANDING_UNDO_SCOPE }),
     }),
-    useCompany, form.node, saveButton);
+    saved.length > 0 ? h('p', { class: 'muted' }, 'Looks saved on this phone') : null, saved.length > 0 ? h('div', { class: 'card-actions' }, saved) : null,
+    form.node, saveButton, keep);
 }

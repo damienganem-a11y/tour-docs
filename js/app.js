@@ -20,7 +20,7 @@ import {
 } from './db.js';
 import { newId } from './ids.js';
 import { guestSheetRows } from './guestSheet.js';
-import { defaultBranding, brandingFromLook, tripAccent } from './loader.js';
+import { defaultBranding, tripAccent } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast, onSheetClosed } from './ui.js';
 import { signOut as authSignOut, hasLiveSession } from './auth.js';
@@ -85,8 +85,7 @@ let hasSession = null;
 let biometricAsking = null;      // the Face ID request in progress, if any (see unlockWithBiometric)
 let autoBiometricAsked = false;  // has the lock screen already popped Face ID up by itself this time?
 // The company look every new trip starts with (Trips > My company), or null: kept on this device only.
-let companyLook = null;
-let companyLookAsked = false; // the load-time prompt is shown once per device, whether it was saved or skipped
+let companyLooks = []; // the company looks saved on this device (owner's request, 18 Oct 2026: several companies, one chosen per trip)
 
 // The small sync light shown on the Trips screen and inside a trip (see chrome.js's syncDot):
 //   'offline'  no internet right now (navigator.onLine)
@@ -252,15 +251,17 @@ const ctx = {
     return result;
   },
   get trips() { return [...state.trips.values()]; },
-  get companyLook() { return companyLook; },
-  get companyLookAsked() { return companyLookAsked; },
-  async markCompanyLookAsked() {
-    companyLookAsked = true;
-    await dbPut('settings', true, 'companyLookAsked');
-  },
+  get companyLooks() { return companyLooks; },
+  // Saves a look in the device's list (a look with an id replaces the one with that id) and returns it.
   async saveCompanyLook(look) {
-    await dbPut('settings', look, 'companyLook');
-    companyLook = look;
+    const saved = { ...look, id: look.id ?? newId() };
+    companyLooks = companyLooks.some((l) => l.id === saved.id) ? companyLooks.map((l) => (l.id === saved.id ? saved : l)) : [...companyLooks, saved];
+    await dbPut('settings', companyLooks, 'companyLooks');
+    return saved;
+  },
+  async deleteCompanyLook(id) {
+    companyLooks = companyLooks.filter((l) => l.id !== id);
+    await dbPut('settings', companyLooks, 'companyLooks');
     render({ keepScroll: true });
   },
   trip: (id) => state.trips.get(id),
@@ -550,7 +551,6 @@ const ctx = {
   // backup; pulling it onto another device is step 2b) — best-effort, not awaited: the local save
   // above is what matters, and already happened by the time this runs.
   async addTrip(trip) {
-    if (companyLook && !trip.branding?.fixed) trip.branding = brandingFromLook(companyLook, trip.branding?.cardNote ?? ''); // a new trip starts with the company look
     await dbPut('trips', trip);
     state.trips.set(trip.id, trip);
     trackPush(pushAndTrack(trip)).catch(() => {});
@@ -759,8 +759,11 @@ async function start() {
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
   try {
     state.owner = await dbGet('settings', 'owner');
-    companyLook = (await dbGet('settings', 'companyLook')) ?? null;
-    companyLookAsked = Boolean(await dbGet('settings', 'companyLookAsked'));
+    companyLooks = (await dbGet('settings', 'companyLooks')) ?? [];
+    if (companyLooks.length === 0) { // the single look saved by an earlier version becomes the first of the list
+      const single = await dbGet('settings', 'companyLook');
+      if (single) { companyLooks = [{ ...single, id: newId() }]; await dbPut('settings', companyLooks, 'companyLooks'); }
+    }
     for (const [id, role] of Object.entries((await dbGet('settings', 'tripRoles')) ?? {})) tripRoles.set(id, role);
     for (const [id, scope] of Object.entries((await dbGet('settings', 'tripScopes')) ?? {})) tripScopes.set(id, scope);
     for (const [id, approval] of Object.entries((await dbGet('settings', 'tripApprovals')) ?? {})) tripApprovals.set(id, approval);

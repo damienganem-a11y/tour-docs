@@ -2,8 +2,9 @@
 // archive/un-archive/delete/reinstate a trip (SPEC.md, "1. Structure").
 
 import { h } from '../dom.js';
-import { buildTrip, brandingFromLook } from '../loader.js';
-import { openCompanyLookSheet } from './companyLook.js';
+import { buildTrip } from '../loader.js';
+import { openCompanyLookChooser } from './companyLook.js';
+import { notificationsCard } from './settingsRequests.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { tripDates } from '../time.js';
@@ -58,16 +59,9 @@ export function tripsView(ctx) {
       return null;
     }
     ctx.go(`#/trip/${trip.id}/use/destination`);
-    // No company look yet: offer to set it now, once per device (skippable; the "My company" button stays).
-    // The screen redraws when the address changes, which would close a sheet opened at the same instant,
-    // so it opens just after.
-    if (!ctx.companyLook && !ctx.companyLookAsked) {
-      ctx.markCompanyLookAsked();
-      setTimeout(() => openCompanyLookSheet(ctx, {
-        title: 'Set up your company look', skipLabel: 'Skip for now',
-        onSaved: (look) => applyChange(ctx, trip.id, { type: 'set-branding', ...brandingFromLook(look, trip.branding?.cardNote ?? '') }),
-      }), 400);
-    }
+    // Which company look? Asked for every trip that arrives without its own (the choice is one tap when looks are already saved).
+    // The screen redraws when the address changes, which would close a sheet opened at the same instant, so it opens just after.
+    if (!trip.branding?.fixed) setTimeout(() => openCompanyLookChooser(ctx, trip), 400);
     return trip;
   }
 
@@ -224,6 +218,11 @@ export function tripsView(ctx) {
     });
   }
 
+  // Notifications of this phone (turn on / off, test), the same card as in Settings.
+  function notificationsSheet() {
+    openSheet({ eyebrow: 'This phone', title: 'Notifications', body: [notificationsCard(ctx)], cancelLabel: 'Close' });
+  }
+
   // "Account": what belongs to this phone and this person, not to a trip.
   function openAccountSheet() {
     const faceId = !ctx.biometricAvailable ? null
@@ -237,7 +236,7 @@ export function tripsView(ctx) {
       eyebrow: 'Account', title: ctx.owner.name, subtitle: 'This phone', cancelLabel: 'Close',
       body: [
         h('div', { class: 'menu' },
-          row('Company look', ctx.companyLook?.companyName || 'Logo and colour for new trips', () => { closeSheet(); openCompanyLookSheet(ctx); }),
+          row('Notifications', 'Turn them on, send a test', () => { closeSheet(); notificationsSheet(); }),
           faceId,
           ctx.previewRole ? null : row('Preview as…', 'View only, Team or Guest', () => { closeSheet(); openPreviewSheet(ctx); }),
           row('Reset the demo', 'Erase the Rhône River Cruise and load it fresh', () => { closeSheet(); resetDemoSheet(); }),

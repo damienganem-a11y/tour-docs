@@ -18,6 +18,7 @@ import { diningPage } from './dining.js';
 import { guestPage } from './guest.js';
 import { todayPage } from './today.js';
 import { programSettingsPage } from './settingsProgram.js';
+import { notificationsPage, appearancePage } from './settingsPhone.js';
 import { journalPage } from './journal.js';
 import { touringSettingsPage } from './settingsTouring.js';
 import { diningSettingsPage } from './settingsDining.js';
@@ -57,14 +58,18 @@ const SETTINGS_SECTIONS = [
   { key: 'documents', icon: 'documents', title: 'Documents and look', blurb: 'Exports, brand and the rest', items: [
     { label: 'Documents', page: 'exports', hint: 'Create lists, cards and sheets, and find every one already made' },
     { label: 'Company look', page: 'brand', hint: 'Company name, logo and colour on documents and in the guest app' },
-    { label: 'Advanced', page: 'section/advanced', hint: 'Warnings, journal, backup, check this phone, preview' },
+    { label: 'Advanced', page: 'section/advanced', hint: 'Warnings, journal, backup, preview' },
+  ] },
+  { key: 'phone', icon: 'cog', title: 'This phone', blurb: 'Check, notifications and look', items: [
+    { label: 'Check this phone', page: 'check', hint: 'What works on this device and what does not' },
+    { label: 'Notifications', page: 'notifications', hint: 'Turn them on, send a test' },
+    { label: 'Appearance', page: 'appearance', hint: 'Light, dark, or follow the phone' },
   ] },
   // Not a tile of its own: reached from "Advanced".
   { key: 'advanced', icon: 'control', title: 'Advanced', blurb: 'Warnings, journal and backup', hidden: true, items: [
     { label: 'Warnings', page: 'warnings', hint: 'Anything that needs your attention' },
     { label: 'Journal', page: 'journal', ownerOnly: true, hint: 'Every change, with who and when' },
     { label: 'Backup', page: 'backup', hint: 'Save or restore the whole trip' },
-    { label: 'Check this phone', page: 'check', hint: 'What works on this device and what does not, and its look' },
     { label: 'Preview as…', preview: true, ownerOnly: true, hint: 'See what a view-only person, a colleague or a guest sees' },
   ] },
 ];
@@ -84,7 +89,21 @@ const USE_TABS = [
 //          #/trip/<id>/settings/journal
 // `first` and `second` are the parts after the page name (they may be missing); Dining alone also
 // takes `third`/`fourth` (a restaurant and seating, for its "By table" grid).
-export function tripView(ctx, tripId, mode, page = 'today', first, second, third, fourth) {
+// The bottom tabs, on the use screens AND on the settings screens (where More is the active one): the same four choices everywhere.
+function tabsNav(ctx, trip, activeTab) {
+  return h('nav', { class: 'bottom-tabs', 'aria-label': 'Main menu' },
+    USE_TABS.filter((t) => !(t.notViewer && ctx.roleFor(trip.id) === 'viewer')).map((t) =>
+      h('a', { class: `bottom-tab${t.tab === activeTab ? ' is-active' : ''}`, href: t.href(trip.id) }, t.label)));
+}
+
+export function tripView(ctx, tripId, mode, page, first, second, third, fourth) {
+  const result = tripViewInner(ctx, tripId, mode, page, first, second, third, fourth);
+  const trip = ctx.trip(tripId);
+  if (mode === 'settings' && trip && ctx.roleFor(trip.id) !== 'viewer' && result.node) result.node.append(tabsNav(ctx, trip, 'more'));
+  return result;
+}
+
+function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, fourth) {
   const trip = ctx.trip(tripId);
   if (!trip) {
     return {
@@ -104,6 +123,12 @@ export function tripView(ctx, tripId, mode, page = 'today', first, second, third
   }
   if (mode === 'settings' && page === 'touring') {
     return { node: h('div', { class: 'screen' }, touringSettingsPage(ctx, trip, first)) };
+  }
+  if (mode === 'settings' && page === 'notifications') {
+    return { node: h('div', { class: 'screen' }, notificationsPage(ctx, trip)) };
+  }
+  if (mode === 'settings' && page === 'appearance') {
+    return { node: h('div', { class: 'screen' }, appearancePage(ctx, trip)) };
   }
   if (mode === 'settings' && page === 'program') {
     return { node: h('div', { class: 'screen' }, programSettingsPage(ctx, trip, first, second)) };
@@ -204,9 +229,7 @@ export function tripView(ctx, tripId, mode, page = 'today', first, second, third
         [['destination', 'Touring'], ['dining', 'Dining']].map(([p, label]) =>
           h('a', { class: `switch-item${p === activePage ? ' is-active' : ''}`, href: `#/trip/${trip.id}/use/${p}` }, label)))
     : null;
-  const tabs = h('nav', { class: 'bottom-tabs', 'aria-label': 'Use screens' },
-    USE_TABS.filter((t) => !(t.notViewer && ctx.roleFor(trip.id) === 'viewer')).map((t) =>
-      h('a', { class: `bottom-tab${t.pages.includes(activePage) ? ' is-active' : ''}`, href: t.href(trip.id) }, t.label)));
+  const tabs = tabsNav(ctx, trip, USE_TABS.find((t) => t.pages.includes(activePage))?.tab);
 
   return { node: h('div', { class: 'screen' }, topBar, readOnlyNotice, toursSwitch, content, tabs) };
 }
@@ -215,8 +238,8 @@ export function tripView(ctx, tripId, mode, page = 'today', first, second, third
 function visibleItems(ctx, trip, section) {
   const role = ctx.roleFor(trip.id);
   const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
-  // The simple version (the owner decides per person, Settings > Team) keeps only Requests, Documents, Warnings and Check this phone (and the Advanced list that holds them).
-  const simpleKeeps = ['requests', 'exports', 'warnings', 'check', 'section/advanced'];
+  // The simple version (the owner decides per person, Settings > Team) keeps only Requests, Documents, Warnings and the This phone list (and the Advanced list that holds Warnings).
+  const simpleKeeps = ['requests', 'exports', 'warnings', 'check', 'notifications', 'appearance', 'section/advanced'];
   const simpleHides = (item) => ctx.simpleFor(trip.id) && !simpleKeeps.includes(item.page);
   return section.items.filter((item) => visible(item) && !simpleHides(item));
 }
@@ -225,7 +248,6 @@ function visibleItems(ctx, trip, section) {
 function settingsMenu(ctx, trip) {
   const role = ctx.roleFor(trip.id);
   return h('div', {},
-    h('a', { class: 'btn btn--plain', href: `#/trip/${trip.id}/settings/messages`, style: 'margin-bottom: 12px;' }, 'Messages: the team, the guests, reminders'),
     h('div', { class: 'tiles' }, SETTINGS_SECTIONS.filter((section) => !section.hidden).map((section) => {
       const items = visibleItems(ctx, trip, section);
       if (items.length === 0) return null;

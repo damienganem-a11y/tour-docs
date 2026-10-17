@@ -53,7 +53,7 @@ function declineSheet(ctx, row, names, trip) {
 }
 
 // Notifications on this phone: a button that says what it will do, and what is missing when it cannot.
-function notificationsCard(ctx) {
+export function notificationsCard(ctx) {
   const line = h('div', { class: 'muted' }, 'Checking…');
   const actions = h('div', { class: 'card-actions' });
   const card = h('div', { class: 'card' }, h('div', { class: 'act-name' }, 'Notifications on this phone'), line, actions);
