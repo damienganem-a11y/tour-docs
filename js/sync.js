@@ -62,10 +62,15 @@ export async function pullTrip(tripId) {
 // part of only fetches what's new, never the whole history again.
 export async function pullJournalEntries(tripId, afterSeq = 0) {
   const supabase = await getClient();
-  const { data, error } = await supabase.from('journal_entries').select('data')
-    .eq('trip_id', tripId).gt('seq', afterSeq).order('seq', { ascending: true });
-  if (error) throw error;
-  return data.map((row) => row.data);
+  // The server answers at most 1000 rows at a time, so a long trip is read page by page.
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from('journal_entries').select('data')
+      .eq('trip_id', tripId).gt('seq', afterSeq).order('seq', { ascending: true }).range(from, from + 999);
+    if (error) throw error;
+    out.push(...data.map((row) => row.data));
+    if (data.length < 1000) return out;
+  }
 }
 
 // The guests' personal sheets (Phase 5): one row per link. `rows` is [{ token, guestId, active, sheet }] from guestSheet.js. A switched-off
@@ -361,11 +366,16 @@ export async function sendRequestRemote(request) {
 // The requests this person can see: all on the trips they own, and their own on others. Oldest first.
 export async function pullRequests() {
   const supabase = await getClient();
-  const { data, error } = await supabase.from('requests')
-    .select('*') // '*': requester_role / requester_scope / requester_approval exist once migration 0018 is applied
-    .order('requested_at', { ascending: true }).limit(300);
-  if (error) throw error;
-  return data;
+  // Everything still waiting or being applied (never lost on a long trip), plus the 300 most recent answered ones, oldest first.
+  // '*': requester_role / requester_scope / requester_approval exist once migration 0018 is applied.
+  const [open, recent] = await Promise.all([
+    supabase.from('requests').select('*').in('status', ['pending', 'applying', 'failed']).order('requested_at', { ascending: true }).limit(1000),
+    supabase.from('requests').select('*').order('requested_at', { ascending: false }).limit(300),
+  ]);
+  if (open.error) throw open.error;
+  if (recent.error) throw recent.error;
+  const byId = new Map([...open.data, ...recent.data].map((r) => [r.id, r]));
+  return [...byId.values()].sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at)));
 }
 
 // Takes a pending request so that only ONE of the owner's devices applies it. A claim left behind by a device that stopped half-way

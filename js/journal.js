@@ -151,6 +151,7 @@ export function forcedPlacements(trip, entries) {
 // startMove/proposePromotion like any other guest.
 export function waitlistOrder(trip, entries, activity) {
   const slot = trip.slots.find((s) => s.id === activity.slotId);
+  if (!slot) return [];
   const currentlyWaiting = new Set((whoIsWhere(trip, slot).waitlisted.get(activity.id) ?? []).map((g) => g.id));
   const latest = new Map(); // guestId -> their latest "joined this activity's waitlist" entry (for its seq)
   for (const batch of groupBatches(entries)) {          // oldest first

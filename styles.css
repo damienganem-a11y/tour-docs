@@ -1141,11 +1141,11 @@ input[type=checkbox] { accent-color: #000; }
    company colour (--yellow, set by applyLook) used as soft tints and one solid button instead of flat vivid blocks, no pure black, lighter titles.
    This is the last layer: it wins over everything above. Every tint is worked out from --yellow, so a different company gives a different, equally calm look. */
 :root {
-  --bg: #f9efdc; --card: #fffaf0; --soft: #f1e6cf; --track: #eadcc0; --line: #e6d6b6; --ink: #1d2d2e; --muted: #5f736f;
+  --bg: #f9efdc; --card: #fffaf0; --soft: #f1e6cf; --track: #eadcc0; --line: #e6d6b6; --ink: #1d2d2e; --muted: #4f635f;
   --shadow: none; --atl-shadow: 0 1px 2px rgba(70, 52, 30, .08);
   /* v0.111.0 "Sand and sea" (owner's choice, jade green): jade is the colour of what is active and of the main button; orange and red are kept for
      what needs attention (full tours, forced moves, waiting requests, problems), so they stand out. */
-  --sand-tint: #cfeadf; --sand-sel: #1f8f6b; --sand-sel-ink: #ffffff; --sand-ink: #0c6648; --sand-btn: #1f8f6b;
+  --sand-tint: #cfeadf; --sand-sel: #187a5a; --sand-sel-ink: #ffffff; --sand-ink: #0c6648; --sand-btn: #187a5a;
   --sand-warn: #ffd6bb; --sand-warn-ink: #7d3314; --sand-alert: #d4602a;
   --warn-bg: #fff0dc; --warn-line: #e08a3c; --warn-ink: #7d3314;
 }
@@ -1208,7 +1208,7 @@ input[type=checkbox] { accent-color: var(--sand-btn); }
 .sheet { background: var(--bg); }
 /* the page ground reaches the bottom of the screen; the sync light is a real green / amber / red (not black) */
 html { background: var(--bg); }
-:root { --sand-ok: #2f9a6c; }
+:root { --sand-ok: #23805a; }
 .sync-light--synced { background: var(--sand-ok); }
 .sync-light--pending { background: #d9962e; }
 .sync-lights-label--synced { color: var(--sand-ok); }
@@ -1248,3 +1248,6 @@ html { background: var(--bg); }
   :root:not([data-theme="light"]) :is(.top-trip, .back-link, .here-tick, .cog, .send-btn, .inbox-btn) { color: var(--ink); }
 }
 :root[data-theme="dark"] :is(.top-trip, .back-link, .here-tick, .cog, .send-btn, .inbox-btn) { color: var(--ink); }
+
+/* a visible frame for keyboard and switch users (v0.114.0) */
+:focus-visible { outline: 3px solid var(--sand-sel); outline-offset: 2px; }

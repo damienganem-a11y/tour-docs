@@ -370,7 +370,9 @@ export function dinnerAddFit(trip, restaurant, booking, addCount) {
     return { status: fits ? 'confirmed' : 'special-request' };
   }
   if (booking.tableIds.length === 0) return { status: 'special-request' }; // already an unfilled special request: stays one
-  const capacity = restaurant.tables.find((t) => t.id === booking.tableIds[0]).size;
+  const table = restaurant.tables.find((t) => t.id === booking.tableIds[0]);
+  if (!table) return { status: 'special-request' }; // the table was removed from the restaurant since: nothing says how many it seats
+  const capacity = table.size;
   return { status: newTotal <= capacity ? 'confirmed' : 'special-request' };
 }
 
