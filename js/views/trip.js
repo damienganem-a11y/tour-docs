@@ -20,6 +20,7 @@ import { todayPage } from './today.js';
 import { programSettingsPage } from './settingsProgram.js';
 import { notificationsPage, appearancePage } from './settingsPhone.js';
 import { avatarButton } from './accountSheet.js';
+import { partyPage } from './party.js';
 import { journalPage } from './journal.js';
 import { touringSettingsPage } from './settingsTouring.js';
 import { diningSettingsPage } from './settingsDining.js';
@@ -79,7 +80,7 @@ const SETTINGS_SECTIONS = [
 const USE_TABS = [
   { tab: 'today', pages: ['today'], label: 'Today', href: (id) => `#/trip/${id}/use/today` },
   { tab: 'tours', pages: ['destination', 'dining'], label: 'Tours', href: (id) => `#/trip/${id}/use/destination` },
-  { tab: 'guest', pages: ['guest'], label: 'Guests', href: (id) => `#/trip/${id}/use/guest` },
+  { tab: 'guest', pages: ['guest', 'party'], label: 'Guests', href: (id) => `#/trip/${id}/use/guest` },
   { tab: 'more', pages: [], label: 'More', href: (id) => `#/trip/${id}/settings`, notViewer: true },
 ];
 
@@ -219,8 +220,9 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   }
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
-  const activePage = page === 'guest' ? 'guest' : page === 'dining' ? 'dining' : page === 'destination' ? 'destination' : 'today';
+  const activePage = page === 'guest' ? 'guest' : page === 'party' ? 'party' : page === 'dining' ? 'dining' : page === 'destination' ? 'destination' : 'today';
   const content = activePage === 'guest' ? guestPage(ctx, trip, first)
+    : activePage === 'party' ? partyPage(ctx, trip, first)
     : activePage === 'dining' ? diningPage(ctx, trip, first, second, third, fourth)
     : activePage === 'destination' ? destinationPage(ctx, trip, first, second)
     : todayPage(ctx, trip);

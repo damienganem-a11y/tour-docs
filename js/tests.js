@@ -25,6 +25,7 @@ import { previewSavedExport, exportName } from './export.js';
 import { dietaryErasureDue } from './rules.js';
 import { nextTour, programToday } from './views/today.js';
 import { programError, programOf, programForEditing } from './program.js';
+import { partyGroups, partiesOf, partyMembers } from './views/party.js';
 import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
 import { signInAddress } from './views/settingsTeam.js';
 import { readXlsx, tripRawFromWorkbook, toIsoDate, toClock } from './xlsxImport.js';
@@ -2735,6 +2736,21 @@ function readZip(bytes) {
   check('Excel: the styles part has the two fixed first fills, a full border and the Normal cell style',
     /<fills count="4"><fill><patternFill patternType="none"\/><\/fill><fill><patternFill patternType="gray125"\/>/.test(styles)
     && /<border><left\/><right\/><top\/><bottom\/><diagonal\/><\/border>/.test(styles) && /cellStyle name="Normal"/.test(styles));
+}
+
+// --- A travel party's whole trip (views/party.js) ---
+{
+  const ctxQ = makeCtx();
+  const familyGuest = ctxQ.state.guests.find((g) => ctxQ.state.guests.filter((o) => !o.leftAt && o.partyId === g.partyId).length >= 3);
+  const members = partyMembers(ctxQ.state, familyGuest);
+  const slotQ = ctxQ.state.slots.find((x) => ctxQ.state.activities.some((a) => a.slotId === x.id && !a.cancelled));
+  const tour = ctxQ.state.activities.find((a) => a.slotId === slotQ.id && !a.cancelled);
+  for (const m of members) await applyChange(ctxQ, trip.id, { type: 'move', guestId: m.id, slotId: slotQ.id, to: { kind: 'activity', activityId: tour.id }, force: true });
+  check('Party: members together on one tour make ONE group with everybody in it', partyGroups(ctxQ.state, members, slotQ).length === 1 && partyGroups(ctxQ.state, members, slotQ)[0].who.length === members.length);
+  await applyChange(ctxQ, trip.id, { type: 'move', guestId: members[0].id, slotId: slotQ.id, to: { kind: 'leisure' } });
+  const split = partyGroups(ctxQ.state, members, slotQ);
+  check('Party: one member at leisure splits the party into two groups, the bigger first', split.length === 2 && split[0].who.length === members.length - 1 && split[1].who[0].id === members[0].id);
+  check('Party: the parties list has one row per party, and every active guest is in exactly one', partiesOf(ctxQ.state).reduce((n, p) => n + p.members.length, 0) === ctxQ.state.guests.filter((g) => !g.leftAt).length);
 }
 
 // --- The daily program of a destination ---

@@ -13,6 +13,7 @@ import { pageHead, destinationMenu, destinationSub } from './chrome.js';
 import { startMove } from './move.js';
 import { undoButton } from './undo.js';
 import { USE_UNDO_SCOPE } from '../journal.js';
+import { partiesOf } from './party.js';
 
 export function guestPage(ctx, trip, guestId) {
   const guest = trip.guests.find((g) => g.id === guestId);
@@ -22,15 +23,15 @@ export function guestPage(ctx, trip, guestId) {
 // ---------- The list of guests ----------
 
 // Kept while the app stays open (like other screen toggles, e.g. a folded list elsewhere in Settings).
-let sortMode = 'alpha'; // 'alpha' | 'seat'
+let sortMode = 'alpha'; // 'alpha' | 'seat' | 'party'
 let seatDestination = 'all'; // in seat order: 'all', or the id of the one destination whose plans are shown for each guest
 
 function sortToggle(ctx) {
   return h('button', {
     class: 'btn btn--plain btn--small', type: 'button',
     'aria-label': 'Switch how the guest list is sorted',
-    onclick: () => { sortMode = sortMode === 'alpha' ? 'seat' : 'alpha'; ctx.refresh(); },
-  }, sortMode === 'alpha' ? 'Sort: A–Z' : 'Sort: Seat');
+    onclick: () => { sortMode = sortMode === 'alpha' ? 'seat' : sortMode === 'seat' ? 'party' : 'alpha'; ctx.refresh(); },
+  }, sortMode === 'alpha' ? 'Sort: A–Z' : sortMode === 'seat' ? 'Sort: Seat' : 'Sort: Party');
 }
 
 function guestList(ctx, trip) {
@@ -62,9 +63,20 @@ function guestList(ctx, trip) {
       h('span', { class: 'seat-when' }, `D${slot.day} ${PART_CODE[slot.half] ?? slot.half}`), h('span', { class: 'seat-what' }, what));
   });
 
+  // "Sort: Party": one row per travel party (every member's name is searched); a tap opens the party's whole trip (party.js).
+  function fillParties(words) {
+    const shown = partiesOf(trip).filter((party) => words.every((w) => party.members.some((g) => plain(`${g.first} ${g.last}`).includes(w))));
+    count.textContent = `${shown.length} travel parties`;
+    list.replaceChildren(...(shown.length === 0 ? [h('li', { class: 'empty' }, 'No party matches that search.')]
+      : shown.map((party) => h('li', {}, h('a', { class: 'row', href: `#/trip/${trip.id}/use/party/${party.members[0].id}` },
+          h('div', { class: 'row-main' }, h('div', { class: 'row-title' }, party.members.map((g) => names.get(g.id)).join(', ')), h('div', { class: 'row-sub' }, party.members.length === 1 ? 'Travelling solo' : `${party.members.length} people`)),
+          h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'))))));
+  }
+
   // Redraws the rows that match what was typed in the search box (the full name is searched too).
   function fill() {
     const words = seatMode ? [] : plain(search.value).split(/\s+/).filter(Boolean);
+    if (sortMode === 'party') { fillParties(words); return; }
     const shown = guests.filter((g) => {
       const text = plain(`${g.first} ${g.last}`);
       return words.every((w) => text.includes(w));
@@ -110,6 +122,8 @@ function guestList(ctx, trip) {
 
 // ---------- One guest's trip ----------
 
+const partyPeople = (trip, guest) => trip.guests.filter((g) => !g.leftAt && g.partyId === guest.partyId).length;
+
 function guestDetail(ctx, trip, guest) {
   const names = displayNames(trip.guests);
   const { upcoming, earlier } = splitPastSlots(trip, localDateNow);
@@ -122,6 +136,8 @@ function guestDetail(ctx, trip, guest) {
       subtitle: [guest.seat ? `Seat ${guest.seat}` : null, partyLabel(trip, guest, names), guest.notes].filter(Boolean).join(' · '),
       action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
     }),
+    // The whole travel party on one page (only when there is a party).
+    partyPeople(trip, guest) > 1 ? h('a', { class: 'btn btn--plain btn--small', href: `#/trip/${trip.id}/use/party/${guest.id}` }, `See the whole party (${partyPeople(trip, guest)})`) : null,
     // Reached by an old link: this guest left the trip (Settings > Guests brings them back).
     guest.leftAt ? h('p', { class: 'notice' }, 'This guest left the trip. Bring them back in Settings › Guests.') : null,
     upcoming.map((slot) => slotRow(ctx, trip, guest, slot)),
