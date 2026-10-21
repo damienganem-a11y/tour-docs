@@ -1266,3 +1266,18 @@ html { background: var(--bg); }
 .party-detail { font-size: 14px; color: var(--muted); }
 .party-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .party-chips .chip { border: 1px solid var(--line); cursor: pointer; font: inherit; font-size: 13px; }
+
+/* v0.123.0: a page that must be answered (ui.js openFullScreen) */
+.fullscreen { position: fixed; inset: 0; z-index: 1000; background: var(--bg); color: var(--ink); overflow-y: auto; padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 24px); }
+.fullscreen-inner { max-width: 720px; margin: 0 auto; display: grid; gap: 12px; }
+.fullscreen h2 { font-size: 26px; margin: 0; text-wrap: balance; }
+.fullscreen-body { display: grid; gap: 12px; margin-top: 8px; }
+
+/* a Special request table: red, so it cannot be missed in the list of tables */
+.card--special { border: 2px solid #c0392b; background: #fdeceb; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card--special { background: #3a1f1b; border-color: #ff7a6b; } }
+:root[data-theme="dark"] .card--special { background: #3a1f1b; border-color: #ff7a6b; }
+/* the small buttons share one size whatever their colour (Un-archive and Delete looked different) */
+.btn--small { border: 2px solid transparent; }
+.btn--small.btn--plain { border-color: var(--line); }
+.btn--small.btn--danger { border-color: #b04a3a; }

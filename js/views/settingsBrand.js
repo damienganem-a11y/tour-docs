@@ -32,7 +32,7 @@ export function brandSettingsPage(ctx, trip) {
   // And what is on the form can be kept for other trips.
   const keep = h('button', {
     class: 'btn btn--plain btn--small', type: 'button',
-    onclick: async () => { const { companyName, accent, logo } = form.read(); await ctx.saveCompanyLook({ companyName: companyName.trim(), accent, logo }); ctx.refresh(); showToast('Kept for other trips'); },
+    onclick: async () => { const { companyName, accent, logo, teamLabel } = form.read(); await ctx.saveCompanyLook({ companyName: companyName.trim(), accent, logo, teamLabel: teamLabel.trim() }); ctx.refresh(); showToast('Kept for other trips'); },
   }, 'Keep this look for other trips');
 
   return h('div', {},

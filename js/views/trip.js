@@ -21,6 +21,8 @@ import { programSettingsPage } from './settingsProgram.js';
 import { notificationsPage, appearancePage } from './settingsPhone.js';
 import { avatarButton } from './accountSheet.js';
 import { partyPage } from './party.js';
+import { openFullScreen, closeSheet } from '../ui.js';
+import { teamLabel } from '../rules.js';
 import { journalPage } from './journal.js';
 import { touringSettingsPage } from './settingsTouring.js';
 import { diningSettingsPage } from './settingsDining.js';
@@ -190,24 +192,17 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
     ? h('div', { class: 'top-bar' },
         h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup')),
         h('span', { class: 'top-trip' }, 'Settings'),
-        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true }), avatarButton(ctx)))
+        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true }), avatarButton(ctx, [{ title: 'Change trip', hint: 'Back to the list of your trips', run: () => ctx.go('#/') }])))
     : h('div', { class: 'top-bar' },
         ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         // The company's logo (Settings > Company look) next to the trip's code, when there is one.
-        h('span', { class: 'top-trip' }, trip.branding?.logo ? h('img', { class: 'top-logo', src: trip.branding.logo, alt: '' }) : null, trip.ref || trip.name),
+        h('span', { class: 'top-trip' }, trip.branding?.logo ? h('img', { class: 'top-logo', src: trip.branding.logo.data, alt: '' }) : null, trip.ref || trip.name),
         h('span', { class: 'top-side' }, inboxButton(ctx, trip), ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
-  const readOnlyNotice = trip.archivedAt
-    ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes again.')
-    : ctx.roleFor(trip.id) === 'viewer'
-      ? notice('You are an Expert on this trip: you can look at everything, but nothing can be changed.')
-      : ctx.roleFor(trip.id) === 'team'
-        ? notice('You are Jet Staff: your changes are applied at once, and every device sees them. A forced move waits for the owner. Offline, or if the owner wants to approve first, your change is sent as a request.')
-        : ctx.roleFor(trip.id) === 'advance'
-          ? notice('You are Advance: in your own destination you have the owner\'s authority and your changes are applied at once. Anything elsewhere is sent as a request.')
-          : null;
+  const readOnlyNotice = trip.archivedAt ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes again.') : null;
+  if (mode === 'use') scheduleRoleNotice(ctx, trip);
 
   // Settings: the full trip heading and the menu.
   if (mode === 'settings') {
@@ -261,7 +256,6 @@ function settingsMenu(ctx, trip) {
         h('span', { class: 'tile-title' }, section.title),
         h('span', { class: 'tile-blurb' }, section.blurb));
     })),
-    h('a', { class: 'btn btn--plain change-trip', href: '#/' }, 'Change trip'),
     null);
 }
 
@@ -276,4 +270,26 @@ function settingsSection(ctx, trip, key) {
         h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null,
           item.page === 'requests' && ctx.roleFor(trip.id) === 'owner' && ctx.guestRequestsFor(trip.id).some((r) => r.status === 'pending') ? h('span', { class: 'tile-badge tile-badge--row' }, String(ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length)) : null,
           h('span', { class: 'row-chev' }, '›'))))));
+}
+
+// What a colleague can do, said ONCE as a page that must be read (owner's request, 21 Oct 2026), the first time they open the trip in this role; the bar at the top of
+// every screen is gone. It comes back only if their role changes.
+let roleNoticeOpen = false;
+function scheduleRoleNotice(ctx, trip) {
+  const role = ctx.roleFor(trip.id);
+  if (ctx.previewRole || roleNoticeOpen || role === 'owner' || ctx.roleNoticeSeen(trip.id) === role) return;
+  const team = teamLabel(trip);
+  const text = {
+    viewer: 'You are an Expert on this trip: you can look at everything (the tours, the days, the times, who is where, allergies and diets), but nothing can be changed.',
+    team: `You are ${team}: your changes are applied at once and every device sees them. A forced move waits for the owner's OK. Offline, or if the owner wants to approve first, your change is sent as a request.`,
+    advance: 'You are Advance: in your own destination you have the owner\'s authority and your changes are applied at once. Anything elsewhere is sent to the owner as a request.',
+  }[role];
+  if (!text) return;
+  roleNoticeOpen = true;
+  setTimeout(() => {
+    openFullScreen({
+      eyebrow: trip.name, title: role === 'viewer' ? 'Welcome, Expert' : role === 'advance' ? 'Welcome, Advance' : `Welcome, ${team}`,
+      body: [h('p', {}, text), h('button', { class: 'btn', type: 'button', onclick: async () => { await ctx.markRoleNoticeSeen(trip.id, role); roleNoticeOpen = false; closeSheet(); } }, 'I have read this')],
+    });
+  }, 300);
 }

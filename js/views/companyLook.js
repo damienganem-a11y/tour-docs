@@ -16,8 +16,8 @@ export function openCompanyLookSheet(ctx, { onSaved, title = 'New company look',
   const save = h('button', {
     class: 'btn', type: 'button',
     onclick: async () => {
-      const { companyName, accent, logo } = form.read();
-      const saved = await ctx.saveCompanyLook({ companyName: companyName.trim(), accent, logo });
+      const { companyName, accent, logo, teamLabel } = form.read();
+      const saved = await ctx.saveCompanyLook({ companyName: companyName.trim(), accent, logo, teamLabel: teamLabel.trim() });
       closeSheet();
       showToast('Company look saved');
       onSaved?.(saved);

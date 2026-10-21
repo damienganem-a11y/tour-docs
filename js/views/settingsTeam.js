@@ -5,6 +5,7 @@
 // kept up to date. The owner can remove someone at any moment. Needs the trip to be on the server (signed in online).
 
 import { h } from '../dom.js';
+import { teamLabel } from '../rules.js';
 import { showToast, closeSheet } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
@@ -14,7 +15,9 @@ import { qrSvg } from '../qr.js';
 import { listMembers, inviteMember, removeMember, cleanInviteEmail, MEMBER_ROLES } from '../sync.js';
 
 // What each role is called and what it does (the names inside the database are team, advance and viewer).
-const ROLE_LABEL = { team: 'Jet Staff', advance: 'Advance', viewer: 'Expert', owner: 'Owner (you)' };
+// The label of the 'team' role is the trip's own word for its team (rules.js teamLabel): Jet Staff, Adventure Guides...
+let ROLE_LABEL = { team: 'Jet Staff', advance: 'Advance', viewer: 'Expert', owner: 'Owner (you)' };
+const setRoleLabels = (trip) => { ROLE_LABEL = { ...ROLE_LABEL, team: teamLabel(trip) }; };
 const ROLE_HELP = {
   team: 'Works on the whole trip and changes things directly. A special request (forcing a full tour) waits for you.',
   advance: 'The local contact of ONE destination: your authority there, including forcing. Anything elsewhere goes to you as a request.',
@@ -116,6 +119,7 @@ export function memberCard(member, { resend, remove, access, scopeName, edit }) 
 }
 
 export function teamSettingsPage(ctx, trip) {
+  setRoleLabels(trip);
   const head = pageHead({
     back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
     eyebrow: 'Team', title: 'Team', subtitle: 'Who else can see this trip.',
@@ -177,7 +181,7 @@ export function teamSettingsPage(ctx, trip) {
   load();
   return h('div', {},
     head,
-    notice('Jet Staff work on the whole trip. An Advance is the local contact of one destination (your authority there). An Expert only looks. Their changes are applied by your device, so keep it open when you expect requests.'),
+    notice(`${teamLabel(trip)} work on the whole trip. An Advance is the local contact of one destination (your authority there). An Expert only looks. Their changes are applied by your device, so keep it open when you expect requests.`),
     mine,
     list,
     h('h2', { class: 'section-title' }, 'Invite someone'),

@@ -8,7 +8,7 @@
 // Moving goes: pick a place -> (travel party prompt) -> confirmation screen -> saved.
 
 import { h } from '../dom.js';
-import { openSheet, closeSheet, showToast } from '../ui.js';
+import { openSheet, closeSheet, showToast, openFullScreen } from '../ui.js';
 import { applyChange, outsideScope } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
 import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, eligibilityProblems, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
@@ -200,15 +200,16 @@ function afterPick(ctx, trip, guest, slot, target, options = {}) {
   // Taking someone off a dinner table says so in words ("remove"), since the party question is easy to
   // mistake for something else when the destination is just "At leisure".
   const leavingTable = guestPlace(trip, guest, slot).kind === 'dinner' && target.kind !== 'dinner';
-  openSheet({
+  // The question must be answered, so it takes the whole screen (owner's request, 21 Oct 2026).
+  openFullScreen({
     eyebrow: 'Travel party', title: leavingTable ? 'Also remove their travel party from the table?' : 'Also move their travel party?',
     subtitle: `Move ${alone.who}${alone.from} to ${alone.to} · ${alone.detail}`,
     body: [
       roomNote ? notice(roomNote) : null,
       h('button', { class: 'btn', type: 'button', onclick: yes }, leavingTable ? `Yes, remove ${moverNames} too` : `Yes, move ${moverNames} too`),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: no }, `No, only ${alone.who}`),
+      h('button', { class: 'btn btn--plain', type: 'button', onclick: closeSheet }, 'Cancel'),
     ],
-    cancelDanger: true,
   });
 }
 
@@ -414,7 +415,7 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
   }, asking ? 'Ask to force' : confirmLabel);
 
   const secondaryButton = secondary
-    ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => saveChanges(ctx, trip, secondary.changes, secondary.done) }, secondary.label)
+    ? h('button', { class: 'btn', type: 'button', onclick: () => saveChanges(ctx, trip, secondary.changes, secondary.done) }, secondary.label)
     : null;
 
   openSheet({
@@ -422,7 +423,8 @@ function confirmSheet(ctx, trip, { title, detail, warnings, confirmLabel, danger
     // A colleague's choices are laid out so both are visible at once: the waiting list first (no one has to decide), then "ask the owner to force it" with its reason.
     body: asking
       ? [warnings.map(notice), secondaryButton, h('div', { class: 'form-label' }, 'Or ask the owner to force it'), approval, confirmButton, notice('The owner decides. They will see your reason, and can approve it, put the guest on the waiting list instead, or decline.')]
-      : [warnings.map(notice), approval, confirmButton, secondaryButton],
+      // The owner sees the same two choices, the waiting list first (it was under the red button and out of sight on a small screen).
+      : secondaryButton ? [warnings.map(notice), secondaryButton, h('div', { class: 'form-label' }, 'Or force it'), approval, confirmButton] : [warnings.map(notice), approval, confirmButton],
     cancelLabel, cancelDanger: !(danger || force),
   });
 }

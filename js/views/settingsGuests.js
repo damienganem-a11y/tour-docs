@@ -15,7 +15,7 @@ import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { alphabetical, displayNames, partyLabel, plain, plural } from '../rules.js';
-import { pageHead } from './chrome.js';
+import { pageHead , guestsSwitch } from './chrome.js';
 import { undoButton } from './undo.js';
 import { notice, choiceRow } from './move.js';
 import { GUEST_UNDO_SCOPE } from '../journal.js';
@@ -53,10 +53,7 @@ function listPage(ctx, trip) {
 
   return h('div', {},
     pageHead({ back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Settings', title: 'Guests', subtitle: `${active.length} on the trip` }),
-    // Travel parties and Groups used to be menu entries of their own; they live here now (owner's plan, 17 Oct 2026).
-    h('div', { class: 'card-actions' },
-      h('a', { class: 'btn btn--small btn--plain', href: `#/trip/${trip.id}/settings/parties` }, 'Travel parties'),
-      h('a', { class: 'btn btn--small btn--plain', href: `#/trip/${trip.id}/settings/groups` }, 'Groups')),
+    guestsSwitch(trip, 'guests'),
     h('ul', { class: 'list' }, active.map((g) => h('li', {}, row(g)))),
     left.length > 0
       ? h('div', {},
@@ -106,17 +103,22 @@ function editDetails(ctx, trip, guest) {
     autocapitalize: 'characters', spellcheck: 'false', maxlength: '10',
   });
 
+  // Allergies and dietary needs: private. Never in the journal or in an export (except a restaurant sheet, if the owner ticks it), erased when the trip is archived.
+  const dietaryInput = h('textarea', { class: 'text-input', rows: '3', maxlength: '300', placeholder: 'Allergies / dietary needs (optional)', 'aria-label': 'Allergies and dietary needs' }, guest.dietary ?? '');
   const confirm = h('button', {
     class: 'btn', type: 'button',
-    onclick: () => save(ctx, trip.id, {
-      type: 'edit-guest', guestId: guest.id, first: firstInput.value, last: lastInput.value, seat: seatInput.value,
-    }, 'Guest updated'),
+    onclick: async () => {
+      const done = await save(ctx, trip.id, {
+        type: 'edit-guest', guestId: guest.id, first: firstInput.value, last: lastInput.value, seat: seatInput.value,
+      }, 'Guest updated');
+      if (done && dietaryInput.value.trim() !== (guest.dietary ?? '').trim()) await save(ctx, trip.id, { type: 'set-dietary', guestId: guest.id, dietary: dietaryInput.value }, 'Allergy information saved');
+    },
   }, 'Save');
 
   openSheet({
     eyebrow: 'Guest', title: 'Edit guest details',
     subtitle: 'The name shown on screen (like "John S.") is worked out from the name automatically. The seat is used to sort By guest for reconfirming names on board.',
-    body: [firstInput, lastInput, seatInput, confirm], cancelLabel: 'Cancel',
+    body: [firstInput, lastInput, seatInput, dietaryInput, h('p', { class: 'muted' }, 'Allergies and dietary needs stay private: never in the journal, never in an export (except a restaurant sheet, when you tick it), and erased for good when the trip is archived.'), confirm], cancelLabel: 'Cancel',
   });
 }
 

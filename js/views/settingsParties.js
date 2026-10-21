@@ -10,7 +10,7 @@ import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { alphabetical, displayNames, joinNames, plain, plural } from '../rules.js';
-import { pageHead } from './chrome.js';
+import { pageHead , guestsSwitch } from './chrome.js';
 import { undoButton } from './undo.js';
 import { choiceRow, notice } from './move.js';
 import { GUEST_UNDO_SCOPE } from '../journal.js';
@@ -43,10 +43,11 @@ export function partiesSettingsPage(ctx, trip) {
 
   return h('div', {},
     pageHead({
-      back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Settings', title: 'Travel parties',
+      back: { href: `#/trip/${trip.id}/settings/guests`, label: 'Guests' }, eyebrow: 'Settings', title: 'Travel parties',
       subtitle: `${parties.length} travel part${parties.length === 1 ? 'y' : 'ies'}`,
       action: undoButton(ctx, trip, { scope: GUEST_UNDO_SCOPE }),
     }),
+    guestsSwitch(trip, 'parties'),
     trip.archivedAt ? notice('This trip is archived: read-only. Un-archive it on the Trips screen to make changes.') : null,
     h('div', {}, parties.map((members) => partyCard(ctx, trip, members, names))),
     h('button', {

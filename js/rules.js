@@ -494,3 +494,7 @@ export function tripWarnings(trip) {
 export function dietaryErasureDue(trip) {
   return Boolean(trip.archivedAt) && trip.guests.some((g) => g.dietary);
 }
+
+// What this trip calls its team of colleagues (owner's request, 21 Oct 2026): "Jet Staff" on a jet trip, "Adventure Guides" on a river cruise. A setting of the trip's
+// company look (branding.teamLabel); "Jet Staff" when nothing is written.
+export const teamLabel = (trip) => String(trip?.branding?.teamLabel ?? '').trim() || 'Jet Staff';

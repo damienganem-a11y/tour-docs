@@ -303,7 +303,7 @@ function todayView(sheet, offline) {
   const facts = place?.facts ?? [];
   const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
   const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
-  return [hero, title, h('div', { class: 'atl-body' }, nextBar(sheet), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), offline, staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+  return [hero, title, h('div', { class: 'atl-body' }, offline, nextBar(sheet), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -327,6 +327,7 @@ function myRowsFor(sheet, programDay) {
   for (const day of sheet.days.filter((d) => d.date === programDay.date && d.destination === programDay.destination)) {
     for (const part of day.parts) {
       if (part.kind === 'activity' && !part.cancelled) rows.push({ mine: true, time: part.time, title: part.name, text: part.meeting ? `Meet: ${part.meeting}` : null, tag: 'Your tour', open: part.tour >= 0 ? () => openTour(part.tour) : null });
+      if (part.kind === 'waitlist') rows.push({ mine: true, time: null, title: part.name, text: 'No place yet. You will be told if a place opens.', tag: 'On the waiting list', warn: true, open: null });
       if (part.kind === 'dinner') rows.push({ mine: true, time: part.seating, title: `Dinner at ${part.restaurant}`, text: part.confirmed ? null : 'Being confirmed', tag: 'Your table', open: part.rest >= 0 ? () => openRestaurant(part.rest) : null });
     }
   }
@@ -347,7 +348,7 @@ function programView(sheet, offline) {
     const node = h('div', { class: `prog-row${r.mine ? ' mine' : ''}${r.kind === 'note' ? ' note' : ''}` },
       h('div', { class: 'prog-time' }, r.clock || ''),
       h('div', { class: 'prog-what' },
-        r.tag ? h('span', { class: 'tag' }, r.tag) : (KIND_NAME[r.kind] ? h('span', { class: 'prog-kind' }, KIND_NAME[r.kind]) : null),
+        r.tag ? h('span', { class: r.warn ? 'tag warn' : 'tag' }, r.tag) : (KIND_NAME[r.kind] ? h('span', { class: 'prog-kind' }, KIND_NAME[r.kind]) : null),
         h('div', { class: 'what' }, r.title),
         r.place ? h('div', { class: 'line' }, r.place) : null,
         r.text ? h('div', { class: 'line prog-text' }, r.text) : null,
@@ -964,7 +965,9 @@ function gentleChip() {
 function levelBlock(info) {
   const level = info?.difficulty ? DIFFICULTY[info.difficulty] : null;
   if (!level && !info?.accessibility && !info?.difficultyNote) return null;
-  const facts = distinctTexts([info.difficultyNote, info.accessibility]);
+  // The green "Gentle walking group" chip at the top already says it: the same sentence is not repeated in the grey box.
+  const withoutGentle = (text) => (offersGentleGroup(info) ? String(text ?? '').replace(/[,;.]?\s*(and )?(a |the )?gentle (walking )?(group|walk|pace)[^.;]*[.;]?/i, '.').replace(/\s*\.\s*\./g, '.').replace(/^[\s.,;]+|[\s,;]+$/g, '').trim() : text);
+  const facts = distinctTexts([info.difficultyNote, info.accessibility].map(withoutGentle).filter((t) => t && !/^[\W_]*$/.test(t)));
   return h('section', { class: `atl-section atl-level${level ? ` level--${info.difficulty}` : ''}` },
     h('div', { class: 'atl-label' }, level ? 'Activity level and accessibility' : 'Accessibility'),
     level ? h('div', { class: 'atl-level-name' }, h('i', { class: 'atl-level-dot' }), level.label) : null,

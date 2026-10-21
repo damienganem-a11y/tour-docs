@@ -39,6 +39,7 @@ export function brandForm({ initial, withNote = false }) {
   let logo = initial.logo ?? null;
 
   const nameInput = h('input', { class: 'text-input', type: 'text', maxlength: '60', placeholder: 'Company name', 'aria-label': 'Company name', value: initial.companyName ?? '' });
+  const teamInput = h('input', { class: 'text-input', type: 'text', maxlength: '30', placeholder: 'What you call your team (default: Jet Staff)', 'aria-label': 'Name of the team', value: initial.teamLabel ?? '' });
   const colorInput = h('input', { class: 'color-input', type: 'color', 'aria-label': 'Colour', value: initial.accent });
   const noteInput = withNote
     ? h('input', { class: 'text-input', type: 'text', maxlength: '200', placeholder: 'Note printed on every card (optional)', 'aria-label': 'Note on every card', value: initial.cardNote ?? '' })
@@ -66,8 +67,8 @@ export function brandForm({ initial, withNote = false }) {
 
   return {
     node: h('div', {}, nameInput, preview, fileInput, chooseButton, removeButton,
-      h('label', { class: 'field-label' }, 'Colour', colorInput), noteInput),
-    read: () => ({ companyName: nameInput.value, accent: colorInput.value, cardNote: noteInput?.value ?? '', logo }),
-    fill: (look) => { nameInput.value = look.companyName ?? ''; colorInput.value = look.accent; logo = look.logo ?? null; drawPreview(); },
+      h('label', { class: 'field-label' }, 'Colour', colorInput), teamInput, noteInput),
+    read: () => ({ companyName: nameInput.value, accent: colorInput.value, cardNote: noteInput?.value ?? '', logo, teamLabel: teamInput.value }),
+    fill: (look) => { nameInput.value = look.companyName ?? ''; colorInput.value = look.accent; teamInput.value = look.teamLabel ?? ''; logo = look.logo ?? null; drawPreview(); },
   };
 }

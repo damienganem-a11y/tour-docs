@@ -1,5 +1,6 @@
 {
-"trip": {"code": "RN-01", "name": "Rhône River Cruise, Lyon to Arles (fictional)", "start": "2027-06-04", "days": 8, "default_vehicles": 4, "vehicle_label": "Coach ", "accent": "#FF8200"},
+"trip": {"code": "RN-01", "name": "Rhône River Cruise, Lyon to Arles (fictional)", "start": "2027-06-04", "days": 8, "default_vehicles": 4, "vehicle_label": "Coach ", "teamLabel": "Adventure Guides",
+  "accent": "#FF8200"},
 "destinations": [
  {"index": 1, "name": "Lyon", "country": "France", "timezone": "Europe/Paris", "first_day": 1, "last_day": 2, "photo": "photos/lyon.jpg", "facts": ["In 1895 the Lumière brothers filmed workers leaving their Lyon factory: one of the first films ever shown.", "The Jacquard loom, which weaves patterns with punched cards, was perfected in Lyon in 1804, and is an ancestor of the computer.", "Lyon has more than 400 \"traboules\", hidden passages that silk workers used to carry cloth through the old city."]},
  {"index": 2, "name": "Tournon", "country": "France", "timezone": "Europe/Paris", "first_day": 3, "last_day": 3, "photo": "photos/tournon.jpg", "facts": ["Valrhona chocolate has been made across the river from Tournon since 1922.", "The Vivarais steam train climbs through the Doux gorges on a line built in the 1890s."]},

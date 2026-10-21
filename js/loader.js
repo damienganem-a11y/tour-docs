@@ -47,7 +47,7 @@ const isText = (value) => typeof value === 'string' && value.trim() !== '';
 // colour, and an optional note printed on every card. Nothing about it is fixed in the code: a new trip
 // starts neutral and the owner fills it in under Settings > Brand.
 export function defaultBranding() {
-  return { companyName: '', accent: '#1d5c57', cardNote: '', logo: null };
+  return { companyName: '', accent: '#1d5c57', cardNote: '', logo: null, teamLabel: '' };
 }
 
 // The company look is set ONCE per device (Trips screen > My company) and copied into every new trip, so
@@ -63,7 +63,7 @@ export function tripAccent(branding) {
 }
 
 export function brandingFromLook(look, cardNote = '') {
-  return { companyName: look.companyName ?? '', accent: look.accent ?? defaultBranding().accent, cardNote, logo: look.logo ?? null };
+  return { companyName: look.companyName ?? '', accent: look.accent ?? defaultBranding().accent, cardNote, logo: look.logo ?? null, teamLabel: look.teamLabel ?? '' };
 }
 
 export function buildTrip(raw) {
@@ -217,7 +217,7 @@ export function buildTrip(raw) {
     loadedAt: new Date().toISOString(),
     destinations, slots, activities, parties, guests, bookings,
     splits: [],                                     // Settings > Groups: named splits of the guests (bus groups, boat groups...)
-    branding: { ...defaultBranding(), ...(/^#[0-9a-f]{6}$/i.test(raw.trip.accent ?? '') ? { accent: raw.trip.accent, fixed: true } : {}) }, // fixed: the file's own colour wins over the device's company look; Settings > Brand: the look of the confirmation cards; the file may bring a colour (trip.accent)
+    branding: { ...defaultBranding(), teamLabel: typeof raw.trip.teamLabel === 'string' ? raw.trip.teamLabel.trim().slice(0, 30) : '', ...(/^#[0-9a-f]{6}$/i.test(raw.trip.accent ?? '') ? { accent: raw.trip.accent, fixed: true } : {}) }, // fixed: the file's own colour wins over the device's company look; Settings > Brand: the look of the confirmation cards; the file may bring a colour (trip.accent)
     restaurants: [],                                // Phase 3 step 1: set up in Settings, one at a time
     program: [],                                    // daily program of each destination (program.js)
     dinnerBookings: [],                             // Phase 3 step 2a: tables, booked one at a time in Use > Dining

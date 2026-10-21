@@ -28,7 +28,7 @@
 
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
-import { openSheet, closeSheet, showToast } from '../ui.js';
+import { openSheet, closeSheet, showToast, openFullScreen, closeFullScreen } from '../ui.js';
 import {
   alphabetical, plain, displayNames, guestPlace, dinnerFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates,
   capacityInfo, bySlotOrder, joinNames, plural,
@@ -156,7 +156,7 @@ function tableCard(ctx, trip, names, slot, booking, title) {
       h('div', { class: `count${countBad ? ' count--bad' : ''}` }, countText)),
     h('div', { class: 'muted' }, booking.seating));
 
-  return h('div', { class: `card${isSpecial ? ' card--warn' : ''}` },
+  return h('div', { class: `card${isSpecial ? ' card--warn card--special' : ''}` },
     head,
     h('div', { class: 'chips' },
       [...guests].sort(alphabetical(names)).map((g) => h('button', {
@@ -296,14 +296,19 @@ function byTablePage(ctx, trip, base, destination, slot, restaurants, restaurant
   // An occupied table (Strict or Flexible) renders as the same tappable card the Overview uses —
   // its head adds more guests, each chip moves that one guest off it. An empty Strict table has no
   // guests to show, so it stays a plain row (tap it to book it fresh).
+  // A Special request table with no physical table (an extra table, or a group that did not fit) is not one of the restaurant's own tables: it is listed after them, in red.
+  const extras = grid.mode === 'strict'
+    ? trip.dinnerBookings.filter((b) => b.restaurantId === restaurant.id && b.slotId === slot.id && b.seating === seating && b.tableIds.length === 0 && dinnerCountIn(trip, b) > 0)
+    : [];
   const rows = grid.mode === 'strict'
-    ? grid.rows.map(({ table, booking, count }) => (booking
+    ? [...grid.rows.map(({ table, booking, count }) => (booking
         ? tableCard(ctx, trip, names, slot, booking, `Table for ${table.size}`)
         : choiceRow({
             title: `Table for ${table.size}`, detail: 'Empty', side: capacityInfo(count, table.size).text,
             disabled: Boolean(trip.archivedAt),
             onclick: () => pickForEmptyTable(ctx, trip, slot, restaurant, seating, table),
-          })))
+          }))),
+        ...extras.map((booking) => tableCard(ctx, trip, names, slot, booking, `Special request table (${plural(dinnerCountIn(trip, booking), 'guest')})`))]
     : [
         ...grid.rows.map(({ booking, count }) => tableCard(ctx, trip, names, slot, booking, `Table (${plural(count, 'guest')})`)),
         h('p', { class: 'muted' }, `${capacityInfo(grid.used, grid.seatsPerSeating).text} seated this seating`),
@@ -408,7 +413,6 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
   // for (26 Sep 2026), so a table's fill state is visible at a glance while ticking guests, not just
   // read afterwards from a line of text. Red once over, exactly like an activity card's own count.
   const titleBadge = h('div', { class: 'count' }, ceiling === null ? '0' : capacityInfo(baseUsed, ceiling).text);
-  const partyPrompt = h('div', {});
   const confirmBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => onConfirm([...checked]) }, confirmLabel);
   const list = h('div', {});
 
@@ -435,15 +439,16 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
   // cleared by the next tick, so it never piles up.
   const offerParty = (guest) => {
     const candidates = dinnerPartyCandidates(trip, guest, slot).filter((c) => !checked.has(c.id));
-    if (candidates.length === 0) { partyPrompt.replaceChildren(); return; }
+    if (candidates.length === 0) return;
     const moverNames = joinNames([...candidates].sort(alphabetical(names)).map((c) => names.get(c.id)));
-    partyPrompt.replaceChildren(notice(`${names.get(guest.id)} travels with ${moverNames}`),
-      // Full-size buttons, like the "move them too" question in Touring (owner's request), not small ones.
-      h('button', {
-        class: 'btn', type: 'button',
-        onclick: () => { for (const c of candidates) checked.add(c.id); partyPrompt.replaceChildren(); fill(); say(); },
-      }, `Add ${moverNames} too`),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => partyPrompt.replaceChildren() }, 'No, just them'));
+    // The question must be answered, so it takes the whole screen (owner's request, 21 Oct 2026), over the list (kept underneath).
+    openFullScreen({
+      keepSheet: true, eyebrow: 'Travel party', title: `${names.get(guest.id)} travels with ${moverNames}`,
+      body: [
+        h('button', { class: 'btn', type: 'button', onclick: () => { for (const c of candidates) checked.add(c.id); closeFullScreen(); fill(); say(); } }, `Add ${moverNames} too`),
+        h('button', { class: 'btn btn--plain', type: 'button', onclick: () => closeFullScreen() }, 'No, just them'),
+      ],
+    });
   };
 
   // The search matches by name only, exactly like the ordinary "Add guest" search elsewhere in the
@@ -460,7 +465,7 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
       : shown.map((guest) => {
           const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });
           box.addEventListener('change', () => {
-            if (box.checked) { checked.add(guest.id); offerParty(guest); } else { checked.delete(guest.id); partyPrompt.replaceChildren(); }
+            if (box.checked) { checked.add(guest.id); offerParty(guest); } else { checked.delete(guest.id); }
             say();
           });
           return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
@@ -478,7 +483,7 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
   // not the scrollable body, so confirming a long guest list never needs a scroll to the bottom first
   // (the owner's feedback, 25 Sep 2026).
   openSheet({
-    eyebrow, title, subtitle, titleBadge, body: [partyPrompt, search, list], cancelLabel: 'Cancel',
+    eyebrow, title, subtitle, titleBadge, body: [search, list], cancelLabel: 'Cancel',
     footer: [status, confirmBtn],
   });
 }

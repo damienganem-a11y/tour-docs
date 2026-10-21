@@ -13,7 +13,29 @@ let whenClosed = null;     // app.js asks to be told when a sheet closes (to dra
 
 export function onSheetClosed(fn) { whenClosed = fn; }
 
+// A full-screen page that must be answered (owner's request, 21 Oct 2026): no backdrop to tap, no swipe, no Escape. The caller's own buttons close it
+// (closeSheet() closes it too, so the usual "close, then save" buttons just work).
+let fullScreen = null;
+export function openFullScreen({ eyebrow, title, subtitle, body, keepSheet = false }) {
+  if (!keepSheet) closeSheet(); else closeFullScreen();
+  fullScreen = h('div', { class: 'fullscreen', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+    h('div', { class: 'fullscreen-inner' },
+      eyebrow ? h('div', { class: 'eyebrow eyebrow--grey' }, eyebrow) : null,
+      h('h2', {}, title),
+      subtitle ? h('div', { class: 'muted' }, subtitle) : null,
+      h('div', { class: 'fullscreen-body' }, body)));
+  document.body.classList.add('sheet-open');
+  document.body.append(fullScreen);
+}
+export function closeFullScreen() {
+  if (!fullScreen) return false;
+  fullScreen.remove(); fullScreen = null;
+  document.body.classList.remove('sheet-open');
+  return true;
+}
+
 export function closeSheet() {
+  if (closeFullScreen() && !openBackdrop) return;
   if (!openBackdrop) return;
   openBackdrop.remove();
   document.body.classList.remove('sheet-open');

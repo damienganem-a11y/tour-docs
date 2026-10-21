@@ -23,7 +23,7 @@ import { guestSheetRows } from './guestSheet.js';
 import { defaultBranding, tripAccent } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast, onSheetClosed } from './ui.js';
-import { signOut as authSignOut, hasLiveSession } from './auth.js';
+import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './auth.js';
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
@@ -42,7 +42,7 @@ import { gateAvailable, checkPasscode, isUnlocked, rememberUnlock } from './gate
 import * as biometrics from './biometrics.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { sameDocument } from './export.js';
-import { dietaryErasureDue } from './rules.js';
+import { dietaryErasureDue, teamLabel } from './rules.js';
 import { applyTheme } from './theme.js';
 import { passcodeView } from './views/passcode.js';
 import { previewBar } from './views/preview.js';
@@ -59,6 +59,7 @@ const state = { owner: undefined, trips: new Map(), journal: new Map(), exports:
 // this list is the person's own (a local trip, or one created here), so they are its owner. Kept on the device so it works offline.
 const tripRoles = new Map();
 const tripScopes = new Map(); // tripId -> the one destination an Advance is tied to (absent = the whole trip)
+let roleNoticeSeen = {}; // tripId -> the role whose "what you can do" notice this person has read on this device
 const tripModes = new Map(); // tripId -> 'full' when the owner unlocked this person (absent = simple version)
 const tripApprovals = new Map(); // tripId -> 'review' when the owner wants to approve this person's changes first (absent = direct)
 // Live editing: how far each trip is known to match the server on THIS device (the same number the database keeps in syncState, kept in memory so a
@@ -280,6 +281,12 @@ const ctx = {
     if (role === 'owner') return true;
     return (role === 'team' || role === 'advance') && tripApprovals.get(tripId) !== 'review';
   },
+  // The notice about a colleague's role is shown once (a page that must be read), not at the top of every screen (owner's request, 21 Oct 2026).
+  roleNoticeSeen: (tripId) => roleNoticeSeen[tripId] ?? null,
+  async markRoleNoticeSeen(tripId, role) {
+    roleNoticeSeen[tripId] = role;
+    await dbPut('settings', roleNoticeSeen, 'roleNoticeSeen');
+  },
   // The simple version of the app: for a colleague (Jet Staff or Advance) until the owner unlocks them (Settings > Team). The owner always has the full app.
   simpleFor(tripId) {
     const role = ctx.roleFor(tripId);
@@ -422,7 +429,7 @@ const ctx = {
       const scope = tripScopes.get(trip.id);
       const place = scope ? ` · ${trip.destinations.find((d) => d.id === scope)?.name ?? 'one destination'}` : '';
       const behind = (knownPushed.get(trip.id) ?? -1) < (trip.changeCount ?? 0);
-      const detail = `${{ owner: 'Owner', team: 'Jet Staff', advance: 'Advance', viewer: 'Expert' }[role] ?? role}${place}${tripApprovals.get(trip.id) === 'review' ? ' · you ask before applying' : ''}. ${trip.changeCount ?? 0} changes. ${conflictTrips.has(trip.id) ? 'TWO VERSIONS: open the inbox.' : behind ? 'Changes not sent yet.' : 'In step with the server.'}`;
+      const detail = `${{ owner: 'Owner', team: teamLabel(trip), advance: 'Advance', viewer: 'Expert' }[role] ?? role}${place}${tripApprovals.get(trip.id) === 'review' ? ' · you ask before applying' : ''}. ${trip.changeCount ?? 0} changes. ${conflictTrips.has(trip.id) ? 'TWO VERSIONS: open the inbox.' : behind ? 'Changes not sent yet.' : 'In step with the server.'}`;
       add(`Trip ${trip.ref || trip.name}`, conflictTrips.has(trip.id) ? 'bad' : behind ? 'warn' : 'ok', detail);
       if (role !== 'viewer') add(`  Live editing on ${trip.ref || trip.name}`, ctx.liveFor(trip.id) ? 'ok' : 'warn', ctx.liveFor(trip.id) ? 'Your changes are applied at once.' : 'Not now (offline, not in step, or you ask before applying): your changes will go as requests or be sent later.');
     }
@@ -769,6 +776,7 @@ async function start() {
     for (const [id, scope] of Object.entries((await dbGet('settings', 'tripScopes')) ?? {})) tripScopes.set(id, scope);
     for (const [id, approval] of Object.entries((await dbGet('settings', 'tripApprovals')) ?? {})) tripApprovals.set(id, approval);
     for (const [id, mode] of Object.entries((await dbGet('settings', 'tripModes')) ?? {})) tripModes.set(id, mode);
+    roleNoticeSeen = (await dbGet('settings', 'roleNoticeSeen')) ?? {};
     outbox = (await dbGet('settings', 'outbox')) ?? [];
     inboxSeen = (await dbGet('settings', 'inboxSeen')) ?? {};
     for (const trip of await dbAll('trips')) { migrateTrip(trip); state.trips.set(trip.id, trip); knownPushed.set(trip.id, (await getPushedChangeCount(trip.id)) ?? -1); }
@@ -793,7 +801,9 @@ async function start() {
   // The access code is only asked for when one is set AND this page can check it (see gate.js).
   // With Face ID/Touch ID turned on (biometrics.js), the app locks itself on every reopen instead of
   // just remembering the code for 30 days — the biometric prompt makes that no burden.
-  state.locked = Boolean(PASSCODE_CONFIG) && gateAvailable() && (biometrics.biometricLockOn() || !isUnlocked());
+  // A QR code made by the owner (a one-time sign-in token in the address) opens the app without the access code: the token is the proof.
+  if (teamLinkFromAddress(location.search)) rememberUnlock(); // this phone is trusted from now on, like after the code
+  state.locked = Boolean(PASSCODE_CONFIG) && gateAvailable() && !teamLinkFromAddress(location.search) && (biometrics.biometricLockOn() || !isUnlocked());
   registerOffline(); // starts straight away, offline setup does not touch the screen
 
   window.addEventListener('hashchange', () => render());

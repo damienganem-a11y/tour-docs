@@ -101,8 +101,9 @@
 //   { type: 'delete-split', splitId }
 //   { type: 'assign-guests', splitId, assignments: [{ guestId, groupId | null }] }   puts guests in a group of a
 //       split, or (groupId null) takes them out of it — one action for one Undo
+//   { type: 'set-dietary', guestId, dietary }  one guest's allergy / dietary text (the journal says only that it was updated); never undoable
 //   { type: 'erase-dietary' }  erase all allergy/dietary text (automatic, when the trip is archived); never undoable
-//   { type: 'set-branding', companyName, accent, cardNote, logo }  the look of the confirmation cards (Settings > Brand);
+//   { type: 'set-branding', companyName, accent, cardNote, logo, teamLabel }  the look of the confirmation cards (Settings > Brand);
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'guest-links', action, guestIds: [id, ...] }      the personal links of the guest app (Settings > Guest links), owner only.
 //       action: 'create' (a guest who has none gets one), 'renew' (a new secret: the old link stops working),
@@ -151,7 +152,7 @@ const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-
 const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity', 'edit-activity', 'cancel-tour', 'add-restaurant', 'edit-restaurant', 'restaurant-card', 'set-program']);
 // Erasing every guest's allergy and dietary information (automatic, when the trip is archived; see rules.js's dietaryErasureDue).
 // Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
-const DIETARY_TYPES = new Set(['erase-dietary']);
+const DIETARY_TYPES = new Set(['erase-dietary', 'set-dietary']);
 // The guest app's personal links (Settings > Guest links): owner only (not in TEAM_TYPES), on their own, never undoable.
 const GUEST_LINK_TYPES = new Set(['guest-links']);
 const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-guests']);
@@ -200,7 +201,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   }
   // Archived trips are read-only, except for undoing and the archive/delete actions themselves (so
   // a trip can be un-archived, or a deleted trip reinstated, without needing to be un-archived first).
-  if (trip.archivedAt && changes[0]?.type !== 'undo' && !TRIP_TYPES.has(changes[0]?.type) && !DIETARY_TYPES.has(changes[0]?.type)) {
+  if (trip.archivedAt && changes[0]?.type !== 'undo' && !TRIP_TYPES.has(changes[0]?.type) && changes[0]?.type !== 'erase-dietary') {
     return fail('This trip is archived. Un-archive it to change it.');
   }
   if (!Array.isArray(changes) || changes.length === 0) return fail('There is nothing to change.');
@@ -221,6 +222,12 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   if (TRIP_TYPES.has(changes[0].type)) return validateTripChange(trip, changes[0]);
   if (TRIP_INFO_TYPES.has(changes[0].type)) return validateRenameTrip(changes[0]);
   if (BRANDING_TYPES.has(changes[0].type)) return validateBranding(changes[0]);
+  if (changes[0].type === 'set-dietary') {
+    const g = trip.guests.find((x) => x.id === changes[0].guestId);
+    if (!g || g.leftAt) return fail('That guest is not on this trip.');
+    if (String(changes[0].dietary ?? '').trim().length > 300) return fail('Allergies and dietary needs: 300 letters at most.');
+    return { ok: true };
+  }
   if (DIETARY_TYPES.has(changes[0].type)) return { ok: true };
   if (GUEST_LINK_TYPES.has(changes[0].type)) return validateGuestLinks(trip, changes[0]);
   if (SPLIT_TYPES.has(changes[0].type)) return validateSplitChange(trip, changes[0]);
@@ -738,6 +745,7 @@ function validateGuestLinks(trip, change) {
 function validateBranding(change) {
   if (typeof change.companyName !== 'string' || change.companyName.trim().length > 60) return fail('The company name must be 60 letters or fewer.');
   if (!/^#[0-9a-f]{6}$/i.test(change.accent ?? '')) return fail('The colour must look like #1d5c57.');
+  if (change.teamLabel !== undefined && (typeof change.teamLabel !== 'string' || change.teamLabel.trim().length > 30)) return fail('The name of the team must be 30 letters or fewer.');
   if (typeof change.cardNote !== 'string' || change.cardNote.trim().length > 200) return fail('The note on the cards must be 200 letters or fewer.');
   const logo = change.logo;
   const goodLogo = logo && typeof logo.data === 'string' && logo.data.startsWith('data:image/jpeg;base64,') && logo.data.length <= 250000
@@ -1478,6 +1486,13 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
   }
 
   // Erases every guest's dietary information. The journal keeps only the number of guests, never what was written.
+  // Writes one guest's allergy / dietary text. The journal says only that it was updated, never what it says; never undoable (the text is not kept anywhere else).
+  if (changes[0].type === 'set-dietary') {
+    const guest = next.guests.find((g) => g.id === changes[0].guestId);
+    guest.dietary = String(changes[0].dietary ?? '').trim();
+    entries.push({ ...base(), type: 'set-dietary', guestId: guest.id, guestName: names.get(guest.id), hasNeed: guest.dietary !== '', ...guestWhere });
+    return save(ctx, next, entries, {});
+  }
   if (DIETARY_TYPES.has(changes[0].type)) {
     const affected = next.guests.filter((g) => g.dietary);
     for (const guest of affected) guest.dietary = '';
@@ -1532,7 +1547,7 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     const c = changes[0];
     const from = trip.branding ?? null;
     const to = {
-      companyName: c.companyName.trim(), accent: c.accent.toLowerCase(), cardNote: c.cardNote.trim(),
+      companyName: c.companyName.trim(), accent: c.accent.toLowerCase(), cardNote: c.cardNote.trim(), teamLabel: String(c.teamLabel ?? '').trim(),
       logo: c.logo ? { data: c.logo.data, width: c.logo.width, height: c.logo.height } : null,
     };
     next.branding = to;

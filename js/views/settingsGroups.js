@@ -8,7 +8,7 @@ import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { displayNames, alphabetical, capacityInfo, plural, joinNames, autoSplitPlan } from '../rules.js';
-import { pageHead } from './chrome.js';
+import { pageHead , guestsSwitch } from './chrome.js';
 import { undoButton } from './undo.js';
 import { choiceRow, notice } from './move.js';
 import { pickGuests } from './guestPicker.js';
@@ -53,10 +53,11 @@ function listPage(ctx, trip) {
   });
   return h('div', {},
     pageHead({
-      back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' },
+      back: { href: `#/trip/${trip.id}/settings/guests`, label: 'Guests' },
       eyebrow: 'Groups', title: 'Groups', subtitle: 'Split the guests into named groups: buses, a boat, a guided tour.',
       action: undoButton(ctx, trip, { scope: GROUPS_UNDO_SCOPE }),
     }),
+    guestsSwitch(trip, 'groups'),
     h('button', { class: 'btn', type: 'button', disabled: Boolean(trip.archivedAt), onclick: () => newSplitSheet(ctx, trip) }, '+ New split'),
     rows.length === 0 ? h('p', { class: 'empty' }, 'No split yet.') : h('ul', { class: 'list' }, rows));
 }
