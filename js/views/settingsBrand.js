@@ -11,6 +11,7 @@ import { applyChange } from '../changes.js';
 import { showToast } from '../ui.js';
 import { BRANDING_UNDO_SCOPE } from '../journal.js';
 import { defaultBranding, brandingFromLook } from '../loader.js';
+import { openCompanyLooksManager } from './companyLook.js';
 
 export function brandSettingsPage(ctx, trip) {
   const form = brandForm({ initial: trip.branding ?? defaultBranding(), withNote: true });
@@ -29,6 +30,7 @@ export function brandSettingsPage(ctx, trip) {
 
   // The looks saved on this device: one tap fills the form from it (name, colour, logo; the note stays), then Save applies it to this trip.
   const saved = ctx.companyLooks.map((look) => h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => form.fill(brandingFromLook(look)) }, `Use ${look.companyName || 'a saved look'}`));
+  const manage = h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => openCompanyLooksManager(ctx) }, 'Manage my company looks');
   // And what is on the form can be kept for other trips.
   const keep = h('button', {
     class: 'btn btn--plain btn--small', type: 'button',
@@ -43,5 +45,5 @@ export function brandSettingsPage(ctx, trip) {
       action: undoButton(ctx, trip, { scope: BRANDING_UNDO_SCOPE }),
     }),
     saved.length > 0 ? h('p', { class: 'muted' }, 'Looks saved on this phone') : null, saved.length > 0 ? h('div', { class: 'card-actions' }, saved) : null,
-    form.node, saveButton, keep);
+    form.node, saveButton, keep, manage);
 }

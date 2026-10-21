@@ -1281,3 +1281,22 @@ html { background: var(--bg); }
 .btn--small { border: 2px solid transparent; }
 .btn--small.btn--plain { border-color: var(--line); }
 .btn--small.btn--danger { border-color: #b04a3a; }
+
+/* the preview of a PDF before it is sent (pdfPreview.js) */
+.pdf-pages { display: grid; gap: 14px; }
+.pdf-page { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); background: #fff; }
+.pdf-actions { position: sticky; bottom: 0; display: grid; gap: 8px; padding: 10px 0 4px; background: var(--bg); }
+
+/* =====================================================================================================================================
+   v0.124.0: polish after a page-by-page review (owner's request, 21 Oct 2026): calmer notices, tighter headings, switches that never wrap,
+   and content that fades out above the bottom bar instead of being cut by it. */
+.notice { font-size: 14px; line-height: 1.4; font-weight: 500; padding: 10px 12px; border-radius: 12px; margin: 0 0 10px; }
+.page-head { margin-bottom: 12px; }
+.page-head .back-link { display: inline-block; font-size: 11px; margin-bottom: 4px; }
+.title { font-size: 28px; line-height: 1.1; }
+.section-title { margin: 18px 0 6px; font-size: 13px; }
+.switch { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+.switch-item { text-align: center; white-space: nowrap; padding-inline: 6px; font-size: 14px; }
+.bottom-tabs { z-index: 60; }
+body:has(.bottom-tabs)::after { content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: calc(92px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 35%, transparent); pointer-events: none; z-index: 50; }
+.card, .tile, .entry { margin-bottom: 10px; }

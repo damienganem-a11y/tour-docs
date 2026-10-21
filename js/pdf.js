@@ -371,7 +371,12 @@ function buildContentStream(items) {
 // page, and the two fonts), followed by an index ("xref") telling a reader exactly where each starts.
 // options.width/height: the page size (A4 landscape for the lists, A4 portrait for the cards).
 // options.images: JPEG pictures to embed, each { name: 'Im1', bytes, width, height }, drawn by name.
+// The pages of the file built last, kept so the screen can show them before the file is sent (pdfPreview.js).
+let lastBuilt = null;
+export const lastPdfPages = () => lastBuilt;
+
 function serializePdf(pages, { width = PAGE_WIDTH, height = PAGE_HEIGHT, images = [] } = {}) {
+  lastBuilt = { pages, width, height, images };
   const nPages = pages.length;
   const pagesObj = 2;
   const firstPageObj = 3;                     // page i -> firstPageObj + i*2, its content -> +1
@@ -832,7 +837,7 @@ function bandBadge(items, put, brand, logoImage, pageW, pageTop, bandH, margin) 
     const k = Math.min((w - 16) / logoImage.width, (h - 14) / logoImage.height);
     items.push({ type: 'image', name: logoImage.name, x: x + (w - logoImage.width * k) / 2, y: y + (h - logoImage.height * k) / 2, w: logoImage.width * k, h: logoImage.height * k });
   } else if (brand.companyName) {
-    put(brand.companyName, pageW - margin, y + h / 2 - 4, { font: FONT_BOLD, size: fitSize(brand.companyName, FONT_BOLD, 16, 8, w + 20), rgb: WHITE, align: 'right', maxWidth: w + 20 });
+    put(brand.companyName, pageW - margin, y + h / 2 - 4, { font: FONT_BOLD, size: fitSize(brand.companyName, FONT_BOLD, 16, 8, w + 20), gray: 0.1, align: 'right', maxWidth: w + 20 });
   }
 }
 
@@ -849,14 +854,14 @@ function drawChecklistPage(plan, number, total, data, brand, accent, logoImage) 
   const bandTop = CHECK_H;
 
   // The colour band: the split's name small, the group's name huge, its count and the details underneath.
-  items.push({ type: 'rect', x: 0, y: bandTop - CHECK_BAND, w: CHECK_W, h: CHECK_BAND, rgb: accent });
-  items.push({ type: 'rect', x: 0, y: bandTop - CHECK_BAND - 3, w: CHECK_W, h: 3, rgb: paler(accent, 0.55) });
+  // A working document (owner's decision, 21 Oct 2026): plain white and black, no colour band; the company's logo or name stays in the corner.
+  items.push({ type: 'rect', x: left, y: bandTop - CHECK_BAND, w: right - left, h: 1.5, gray: 0.15 });
   const nameRoom = right - left - 150;
   const title = plan.section.heading + (plan.continued ? ' (continued)' : '');
-  put(data.title.toUpperCase(), left, bandTop - 34, { font: FONT_BOLD, size: 10, rgb: paler(accent, 0.3), maxWidth: nameRoom });
-  put(title, left, bandTop - 80, { font: FONT_BOLD, size: fitSize(title, FONT_BOLD, 40, 18, nameRoom), rgb: WHITE, maxWidth: nameRoom });
+  put(data.title.toUpperCase(), left, bandTop - 34, { font: FONT_BOLD, size: 10, gray: 0.4, maxWidth: nameRoom });
+  put(title, left, bandTop - 80, { font: FONT_BOLD, size: fitSize(title, FONT_BOLD, 40, 18, nameRoom), gray: 0.05, maxWidth: nameRoom });
   const sub = [plan.section.countText, data.details].filter(Boolean).join('   ·   ');
-  put(sub, left, bandTop - 106, { size: 11, rgb: paler(accent, 0.2), maxWidth: nameRoom });
+  put(sub, left, bandTop - 106, { size: 11, gray: 0.35, maxWidth: nameRoom });
   bandBadge(items, put, brand, logoImage, CHECK_W, bandTop, CHECK_BAND, CHECK_MARGIN);
 
   // The rows fill the page as one, two or three columns (filled top to bottom, then the next column), as tall as the page allows.
@@ -873,7 +878,7 @@ function drawChecklistPage(plan, number, total, data, brand, accent, logoImage) 
     const c = Math.floor(i / perColumn), r = i % perColumn;
     const x = left + c * (colW + CHECK_GAP);
     const rowTop = CHECK_TABLE_TOP - r * rowH;
-    if (r % 2 === 0) items.push({ type: 'rect', x, y: rowTop - rowH, w: colW, h: rowH, rgb: paler(accent, 0.08) });
+    if (r % 2 === 0) items.push({ type: 'rect', x, y: rowTop - rowH, w: colW, h: rowH, gray: 0.96 });
     const mid = rowTop - rowH / 2;
     put(String(plan.first + i + 1), x + numW - 4, mid - nameSize * 0.3, { size: nameSize * 0.7, gray: 0.5, align: 'right' });
     if (row.note) {
@@ -887,8 +892,8 @@ function drawChecklistPage(plan, number, total, data, brand, accent, logoImage) 
   });
   if (plan.rows.length === 0 && plan.section.empty) put(plan.section.empty, left + 12, CHECK_TABLE_TOP - 30, { gray: 0.45, size: 12 });
 
-  // The footer: a colour rule, when it was made, and the page number.
-  items.push({ type: 'rect', x: left, y: 48, w: right - left, h: 1.5, rgb: accent });
+  // The footer: a rule, when it was made, and the page number.
+  items.push({ type: 'rect', x: left, y: 48, w: right - left, h: 1, gray: 0.6 });
   put(brand.companyName ? `${brand.companyName}  ·  ${data.updatedLine}` : data.updatedLine, left, 32, { size: 7.5, gray: 0.45, maxWidth: 420 });
   put(`Page ${number} of ${total}`, right, 32, { size: 7.5, gray: 0.45, align: 'right' });
   return items;
@@ -948,34 +953,33 @@ function drawOverviewPage(fit, pageIndex, columns, data, brand, accent, logoImag
   const W = shape.width, H = shape.height;
 
   // The colour band across the top: the split's name and details, the logo on the right.
-  items.push({ type: 'rect', x: 0, y: H - OVERVIEW_BAND, w: W, h: OVERVIEW_BAND, rgb: accent });
+  items.push({ type: 'rect', x: OVERVIEW_MARGIN, y: H - OVERVIEW_BAND, w: W - OVERVIEW_MARGIN * 2, h: 1.5, gray: 0.15 }); // plain white page (owner's decision, 21 Oct 2026)
   const roomForTitle = W - OVERVIEW_MARGIN * 2 - 150;
-  put(data.title, OVERVIEW_MARGIN, H - 40, { font: FONT_BOLD, size: fitSize(data.title, FONT_BOLD, 26, 14, roomForTitle), rgb: WHITE, maxWidth: roomForTitle });
-  if (data.details) put(data.details, OVERVIEW_MARGIN, H - 60, { size: 11, rgb: paler(accent, 0.2), maxWidth: roomForTitle });
+  put(data.title, OVERVIEW_MARGIN, H - 40, { font: FONT_BOLD, size: fitSize(data.title, FONT_BOLD, 26, 14, roomForTitle), gray: 0.05, maxWidth: roomForTitle });
+  if (data.details) put(data.details, OVERVIEW_MARGIN, H - 60, { size: 11, gray: 0.35, maxWidth: roomForTitle });
   bandBadge(items, put, brand, logoImage, W, H, OVERVIEW_BAND, OVERVIEW_MARGIN);
 
   const top = H - OVERVIEW_BAND - 14;
   columns.forEach((col, c) => {
     const x = OVERVIEW_MARGIN + c * (colW + OVERVIEW_GAP);
-    const colAccent = col.unplaced ? [0.45, 0.45, 0.45] : accent;
     // the column's head: the group's name and count on its colour
-    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD, w: colW, h: OVERVIEW_HEAD, rgb: colAccent });
-    put(col.name, x + 8, top - 15, { font: FONT_BOLD, size: fitSize(col.name, FONT_BOLD, 13, 8, colW - 16), rgb: WHITE, maxWidth: colW - 16 });
-    put(col.countText, x + 8, top - 28, { size: 8, rgb: paler(colAccent, 0.25), maxWidth: colW - 16 });
+    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD, w: colW, h: OVERVIEW_HEAD, gray: 0.9 });
+    put(col.name, x + 8, top - 15, { font: FONT_BOLD, size: fitSize(col.name, FONT_BOLD, 13, 8, colW - 16), gray: 0.05, maxWidth: colW - 16 });
+    put(col.countText, x + 8, top - 28, { size: 8, gray: 0.4, maxWidth: colW - 16 });
     const slice = col.rows.slice(pageIndex * perPage, (pageIndex + 1) * perPage);
     slice.forEach((row, i) => {
       const rowTop = top - OVERVIEW_HEAD - i * rowH;
-      if (i % 2 === 0) items.push({ type: 'rect', x, y: rowTop - rowH, w: colW, h: rowH, rgb: paler(colAccent, 0.09) });
+      if (i % 2 === 0) items.push({ type: 'rect', x, y: rowTop - rowH, w: colW, h: rowH, gray: 0.96 });
       const base = rowTop - rowH / 2 - size * 0.34;
       put(String(pageIndex * perPage + i + 1), x + numW - 2, base, { size: size * 0.75, gray: 0.5, align: 'right' });
       put(row.name, x + numW + 4, base, { font: FONT_BOLD, size, maxWidth: colW - numW - idW - 8 });
       put(row.id ?? '', x + colW - 4, base, { size: size * 0.75, gray: 0.5, align: 'right', maxWidth: idW });
     });
     // a thin colour rule under the last row of the column
-    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD - Math.max(slice.length, 1) * rowH - 1, w: colW, h: 1.2, rgb: colAccent });
+    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD - Math.max(slice.length, 1) * rowH - 1, w: colW, h: 1.2, gray: 0.5 });
   });
 
-  items.push({ type: 'rect', x: OVERVIEW_MARGIN, y: 34, w: W - OVERVIEW_MARGIN * 2, h: 1, rgb: accent });
+  items.push({ type: 'rect', x: OVERVIEW_MARGIN, y: 34, w: W - OVERVIEW_MARGIN * 2, h: 1, gray: 0.6 });
   put(brand.companyName ? `${brand.companyName}  ·  ${data.updatedLine}` : data.updatedLine, OVERVIEW_MARGIN, 22, { size: 7.5, gray: 0.45, maxWidth: W - OVERVIEW_MARGIN * 2 - 80 });
   if (fit.pages > 1) put(`Page ${pageIndex + 1} of ${fit.pages}`, W - OVERVIEW_MARGIN, 22, { size: 7.5, gray: 0.45, align: 'right' });
   return items;

@@ -7,6 +7,7 @@ import { openSheet, closeSheet, showToast } from '../ui.js';
 import { APP_VERSION } from '../version.js';
 import { openPreviewSheet } from './preview.js';
 import { notificationsCard } from './settingsRequests.js';
+import { openCompanyLooksManager } from './companyLook.js';
 
 const row = (title, hint, run, extra = null) => h('button', { class: 'menu-row', type: 'button', onclick: run },
   h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, title), hint ? h('span', { class: 'menu-hint' }, hint) : null),
@@ -35,6 +36,7 @@ export function openAccountSheet(ctx, extraRows = []) {
     body: [
       h('div', { class: 'menu' },
         row('Notifications', 'Turn them on, send a test', () => { closeSheet(); openSheet({ eyebrow: 'This phone', title: 'Notifications', body: [notificationsCard(ctx)], cancelLabel: 'Close' }); }),
+        row('Company looks', 'Your companies: name, colour, logo, team name', () => { closeSheet(); openCompanyLooksManager(ctx); }),
         faceId,
         ctx.previewRole ? null : row('Preview as…', 'View only, Team or Guest', () => { closeSheet(); openPreviewSheet(ctx); }),
         ...extraRows.map((r) => row(r.title, r.hint, () => { closeSheet(); r.run(); })),

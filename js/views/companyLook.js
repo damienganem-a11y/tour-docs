@@ -10,14 +10,14 @@ import { defaultBranding, brandingFromLook } from '../loader.js';
 import { applyChange } from '../changes.js';
 
 // onSaved(look) runs after a successful save (used to also apply the look to the trip just loaded).
-export function openCompanyLookSheet(ctx, { onSaved, title = 'New company look', skipLabel = 'Cancel' } = {}) {
-  const form = brandForm({ initial: defaultBranding(), withNote: false });
+export function openCompanyLookSheet(ctx, { onSaved, title = 'New company look', skipLabel = 'Cancel', look = null } = {}) {
+  const form = brandForm({ initial: look ?? defaultBranding(), withNote: false });
 
   const save = h('button', {
     class: 'btn', type: 'button',
     onclick: async () => {
       const { companyName, accent, logo, teamLabel } = form.read();
-      const saved = await ctx.saveCompanyLook({ companyName: companyName.trim(), accent, logo, teamLabel: teamLabel.trim() });
+      const saved = await ctx.saveCompanyLook({ ...(look ? { id: look.id } : {}), companyName: companyName.trim(), accent, logo, teamLabel: teamLabel.trim() });
       closeSheet();
       showToast('Company look saved');
       onSaved?.(saved);
@@ -61,4 +61,27 @@ export function openCompanyLookChooser(ctx, trip) {
       h('button', { class: 'btn', type: 'button', onclick: () => { closeSheet(); setTimeout(() => openCompanyLookSheet(ctx, { onSaved: (look) => applyLookToTrip(ctx, trip, look) }), 150); } }, '+ New company look')],
     cancelLabel: 'No company look',
   });
+}
+
+// "Company looks": the list of identities saved on this phone (owner's request, 21 Oct 2026): make them once, delete the ones no longer needed, make a new one.
+// Reached from the account menu (avatar) and from a trip's Settings > Company look.
+export function openCompanyLooksManager(ctx) {
+  const draw = () => {
+    const looks = ctx.companyLooks;
+    openSheet({
+      eyebrow: 'This phone', title: 'Company looks',
+      subtitle: 'Each company you work for: name, colour, logo and what you call your team. You choose one when you add a trip.',
+      body: [
+        ...(looks.length === 0 ? [h('p', { class: 'muted' }, 'None yet.')] : looks.map((look) => h('div', { class: 'card' },
+          h('div', { class: 'act-name' }, look.companyName || 'Unnamed company'),
+          h('div', { class: 'muted' }, [look.teamLabel ? `Team: ${look.teamLabel}` : null, look.logo ? 'With a logo' : 'No logo'].filter(Boolean).join(' · ')),
+          h('div', { class: 'card-actions' },
+            h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => { closeSheet(); setTimeout(() => openCompanyLookSheet(ctx, { look, title: 'Edit company look', onSaved: () => setTimeout(draw, 200) }), 150); } }, 'Edit'),
+            h('button', { class: 'btn btn--small btn--danger', type: 'button', onclick: async () => { await ctx.deleteCompanyLook(look.id); draw(); } }, 'Delete'))))),
+        h('button', { class: 'btn', type: 'button', onclick: () => { closeSheet(); setTimeout(() => openCompanyLookSheet(ctx, { onSaved: () => setTimeout(draw, 200) }), 150); } }, '+ New company look'),
+      ],
+      cancelLabel: 'Close',
+    });
+  };
+  draw();
 }

@@ -58,9 +58,9 @@ export function tripsView(ctx) {
       return null;
     }
     ctx.go(`#/trip/${trip.id}/use/destination`);
-    // Which company look? Asked for every trip that arrives without its own (the choice is one tap when looks are already saved).
+    // Which company look? Asked for every new trip (one tap when looks are already saved; "No company look" keeps the trip's own colour).
     // The screen redraws when the address changes, which would close a sheet opened at the same instant, so it opens just after.
-    if (!trip.branding?.fixed) setTimeout(() => openCompanyLookChooser(ctx, trip), 400);
+    setTimeout(() => openCompanyLookChooser(ctx, trip), 400);
     return trip;
   }
 

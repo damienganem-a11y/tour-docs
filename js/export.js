@@ -17,7 +17,10 @@ import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx }
 import { formatTime, formatFullMoment, formatWeekdayDate } from './time.js';
 import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural } from './rules.js';
 import { newId } from './ids.js';
-import { showToast, shareOrDownloadFile } from './ui.js';
+import { showToast, shareOrDownloadFile, openFullScreen, closeSheet } from './ui.js';
+import { lastPdfPages } from './pdf.js';
+import { pdfPageCanvases } from './pdfPreview.js';
+import { h } from './dom.js';
 
 // The two export formats: how to build each one's file, its extension and its MIME type (the
 // "kind of file" tag the share sheet and downloads use to recognise it).
@@ -463,7 +466,25 @@ function releasePreviewWindow() {
   try { previewWindow?.close(); } catch { /* already gone */ }
   previewWindow = null;
 }
+// The Send button's PDF: shown page by page first (owner's request, 21 Oct 2026), and shared only from the "Send" button of that screen.
+async function previewThenShare(blob, spec, filename) {
+  const layout = lastPdfPages();
+  if (!layout) { await shareOrDownloadFile(blob, filename, spec.mimeType); return; }
+  let canvases;
+  try { canvases = await pdfPageCanvases(layout, Math.min(720, Math.round((window.innerWidth - 40) * (window.devicePixelRatio || 1)))); } catch { await shareOrDownloadFile(blob, filename, spec.mimeType); return; }
+  openFullScreen({
+    eyebrow: 'Preview', title: filename, subtitle: `${canvases.length} page${canvases.length === 1 ? '' : 's'}: this is what will be sent.`,
+    body: [
+      h('div', { class: 'pdf-pages' }, canvases),
+      h('div', { class: 'pdf-actions' },
+        h('button', { class: 'btn', type: 'button', onclick: async () => { await shareOrDownloadFile(blob, filename, spec.mimeType); closeSheet(); } }, 'Send'),
+        h('button', { class: 'btn btn--plain', type: 'button', onclick: closeSheet }, 'Close without sending')),
+    ],
+  });
+}
+
 async function showPreview(blob, spec, filename) {
+  if (directMode && spec.extension === 'pdf') { releasePreviewWindow(); await previewThenShare(blob, spec, filename); return; }
   if (directMode || spec.extension !== 'pdf') { releasePreviewWindow(); await shareOrDownloadFile(blob, filename, spec.mimeType); return; }
   const win = previewWindow;
   previewWindow = null;

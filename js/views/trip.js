@@ -274,10 +274,9 @@ function settingsSection(ctx, trip, key) {
 
 // What a colleague can do, said ONCE as a page that must be read (owner's request, 21 Oct 2026), the first time they open the trip in this role; the bar at the top of
 // every screen is gone. It comes back only if their role changes.
-let roleNoticeOpen = false;
 function scheduleRoleNotice(ctx, trip) {
   const role = ctx.roleFor(trip.id);
-  if (ctx.previewRole || roleNoticeOpen || role === 'owner' || ctx.roleNoticeSeen(trip.id) === role) return;
+  if (ctx.previewRole || document.querySelector('.fullscreen') || role === 'owner' || ctx.roleNoticeSeen(trip.id) === role) return;
   const team = teamLabel(trip);
   const text = {
     viewer: 'You are an Expert on this trip: you can look at everything (the tours, the days, the times, who is where, allergies and diets), but nothing can be changed.',
@@ -285,11 +284,11 @@ function scheduleRoleNotice(ctx, trip) {
     advance: 'You are Advance: in your own destination you have the owner\'s authority and your changes are applied at once. Anything elsewhere is sent to the owner as a request.',
   }[role];
   if (!text) return;
-  roleNoticeOpen = true;
   setTimeout(() => {
+    if (document.querySelector('.fullscreen') || ctx.roleNoticeSeen(trip.id) === role) return;
     openFullScreen({
       eyebrow: trip.name, title: role === 'viewer' ? 'Welcome, Expert' : role === 'advance' ? 'Welcome, Advance' : `Welcome, ${team}`,
-      body: [h('p', {}, text), h('button', { class: 'btn', type: 'button', onclick: async () => { await ctx.markRoleNoticeSeen(trip.id, role); roleNoticeOpen = false; closeSheet(); } }, 'I have read this')],
+      body: [h('p', {}, text), h('button', { class: 'btn', type: 'button', onclick: async () => { await ctx.markRoleNoticeSeen(trip.id, role); closeSheet(); } }, 'I have read this')],
     });
   }, 300);
 }

@@ -909,11 +909,17 @@ async function loadTeamMessagesOnce(tripId) {
   }
   return added.length > 0;
 }
+// The trip on screen is followed at every round; the others (there can be many on one phone) once a minute, so a long list of trips does not mean a long list of requests every 5 seconds.
+let lastAllMessagesAt = 0;
 async function loadAllTeamMessages() {
   if (!state.owner || hasSession !== true || !navigator.onLine) return;
+  const openId = location.hash.match(/^#\/trip\/([^/]+)/)?.[1];
+  const everyone = Date.now() - lastAllMessagesAt > 60000;
+  if (everyone) lastAllMessagesAt = Date.now();
   let changed = false;
   for (const trip of state.trips.values()) {
     if (trip.archivedAt || trip.deletedAt) continue; // finished trips are not followed
+    if (!everyone && trip.id !== openId) continue;
     try { changed = (await loadTeamMessages(trip.id)) || changed; } catch { /* the table may not exist yet: nothing to show */ }
   }
   if (changed && !document.body.classList.contains('sheet-open')) renderQuiet();
@@ -951,13 +957,18 @@ function notifyAfterChange(trip, entries) {
 // never blocks anything (the next change or start tries again). Only the owner's phone does this, and only for a trip that is not archived.
 const autoSent = new Map(); // tripId -> what was last sent, so nothing is sent twice for nothing
 const autoTimers = new Map();
+const autoChecked = new Map(); // tripId -> the last "trip version | 10 minutes" looked at
 async function syncAutoMessages(tripId) {
   const trip = state.trips.get(tripId);
   if (!trip || !state.owner || hasSession === false || !navigator.onLine || ctx.roleFor(tripId) !== 'owner') return;
+  // The plan only changes when the trip changes, or as time passes: look again for a changed trip, or every 10 minutes (it was recomputed for EVERY trip every 5 seconds).
+  const stamp = `${trip.changeCount ?? 0}|${Math.floor(Date.now() / 600000)}`;
+  if (autoChecked.get(tripId) === stamp) return;
+  autoChecked.set(tripId, stamp);
   const rows = plannedAutoMessages(trip);
   const signature = JSON.stringify(rows);
   if (autoSent.get(tripId) === signature) return;
-  try { await replaceAutoMessages(tripId, rows); autoSent.set(tripId, signature); } catch { /* the next change tries again */ }
+  try { await replaceAutoMessages(tripId, rows); autoSent.set(tripId, signature); } catch { autoChecked.delete(tripId); /* the next round tries again */ }
 }
 function syncAutoMessagesSoon(tripId) {
   clearTimeout(autoTimers.get(tripId));
