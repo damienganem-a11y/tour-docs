@@ -1300,3 +1300,15 @@ html { background: var(--bg); }
 .bottom-tabs { z-index: 60; }
 body:has(.bottom-tabs)::after { content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: calc(92px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 35%, transparent); pointer-events: none; z-index: 50; }
 .card, .tile, .entry { margin-bottom: 10px; }
+
+/* a sheet is on top of EVERYTHING: the bottom bar and its fade step aside while one is open (the bar used to be drawn over the sheet's last button) */
+body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
+
+/* the Undo button is a small pill: its word, and the last action on ONE line (it used to be a three-line block that competed with the title) */
+.undo-btn { padding: 6px 12px; min-height: 0; max-width: 200px; gap: 0; }
+.page-head-row > .undo-btn, .page-head-row > .head-actions { flex: 0 1 auto; }
+.undo-what, .undo-when { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; max-width: 100%; }
+.undo-when { display: none; }
+.undo-btn:disabled .undo-what { display: none; }
+.page-head .back-link { margin-bottom: 0; }
+.page-head > .eyebrow, .page-head-text > .eyebrow { margin-top: 2px; }

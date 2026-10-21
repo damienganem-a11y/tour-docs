@@ -46,8 +46,9 @@ export function accentTitle(text) {
 }
 
 export function pageHead({ back, eyebrow, title, subtitle, action, tightSubtitle = false }) {
-  // An eyebrow that only repeats the title ("Team" above "Team") is left out.
-  const eyebrowEl = eyebrow && String(eyebrow).trim().toLowerCase() !== String(title ?? '').trim().toLowerCase() ? h('div', { class: 'eyebrow' }, eyebrow) : null;
+  // An eyebrow that only repeats the title ("Team" above "Team") or the back link ("‹ Settings" above "Settings") is left out.
+  const same = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+  const eyebrowEl = eyebrow && !same(eyebrow, title) && !(back && same(eyebrow, back.label)) ? h('div', { class: 'eyebrow' }, eyebrow) : null;
   const detail = subtitle ? h('div', { class: 'subtitle' }, subtitle) : null;
   const backLink = back ? h('a', { class: 'back-link', href: back.href }, `‹ ${back.label}`) : null;
 

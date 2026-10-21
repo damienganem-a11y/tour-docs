@@ -117,8 +117,8 @@ function editDetails(ctx, trip, guest) {
 
   openSheet({
     eyebrow: 'Guest', title: 'Edit guest details',
-    subtitle: 'The name shown on screen (like "John S.") is worked out from the name automatically. The seat is used to sort By guest for reconfirming names on board.',
-    body: [firstInput, lastInput, seatInput, dietaryInput, h('p', { class: 'muted' }, 'Allergies and dietary needs stay private: never in the journal, never in an export (except a restaurant sheet, when you tick it), and erased for good when the trip is archived.'), confirm], cancelLabel: 'Cancel',
+    subtitle: 'The seat sorts By guest, to reconfirm names on board.',
+    body: [firstInput, lastInput, seatInput, dietaryInput, h('p', { class: 'muted' }, 'Allergies stay private: not in the journal, only on a restaurant sheet if you tick it, erased when the trip is archived.'), confirm], cancelLabel: 'Cancel',
   });
 }
 

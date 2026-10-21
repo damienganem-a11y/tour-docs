@@ -58,7 +58,7 @@ export function partiesSettingsPage(ctx, trip) {
 
 function partyCard(ctx, trip, members, names) {
   return h('div', { class: 'card' },
-    h('div', { class: 'muted', style: 'padding: 2px 2px 6px;' }, plural(members.length, 'person')),
+    h('div', { class: 'muted', style: 'padding: 2px 2px 6px;' }, (members.length === 1 ? '1 person' : `${members.length} people`)),
     h('div', {}, members.map((g) => h('a', {
       class: 'row', href: `#/trip/${trip.id}/settings/guests/${g.id}`,
     },

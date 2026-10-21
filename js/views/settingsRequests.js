@@ -174,8 +174,8 @@ export function requestsSettingsPage(ctx, trip) {
   return h('div', {},
     head,
     owner
-      ? notice('Your devices apply a colleague\'s request by themselves when it fits. Here wait the ones that need your OK (a forced move, a colleague set to "review", a change outside their destination) and the ones that no longer fit.')
-      : notice('A change you make is sent to the owner\'s device and applied there, once that device is open. Some changes (outside your destination, or if the owner wants to approve everything) wait for the owner\'s OK. You can take back a request that is still waiting.'),
+      ? notice('A colleague\'s request is applied by itself when it fits. Here wait the ones that need your OK, and the ones that no longer fit.')
+      : notice('Your change is applied by the owner\'s device once it is open. Some wait for the owner\'s OK. You can take back a request that is still waiting.'),
     owner ? notificationsCard(ctx) : null,
     approver ? section('Waiting for your OK', approvable.map((r) => card(r, decideForce(r)))) : null,
     guestSection,

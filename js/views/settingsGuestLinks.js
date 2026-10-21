@@ -113,7 +113,7 @@ export function guestLinksSettingsPage(ctx, trip) {
     : null;
 
   return h('div', {}, head,
-    notice('A guest sees only their own programme: their activities and times, At leisure, and their dinners with their own travel party. Never allergies, notes or other guests.'),
+    notice('A guest sees only their own programme. Never allergies, notes or other guests.'),
     without.length > 0
       ? h('button', { class: 'btn', type: 'button', onclick: () => run({ type: 'guest-links', action: 'create', guestIds: without.map((g) => g.id) }, `${plural(without.length, 'link')} created`) },
         without.length === guests.length ? 'Create links for everyone' : `Create links for the ${without.length} without one`)

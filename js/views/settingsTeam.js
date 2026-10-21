@@ -181,7 +181,7 @@ export function teamSettingsPage(ctx, trip) {
   load();
   return h('div', {},
     head,
-    notice(`${teamLabel(trip)} work on the whole trip. An Advance is the local contact of one destination (your authority there). An Expert only looks. Their changes are applied by your device, so keep it open when you expect requests.`),
+    notice(`${teamLabel(trip)} work on the whole trip, an Advance is the local contact of one destination, an Expert only looks. Keep this device open when you expect requests.`),
     mine,
     list,
     h('h2', { class: 'section-title' }, 'Invite someone'),
