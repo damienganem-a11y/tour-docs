@@ -42,6 +42,7 @@ import { buildGuestSheet, guestSheetRows, SHEET_VERSION, guestLinkExpiry, GUEST_
 import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
+import { openAlbumViewer } from './albumViewer.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
 import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
 import { guestConversations, unreadAnswers, guestMessageAnswerText } from './guestMessages.js';
@@ -3031,6 +3032,23 @@ function readZip(bytes) {
   const albumBad = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'album-settings', settings: { downloadDays: 2 } });
   check('The album settings are saved on the trip through the change function and journaled; a wrong value is refused',
     albumOff.ok && ctxS.state.album.enabled === false && albumSettings(ctxS.state).downloadDays === 90 && !albumBad.ok && ctxS.entries.at(-1).action === 'album-settings');
+  // The full-screen viewer: who posted, "1 of 3", next/previous, an action that goes on by itself, and one that removes the photo
+  const viewerPhotos = [{ id: 'a', who: 'Ana Perez' }, { id: 'b', who: 'Ben Hall' }, { id: 'c', who: 'Cy Long' }];
+  const seen = [];
+  const viewer = openAlbumViewer({ photos: viewerPhotos, index: 0, fullUrl: async () => null, thumbUrl: () => null, title: (p) => `Posted by ${p.who}`, subtitle: () => 'now',
+    actions: (p) => [{ icon: '✓', label: 'Keep', onClick: async () => { seen.push(p.id); return 'next'; } }, { icon: '🗑', label: 'Delete', onClick: async () => 'removed' }] });
+  const root = document.querySelector('.albv');
+  const text = () => `${root.querySelector('.albv-title').textContent} | ${root.querySelector('.albv-count').textContent}`;
+  const first = text();
+  root.querySelector('.albv-arrow--next').click();
+  const second = text();
+  root.querySelectorAll('.albv-action')[0].click(); await new Promise((r) => setTimeout(r, 20)); // Keep: goes on to the third
+  const third = text();
+  root.querySelectorAll('.albv-action')[1].click(); await new Promise((r) => setTimeout(r, 20)); // Delete the third: the viewer shows the one before
+  const afterDelete = text();
+  viewer.close();
+  check('The photo viewer shows who posted the photo and the position, goes to the next photo, goes on by itself after Keep, and moves on after a delete',
+    first === 'Posted by Ana Perez | 1 of 3' && second === 'Posted by Ben Hall | 2 of 3' && third === 'Posted by Cy Long | 3 of 3' && seen.join() === 'b' && afterDelete === 'Posted by Ben Hall | 2 of 2' && !document.querySelector('.albv'));
   const albumPage = albumSettingsPage({ roleFor: () => 'owner', album: { pull: async () => ({ photos: [], marks: [], settings: null }), links: async () => ({}), upload: async () => ({ ok: true }), act: async () => ({ ok: true }) }, refresh: () => {}, userFor: () => ({ name: 'Owner' }) }, structuredClone(t));
   check('Settings > Our Album draws, with the on/off switch for the owner', albumPage.textContent.includes('Our Album is on') && albumPage.textContent.includes('Switch off'));
 }
@@ -3663,7 +3681,7 @@ function readZip(bytes) {
   check('The album phase follows the dates: open, then download only, then over; off when switched off',
     albumPhase(as, as.uploadUntil) === 'open' && albumPhase(as, addDays(as.uploadUntil, 1)) === 'download' && albumPhase(as, addDays(as.downloadUntil, 1)) === 'over' && albumPhase({ ...as, enabled: false }, as.uploadUntil) === 'off');
   check('Album settings are checked: days between 14 and 365, only known keys', albumSettingsError({ downloadDays: 60 }) === null && albumSettingsError({ downloadDays: 3 }) !== null && albumSettingsError({ colour: 1 }) !== null && albumSettingsError({ enabled: 'yes' }) !== null);
-  const pr = downloadProgress([{ id: 'p1', guest_id: 'a' }, { id: 'p2', guest_id: 'b' }, { id: 'p3', guest_id: 'b' }], [{ guest_id: 'a', photo_id: 'p2', state: 'downloaded' }, { guest_id: 'a', photo_id: 'p3', state: 'skipped' }], ['a', 'b']);
+  const pr = downloadProgress([{ id: 'p1', guest_id: 'a' }, { id: 'p2', guest_id: 'b' }, { id: 'p3', guest_id: 'b' }], [{ guest_id: 'a', photo_id: 'p2', state: 'downloaded' }, { guest_id: 'a', photo_id: 'p3', state: 'skipped' }, { guest_id: 'b', photo_id: 'p1', state: 'kept' }], ['a', 'b']);
   check('Download progress: a guest\'s own photos do not count against them and a skipped photo counts as done', pr[0].total === 2 && pr[0].complete === true && pr[1].total === 1 && pr[1].missing === 1 && pr[1].complete === false);
   check('Three automatic album reminders are planned for every guest, in the future only', albumReminders(jetT).length === 3 && albumReminders({ ...jetT, album: { enabled: false } }).length === 0);
   const early = plannedAutoMessages(jetT, new Date(`${addDays(lastDay, 3)}T00:00:00Z`));

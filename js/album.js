@@ -39,10 +39,10 @@ export function albumPhase(settings, today) {
 }
 
 // Who has saved everything: photos = [{ id, guest_id }] of the album, marks = [{ guest_id, photo_id, state }]. A guest's own photos do not count against them
-// (the server marks them saved at upload). A skipped photo counts as dealt with. Returns [{ guestId, total, done, missing, complete }].
+// (the server marks them saved at upload). A skipped photo counts as dealt with; a photo only marked "kept" does not. Returns [{ guestId, total, done, missing, complete }].
 export function downloadProgress(photos, marks, guestIds) {
   const dealt = new Map();
-  for (const m of marks) { if (!dealt.has(m.guest_id)) dealt.set(m.guest_id, new Set()); dealt.get(m.guest_id).add(m.photo_id); }
+  for (const m of marks) { if (m.state === 'kept') continue; if (!dealt.has(m.guest_id)) dealt.set(m.guest_id, new Set()); dealt.get(m.guest_id).add(m.photo_id); }
   return guestIds.map((guestId) => {
     const got = dealt.get(guestId) ?? new Set();
     const mine = photos.filter((p) => p.guest_id !== guestId);

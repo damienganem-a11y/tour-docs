@@ -8,6 +8,7 @@
 // guest.js hands this file what it needs once (initAlbum), so this file does not import guest.js.
 
 import { shrinkPhoto as shrink } from '../js/albumImage.js';
+import { openAlbumViewer } from '../js/albumViewer.js';
 
 let d = null; // { h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, repaint, modal, plainHead, firstName }
 export function initAlbum(deps) { d = deps; }
@@ -22,6 +23,7 @@ let state = null;               // what album_state last said: { settings, photo
 let urls = { thumb: new Map(), full: new Map() };   // photo id -> link (links last an hour)
 let loading = false;
 let queueCount = 0;
+let filter = 'all';          // which photos the grid shows: all, new, kept, skipped
 
 // ---------- asking the server ----------
 async function post(body) {
@@ -65,7 +67,8 @@ function phase() {
 const niceDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 const photos = () => state?.photos ?? [];
 const markOf = (id) => state?.marks?.[id];
-const newOnes = () => photos().filter((p) => !markOf(p.id));
+// "New" = not saved yet and not refused: photos nobody has dealt with, and the ones the guest marked to keep.
+const newOnes = () => photos().filter((p) => { const m = markOf(p.id); return !m || m === 'kept'; });
 
 // Does the album have something to say (is it on for this guest)?
 export function albumAvailable(sheet) { return sheet?.album !== false; }
@@ -117,7 +120,7 @@ async function addFiles(files) {
     setStatus(`Preparing ${done + 1} of ${list.length}…`);
     try {
       const full = await shrink(file, LONG_SIDE, 0.82); const thumb = await shrink(file, THUMB_SIDE, 0.7);
-      await QUEUE.add({ author: d.firstName(), width: full.width, height: full.height, full: full.blob, thumb: thumb.blob });
+      await QUEUE.add({ author: d.fullName(), width: full.width, height: full.height, full: full.blob, thumb: thumb.blob });
       done++;
     } catch { setStatus('One of the files is not a photo this phone can read.'); }
   }
@@ -194,25 +197,60 @@ function addButton() {
   return d.h('span', { class: 'album-adders' }, make('Add photos', true, 'btn-link'), make('Add one photo', false, 'plain-link'));
 }
 
-function viewer(photo) {
-  const img = d.h('img', { class: 'album-big', alt: photo.caption || `Photo by ${photo.author}`, src: urls.thumb.get(photo.id) ?? '' });
-  fetchLinks([photo.id], 'full').then(() => { const url = urls.full.get(photo.id); if (url) img.src = url; });
-  const buttons = [d.h('button', { class: 'btn-link', type: 'button', onclick: () => { overlay.remove(); saveSheet([photo], 'Save this photo'); } }, 'Save this photo')];
-  if (markOf(photo.id) !== 'skipped') buttons.push(d.h('button', { class: 'plain-link', type: 'button', onclick: async () => { await mark([photo.id], 'skipped'); overlay.remove(); d.repaint(); } }, 'Not for me'));
-  else buttons.push(d.h('button', { class: 'plain-link', type: 'button', onclick: async () => { await mark([photo.id], 'new'); delete state.marks[photo.id]; overlay.remove(); d.repaint(); } }, 'Bring it back'));
-  if (photo.mine) buttons.push(d.h('button', { class: 'plain-link', type: 'button', onclick: async () => {
-    if (!confirm('Delete this photo for everyone?')) return;
-    const r = await post({ action: 'delete', id: photo.id }).catch(() => ({ ok: false }));
-    if (r.ok) { state.photos = state.photos.filter((p) => p.id !== photo.id); overlay.remove(); d.repaint(); }
-  } }, 'Delete'));
-  buttons.push(d.h('button', { class: 'plain-link', type: 'button', onclick: () => overlay.remove() }, 'Close'));
-  const overlay = d.modal(`${photo.pinned ? '★ ' : ''}${photo.author || 'Photo'}`, [img], buttons);
+// The full-screen viewer (js/albumViewer.js): swipe from photo to photo; Keep / Not for me / Save / Delete are one row at the bottom, and Keep and Not for me go on
+// to the next photo by themselves, so a guest can go through the whole album in one go.
+const blobs = new Map();   // photo id -> the big picture already fetched, so "Save" can open the phone's share sheet at once (a tap is needed for that)
+function warmBlob(photo, url) {
+  if (blobs.has(photo.id) || !url) return;
+  blobs.set(photo.id, null);
+  fetch(url).then((r) => r.blob()).then((blob) => {
+    blobs.set(photo.id, new File([blob], `${(photo.author || 'photo').replace(/[^\w-]+/g, '_')}-${photo.id.slice(0, 6)}.jpg`, { type: 'image/jpeg' }));
+    if (blobs.size > 8) blobs.delete(blobs.keys().next().value);
+  }).catch(() => blobs.delete(photo.id));
+}
+const whenText = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const MARK_WORD = { downloaded: 'saved on your phone', skipped: 'not for you', kept: 'kept' };
+
+function openViewer(list, index) {
+  openAlbumViewer({
+    photos: list, index,
+    fullUrl: async (p) => { await fetchLinks([p.id], 'full'); const url = urls.full.get(p.id) ?? null; warmBlob(p, url); return url; },
+    thumbUrl: (p) => urls.thumb.get(p.id) ?? null,
+    title: (p) => `Posted by ${p.author || (p.staff ? 'the staff' : 'a guest')}${p.mine ? ' (you)' : ''}${p.pinned ? '  ★' : ''}`,
+    subtitle: (p) => [whenText(p.at), MARK_WORD[markOf(p.id)]].filter(Boolean).join(' · '),
+    onClose: () => d.repaint(),
+    actions: (p) => {
+      const m = markOf(p.id);
+      const actions = [
+        { icon: '✗', label: m === 'skipped' ? 'Bring back' : 'Not for me', active: m === 'skipped',
+          onClick: async () => { if (m === 'skipped') { await mark([p.id], 'new'); return 'stay'; } await mark([p.id], 'skipped'); return 'next'; } },
+        { icon: '✓', label: m === 'downloaded' ? 'Saved' : m === 'kept' ? 'Kept' : 'Keep', active: m === 'kept' || m === 'downloaded', disabled: m === 'downloaded',
+          onClick: async () => { if (m === 'kept') { await mark([p.id], 'new'); return 'stay'; } await mark([p.id], 'kept'); return 'next'; } },
+        { icon: '⬇', label: 'Save',
+          onClick: (photo, api) => {
+            const file = blobs.get(p.id);
+            if (!file) { api.say('Getting the photo… tap Save again in a moment.'); return 'stay'; }
+            // navigator.share has to start straight from the tap (before anything is awaited): the photo was fetched ahead for that.
+            const shared = navigator.canShare?.({ files: [file] }) ? navigator.share({ files: [file] }) : Promise.resolve().then(() => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); });
+            return shared.then(async () => { await mark([p.id], 'downloaded'); api.say('Saved'); return 'stay'; }).catch((e) => { api.say(e?.name === 'AbortError' ? 'Not saved.' : 'Could not save this photo.'); return 'stay'; });
+          } },
+      ];
+      if (p.mine) actions.push({ icon: '🗑', label: 'Delete', danger: true, onClick: async () => {
+        if (!confirm('Delete this photo for everyone?')) return 'stay';
+        const r = await post({ action: 'delete', id: p.id }).catch(() => ({ ok: false }));
+        if (!r.ok) return 'stay';
+        state.photos = state.photos.filter((x) => x.id !== p.id);
+        return 'removed';
+      } });
+      return actions;
+    },
+  });
 }
 
-function tile(photo) {
+function tile(photo, list, index) {
   const mark = markOf(photo.id);
   const url = urls.thumb.get(photo.id);
-  return d.h('button', { class: `album-tile${mark === 'downloaded' ? ' is-saved' : ''}${mark === 'skipped' ? ' is-skipped' : ''}`, type: 'button', 'aria-label': `Photo by ${photo.author || 'a guest'}`, onclick: () => viewer(photo) },
+  return d.h('button', { class: `album-tile${mark === 'downloaded' ? ' is-saved' : ''}${mark === 'skipped' ? ' is-skipped' : ''}${mark === 'kept' ? ' is-kept' : ''}`, type: 'button', 'aria-label': `Photo by ${photo.author || 'a guest'}`, onclick: () => openViewer(list, index) },
     url ? d.h('img', { src: url, alt: '', loading: 'lazy' }) : d.h('span', { class: 'album-wait' }),
     photo.pinned ? d.h('i', { class: 'album-pin', 'aria-hidden': 'true' }, '★') : null);
 }
@@ -254,10 +292,14 @@ export function albumView(sheet, offline, { backButton } = {}) {
   if (queueCount) body.append(d.h('p', { class: 'muted' }, `${queueCount} photo${queueCount === 1 ? '' : 's'} waiting to be sent.`, ' ', d.h('button', { class: 'link-btn', type: 'button', onclick: async () => { setStatus('Sending…'); const r = await sendQueue(); setStatus(r.sent ? `${r.sent} sent.` : 'Still no connection.'); d.repaint(); } }, 'Send now')));
 
   const list = photos();
-  const pinned = list.filter((x) => x.pinned);
-  if (pinned.length) body.append(d.h('div', { class: 'block-title' }, 'Favourites'), d.h('div', { class: 'album-grid' }, pinned.map(tile)));
-  body.append(d.h('div', { class: 'block-title' }, `All photos (${list.length})`),
-    list.length ? d.h('div', { class: 'album-grid' }, list.map(tile)) : d.h('p', { class: 'muted' }, p === 'open' ? 'No photos yet. Be the first to add one!' : 'No photos were added.'));
+  const FILTERS = [['all', 'All', list], ['new', 'New', newOnes()], ['kept', 'Kept', list.filter((x) => markOf(x.id) === 'kept')], ['skipped', 'Not for me', list.filter((x) => markOf(x.id) === 'skipped')]];
+  const shown = (FILTERS.find((f) => f[0] === filter) ?? FILTERS[0])[2];
+  const pinned = filter === 'all' ? list.filter((x) => x.pinned) : [];
+  if (pinned.length) body.append(d.h('div', { class: 'block-title' }, 'Favourites'), d.h('div', { class: 'album-grid' }, pinned.map((x, i) => tile(x, pinned, i))));
+  if (list.length) body.append(d.h('div', { class: 'album-filters', role: 'group', 'aria-label': 'Show' }, FILTERS.map(([key, label, items]) =>
+    d.h('button', { class: `album-chip${filter === key ? ' is-on' : ''}`, type: 'button', 'aria-pressed': filter === key ? 'true' : 'false', onclick: () => { filter = key; d.repaint(); } }, `${label} ${items.length}`))));
+  body.append(d.h('div', { class: 'block-title' }, `${(FILTERS.find((f) => f[0] === filter) ?? FILTERS[0])[1]} (${shown.length})`),
+    shown.length ? d.h('div', { class: 'album-grid' }, shown.map((x, i) => tile(x, shown, i))) : d.h('p', { class: 'muted' }, filter !== 'all' ? 'Nothing here.' : p === 'open' ? 'No photos yet. Be the first to add one!' : 'No photos were added.'));
   return [header(sheet, backButton), body];
 }
 function header(sheet, backButton) {

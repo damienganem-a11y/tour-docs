@@ -1222,7 +1222,7 @@ function repaintEnded() {
   app.replaceChildren(...(farewellAlbum ? [h('div', { class: 'atl-head atl-head--sub' }, h('button', { class: 'atl-back atl-back--inline', type: 'button', 'aria-label': 'Back', onclick: () => { farewellAlbum = false; repaintEnded(); } }, '‹'), h('small', {}, currentSheet.trip), h('h1', {}, 'Our Album')), ...albumView(currentSheet, null).slice(1)] : farewellView(currentSheet)));
   window.scrollTo(0, 0);
 }
-initAlbum({ h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, modal, plainHead, isPreview: () => PREVIEW, repaint: () => repaintEnded(), firstName: () => store.get('tourdocs.guest.first') || '' });
+initAlbum({ h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, modal, plainHead, isPreview: () => PREVIEW, repaint: () => repaintEnded(), fullName: () => store.get('tourdocs.guest.fullname') || store.get('tourdocs.guest.first') || '' });
 
 // After the link's last day the programme is no longer shown and the kept copy is erased (the server has already forgotten it).
 function expired(sheet) { return !simulatedDate && /^\d{4}-\d{2}-\d{2}$/.test(sheet.expiresOn ?? '') && localToday() > sheet.expiresOn; }
@@ -1250,6 +1250,7 @@ function render(sheet, { offline = false } = {}) {
   currentSheet = sheet;
   currentOffline = offline;
   if (sheet.first) store.set('tourdocs.guest.first', sheet.first);
+  if (sheet.first) store.set('tourdocs.guest.fullname', `${sheet.first} ${sheet.last ?? ''}`.trim());
   paint();
   // Keep the pictures for offline use: asking for them once lets the service worker keep them. The tours the guest is booked on get all their
   // photos, their other options only the first one.

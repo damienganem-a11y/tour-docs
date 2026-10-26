@@ -6,12 +6,13 @@
 
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
-import { openSheet, closeSheet, showToast } from '../ui.js';
+import { showToast } from '../ui.js';
 import { displayNames, alphabetical, plural } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { albumSettings, albumPhase, downloadProgress } from '../album.js';
 import { shrinkPhoto } from '../albumImage.js';
+import { openAlbumViewer } from '../albumViewer.js';
 
 const niceDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'not set');
 const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
@@ -83,16 +84,23 @@ export function albumSettingsPage(ctx, trip) {
     draw();
   }
 
-  function photoSheet(photo) {
-    const img = h('img', { class: 'album-big', alt: '', src: links[photo.id] ?? '' });
-    ctx.album.links(trip.id, [photo.id], 'full').then((u) => { if (u[photo.id]) img.src = u[photo.id]; }).catch(() => {});
-    const by = photo.guest_id ? (displayNames(trip.guests).get(photo.guest_id) ?? 'A guest') : cleanName(photo.author_name);
-    openSheet({
-      eyebrow: 'Photo', title: by, subtitle: new Date(photo.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
-      body: [img,
-        h('button', { class: 'btn', type: 'button', onclick: async () => { await ctx.album.act(trip.id, 'pin', photo.id, { pinned: !photo.pinned }); closeSheet(); load(); showToast(photo.pinned ? 'No longer a favourite' : 'Marked as a favourite: guests see it first'); } }, photo.pinned ? 'Remove from favourites' : '★ Make a favourite'),
-        h('button', { class: 'btn btn--plain', type: 'button', onclick: async () => { if (!confirm('Delete this photo for everyone? This cannot be undone.')) return; await ctx.album.act(trip.id, 'delete', photo.id); closeSheet(); load(); showToast('Photo deleted'); } }, 'Delete this photo')],
-      cancelLabel: 'Close',
+  // The full-screen viewer shared with the guest app (js/albumViewer.js): swipe from photo to photo; favourite and delete are in the bottom row.
+  const names = displayNames(trip.guests);
+  const postedBy = (p) => (p.guest_id ? (trip.guests.find((g) => g.id === p.guest_id) ? `${trip.guests.find((g) => g.id === p.guest_id).first} ${trip.guests.find((g) => g.id === p.guest_id).last ?? ''}`.trim() : (names.get(p.guest_id) ?? 'A guest')) : cleanName(p.author_name));
+  function openViewer(list, index) {
+    openAlbumViewer({
+      photos: list, index,
+      fullUrl: async (p) => (await ctx.album.links(trip.id, [p.id], 'full').catch(() => ({})))[p.id] ?? null,
+      thumbUrl: (p) => links[p.id] ?? null,
+      title: (p) => `Posted by ${postedBy(p)}${p.guest_id ? '' : ' (staff)'}${p.pinned ? '  ★' : ''}`,
+      subtitle: (p) => new Date(p.created_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
+      onClose: () => load(),
+      actions: (p) => [
+        { icon: p.pinned ? '★' : '☆', label: p.pinned ? 'Favourite' : 'Make favourite', active: p.pinned,
+          onClick: async (photo, api) => { const r = await ctx.album.act(trip.id, 'pin', p.id, { pinned: !p.pinned }).catch(() => ({ ok: false })); if (r.ok) { p.pinned = !p.pinned; api.say(p.pinned ? 'Guests will see it first' : 'No longer a favourite'); } else api.say('Could not change it.'); return 'stay'; } },
+        { icon: '🗑', label: 'Delete', danger: true,
+          onClick: async (photo, api) => { if (!confirm('Delete this photo for everyone? This cannot be undone.')) return 'stay'; const r = await ctx.album.act(trip.id, 'delete', p.id).catch(() => ({ ok: false })); if (!r.ok) { api.say('Could not delete it.'); return 'stay'; } return 'removed'; } },
+      ],
     });
   }
 
@@ -123,12 +131,12 @@ export function albumSettingsPage(ctx, trip) {
     // The grid
     const photos = data.photos;
     const pinned = photos.filter((p) => p.pinned);
-    const tile = (p) => h('button', { class: 'album-tile', type: 'button', 'aria-label': 'Photo', onclick: () => photoSheet(p) },
+    const tile = (p, list, i) => h('button', { class: 'album-tile', type: 'button', 'aria-label': `Photo by ${postedBy(p)}`, onclick: () => openViewer(list, i) },
       links[p.id] ? h('img', { src: links[p.id], alt: '', loading: 'lazy' }) : h('span', { class: 'album-wait' }), p.pinned ? h('i', { class: 'album-pin' }, '★') : null);
     blocks.push(h('h2', { class: 'section-title' }, `Photos (${photos.length})`),
       photos.length === 0 ? h('p', { class: 'empty' }, 'No photo yet.') : null,
-      pinned.length ? h('div', {}, h('div', { class: 'muted' }, 'Favourites'), h('div', { class: 'album-grid' }, pinned.map(tile))) : null,
-      photos.length ? h('div', { class: 'album-grid' }, photos.map(tile)) : null);
+      pinned.length ? h('div', {}, h('div', { class: 'muted' }, 'Favourites'), h('div', { class: 'album-grid' }, pinned.map((p, i) => tile(p, pinned, i)))) : null,
+      photos.length ? h('div', { class: 'album-grid' }, photos.map((p, i) => tile(p, photos, i))) : null);
 
     // Who has saved everything (owner)
     if (owner && photos.length) {

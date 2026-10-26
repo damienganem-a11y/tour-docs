@@ -1,0 +1,6 @@
+<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><link rel=stylesheet href="/guest/guest.css"><body><script type=module>
+import { openAlbumViewer } from '/js/albumViewer.js';
+const c=document.createElement('canvas');c.width=900;c.height=1600;const x=c.getContext('2d');const g=x.createLinearGradient(0,0,0,1600);g.addColorStop(0,'#2a9d8f');g.addColorStop(1,'#e9c46a');x.fillStyle=g;x.fillRect(0,0,900,1600);
+const url=c.toDataURL('image/jpeg');
+openAlbumViewer({photos:[{id:'a'},{id:'b'}],index:0,fullUrl:async()=>url,thumbUrl:()=>url,title:()=>'Posted by Alexandra Montgomery-Williams (you)',subtitle:()=>'Mon, Oct 26, 3:42 PM · kept',actions:()=>[{icon:'✗',label:'Not for me'},{icon:'✓',label:'Keep',active:true},{icon:'⬇',label:'Save'},{icon:'🗑',label:'Delete',danger:true}]});
+</script>

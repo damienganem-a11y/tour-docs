@@ -1316,3 +1316,27 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 /* Guest messages (v0.127.0): the owner's list of conversations, and the form error line */
 .card--tap { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .form-error { color: var(--danger, #b3261e); font-size: .9rem; margin: .25rem 0; }
+
+/* Our Album: the full-screen photo viewer (v0.129.0), shared by the guest app and the staff app */
+.albv { position: fixed; inset: 0; z-index: 3000; background: #000; color: #fff; display: flex; flex-direction: column; overscroll-behavior: contain; touch-action: pan-y; }
+.albv-top { display: flex; align-items: flex-start; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px; background: linear-gradient(#000, rgba(0,0,0,0)); position: relative; z-index: 2; }
+.albv-close { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 18px; cursor: pointer; }
+.albv-who { flex: 1; min-width: 0; }
+.albv-title { font-size: 1.05rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.albv-sub { font-size: .85rem; opacity: .8; line-height: 1.3; }
+.albv-count { flex: none; font-size: .85rem; opacity: .8; padding-top: 10px; }
+.albv-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.albv-image { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: opacity .2s; }
+.albv-image.albv-loading { opacity: .75; }
+.albv-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; width: 44px; height: 64px; border: 0; background: rgba(255,255,255,.14); color: #fff; font-size: 34px; cursor: pointer; }
+.albv-arrow--prev { left: 0; border-radius: 0 10px 10px 0; }
+.albv-arrow--next { right: 0; border-radius: 10px 0 0 10px; }
+@media (max-width: 700px) { .albv-arrow { opacity: .55; width: 32px; height: 56px; font-size: 28px; } }
+.albv-message { text-align: center; font-size: .85rem; min-height: 1.2em; padding: 2px 12px; opacity: .9; }
+.albv-bar { display: flex; justify-content: center; gap: 6px; padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 8px); background: rgba(0,0,0,.85); }
+.albv-action { flex: 1; max-width: 120px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border: 0; border-radius: 12px; background: transparent; color: #fff; font: inherit; cursor: pointer; }
+.albv-action:disabled { opacity: .35; }
+.albv-action.is-on { background: rgba(255,255,255,.22); }
+.albv-action.is-danger { color: #ff8a80; }
+.albv-icon { font-size: 22px; line-height: 1.1; }
+.albv-label { font-size: .72rem; line-height: 1.1; }
