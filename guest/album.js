@@ -104,22 +104,37 @@ export async function sendQueue() {
   return result;
 }
 
-async function addFiles(files, status) {
+// The progress line is kept here, not only on the page: the app redraws its screens by itself, and a redraw while the phone's photo picker is open used to
+// throw away the page that was waiting for the answer.
+let statusText = '';
+function setStatus(text) { statusText = text; document.querySelectorAll('.album-status').forEach((el) => { el.textContent = text; }); }
+let picker = null;
+function pickPhotos() {
+  if (!picker) {
+    picker = d.h('input', { type: 'file', accept: 'image/*', multiple: '', 'aria-hidden': 'true', tabindex: '-1' });
+    picker.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0';
+    picker.addEventListener('change', () => { const files = [...picker.files]; picker.value = ''; if (files.length) addFiles(files); });
+    document.body.append(picker);
+  }
+  picker.click();
+}
+
+async function addFiles(files) {
   const list = [...files].filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
-  if (!list.length) { status.textContent = 'Please choose photos.'; return; }
+  if (!list.length) { setStatus('Please choose photos.'); return; }
   let done = 0;
   for (const file of list) {
-    status.textContent = `Preparing ${done + 1} of ${list.length}…`;
+    setStatus(`Preparing ${done + 1} of ${list.length}…`);
     try {
       const full = await shrink(file, LONG_SIDE, 0.82); const thumb = await shrink(file, THUMB_SIDE, 0.7);
       await QUEUE.add({ author: d.firstName(), width: full.width, height: full.height, full: full.blob, thumb: thumb.blob });
       done++;
-    } catch { status.textContent = 'One of the files is not a photo this phone can read.'; }
+    } catch { setStatus('One of the files is not a photo this phone can read.'); }
   }
-  status.textContent = 'Sending…';
+  setStatus('Sending…');
   const result = await sendQueue();
   queueCount = (await QUEUE.all()).length;
-  status.textContent = result.failed[0] ?? (queueCount ? `${queueCount} photo${queueCount === 1 ? '' : 's'} will be sent when you are online again.` : `${result.sent} photo${result.sent === 1 ? '' : 's'} added. Thank you!`);
+  setStatus(result.failed[0] ?? (queueCount ? `${queueCount} photo${queueCount === 1 ? '' : 's'} will be sent when you are online again.` : `${result.sent} photo${result.sent === 1 ? '' : 's'} added. Thank you!`));
   d.repaint();
 }
 
@@ -214,9 +229,7 @@ export function albumView(sheet, offline, { backButton } = {}) {
   if (p === 'off') { body.append(d.h('p', { class: 'foot' }, 'Our Album is not switched on for this trip.')); return [header(sheet, backButton), body]; }
   if (p === 'over') { body.append(d.h('p', { class: 'foot' }, 'The download period is over: the photos have been erased from the server. Thank you for sharing this trip.')); return [header(sheet, backButton), body]; }
 
-  const status = d.h('p', { class: 'muted album-status', role: 'status' });
-  const input = d.h('input', { type: 'file', accept: 'image/*', multiple: '', hidden: '' });
-  input.addEventListener('change', () => { if (input.files.length) addFiles(input.files, status); input.value = ''; });
+  const status = d.h('p', { class: 'muted album-status', role: 'status' }, statusText);
 
   // What the album allows now, in plain words.
   const notes = [];
@@ -226,13 +239,13 @@ export function albumView(sheet, offline, { backButton } = {}) {
   body.append(d.h('p', { class: 'muted' }, notes.join(' ')));
 
   const actions = d.h('div', { class: 'album-actions' });
-  if (p === 'open') actions.append(d.h('button', { class: 'btn-link', type: 'button', onclick: () => privacyNotice(() => input.click()) }, 'Add photos'));
+  if (p === 'open') actions.append(d.h('button', { class: 'btn-link', type: 'button', onclick: () => privacyNotice(pickPhotos) }, 'Add photos'));
   const fresh = newOnes();
   actions.append(
     d.h('button', { class: 'btn-link', type: 'button', disabled: fresh.length ? null : '', onclick: () => saveSheet(fresh, 'Download new photos') }, fresh.length ? `Download new (${fresh.length})` : 'Nothing new'),
     d.h('button', { class: 'plain-link', type: 'button', disabled: photos().length ? null : '', onclick: () => saveSheet(photos(), 'Download all photos') }, 'Download all'));
-  body.append(actions, input, status);
-  if (queueCount) body.append(d.h('p', { class: 'muted' }, `${queueCount} photo${queueCount === 1 ? '' : 's'} waiting to be sent.`, ' ', d.h('button', { class: 'link-btn', type: 'button', onclick: async () => { status.textContent = 'Sending…'; const r = await sendQueue(); status.textContent = r.sent ? `${r.sent} sent.` : 'Still no connection.'; d.repaint(); } }, 'Send now')));
+  body.append(actions, status);
+  if (queueCount) body.append(d.h('p', { class: 'muted' }, `${queueCount} photo${queueCount === 1 ? '' : 's'} waiting to be sent.`, ' ', d.h('button', { class: 'link-btn', type: 'button', onclick: async () => { setStatus('Sending…'); const r = await sendQueue(); setStatus(r.sent ? `${r.sent} sent.` : 'Still no connection.'); d.repaint(); } }, 'Send now')));
 
   const list = photos();
   const pinned = list.filter((x) => x.pinned);

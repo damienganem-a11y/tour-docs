@@ -17,6 +17,41 @@ const niceDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString(
 const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 const DOWNLOAD_CHOICES = [30, 60, 90, 180];
 
+// The photo picker: ONE hidden file field kept on the page's body (not inside a screen), and the sending runs from here, with its progress shown as toasts.
+// A toast stays on screen even if the screen behind it is redrawn.
+let picker = null;
+let pickerFor = null;      // { ctx, trip } of the page that opened the picker last
+let sending = false;
+function pickPhotos(ctx, trip) {
+  pickerFor = { ctx, trip };
+  if (!picker) {
+    picker = h('input', { type: 'file', accept: 'image/*', multiple: '', class: 'file-hidden', 'aria-hidden': 'true', tabindex: '-1' });
+    picker.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0';
+    picker.addEventListener('change', () => { const files = [...picker.files]; picker.value = ''; if (files.length) uploadFiles(files); });
+    document.body.append(picker);
+  }
+  picker.click();
+}
+async function uploadFiles(files) {
+  if (sending || !pickerFor) return;
+  const { ctx, trip } = pickerFor;
+  sending = true;
+  let sent = 0; let problem = null;
+  for (const [i, file] of files.entries()) {
+    showToast(`Sending photo ${i + 1} of ${files.length}…`);
+    try {
+      const full = await shrinkPhoto(file, 2000, 0.82); const thumb = await shrinkPhoto(file, 420, 0.7);
+      const r = await ctx.album.upload(trip.id, ctx.userFor(trip.id).name ?? 'Staff', { full: full.blob, thumb: thumb.blob, width: full.width, height: full.height });
+      if (r.ok) sent++;
+      else { problem = r.error === 'closed' ? 'The album is closed for new photos.' : r.error === 'off' ? 'The album is switched off, or its dates are not saved on the server yet. Open the app online as the owner and try again.' : r.error === 'link' ? 'You are not signed in online: sign in, then try again.' : `The server refused a photo (${r.error ?? 'unknown'}).`; break; }
+    } catch (e) { problem = `A photo could not be sent: ${String(e?.message ?? e).slice(0, 120)}`; break; }
+  }
+  sending = false;
+  if (problem) showToast(sent ? `${plural(sent, 'photo')} added. ${problem}` : problem, true);
+  else showToast(`${plural(sent, 'photo')} added`);
+  if (sent) ctx.refresh();
+}
+
 export function albumSettingsPage(ctx, trip) {
   const owner = ctx.roleFor(trip.id) === 'owner';
   const settings = albumSettings(trip);
@@ -52,20 +87,6 @@ export function albumSettingsPage(ctx, trip) {
     });
   }
 
-  async function addFiles(files, status) {
-    const list = [...files];
-    let sent = 0;
-    for (const [i, file] of list.entries()) {
-      status.textContent = `Sending ${i + 1} of ${list.length}…`;
-      try {
-        const full = await shrinkPhoto(file, 2000, 0.82); const thumb = await shrinkPhoto(file, 420, 0.7);
-        const r = await ctx.album.upload(trip.id, ctx.userFor(trip.id).name ?? 'Staff', { full: full.blob, thumb: thumb.blob, width: full.width, height: full.height });
-        if (r.ok) sent++; else { status.textContent = r.error === 'closed' ? 'The album is closed for new photos.' : r.error === 'off' ? 'The album is switched off (or its dates are not saved yet).' : 'A photo could not be sent.'; break; }
-      } catch { status.textContent = 'No connection, or a file this phone could not read.'; break; }
-    }
-    if (sent) { showToast(`${plural(sent, 'photo')} added`); await load(); }
-  }
-
   function draw() {
     const phase = albumPhase(settings, todayIso());
     const blocks = [];
@@ -86,11 +107,9 @@ export function albumSettingsPage(ctx, trip) {
     if (data.error) { content.replaceChildren(...blocks, h('p', { class: 'muted' }, 'The photos could not be loaded. The database may not be updated yet (Settings > Check this phone), or you are offline.'), h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: load }, 'Try again')); return; }
     if (!data.settings) blocks.push(notice('The album is not yet saved on the server. It is saved by the owner\'s phone when the app is open and online.'));
 
-    // Add photos (staff)
-    const status = h('p', { class: 'muted', role: 'status' });
-    const input = h('input', { type: 'file', accept: 'image/*', multiple: '', hidden: '' });
-    input.addEventListener('change', () => { if (input.files.length) addFiles(input.files, status); input.value = ''; });
-    if (ctx.roleFor(trip.id) !== 'viewer' && phase !== 'over') blocks.push(h('div', {}, h('button', { class: 'btn', type: 'button', onclick: () => input.click() }, 'Add photos as staff'), input, status));
+    // Add photos (staff). The file picker lives outside this page (see uploadFiles): the app redraws its screens by itself, and a redraw while the phone's
+    // photo picker is open used to throw away the page that was waiting for the answer, so nothing happened after "Add".
+    if (ctx.roleFor(trip.id) !== 'viewer' && phase !== 'over') blocks.push(h('div', {}, h('button', { class: 'btn', type: 'button', onclick: () => pickPhotos(ctx, trip) }, 'Add photos as staff')));
 
     // The grid
     const photos = data.photos;
