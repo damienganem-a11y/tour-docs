@@ -467,7 +467,7 @@ function passportView(sheet, offline) {
   return [
     h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Passport'), h('p', {}, counterText(sheet, state))),
     h('div', { class: 'atl-body' }, offline, h('div', { class: 'stamp-grid' }, tiles),
-      h('p', { class: 'foot' }, state.some((d) => d.ex) ? 'In some places you earn the stamp by playing: it opens on the travel day. Elsewhere it arrives on the first day, at the local time there.' : 'A stamp arrives on the first day in each place, at the local time there.'), creditsLink(sheet)),
+      h('p', { class: 'foot' }, state.some((d) => d.ex) ? 'In some places you earn the stamp by playing: tap a place to start. Elsewhere it arrives on the first day, at the local time there.' : 'A stamp arrives on the first day in each place, at the local time there.'), creditsLink(sheet)),
   ];
 }
 

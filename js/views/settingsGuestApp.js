@@ -61,6 +61,21 @@ export function guestAppSettingsPage(ctx, trip) {
     h('div', { class: 'check-row' },
       h('div', {}, h('b', {}, trip.gamesAnytime === false ? 'Open on the travel day' : 'Open any time'), h('div', { class: 'muted' }, trip.gamesAnytime === false ? 'Each place\'s games open the day before the group arrives there.' : 'Guests can play every place from the start and earn the stamps whenever they like.')),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => run({ type: 'guest-links', action: 'games-settings', anytime: trip.gamesAnytime === false }, trip.gamesAnytime === false ? 'The games are open any time' : 'The games open on the travel day') }, trip.gamesAnytime === false ? 'Open any time' : 'Open on the travel day')),
+    // One tap for every place that is ready but not yet on (a trip loaded before the content was approved has all its places in draft).
+    (() => {
+      const ready = explorerDestinations.filter((d) => d.explorer.status !== 'validated' && explorerProblems(d.explorer).length === 0);
+      if (ready.length === 0) return null;
+      return h('button', { class: 'btn', type: 'button', onclick: async () => {
+        let done = 0;
+        for (const d of ready) {
+          const result = await applyChange(ctx, trip.id, { type: 'edit-destination', destinationId: d.id, name: d.name, country: d.country, timeZone: d.timeZone, explorerStatus: 'validated' });
+          if (!result.ok) { showToast(result.error, true); break; }
+          done++;
+        }
+        ctx.refresh();
+        if (done) showToast(`${done} place${done === 1 ? '' : 's'} switched on for guests`);
+      } }, `Switch on all ${ready.length} places that are ready`);
+    })(),
     ...explorerDestinations.map((d) => {
       const live = d.explorer.status === 'validated';
       const problems = explorerProblems(d.explorer);
