@@ -14,7 +14,7 @@ let whenClosed = null;     // app.js asks to be told when a sheet closes (to dra
 export function onSheetClosed(fn) { whenClosed = fn; }
 
 // A full-screen page that must be answered (owner's request, 21 Oct 2026): no backdrop to tap, no swipe, no Escape. The caller's own buttons close it
-// (closeSheet() closes it too, so the usual "close, then save" buttons just work).
+// (closeSheet() closes it too, so the usual "close, then save" buttons just work; a redraw of the screen behind does not).
 let fullScreen = null;
 export function openFullScreen({ eyebrow, title, subtitle, body, keepSheet = false }) {
   if (!keepSheet) closeSheet(); else closeFullScreen();
@@ -30,15 +30,17 @@ export function openFullScreen({ eyebrow, title, subtitle, body, keepSheet = fal
 export function closeFullScreen() {
   if (!fullScreen) return false;
   fullScreen.remove(); fullScreen = null;
-  document.body.classList.remove('sheet-open');
+  if (!openBackdrop) document.body.classList.remove('sheet-open');
   return true;
 }
 
-export function closeSheet() {
-  if (closeFullScreen() && !openBackdrop) return;
+// Closes the sheet on screen AND any full-screen page, unless keepFullScreen: a redraw of the screen behind (app.js render) must not close a preview or a
+// question that is being read (the preview of a file used to vanish the instant it appeared).
+export function closeSheet({ keepFullScreen = false } = {}) {
+  if (!keepFullScreen) closeFullScreen();
   if (!openBackdrop) return;
   openBackdrop.remove();
-  document.body.classList.remove('sheet-open');
+  if (!fullScreen) document.body.classList.remove('sheet-open');
   document.removeEventListener('keydown', removeKeyHandler);
   openBackdrop = null;
   whenClosed?.();

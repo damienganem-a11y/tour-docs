@@ -690,7 +690,7 @@ onSheetClosed(() => { if (renderWaiting) { renderWaiting = false; render({ keepS
 function render({ keepScroll = false } = {}) {
   const app = document.getElementById('app');
   renderWaiting = false;
-  closeSheet(); // a pick-list left open would be pointing at an old screen
+  closeSheet({ keepFullScreen: true }); // a pick-list left open would be pointing at an old screen (a full-screen preview or question stays)
 
   // Locked: nothing else is shown until the access code is entered.
   if (state.locked) {
