@@ -12,6 +12,8 @@ import { shrinkPhoto as shrink } from '../js/albumImage.js';
 let d = null; // { h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, repaint, modal, plainHead, firstName }
 export function initAlbum(deps) { d = deps; }
 
+// Naming HEIC (the iPhone's own format) stops the phone converting each photo itself first, which can hang on the white wheel. See js/views/settingsAlbum.js.
+const PHOTO_TYPES = 'image/jpeg,image/png,image/heic,image/heif,image/webp';
 const BATCH = 10;               // photos saved per tap (the phone's share sheet takes a handful at a time)
 const LONG_SIDE = 2000;         // the longest side of a shared photo, in pixels
 const THUMB_SIDE = 420;
@@ -178,7 +180,7 @@ function saveSheet(list, title) {
 // reliable on every phone). The privacy notice is written under it, always visible.
 function addButton() {
   const make = (text, many, className) => {
-    const input = d.h('input', { type: 'file', accept: 'image/*', ...(many ? { multiple: '' } : {}), 'aria-label': text });
+    const input = d.h('input', { type: 'file', accept: PHOTO_TYPES, ...(many ? { multiple: '' } : {}), 'aria-label': text });
     input.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px';
     input.addEventListener('change', () => {
       const files = [...input.files]; input.value = '';

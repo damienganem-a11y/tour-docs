@@ -19,12 +19,16 @@ const DOWNLOAD_CHOICES = [30, 60, 90, 180];
 
 // Adding photos. The "button" is a real <label> wrapped around the file field, so the phone's own tap opens the picker (a button that calls input.click() by
 // code is not reliable on every phone). The sending runs from here and reports with toasts, which stay on screen even if the screen behind is redrawn.
+// The kinds of file the picker accepts. Naming the iPhone's own format (HEIC) matters: with just "image/*" the iPhone first converts every chosen photo to JPEG
+// by itself, and for large photos (or photos kept in iCloud) that step can hang on the little white wheel and never hand the photo over. Named like this, the
+// phone hands it over at once and the app shrinks it to JPEG itself (shrinkPhoto).
+const PHOTO_TYPES = 'image/jpeg,image/png,image/heic,image/heif,image/webp';
 let sending = false;
 // The name written under a staff photo. A name that was never filled in can be stored as the words "null null": that is never shown.
 const cleanName = (name) => { const text = String(name ?? '').trim(); return !text || /\b(null|undefined)\b/i.test(text) ? 'Staff' : text.slice(0, 40); };
 // One tap target that opens the phone's picker. `many`: several photos at once from the library (the phone's own choice of "Photo Library", "Take Photo", "Choose File").
 function pickerLabel(ctx, trip, text, many, plain) {
-  const input = h('input', { type: 'file', accept: 'image/*', ...(many ? { multiple: '' } : {}), 'aria-label': text });
+  const input = h('input', { type: 'file', accept: PHOTO_TYPES, ...(many ? { multiple: '' } : {}), 'aria-label': text });
   input.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px';
   input.addEventListener('change', () => {
     const files = [...input.files]; input.value = '';
