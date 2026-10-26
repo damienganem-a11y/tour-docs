@@ -42,6 +42,8 @@ import { buildGuestSheet, guestSheetRows, SHEET_VERSION, guestLinkExpiry, GUEST_
 import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
+import { albumSettingsPage } from './views/settingsAlbum.js';
+import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
 import { guestConversations, unreadAnswers, guestMessageAnswerText } from './guestMessages.js';
 import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAnswerText } from './guestRequests.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
@@ -3010,7 +3012,7 @@ function readZip(bytes) {
   check('An hour before a tour that starts after 07:30, they are told again', rows.some((r) => r.title === 'In one hour: Alfama walking tour' && r.send_at === '2027-01-12T14:00:00.000Z'));
   const roll = rows.find((r) => r.auto_key.startsWith('roll|'));
   check('The leader is alerted 15 minutes after a tour leaves if its roll call is still open (to the leader, not to guests)', Boolean(roll) && roll.audience === 'owner' && roll.guest_ids === null && /Roll call not finished/.test(roll.title));
-  check('Nothing is planned for the past or beyond 10 days', plannedAutoMessages(t, new Date('2030-01-01T00:00:00Z')).length === 0 && rows.every((r) => Date.parse(r.send_at) < before.getTime() + 10 * 86400000));
+  check('Nothing is planned for the past or beyond 10 days', plannedAutoMessages(t, new Date('2030-01-01T00:00:00Z')).filter((r) => !r.auto_key.startsWith('album-')).length === 0 && rows.filter((r) => !r.auto_key.startsWith('album-')).every((r) => Date.parse(r.send_at) < before.getTime() + 10 * 86400000));
   check('Switching a kind off removes its messages', !plannedAutoMessages(t, before, { ...autoNotifySettings(t), eveningBefore: false }).some((r) => r.auto_key.startsWith('eve|')) && plannedAutoMessages(t, before, { ...autoNotifySettings(t), rollCallAlert: false }).every((r) => !r.auto_key.startsWith('roll|')));
   const tourId = t.activities.find((a) => a.name === 'Alfama walking tour').id;
   const party = t.parties[0];
@@ -3025,6 +3027,12 @@ function readZip(bytes) {
   const set = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'auto-settings', settings: { dinnerAlert: false } });
   const bad = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'auto-settings', settings: { nonsense: false } });
   check('The leader\'s choice is saved on the trip and journaled; an unknown kind is refused', set.ok && ctxS.state.autoNotify.dinnerAlert === false && autoNotifySettings(ctxS.state).dinnerAlert === false && !bad.ok && groupBatches(ctxS.entries).map(summarize).some((x) => /automatic reminders and alerts/.test(x)));
+  const albumOff = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'album-settings', settings: { enabled: false, downloadDays: 90 } });
+  const albumBad = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'album-settings', settings: { downloadDays: 2 } });
+  check('The album settings are saved on the trip through the change function and journaled; a wrong value is refused',
+    albumOff.ok && ctxS.state.album.enabled === false && albumSettings(ctxS.state).downloadDays === 90 && !albumBad.ok && ctxS.entries.at(-1).action === 'album-settings');
+  const albumPage = albumSettingsPage({ roleFor: () => 'owner', album: { pull: async () => ({ photos: [], marks: [], settings: null }), links: async () => ({}), upload: async () => ({ ok: true }), act: async () => ({ ok: true }) }, refresh: () => {}, userFor: () => ({ name: 'Owner' }) }, structuredClone(t));
+  check('Settings > Our Album draws, with the on/off switch for the owner', albumPage.textContent.includes('Our Album is on') && albumPage.textContent.includes('Switch off'));
 }
 
 // --- Destination fun facts (editor in Settings > Touring) ---
@@ -3645,6 +3653,22 @@ function readZip(bytes) {
   check('A conversation is unanswered when the guest spoke last, and counts only messages the owner has not opened', convos[0].unanswered === true && convos[0].unread === 1 && convos[1].unanswered === false && convos[1].unread === 1);
   check('A guest counts the answers they have not opened', unreadAnswers([m(5, 'g1', 'staff', '2027-01-02T10:00:00Z'), m(6, 'g1', 'staff', '2027-01-02T11:00:00Z', '2027-01-02T12:00:00Z'), m(7, 'g1', 'guest', '2027-01-02T09:00:00Z')]) === 1);
   check('The notification to the guest carries the answer, shortened when long', guestMessageAnswerText('See you at 8').body === 'See you at 8' && guestMessageAnswerText('x'.repeat(300)).body.length === 120);
+}
+
+// Our Album (v0.128.0)
+{
+  const as = albumSettings(jetT);
+  const lastDay = jetT.slots.map((s) => s.date).sort().at(-1);
+  check('The album is on by default; guests can add photos until the link expires (last day + 7) and download until last day + 60', as.enabled === true && as.uploadUntil === guestLinkExpiry(jetT) && as.downloadUntil === addDays(lastDay, 60));
+  check('The album phase follows the dates: open, then download only, then over; off when switched off',
+    albumPhase(as, as.uploadUntil) === 'open' && albumPhase(as, addDays(as.uploadUntil, 1)) === 'download' && albumPhase(as, addDays(as.downloadUntil, 1)) === 'over' && albumPhase({ ...as, enabled: false }, as.uploadUntil) === 'off');
+  check('Album settings are checked: days between 14 and 365, only known keys', albumSettingsError({ downloadDays: 60 }) === null && albumSettingsError({ downloadDays: 3 }) !== null && albumSettingsError({ colour: 1 }) !== null && albumSettingsError({ enabled: 'yes' }) !== null);
+  const pr = downloadProgress([{ id: 'p1', guest_id: 'a' }, { id: 'p2', guest_id: 'b' }, { id: 'p3', guest_id: 'b' }], [{ guest_id: 'a', photo_id: 'p2', state: 'downloaded' }, { guest_id: 'a', photo_id: 'p3', state: 'skipped' }], ['a', 'b']);
+  check('Download progress: a guest\'s own photos do not count against them and a skipped photo counts as done', pr[0].total === 2 && pr[0].complete === true && pr[1].total === 1 && pr[1].missing === 1 && pr[1].complete === false);
+  check('Three automatic album reminders are planned for every guest, in the future only', albumReminders(jetT).length === 3 && albumReminders({ ...jetT, album: { enabled: false } }).length === 0);
+  const early = plannedAutoMessages(jetT, new Date(`${addDays(lastDay, 3)}T00:00:00Z`));
+  check('The reminders reach the server list when they are still to come (one week before closing is already past here, the other two are not)', ['album-download', 'album-last-call'].every((k) => early.some((r) => r.auto_key === k && r.audience === 'guests')) && !early.some((r) => r.auto_key === 'album-closing'));
+  check('The guest sheet says whether the album is on', buildGuestSheet(jetT, jetT.guests[0], 'x').album === true && buildGuestSheet({ ...jetT, album: { enabled: false } }, jetT.guests[0], 'x').album === false);
 }
 
   check('The jet sample has Passport Explorer content for all 12 destinations: the ten the owner reviewed are validated, Kathmandu and Washington are still draft', jetT.destinations.length === 12 && jetT.destinations.every((d) => d.explorer?.status === (['Kathmandu', 'Washington'].includes(d.name) ? 'draft' : 'validated')));

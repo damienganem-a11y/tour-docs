@@ -10,6 +10,7 @@
 
 import { addDays, formatTime, localToInstant, offsetMinutes } from './time.js';
 import { findRollCall } from './rollcall.js';
+import { albumReminders } from './album.js';
 
 export const MESSAGE_TEMPLATES = [
   { key: 'clocks', label: 'Clocks change tonight', title: 'Clocks change tonight', body: 'Tonight, remember to change your clock or watch before you go to bed.' },
@@ -115,6 +116,15 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
       if (without === 0) continue;
       add({ auto_key: `dinner|${slot.id}`, send_at: localToInstant(slot.date, '15:00', destination.timeZone), audience: 'owner', guest_ids: null, category: 'reminders', priority: 'info',
         title: clip(`Dinner tonight: ${without} ${without === 1 ? 'guest has' : 'guests have'} no table`, 80), body: clip(`In ${destination.name}, ${without} ${without === 1 ? 'guest has' : 'guests have'} no dinner booked yet.`, 200) });
+    }
+  }
+  // Our Album: one week before it closes, when it closes, two weeks before the photos are erased. Sent to every guest. These are planned further ahead
+  // than the 10 days of the others (the server keeps them until their time), in the time zone of the trip's last destination.
+  const lastSlot = [...trip.slots].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+  if (lastSlot) {
+    for (const r of albumReminders(trip)) {
+      const sendAt = localToInstant(r.date, `${String(r.hour).padStart(2, '0')}:00`, zoneOfSlot(trip, lastSlot));
+      if (Date.parse(sendAt) > now.getTime() + 60000) rows.push({ auto_key: r.key, send_at: sendAt, audience: 'guests', guest_ids: null, category: 'announcement', priority: 'info', title: r.title, body: r.body });
     }
   }
   return rows.sort((a, b) => a.send_at.localeCompare(b.send_at));

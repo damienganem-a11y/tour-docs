@@ -484,6 +484,51 @@ export async function markGuestMessagesRead(tripId, guestId) {
   if (error) throw error;
 }
 
+// ---------- Our Album (v0.128.0): the staff side. The files are handled by the server function `album`; the rows are read directly (the owner's rules say who sees what). ----------
+// Photos (not deleted) of a trip, oldest first, and, for the owner, what each guest has saved. Returns { photos, marks, settings }.
+export async function pullAlbum(tripId) {
+  const supabase = await getClient();
+  const photos = await supabase.from('album_photos').select('id, trip_id, guest_id, author_name, caption, pinned, width, height, created_at')
+    .eq('trip_id', tripId).is('deleted_at', null).order('created_at', { ascending: false }).limit(1500);
+  if (photos.error) throw photos.error;
+  const marks = await supabase.from('album_marks').select('guest_id, photo_id, state').eq('trip_id', tripId).limit(20000);
+  const settings = await supabase.from('album_settings').select('enabled, upload_until, download_until, purged_at').eq('trip_id', tripId).maybeSingle();
+  return { photos: photos.data, marks: marks.error ? [] : marks.data, settings: settings.data ?? null };
+}
+// The owner's phone keeps the server's copy of the album's settings (on/off and the two last days) in step with the trip.
+export async function saveAlbumSettings(tripId, ownerId, { enabled, uploadUntil, downloadUntil }) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('album_settings').upsert({ trip_id: tripId, owner_id: ownerId, enabled, upload_until: uploadUntil, download_until: downloadUntil, updated_at: new Date().toISOString() }, { onConflict: 'trip_id' });
+  if (error) throw error;
+}
+async function albumFetch(init) {
+  const supabase = await getClient();
+  const { data: session } = await supabase.auth.getSession();
+  const token = session?.session?.access_token;
+  if (!token) throw new Error('Sign in online first.');
+  const { SUPABASE_URL, SUPABASE_ANON_KEY } = await import('./supabase-config.js');
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/album`, { method: 'POST', ...init, headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
+  return response.json();
+}
+// Links (valid for an hour) for photos: { id: url }. size: 'thumb' | 'full'.
+export async function albumLinks(tripId, ids, size = 'thumb') {
+  const out = {};
+  for (let i = 0; i < ids.length; i += 60) {
+    const r = await albumFetch({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'urls', tripId, ids: ids.slice(i, i + 60), size }) });
+    if (r.ok) Object.assign(out, r.urls);
+  }
+  return out;
+}
+export async function albumUpload(tripId, author, { full, thumb, width, height }) {
+  const form = new FormData();
+  form.append('action', 'upload'); form.append('tripId', tripId); form.append('author', author); form.append('w', String(width)); form.append('h', String(height));
+  form.append('file', full, 'photo.jpg'); form.append('thumb', thumb, 'thumb.jpg');
+  return albumFetch({ body: form });
+}
+export async function albumAct(tripId, action, id, extra = {}) {
+  return albumFetch({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, tripId, id, ...extra }) });
+}
+
 // Notifications. The public key lives in the database (the setup workflow put it there); the private one only in the sending function.
 export async function getPushPublicKey() {
   const supabase = await getClient();

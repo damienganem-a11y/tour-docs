@@ -163,6 +163,7 @@ export function buildGuestSheet(trip, guest, now) {
     theme: tripAccent(trip.branding), // the colour the guest app wears: the company's, else Tour Docs orange
     expiresOn: guestLinkExpiry(trip), // the guest app also stops showing the programme after this day, even with no connection
     farewell: farewellOf(trip),
+    album: trip.album?.enabled !== false, // Our Album (the photos themselves are on the server)
     restaurants: restaurants.map(({ _id, ...restaurant }) => restaurant),
     tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };
@@ -177,7 +178,7 @@ export function guestSheetRows(trip, now, today = new Date().toISOString().slice
   const expired = expiry !== null && today > expiry;
   const archivedEarly = Boolean(trip.archivedAt) && !expired;
   // After the expiry the server keeps NO programme, only the farewell message (no name, no days): the guest still gets a kind goodbye.
-  const farewell = (guest) => ({ v: SHEET_VERSION, trip: trip.name, company: trip.branding?.companyName || '', accent: trip.branding?.accent || '#1d5c57', first: '', updatedAt: now, days: [], destinations: [], tours: [], restaurants: [], options: false, expiresOn: expiry, ended: true, farewell: farewellOf(trip) });
+  const farewell = (guest) => ({ v: SHEET_VERSION, trip: trip.name, company: trip.branding?.companyName || '', accent: trip.branding?.accent || '#1d5c57', first: '', updatedAt: now, days: [], destinations: [], tours: [], restaurants: [], options: false, expiresOn: expiry, ended: true, farewell: farewellOf(trip), album: trip.album?.enabled !== false });
   for (const [guestId, link] of Object.entries(trip.guestLinks ?? {})) {
     const guest = trip.guests.find((g) => g.id === guestId);
     if (!guest) continue;

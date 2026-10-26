@@ -17,6 +17,7 @@ import { setSoundCheck } from './explorer/common.js';
 import { entryOf, totals, stepOpen, finishStep, finishQuiz, drawQuiz, QUIZ_LENGTH, STAMP_NEEDED } from './explorer/state.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
+import { initAlbum, albumView, albumAvailable, albumNewCount, loadAlbum, sendQueue } from './album.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
 const SHEET_KEY = 'tourdocs.guest.sheet';
@@ -370,7 +371,7 @@ function tabBar(sheet) {
   const fresh = passportOf(sheet).some((d) => d.given && !isSeen(seenStamps(), d));
   const tab = (key, text) => h('button', { class: `atl-tab${view.tab === key ? ' on' : ''}`, type: 'button', 'aria-current': view.tab === key ? 'page' : null, onclick: () => { if (view.tab !== key) go({ tab: key }); else window.scrollTo({ top: 0, behavior: 'smooth' }); } },
     text, key === 'passport' && fresh ? h('i', { class: 'atl-new', 'aria-label': 'New stamp' }) : null);
-  return h('nav', { class: 'atl-tabs', 'aria-label': 'Main menu' }, tab('today', 'Today'), sheet.program?.length ? tab('program', 'Program') : null, tab('trip', 'Trip'), tab('passport', 'Passport'));
+  return h('nav', { class: 'atl-tabs', 'aria-label': 'Main menu' }, tab('today', 'Today'), sheet.program?.length ? tab('program', 'Program') : null, tab('trip', 'Trip'), tab('passport', 'Passport'), albumAvailable(sheet) ? tab('album', 'Album') : null);
 }
 
 // The programme is folded by destination: tap Lisbon to open its days. Consecutive days in the same place form one group. Everything starts
@@ -1163,6 +1164,7 @@ function paintPage() {
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
   if (view.inbox) { app.replaceChildren(...inboxView(sheet, offline)); return; }
   if (view.credits) { app.replaceChildren(...creditsView(sheet, offline)); return; }
+  if (view.album) { app.replaceChildren(...albumView(sheet, offline, { backButton: true })); return; }
   if (view.rest !== undefined && !sheet.restaurants?.[view.rest]) view = { tab: 'today' };
   if (view.rest !== undefined) { app.replaceChildren(...restaurantView(sheet, view.rest, offline)); return; }
   if (view.eat !== undefined) { app.replaceChildren(...eatView(sheet, view.eat, offline)); return; }
@@ -1189,7 +1191,7 @@ function paintPage() {
     if (page) { app.replaceChildren(...page); return; }
     view = { tab: 'passport' };
   }
-  const tabs = { today: () => todayView(sheet, offline), program: () => programView(sheet, offline), trip: () => tripView(sheet, offline), passport: () => passportView(sheet, offline) };
+  const tabs = { album: () => albumView(sheet, offline), today: () => todayView(sheet, offline), program: () => programView(sheet, offline), trip: () => tripView(sheet, offline), passport: () => passportView(sheet, offline) };
   if (!tabs[view.tab] || (view.tab === 'program' && !sheet.program?.length)) view = { tab: 'today' };
   app.replaceChildren(...tabs[view.tab](), tabBar(sheet));
 }
@@ -1209,9 +1211,18 @@ function farewellView(sheet) {
     h('div', { class: 'content farewell' },
       h('p', { class: 'farewell-text' }, f.text || FAREWELL_DEFAULT),
       site ? h('p', { class: 'farewell-text' }, 'Find your next trip at') : null,
-      site ? h('a', { class: 'btn-link', href, target: '_blank', rel: 'noopener' }, shown) : null),
+      site ? h('a', { class: 'btn-link', href, target: '_blank', rel: 'noopener' }, shown) : null,
+      albumAvailable(sheet) && !PREVIEW ? h('button', { class: 'btn-link', type: 'button', onclick: () => { farewellAlbum = true; repaintEnded(); } }, 'Our Album: download your photos') : null),
   ];
 }
+// After the trip the guest can still open Our Album from the farewell page, to save the photos until the download period ends.
+let farewellAlbum = false;
+function repaintEnded() {
+  if (!currentSheet?.ended) { paint(); return; }
+  app.replaceChildren(...(farewellAlbum ? [h('div', { class: 'atl-head atl-head--sub' }, h('button', { class: 'atl-back atl-back--inline', type: 'button', 'aria-label': 'Back', onclick: () => { farewellAlbum = false; repaintEnded(); } }, '‹'), h('small', {}, currentSheet.trip), h('h1', {}, 'Our Album')), ...albumView(currentSheet, null).slice(1)] : farewellView(currentSheet)));
+  window.scrollTo(0, 0);
+}
+initAlbum({ h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, modal, plainHead, repaint: () => repaintEnded(), firstName: () => store.get('tourdocs.guest.first') || '' });
 
 // After the link's last day the programme is no longer shown and the kept copy is erased (the server has already forgotten it).
 function expired(sheet) { return !simulatedDate && /^\d{4}-\d{2}-\d{2}$/.test(sheet.expiresOn ?? '') && localToday() > sheet.expiresOn; }
@@ -1228,15 +1239,17 @@ function staleNotice(sheet) {
 function render(sheet, { offline = false } = {}) {
   if (sheet.ended || expired(sheet)) {
     // The programme is erased from this phone; only the farewell stays (small, no names, no days).
-    const keep = { v: SUPPORTED_SHEET, trip: sheet.trip, company: sheet.company, accent: sheet.accent, first: '', updatedAt: sheet.updatedAt, days: [], destinations: [], tours: [], restaurants: [], options: false, expiresOn: sheet.expiresOn, ended: true, farewell: sheet.farewell };
+    const keep = { v: SUPPORTED_SHEET, trip: sheet.trip, company: sheet.company, accent: sheet.accent, first: '', updatedAt: sheet.updatedAt, days: [], destinations: [], tours: [], restaurants: [], options: false, expiresOn: sheet.expiresOn, ended: true, farewell: sheet.farewell, album: sheet.album };
     if (!simulatedDate) store.set(SHEET_KEY, JSON.stringify(keep));
     currentSheet = keep; currentOffline = false;
-    app.replaceChildren(...farewellView(keep));
+    repaintEnded();
+    if (keep.album !== false && !PREVIEW) loadAlbum();
     return;
   }
   if (currentSheet && offline === currentOffline && JSON.stringify(sheet) === JSON.stringify(currentSheet) && app.children.length > 0 && !app.querySelector('.problem')) return; // nothing new: do not redraw (it would close an open panel)
   currentSheet = sheet;
   currentOffline = offline;
+  if (sheet.first) store.set('tourdocs.guest.first', sheet.first);
   paint();
   // Keep the pictures for offline use: asking for them once lets the service worker keep them. The tours the guest is booked on get all their
   // photos, their other options only the first one.
@@ -1314,6 +1327,7 @@ async function refresh() {
     status = 'ok';
     loadMyRequests();
     loadMyMessages();
+    if (currentSheet?.album !== false && !PREVIEW) { loadAlbum(); sendQueue().catch(() => {}); }
     syncPushZone();
     const label = document.querySelector('.updated-text'); // the "checked" time moves on without redrawing the page
     if (label && !refreshNote && currentSheet?.updatedAt) label.textContent = `Updated ${updatedText(currentSheet.updatedAt)} · checked ${clockOf(lastChecked)}`;

@@ -858,3 +858,16 @@ input[type=checkbox] { accent-color: #000; }
 .msg--staff { margin-right: 24px; border-left: 4px solid var(--yellow, #f2b705); }
 .msg-who { font-weight: 600; font-size: .85rem; }
 .msg-dot { color: var(--yellow, #b8860b); font-weight: 600; }
+
+/* Our Album (v0.128.0) */
+.album-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; align-items: center; }
+.album-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 8px 0 16px; }
+@media (min-width: 700px) { .album-grid { grid-template-columns: repeat(5, 1fr); } }
+.album-tile { position: relative; aspect-ratio: 1; padding: 0; border: 0; background: var(--atl-mist, #eef3f4); overflow: hidden; border-radius: 6px; cursor: pointer; }
+.album-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album-tile.is-skipped img { opacity: .35; }
+.album-tile.is-saved::after { content: '✓'; position: absolute; right: 4px; bottom: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,.9); color: #1d5c57; font-size: 13px; line-height: 20px; text-align: center; }
+.album-pin { position: absolute; left: 4px; top: 2px; color: #f2b705; font-style: normal; text-shadow: 0 0 3px rgba(0,0,0,.6); }
+.album-wait { display: block; width: 100%; height: 100%; }
+.album-big { max-width: 100%; max-height: 60vh; display: block; margin: 0 auto 10px; border-radius: 8px; }
+.album-status { min-height: 1.2em; }

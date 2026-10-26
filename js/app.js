@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './a
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
+  pullGuestRequests, answerGuestRequest, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
@@ -35,6 +35,7 @@ import { inboxItems } from './inbox.js';
 import { APP_VERSION } from './version.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { guestMessageAnswerText } from './guestMessages.js';
+import { albumSettings } from './album.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
@@ -312,6 +313,8 @@ const ctx = {
   // Requests: a Team colleague asks, the owner's device applies (sendRequest is called by the one change function).
   requestsFor: (tripId) => requestRows.filter((r) => r.trip_id === tripId),
   guestRequestsFor: (tripId) => guestRequestRows.filter((r) => r.trip_id === tripId),
+  // Our Album (staff side): everything goes to the server's album function; the settings of the album are a trip setting (journaled, in the one change function).
+  album: { pull: pullAlbum, links: albumLinks, upload: albumUpload, act: albumAct },
   guestMessagesFor: (tripId) => guestMessageRows.filter((r) => r.trip_id === tripId),
   // The owner answers a guest in words: saved on the server, and the guest is told by notification (if they turned those on).
   async answerGuestMessage(tripId, guestId, body) {
@@ -386,6 +389,7 @@ const ctx = {
   },
   async testPush() { return notifyMe({ title: 'Tour Docs', body: 'Notifications work on this phone.' }); },
   // A short message to the guests of a trip who said "notify me" in their app (Settings > Guest links). Returns { sent }.
+  async notifyGuestList(tripId, guestIds, title, body) { return notifyGuests(tripId, guestIds, { title, body, url: './', category: 'announcement', priority: 'info' }); },
   async notifyAllGuests(tripId, title, body, important = false) { return notifyGuests(tripId, undefined, { title, body, url: './', category: 'announcement', priority: important ? 'important' : 'info' }); },
   guestPushOverview: (tripId) => guestPushOverview(tripId),
   makeGuestCode: (tripId, guestId) => makeGuestCode(tripId, guestId),
@@ -954,6 +958,19 @@ async function loadGuestRequests() {
   } catch { /* the next round tries again */ }
 }
 
+// Our Album: the owner's phone keeps the server's copy of the album's settings (on/off, last day to add, last day to download) in step with the trip.
+// Only the owner, only when it changed (or every 10 minutes), best effort.
+const albumSent = new Map();
+async function syncAlbumSettings(tripId) {
+  const trip = state.trips.get(tripId);
+  if (!trip || !state.owner || ctx.roleFor(tripId) !== 'owner' || trip.archivedAt || !navigator.onLine || hasSession === false) return;
+  const settings = albumSettings(trip);
+  const key = JSON.stringify([settings.enabled, settings.uploadUntil, settings.downloadUntil]);
+  const last = albumSent.get(tripId);
+  if (last && last.key === key && Date.now() - last.at < 10 * 60000) return;
+  try { await saveAlbumSettings(tripId, state.owner.id, settings); albumSent.set(tripId, { key, at: Date.now() }); } catch { /* the album tables are not there yet (database not updated), or no connection: the next round tries again */ }
+}
+
 // Fetches the guests' messages (a missing table, before the database update, or no internet simply leaves the list as it was).
 async function loadGuestMessages() {
   if (!state.owner || hasSession === false || !navigator.onLine) return;
@@ -1323,7 +1340,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) await syncAlbumSettings(id); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }

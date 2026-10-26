@@ -40,6 +40,7 @@ import { groupsSettingsPage } from './settingsGroups.js';
 import { teamSettingsPage } from './settingsTeam.js';
 import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { guestAppSettingsPage } from './settingsGuestApp.js';
+import { albumSettingsPage } from './settingsAlbum.js';
 import { scheduledSettingsPage } from './settingsScheduled.js';
 import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
@@ -57,6 +58,7 @@ const SETTINGS_SECTIONS = [
     { label: 'Team', page: 'team', ownerOnly: true, hint: 'Colleagues, their role, test access' },
     { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
+    { label: 'Our Album', page: 'album', hint: 'Guests\' photo circle: add photos, favourites, who has downloaded' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
   ] },
   { key: 'documents', icon: 'documents', title: 'Documents and look', blurb: 'Exports, brand and the rest', items: [
@@ -176,6 +178,9 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   if (mode === 'settings' && page === 'scheduled') {
     return { node: h('div', { class: 'screen' }, scheduledSettingsPage(ctx, trip)) };
   }
+  if (mode === 'settings' && page === 'album') {
+    return { node: h('div', { class: 'screen' }, albumSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'guestapp') {
     return { node: h('div', { class: 'screen' }, guestAppSettingsPage(ctx, trip)) };
   }
@@ -235,7 +240,7 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
 // Which Settings entries this person may open (owner-only ones are hidden from everybody else).
 function visibleItems(ctx, trip, section) {
   const role = ctx.roleFor(trip.id);
-  const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' ? role !== 'viewer' : true);
+  const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' || item.page === 'album' ? role !== 'viewer' : true);
   // The simple version (the owner decides per person, Settings > Team) keeps only Requests, Documents, Warnings and the This phone list (and the Advanced list that holds Warnings).
   const simpleKeeps = ['requests', 'exports', 'warnings', 'check', 'notifications', 'appearance', 'section/advanced'];
   const simpleHides = (item) => ctx.simpleFor(trip.id) && !simpleKeeps.includes(item.page);
