@@ -34,7 +34,7 @@ import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js
 import { inboxItems } from './inbox.js';
 import { APP_VERSION } from './version.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
-import { guestMessageAnswerText } from './guestMessages.js';
+import { staffDisplayName } from './guestMessages.js';
 import { albumSettings } from './album.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
@@ -316,13 +316,14 @@ const ctx = {
   // Our Album (staff side): everything goes to the server's album function; the settings of the album are a trip setting (journaled, in the one change function).
   album: { pull: pullAlbum, links: albumLinks, upload: albumUpload, act: albumAct },
   guestMessagesFor: (tripId) => guestMessageRows.filter((r) => r.trip_id === tripId),
-  // The owner answers a guest in words: saved on the server, and the guest is told by notification (if they turned those on).
+  // A staff member (owner or colleague) writes to a guest, as an answer or as the first word: saved on the server with their name and the exact time; the server
+  // tells the guest by notification (if they turned those on). The message can never be edited or deleted afterwards.
   async answerGuestMessage(tripId, guestId, body) {
     const text = String(body ?? '').trim();
-    if (!text) return { ok: false, error: 'Write your answer first.' };
-    try { guestMessageRows = [...guestMessageRows, await answerGuestMessage(tripId, guestId, text)]; }
-    catch { return { ok: false, error: 'The answer could not be sent. Check your connection and try again.' }; }
-    notifyGuests(tripId, [guestId], { ...guestMessageAnswerText(text), category: 'requests', priority: 'info' }).catch(() => {});
+    if (!text) return { ok: false, error: 'Write your message first.' };
+    const me = ctx.userFor(tripId);
+    try { guestMessageRows = [...guestMessageRows, await answerGuestMessage(tripId, guestId, text, { id: state.owner.id, name: staffDisplayName(me.name, teamLabel(state.trips.get(tripId))) })]; }
+    catch { return { ok: false, error: 'The message could not be sent. Check your connection and try again.' }; }
     render({ keepScroll: true });
     return { ok: true };
   },

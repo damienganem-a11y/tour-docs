@@ -463,16 +463,17 @@ export async function answerGuestRequest(id, status, note = null) {
 export async function pullGuestMessages() {
   const supabase = await getClient();
   const { data, error } = await supabase.from('guest_messages')
-    .select('id, trip_id, guest_id, direction, topic, body, created_at, read_at')
-    .order('created_at', { ascending: false }).limit(500);
+    .select('id, trip_id, guest_id, direction, topic, body, sender_id, sender_name, created_at, read_at')
+    .order('created_at', { ascending: false }).limit(2000);
   if (error) throw error;
   return data.reverse();
 }
-// The owner's answer to a guest. Returns the saved row.
-export async function answerGuestMessage(tripId, guestId, body) {
+// A staff member writes to a guest (an answer, or the first word). sender = { id, name }: the name stays on the message for good. Returns the saved row.
+export async function answerGuestMessage(tripId, guestId, body, sender) {
   const supabase = await getClient();
   const { data, error } = await supabase.from('guest_messages')
-    .insert({ trip_id: tripId, guest_id: guestId, direction: 'staff', body: String(body).trim().slice(0, 1000) }).select('id, trip_id, guest_id, direction, topic, body, created_at, read_at').single();
+    .insert({ trip_id: tripId, guest_id: guestId, direction: 'staff', body: String(body).trim().slice(0, 1000), sender_id: sender.id, sender_name: sender.name })
+    .select('id, trip_id, guest_id, direction, topic, body, sender_id, sender_name, created_at, read_at').single();
   if (error) throw error;
   return data;
 }

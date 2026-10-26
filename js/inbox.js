@@ -22,12 +22,14 @@ export function inboxItems({ trip, role, userId, requests = [], guestRequests = 
   const base = `#/trip/${trip.id}/settings`;
   const items = [];
 
+  if (role === 'owner' || role === 'team' || role === 'advance') {
+    for (const c of guestConversations(guestMessages).filter((x) => x.unanswered)) {
+      items.push({ id: `gm:${c.last.id}`, kind: 'guest-message', todo: true, title: `${names.get(c.guestId) ?? 'A guest'} wrote to the staff`, detail: c.last.body, at: c.last.created_at, href: `${base}/guestmessages` });
+    }
+  }
   if (role === 'owner') {
     for (const row of guestRequests.filter((r) => r.status === 'pending')) {
       items.push({ id: `g:${row.id}`, kind: 'guest-request', todo: true, title: 'Guest request', detail: describeGuestRequest(trip, row, names), at: row.created_at, href: `${base}/requests` });
-    }
-    for (const c of guestConversations(guestMessages).filter((x) => x.unanswered)) {
-      items.push({ id: `gm:${c.last.id}`, kind: 'guest-message', todo: true, title: `${names.get(c.guestId) ?? 'A guest'} wrote to the team`, detail: c.last.body, at: c.last.created_at, href: `${base}/requests` });
     }
     for (const row of requests.filter((r) => r.status === 'failed' && now - Date.parse(r.decided_at ?? r.requested_at) < 2 * A_WEEK)) { // older ones stay in Settings > Requests
       items.push({ id: `f:${row.id}`, kind: 'failed', todo: true, title: 'A request no longer fits', detail: `${row.requester_name || row.requester_email || 'A colleague'}: ${describeRequest(trip, row.changes, names) || 'a change'}`, at: row.decided_at ?? row.requested_at, href: `${base}/requests` });

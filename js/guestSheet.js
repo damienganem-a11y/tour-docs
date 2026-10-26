@@ -11,7 +11,7 @@
 //
 // Times are exact moments in the trip, shown here as clock times in the destination's own time zone (CLAUDE.md rule).
 
-import { guestPlace, samePlace, bySlotOrder } from './rules.js';
+import { guestPlace, samePlace, bySlotOrder, teamLabel } from './rules.js';
 import { formatTime } from './time.js';
 import { guestMenuCard } from './menuCard.js';
 import { tripAccent } from './loader.js';
@@ -164,6 +164,7 @@ export function buildGuestSheet(trip, guest, now) {
     expiresOn: guestLinkExpiry(trip), // the guest app also stops showing the programme after this day, even with no connection
     farewell: farewellOf(trip),
     album: trip.album?.enabled !== false, // Our Album (the photos themselves are on the server)
+    staffLabel: teamLabel(trip), // what the guest calls the people who answer their messages ("Jet Staff", "Adventure Guides"...)
     restaurants: restaurants.map(({ _id, ...restaurant }) => restaurant),
     tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };

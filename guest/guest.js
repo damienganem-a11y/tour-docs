@@ -238,6 +238,7 @@ const bellIcon = () => { const span = h('span', { class: 'atl-icon' }); span.inn
 
 function inboxView(sheet, offline) {
   store.set(INBOX_SEEN_KEY, String(Date.now()));
+  if (!PREVIEW && currentToken() && unreadFromTeam()) callRpc('read_guest_messages', { p_token: currentToken() }).then(() => loadMyMessages()).catch(() => {}); // opening Messages = the answers are read
   const capability = pushCapability();
   const on = store.get(PUSH_KEY) === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted';
   const prompt = !PREVIEW && capability.supported && !on && !capability.needsInstall && !capability.denied
@@ -245,9 +246,9 @@ function inboxView(sheet, offline) {
       h('button', { class: 'atl-pill-btn', type: 'button', onclick: async (e) => { e.target.disabled = true; try { await enablePush(); paint(); } catch (error) { e.target.textContent = String(error.message).slice(0, 60); } } }, 'Turn on notifications'))
     : null;
   const list = inbox.length === 0
-    ? h('p', { class: 'muted atl-empty' }, 'No messages yet. Changes to your programme and messages from your tour leader will appear here.')
+    ? h('p', { class: 'muted atl-empty' }, 'No updates yet. Changes to your programme will appear here.')
     : inbox.map((m) => h('div', { class: 'atl-msg' }, h('b', {}, m.title), h('p', {}, m.body), h('small', {}, messageTime(m.at))));
-  return [plainHead(sheet.trip, 'Messages'), h('div', { class: 'atl-body' }, offline, prompt, h('div', { class: 'atl-cards' }, list))];
+  return [plainHead(sheet.trip, 'Messages'), h('div', { class: 'atl-body' }, offline, prompt, h('div', { class: 'block-title' }, `Your conversation with the ${staffWord()}`), conversationBlock(), h('button', { class: 'atl-pill-btn', type: 'button', onclick: openMessages }, `Message the ${staffWord()}`), h('div', { class: 'block-title' }, 'Updates'), h('div', { class: 'atl-cards' }, list))];
 }
 
 // ---------- the guest's own panel (tap the initials): name, notifications, refresh ----------
@@ -304,7 +305,7 @@ function todayView(sheet, offline) {
   const facts = place?.facts ?? [];
   const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
   const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
-  return [hero, title, h('div', { class: 'atl-body' }, offline, nextBar(sheet), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), messageRow(), creditsLink(sheet))];
+  return [hero, title, h('div', { class: 'atl-body' }, offline, nextBar(sheet), messageCard(), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -796,27 +797,36 @@ const unreadFromTeam = () => myMessages.filter((m) => m.direction === 'staff' &&
 
 function messageTimes(iso) { return new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
 
-// The row on the Today page.
-function messageRow() {
+// What the guest calls the people who answer: "Jet Staff", "Adventure Guides"... (the trip's own word, from the sheet).
+const staffWord = () => currentSheet?.staffLabel || 'the staff';
+// The card on the Today page, and its twin at the top of Messages: the way to write to the staff, with a count of answers not read yet.
+function messageCard() {
   const unread = unreadFromTeam();
-  return h('p', { class: 'foot' }, h('button', { class: 'link-btn', type: 'button', onclick: openMessages },
-    'Message the team', unread ? h('span', { class: 'msg-dot', 'aria-label': `${unread} new answer${unread === 1 ? '' : 's'}` }, ` · ${unread} new`) : null));
+  return h('div', { class: 'atl-note msg-card' }, h('small', {}, unread ? `${unread} new answer${unread === 1 ? '' : 's'}` : 'Need something?'),
+    h('span', {}, `Write to the ${staffWord()} here: a question, or a problem on the spot. You will see the answer in Messages.`),
+    h('button', { class: 'atl-pill-btn', type: 'button', onclick: openMessages }, `Message the ${staffWord()}`));
+}
+// The conversation so far, newest at the bottom (shown in Messages, above the notifications).
+function conversationBlock() {
+  if (myMessages.length === 0) return h('p', { class: 'muted' }, `No conversation yet. Tap "Message the ${staffWord()}" to write to them.`);
+  return h('div', { class: 'msg-thread' }, myMessages.slice(-8).map((m) => h('div', { class: `msg msg--${m.direction}` },
+    h('div', { class: 'msg-who' }, m.direction === 'staff' ? `${m.sender || staffWord()} (${staffWord()})` : 'You'), h('div', {}, m.body), h('div', { class: 'request-when' }, messageTimes(m.created_at)))));
 }
 
 function openMessages() {
-  if (PREVIEW) { modal('Preview', [h('p', {}, 'In the real app, a guest can write to the staff team here. Nothing is sent from a preview.')], [h('button', { class: 'btn-link', type: 'button', onclick: (e) => e.target.closest('.modal').remove() }, 'OK')]); return; }
+  if (PREVIEW) { modal('Preview', [h('p', {}, 'In the real app, a guest can write to the staff here. Nothing is sent from a preview.')], [h('button', { class: 'btn-link', type: 'button', onclick: (e) => e.target.closest('.modal').remove() }, 'OK')]); return; }
   const topic = h('select', { class: 'note-input', 'aria-label': 'About' }, [['question', 'A question'], ['problem', 'A problem here'], ['other', 'Something else']].map(([v, t]) => h('option', { value: v }, t)));
   const text = h('textarea', { class: 'note-input', rows: '4', maxlength: '1000', placeholder: 'Write to the team…', 'aria-label': 'Your message' });
   const error = h('p', { class: 'modal-error', hidden: '' });
   const send = h('button', { class: 'btn-link', type: 'button' }, 'Send');
   const thread = h('div', { class: 'msg-thread' });
   const drawThread = () => thread.replaceChildren(...(myMessages.length ? myMessages.slice(-20).map((m) => h('div', { class: `msg msg--${m.direction}` },
-    h('div', { class: 'msg-who' }, m.direction === 'staff' ? 'Your leader' : 'You'), h('div', {}, m.body), h('div', { class: 'request-when' }, messageTimes(m.created_at))))
-    : [h('p', { class: 'muted' }, 'Nothing yet. Your leader and the team will answer here.')]));
+    h('div', { class: 'msg-who' }, m.direction === 'staff' ? `${m.sender || staffWord()} (${staffWord()})` : 'You'), h('div', {}, m.body), h('div', { class: 'request-when' }, messageTimes(m.created_at))))
+    : [h('p', { class: 'muted' }, `Nothing yet. The ${staffWord()} will answer here.`)]));
   drawThread();
-  const overlay = modal('Message the team', [
+  const overlay = modal(`Message the ${staffWord()}`, [
     thread,
-    h('p', { class: 'muted' }, 'Your message goes to the staff team only. Please do not write allergies or medical details here: they have their own place in your profile.'),
+    h('p', { class: 'muted' }, `Your message goes to the ${staffWord()} only. A record of all messages is kept. Please do not write allergies or medical details here: they have their own place in your profile.`),
     topic, text, error,
   ], [send, h('button', { class: 'plain-link', type: 'button', onclick: () => { overlay.remove(); paint(); } }, 'Close')]);
   callRpc('read_guest_messages', { p_token: currentToken() }).then(() => loadMyMessages()).catch(() => {});

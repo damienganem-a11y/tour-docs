@@ -41,9 +41,11 @@ import { teamSettingsPage } from './settingsTeam.js';
 import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { guestAppSettingsPage } from './settingsGuestApp.js';
 import { albumSettingsPage } from './settingsAlbum.js';
+import { guestMessagesSettingsPage } from './settingsGuestMessages.js';
 import { scheduledSettingsPage } from './settingsScheduled.js';
 import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
+import { guestConversations } from '../guestMessages.js';
 import { openPreviewSheet } from './preview.js';
 import { icon } from './icons.js';
 
@@ -58,6 +60,7 @@ const SETTINGS_SECTIONS = [
     { label: 'Team', page: 'team', ownerOnly: true, hint: 'Colleagues, their role, test access' },
     { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
+    { label: 'Guest messages', page: 'guestmessages', hint: 'Every message between guests and staff, kept as a record' },
     { label: 'Our Album', page: 'album', hint: 'Guests\' photo circle: add photos, favourites, who has downloaded' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
   ] },
@@ -178,6 +181,9 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   if (mode === 'settings' && page === 'scheduled') {
     return { node: h('div', { class: 'screen' }, scheduledSettingsPage(ctx, trip)) };
   }
+  if (mode === 'settings' && page === 'guestmessages') {
+    return { node: h('div', { class: 'screen' }, guestMessagesSettingsPage(ctx, trip)) };
+  }
   if (mode === 'settings' && page === 'album') {
     return { node: h('div', { class: 'screen' }, albumSettingsPage(ctx, trip)) };
   }
@@ -240,7 +246,7 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
 // Which Settings entries this person may open (owner-only ones are hidden from everybody else).
 function visibleItems(ctx, trip, section) {
   const role = ctx.roleFor(trip.id);
-  const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' || item.page === 'album' ? role !== 'viewer' : true);
+  const visible = (item) => (item.preview ? role === 'owner' : (item.page === 'team' || item.page === 'guestlinks' || item.page === 'guestapp' || item.page === 'scheduled') ? role === 'owner' : item.page === 'requests' || item.page === 'album' || item.page === 'guestmessages' ? role !== 'viewer' : true);
   // The simple version (the owner decides per person, Settings > Team) keeps only Requests, Documents, Warnings and the This phone list (and the Advanced list that holds Warnings).
   const simpleKeeps = ['requests', 'exports', 'warnings', 'check', 'notifications', 'appearance', 'section/advanced'];
   const simpleHides = (item) => ctx.simpleFor(trip.id) && !simpleKeeps.includes(item.page);
@@ -273,6 +279,7 @@ function settingsSection(ctx, trip, key) {
       h(item.preview ? 'button' : 'a', item.preview ? { class: 'menu-row', type: 'button', onclick: () => openPreviewSheet(ctx, trip) } : { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
         h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, item.label), item.hint ? h('span', { class: 'menu-hint' }, item.hint) : null),
         h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null,
+          item.page === 'guestmessages' && ctx.guestMessagesFor(trip.id).length && guestConversations(ctx.guestMessagesFor(trip.id)).some((c) => c.unanswered) ? h('span', { class: 'tile-badge tile-badge--row' }, String(guestConversations(ctx.guestMessagesFor(trip.id)).filter((c) => c.unanswered).length)) : null,
           item.page === 'requests' && ctx.roleFor(trip.id) === 'owner' && ctx.guestRequestsFor(trip.id).some((r) => r.status === 'pending') ? h('span', { class: 'tile-badge tile-badge--row' }, String(ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length)) : null,
           h('span', { class: 'row-chev' }, '›'))))));
 }

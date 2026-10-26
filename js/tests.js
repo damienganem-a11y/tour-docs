@@ -45,7 +45,9 @@ import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
 import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
-import { guestConversations, unreadAnswers, guestMessageAnswerText } from './guestMessages.js';
+import { guestConversations, unreadAnswers, guestMessageAnswerText, staffDisplayName, messageRecord, messageRecordCsv } from './guestMessages.js';
+import { buildTranscriptPdf } from './pdf.js';
+import { guestMessagesSettingsPage } from './views/settingsGuestMessages.js';
 import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAnswerText } from './guestRequests.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { notificationsFor, notifySettings, NOTIFY_KINDS } from './notifyRules.js';
@@ -3669,6 +3671,16 @@ function readZip(bytes) {
   const convos = guestConversations([m(1, 'g1', 'guest', '2027-01-01T10:00:00Z'), m(2, 'g2', 'guest', '2027-01-01T11:00:00Z'), m(3, 'g2', 'staff', '2027-01-01T12:00:00Z'), m(4, 'g1', 'guest', '2027-01-01T13:00:00Z', '2027-01-01T13:05:00Z')]);
   check('Guest messages are grouped per guest, the most recent conversation first', convos.length === 2 && convos[0].guestId === 'g1' && convos[1].guestId === 'g2');
   check('A conversation is unanswered when the guest spoke last, and counts only messages the owner has not opened', convos[0].unanswered === true && convos[0].unread === 1 && convos[1].unanswered === false && convos[1].unread === 1);
+  check('A staff name that was never filled in ("null null") is never shown', staffDisplayName('null null') === 'Staff' && staffDisplayName('') === 'Staff' && staffDisplayName('Marie Dupont') === 'Marie Dupont' && staffDisplayName(undefined, 'Jet Staff') === 'Jet Staff');
+  const recRows = [{ ...m(11, 'g1', 'guest', '2027-01-01T10:00:00Z', '2027-01-01T10:05:00Z'), body: 'Is the "bus" late?' }, { ...m(12, 'g1', 'staff', '2027-01-01T10:06:00Z'), sender_name: 'Marie Dupont', body: 'Five minutes, sorry.' }];
+  const rec = messageRecord(recRows, new Map([['g1', 'Ana Perez']]), 'Jet Staff', 'UTC');
+  check('The record lists each guest\'s messages oldest first with who wrote them and when they were read', rec.length === 1 && rec[0].name === 'Ana Perez' && rec[0].messages[0].who === 'Ana Perez' && rec[0].messages[1].who === 'Marie Dupont' && rec[0].messages[1].from === 'Jet Staff' && rec[0].messages[0].read.startsWith('read ') && rec[0].messages[1].read === 'not read yet');
+  const csv = messageRecordCsv(rec);
+  check('The spreadsheet has a header, one line per message, quotes doubled and the exact UTC time', csv.split('\r\n').filter(Boolean).length === 3 && csv.includes('"Is the ""bus"" late?"') && csv.includes('2027-01-01T10:00:00Z'));
+  const pdfBlob = buildTranscriptPdf({ title: 'Record', subtitle: 'made now', note: 'kept', record: rec });
+  check('The printable record is a PDF', pdfBlob.type === 'application/pdf' && pdfBlob.size > 800);
+  const gmPage = guestMessagesSettingsPage({ roleFor: () => 'owner', guestMessagesFor: () => recRows.map((r) => ({ ...r, guest_id: structuredClone(jetT).guests[0].id })), refreshGuestMessages: () => {}, openGuestConversation: () => {}, answerGuestMessage: async () => ({ ok: true }) }, structuredClone(jetT));
+  check('Settings > Guest messages lists the conversations and offers the record', gmPage.textContent.includes('Conversations (1)') && gmPage.textContent.includes('Record as PDF') && gmPage.textContent.includes('Write to a guest') && gmPage.textContent.includes('edited or deleted'));
   check('A guest counts the answers they have not opened', unreadAnswers([m(5, 'g1', 'staff', '2027-01-02T10:00:00Z'), m(6, 'g1', 'staff', '2027-01-02T11:00:00Z', '2027-01-02T12:00:00Z'), m(7, 'g1', 'guest', '2027-01-02T09:00:00Z')]) === 1);
   check('The notification to the guest carries the answer, shortened when long', guestMessageAnswerText('See you at 8').body === 'See you at 8' && guestMessageAnswerText('x'.repeat(300)).body.length === 120);
 }
@@ -3686,6 +3698,7 @@ function readZip(bytes) {
   check('Three automatic album reminders are planned for every guest, in the future only', albumReminders(jetT).length === 3 && albumReminders({ ...jetT, album: { enabled: false } }).length === 0);
   const early = plannedAutoMessages(jetT, new Date(`${addDays(lastDay, 3)}T00:00:00Z`));
   check('The reminders reach the server list when they are still to come (one week before closing is already past here, the other two are not)', ['album-download', 'album-last-call'].every((k) => early.some((r) => r.auto_key === k && r.audience === 'guests')) && !early.some((r) => r.auto_key === 'album-closing'));
+  check('The guest sheet carries the word guests use for the staff', buildGuestSheet(jetT, jetT.guests[0], 'x').staffLabel === 'Jet Staff');
   check('The guest sheet says whether the album is on', buildGuestSheet(jetT, jetT.guests[0], 'x').album === true && buildGuestSheet({ ...jetT, album: { enabled: false } }, jetT.guests[0], 'x').album === false);
 }
 

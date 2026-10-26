@@ -492,6 +492,38 @@ function summaryPages(summary) {
   return pages;
 }
 
+// ---------- The record of messages between guests and staff (v0.130.0) ----------
+// A plain printable transcript (A4 portrait): one heading per guest, then every message oldest first: when, who, then the words, then when it was read.
+// record = [{ name, messages: [{ when, from, who, body, read }] }] (guestMessages.js messageRecord). title / subtitle are written at the top of the first page.
+export function buildTranscriptPdf({ title, subtitle, note, record }) {
+  const width = 595, height = 842, margin = 42, usable = width - margin * 2;
+  const pages = [[]];
+  let y = height - margin;
+  const put = (item) => pages.at(-1).push(item);
+  const room = (needed) => { if (y - needed < margin + 14) { pages.push([]); y = height - margin; } };
+  put({ type: 'text', x: margin, y: y - 16, font: FONT_BOLD, size: 16, gray: 0, text: fitOneLine(title, FONT_BOLD, 16, usable) }); y -= 24;
+  for (const line of wrapText(subtitle, FONT_REGULAR, 9, usable)) { put({ type: 'text', x: margin, y: y - 9, font: FONT_REGULAR, size: 9, gray: 0.4, text: line }); y -= 12; }
+  for (const line of wrapText(note, FONT_REGULAR, 9, usable)) { put({ type: 'text', x: margin, y: y - 9, font: FONT_REGULAR, size: 9, gray: 0.4, text: line }); y -= 12; }
+  y -= 8;
+  if (record.length === 0) put({ type: 'text', x: margin, y: y - 11, font: FONT_REGULAR, size: 11, gray: 0, text: 'No message was sent.' });
+  for (const conversation of record) {
+    room(60);
+    put({ type: 'rect', x: margin, y: y - 17, w: usable, h: 17, gray: 0.88 });
+    put({ type: 'text', x: margin + 4, y: y - 13, font: FONT_BOLD, size: 11, gray: 0, text: fitOneLine(conversation.name, FONT_BOLD, 11, usable - 8) });
+    y -= 24;
+    for (const m of conversation.messages) {
+      const body = wrapText(m.body.replace(/\s+/g, ' '), FONT_REGULAR, 10, usable - 14);
+      room(26 + body.length * 13);
+      put({ type: 'text', x: margin, y: y - 9, font: FONT_BOLD, size: 9, gray: 0, text: fitOneLine(`${m.when} · ${m.from === 'Guest' ? 'Guest' : m.from}: ${m.who}`, FONT_BOLD, 9, usable) }); y -= 13;
+      for (const line of body) { put({ type: 'text', x: margin + 14, y: y - 10, font: FONT_REGULAR, size: 10, gray: 0, text: line }); y -= 13; }
+      put({ type: 'text', x: margin + 14, y: y - 8, font: FONT_REGULAR, size: 8, gray: 0.5, text: m.read }); y -= 17;
+    }
+    y -= 6;
+  }
+  pages.forEach((page, i) => page.push({ type: 'text', x: margin, y: margin - 18, font: FONT_REGULAR, size: 8, gray: 0.5, text: `Page ${i + 1} of ${pages.length}` }));
+  return new Blob([serializePdf(pages, { width, height })], { type: 'application/pdf' });
+}
+
 // ---------- The evening sheet: every restaurant of one evening, compact ----------
 //
 // The list the owner sends to the local team for a whole evening (SPEC.md, Phase 3 exports). Restaurants are never

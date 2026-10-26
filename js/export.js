@@ -12,15 +12,16 @@
 //   - shareSavedExport      re-shares a version already in the archive (no rebuilding).
 // (shareOrDownloadFile itself now lives in ui.js, shared with Settings > Backup.)
 
-import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
+import { buildTranscriptPdf, buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment, formatWeekdayDate } from './time.js';
-import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural } from './rules.js';
+import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural, displayNames, teamLabel } from './rules.js';
 import { newId } from './ids.js';
 import { showToast, shareOrDownloadFile, openFullScreen, closeSheet } from './ui.js';
 import { lastPdfPages } from './pdf.js';
 import { pdfPageCanvases } from './pdfPreview.js';
 import { h } from './dom.js';
+import { messageRecord, messageRecordCsv } from './guestMessages.js';
 
 // The two export formats: how to build each one's file, its extension and its MIME type (the
 // "kind of file" tag the share sheet and downloads use to recognise it).
@@ -443,6 +444,27 @@ export async function exportFinalTrip(ctx, trip, format) {
     showToast('Could not save this export to the archive, but showing it anyway.', true);
   }
   await showPreview(blob, FORMATS[format], fileNameFor(title, FORMATS[format].extension));
+}
+
+// The record of every message between guests and staff (owner's request, 26 Oct 2026): a printable PDF and a spreadsheet (CSV) with the exact times, who wrote
+// each message and when it was read. `rows` are the guest_messages rows of the trip. Not put in the Exports archive: it holds the guests' own words, and the
+// archive is shared between the owner's devices through the server.
+export async function exportMessageRecord(trip, rows, format) {
+  const names = new Map([...displayNames(trip.guests)].map(([id]) => { const g = trip.guests.find((x) => x.id === id); return [id, g ? `${g.first} ${g.last}`.trim() : 'A guest']; }));
+  const record = messageRecord(rows, names, teamLabel(trip));
+  const when = formatFullMoment(new Date().toISOString(), localTimeZone());
+  const title = `${trip.name}: messages between guests and staff`;
+  reservePreviewWindow(format === 'csv' ? 'xlsx' : 'pdf');
+  let blob; let spec;
+  try {
+    if (format === 'csv') { blob = new Blob([messageRecordCsv(record)], { type: 'text/csv' }); spec = { extension: 'csv', mimeType: 'text/csv', label: 'CSV' }; }
+    else { blob = buildTranscriptPdf({ title, subtitle: `Record made ${when} (local time of the phone that made it).`, note: 'Every message is kept exactly as it was sent. A message cannot be edited or deleted. Times are those of the phone that made this file; the spreadsheet also gives UTC.', record }); spec = FORMATS.pdf; }
+  } catch {
+    releasePreviewWindow();
+    showToast('Could not build the file.', true);
+    return;
+  }
+  await showPreview(blob, spec, fileNameFor(title, spec.extension));
 }
 
 // ---------- Showing a finished file first, sharing it from there ----------
