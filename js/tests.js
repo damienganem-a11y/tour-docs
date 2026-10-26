@@ -3636,7 +3636,7 @@ function readZip(bytes) {
 {
   const jetFile = await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json();
   const jetT = buildTrip(jetFile);
-  check('The jet sample has Passport Explorer content for all 12 destinations, all still draft', jetT.destinations.length === 12 && jetT.destinations.every((d) => d.explorer?.status === 'draft'));
+  check('The jet sample has Passport Explorer content for all 12 destinations: the ten the owner reviewed are validated, Kathmandu and Washington are still draft', jetT.destinations.length === 12 && jetT.destinations.every((d) => d.explorer?.status === (['Kathmandu', 'Washington'].includes(d.name) ? 'draft' : 'validated')));
   check('Every destination has two steps and at least 2 questions per category, and nothing to fix (no metric units)', jetT.destinations.every((d) => explorerProblems(d.explorer).length === 0 && d.explorer.steps.length === 2 && QUIZ_CATEGORIES.every((c) => d.explorer.questions.filter((q) => q.category === c).length >= 2)));
   check('No real company name in the explorer content (NGE instead)', !/national geographic/i.test(JSON.stringify(jetFile)));
   check('Kathmandu has its own content, and Washington is the wrap-up at the end', jetT.destinations.find((d) => d.name === 'Kathmandu').explorer.greeting.word === 'Namaste' && jetT.destinations.find((d) => d.name === 'Washington').explorer.wrapUp === true);
@@ -3683,7 +3683,8 @@ function readZip(bytes) {
   check('Open or not depends on the date IN that time zone', explorerOpen({ unlockOn: '2027-08-28', unlockTz: 'Asia/Kathmandu' }, new Date('2027-08-27T19:00:00Z')) && !explorerOpen({ unlockOn: '2027-08-28', unlockTz: 'America/Lima' }, new Date('2027-08-27T19:00:00Z')) && explorerOpen({ unlockOn: '2027-08-28', unlockTz: 'UTC' }, '2027-08-28'));
 
   // Draft content never reaches the guest; validating needs good content, goes through the one change function, and can be undone.
-  const exCtx = { owner, state: structuredClone(jetT), entries: [], trip: (id) => (id === exCtx.state.id ? exCtx.state : undefined), journal: () => exCtx.entries, async commit(next, entries) { exCtx.state = next; exCtx.entries.push(...entries); } };
+  const draftJet = structuredClone(jetT); for (const d of draftJet.destinations) d.explorer.status = 'draft'; // this scenario starts from content nobody validated yet
+  const exCtx = { owner, state: draftJet, entries: [], trip: (id) => (id === exCtx.state.id ? exCtx.state : undefined), journal: () => exCtx.entries, async commit(next, entries) { exCtx.state = next; exCtx.entries.push(...entries); } };
   const someone = exCtx.state.guests[0];
   check('Draft explorer content is NOT in the guest\'s sheet', buildGuestSheet(exCtx.state, someone, '2027-08-01T00:00:00.000Z').destinations.every((d) => !d.ex));
   const destC = exCtx.state.destinations.find((d) => d.name === 'Cusco');
