@@ -10,8 +10,42 @@ import { displayNames, countIn } from '../rules.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { resolveGuestRequest, describeGuestRequest } from '../guestRequests.js';
 import { describeRequest } from '../sync.js';
+import { guestConversations, GUEST_MESSAGE_MAX } from '../guestMessages.js';
 
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+// ---------- Messages from guests (their app's "Message the team"): the owner reads the conversation and answers in words ----------
+function conversationSheet(ctx, trip, convo, names) {
+  const who = names.get(convo.guestId) ?? 'A guest';
+  const reply = h('textarea', { class: 'text-input', rows: '3', maxlength: String(GUEST_MESSAGE_MAX), placeholder: `Your answer to ${who}`, 'aria-label': `Your answer to ${who}` });
+  const error = h('p', { class: 'form-error', hidden: '' });
+  const send = h('button', { class: 'btn', type: 'button' }, 'Send answer');
+  send.addEventListener('click', async () => {
+    send.disabled = true;
+    const result = await ctx.answerGuestMessage(trip.id, convo.guestId, reply.value);
+    if (result.ok) { closeSheet(); showToast('Answer sent'); return; }
+    error.hidden = false; error.textContent = result.error; send.disabled = false;
+  });
+  ctx.openGuestConversation(trip.id, convo.guestId);
+  openSheet({
+    eyebrow: 'Guest message', title: who, subtitle: 'Free text: ask guests to keep allergies in their own field, never in a message.',
+    body: [...convo.rows.map((m) => h('div', { class: `card ${m.direction === 'staff' ? 'card--soft' : ''}` },
+      h('div', { class: 'act-name' }, m.direction === 'staff' ? 'You' : who), h('div', {}, m.body), h('div', { class: 'muted' }, when(m.created_at)))), reply, error, send],
+    cancelLabel: 'Close',
+  });
+}
+function guestMessagesSection(ctx, trip, names) {
+  const conversations = guestConversations(ctx.guestMessagesFor(trip.id));
+  const waiting = conversations.filter((c) => c.unanswered).length;
+  return h('div', {},
+    h('h2', { class: 'section-title' }, `Guests' messages${waiting ? ` (${waiting})` : ''}`),
+    conversations.length === 0 ? h('p', { class: 'empty' }, 'No guest message yet.') : null,
+    ...conversations.slice(0, 15).map((c) => h('button', { class: 'card card--tap', type: 'button', onclick: () => conversationSheet(ctx, trip, c, names) },
+      h('div', { class: 'act-name' }, `${names.get(c.guestId) ?? 'A guest'}${c.unanswered ? ' · waiting for your answer' : ''}`),
+      h('div', { class: 'muted' }, `${c.last.direction === 'staff' ? 'You: ' : ''}${c.last.body.slice(0, 100)}`),
+      h('div', { class: 'muted' }, when(c.last.created_at)))),
+    h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => ctx.refreshGuestMessages() }, 'Check for new messages'));
+}
 
 // ---------- Requests from guests (their app's "Ask to switch to this tour") ----------
 function guestRequestCard(ctx, trip, row, names) {
@@ -178,6 +212,7 @@ export function requestsSettingsPage(ctx, trip) {
       : notice('Your change is applied by the owner\'s device once it is open. Some wait for the owner\'s OK. You can take back a request that is still waiting.'),
     owner ? notificationsCard(ctx) : null,
     approver ? section('Waiting for your OK', approvable.map((r) => card(r, decideForce(r)))) : null,
+    owner ? guestMessagesSection(ctx, trip, names) : null,
     guestSection,
     nothing && !owner ? h('p', { class: 'empty' }, 'No requests yet.') : null,
     section('Waiting to be sent', waiting.map((r) => h('div', { class: 'card' }, h('div', { class: 'act-name' }, describeRequest(trip, r.changes, names) || 'A change'), h('div', { class: 'muted' }, `${when(r.requestedAt)} · it will be sent as soon as you are online`),

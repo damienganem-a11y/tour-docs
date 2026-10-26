@@ -8,6 +8,7 @@
 
 import { describeRequest } from './sync.js';
 import { describeGuestRequest } from './guestRequests.js';
+import { guestConversations } from './guestMessages.js';
 import { tripWarnings, displayNames } from './rules.js';
 
 const THREE_DAYS = 3 * 86400000;
@@ -16,7 +17,7 @@ const MAX_MESSAGES = 15; // the most recent messages from the team; Messages sho
 
 // ctx-free input: { trip, role, userId, requests (rows of this trip), guestRequests (rows of this trip), messages (rows of this trip),
 //   holdsFor(row) -> true when a pending request waits for the owner's OK, seen: Set of item ids, now }
-export function inboxItems({ trip, role, userId, requests = [], guestRequests = [], messages = [], holdsFor = () => false, conflict = false, seen = new Set(), now = Date.now() }) {
+export function inboxItems({ trip, role, userId, requests = [], guestRequests = [], guestMessages = [], messages = [], holdsFor = () => false, conflict = false, seen = new Set(), now = Date.now() }) {
   const names = displayNames(trip.guests);
   const base = `#/trip/${trip.id}/settings`;
   const items = [];
@@ -24,6 +25,9 @@ export function inboxItems({ trip, role, userId, requests = [], guestRequests = 
   if (role === 'owner') {
     for (const row of guestRequests.filter((r) => r.status === 'pending')) {
       items.push({ id: `g:${row.id}`, kind: 'guest-request', todo: true, title: 'Guest request', detail: describeGuestRequest(trip, row, names), at: row.created_at, href: `${base}/requests` });
+    }
+    for (const c of guestConversations(guestMessages).filter((x) => x.unanswered)) {
+      items.push({ id: `gm:${c.last.id}`, kind: 'guest-message', todo: true, title: `${names.get(c.guestId) ?? 'A guest'} wrote to the team`, detail: c.last.body, at: c.last.created_at, href: `${base}/requests` });
     }
     for (const row of requests.filter((r) => r.status === 'failed' && now - Date.parse(r.decided_at ?? r.requested_at) < 2 * A_WEEK)) { // older ones stay in Settings > Requests
       items.push({ id: `f:${row.id}`, kind: 'failed', todo: true, title: 'A request no longer fits', detail: `${row.requester_name || row.requester_email || 'A colleague'}: ${describeRequest(trip, row.changes, names) || 'a change'}`, at: row.decided_at ?? row.requested_at, href: `${base}/requests` });

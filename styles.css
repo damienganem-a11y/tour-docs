@@ -1312,3 +1312,7 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .undo-btn:disabled .undo-what { display: none; }
 .page-head .back-link { margin-bottom: 0; }
 .page-head > .eyebrow, .page-head-text > .eyebrow { margin-top: 2px; }
+
+/* Guest messages (v0.127.0): the owner's list of conversations, and the form error line */
+.card--tap { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.form-error { color: var(--danger, #b3261e); font-size: .9rem; margin: .25rem 0; }

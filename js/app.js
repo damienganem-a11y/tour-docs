@@ -27,13 +27,14 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './a
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
+  pullGuestRequests, answerGuestRequest, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
 import { inboxItems } from './inbox.js';
 import { APP_VERSION } from './version.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
+import { guestMessageAnswerText } from './guestMessages.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
@@ -76,6 +77,7 @@ let previewRole = (() => { try { const r = sessionStorage.getItem('tourdocs.prev
 let requestRows = [];
 // Requests from GUESTS (their app's "Ask to switch to this tour"): what the server last said. Never applied by themselves: the owner decides.
 let guestRequestRows = [];
+let guestMessageRows = []; // the guests' messages to the team (all trips this person owns), oldest first
 let outbox = [];
 // The team's conversation (Messages) and what the person has already seen in their inbox (kept on the device).
 const teamMessageRows = new Map(); // tripId -> rows, oldest first
@@ -310,6 +312,22 @@ const ctx = {
   // Requests: a Team colleague asks, the owner's device applies (sendRequest is called by the one change function).
   requestsFor: (tripId) => requestRows.filter((r) => r.trip_id === tripId),
   guestRequestsFor: (tripId) => guestRequestRows.filter((r) => r.trip_id === tripId),
+  guestMessagesFor: (tripId) => guestMessageRows.filter((r) => r.trip_id === tripId),
+  // The owner answers a guest in words: saved on the server, and the guest is told by notification (if they turned those on).
+  async answerGuestMessage(tripId, guestId, body) {
+    const text = String(body ?? '').trim();
+    if (!text) return { ok: false, error: 'Write your answer first.' };
+    try { guestMessageRows = [...guestMessageRows, await answerGuestMessage(tripId, guestId, text)]; }
+    catch { return { ok: false, error: 'The answer could not be sent. Check your connection and try again.' }; }
+    notifyGuests(tripId, [guestId], { ...guestMessageAnswerText(text), category: 'requests', priority: 'info' }).catch(() => {});
+    render({ keepScroll: true });
+    return { ok: true };
+  },
+  async openGuestConversation(tripId, guestId) {
+    await markGuestMessagesRead(tripId, guestId).catch(() => {});
+    guestMessageRows = guestMessageRows.map((m) => (m.trip_id === tripId && m.guest_id === guestId && m.direction === 'guest' && !m.read_at ? { ...m, read_at: new Date().toISOString() } : m));
+  },
+  async refreshGuestMessages() { await loadGuestMessages(); render({ keepScroll: true }); },
   // The owner says yes to a guest's request. mode: 'move' (needs a free place), 'waitlist' (joins the waiting list), 'force' (over capacity).
   // Returns { ok } or { ok: false, error, full? }: `full` tells the screen to offer the waiting list or going over capacity.
   async approveGuestRequest(id, mode = 'move') {
@@ -475,7 +493,7 @@ const ctx = {
     if (!trip) return [];
     return inboxItems({
       trip, role: ctx.roleFor(tripId), userId: state.owner?.id,
-      requests: requestRows.filter((r) => r.trip_id === tripId), guestRequests: guestRequestRows.filter((r) => r.trip_id === tripId),
+      requests: requestRows.filter((r) => r.trip_id === tripId), guestRequests: guestRequestRows.filter((r) => r.trip_id === tripId), guestMessages: guestMessageRows.filter((r) => r.trip_id === tripId),
       messages: teamMessageRows.get(tripId) ?? [], holdsFor: (row) => canApprove(row), conflict: ctx.conflictFor(tripId), seen: new Set(inboxSeen[tripId] ?? []),
     });
   },
@@ -936,6 +954,16 @@ async function loadGuestRequests() {
   } catch { /* the next round tries again */ }
 }
 
+// Fetches the guests' messages (a missing table, before the database update, or no internet simply leaves the list as it was).
+async function loadGuestMessages() {
+  if (!state.owner || hasSession === false || !navigator.onLine) return;
+  try {
+    const before = guestMessageRows.length;
+    guestMessageRows = await pullGuestMessages();
+    if (guestMessageRows.length !== before && !document.body.classList.contains('sheet-open') && /\/settings/.test(location.hash)) renderQuiet();
+  } catch { /* the next round tries again */ }
+}
+
 // The guest is told their request was answered (if the owner left that kind of notification on).
 function sendAnswer(row, note, outcome) {
   const trip = state.trips.get(row.trip_id);
@@ -1295,7 +1323,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }

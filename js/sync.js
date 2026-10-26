@@ -186,6 +186,7 @@ export async function watchServerChanges(onChange, onStatus) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_requests' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_messages' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'team_messages' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
 }
@@ -456,6 +457,31 @@ export async function answerGuestRequest(id, status, note = null) {
     .update({ status, note, decided_at: new Date().toISOString() }).eq('id', id).eq('status', 'pending').select('id');
   if (error) throw error;
   return data.length > 0;
+}
+
+// Messages from guests to the team (v0.127.0), on the trips this person owns (the server's rules say so), oldest first.
+export async function pullGuestMessages() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('guest_messages')
+    .select('id, trip_id, guest_id, direction, topic, body, created_at, read_at')
+    .order('created_at', { ascending: false }).limit(500);
+  if (error) throw error;
+  return data.reverse();
+}
+// The owner's answer to a guest. Returns the saved row.
+export async function answerGuestMessage(tripId, guestId, body) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('guest_messages')
+    .insert({ trip_id: tripId, guest_id: guestId, direction: 'staff', body: String(body).trim().slice(0, 1000) }).select('id, trip_id, guest_id, direction, topic, body, created_at, read_at').single();
+  if (error) throw error;
+  return data;
+}
+// The owner opened a guest's conversation: its messages are marked as read.
+export async function markGuestMessagesRead(tripId, guestId) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('guest_messages').update({ read_at: new Date().toISOString() })
+    .eq('trip_id', tripId).eq('guest_id', guestId).eq('direction', 'guest').is('read_at', null);
+  if (error) throw error;
 }
 
 // Notifications. The public key lives in the database (the setup workflow put it there); the private one only in the sending function.

@@ -850,3 +850,11 @@ input[type=checkbox] { accent-color: #000; }
 .prog-text { white-space: pre-line; }
 .prog-notes { margin-top: 18px; padding-top: 6px; border-top: 1px solid var(--line); }
 .prog-notes p { margin: 8px 0; }
+
+/* Messages to the team (v0.127.0) */
+.msg-thread { max-height: 40vh; overflow-y: auto; margin: 0 0 10px; }
+.msg { padding: 8px 12px; margin: 6px 0; border-radius: 14px; background: var(--atl-mist, #eef3f4); }
+.msg--guest { margin-left: 24px; }
+.msg--staff { margin-right: 24px; border-left: 4px solid var(--yellow, #f2b705); }
+.msg-who { font-weight: 600; font-size: .85rem; }
+.msg-dot { color: var(--yellow, #b8860b); font-weight: 600; }

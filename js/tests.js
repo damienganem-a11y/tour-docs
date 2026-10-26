@@ -42,6 +42,7 @@ import { buildGuestSheet, guestSheetRows, SHEET_VERSION, guestLinkExpiry, GUEST_
 import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
+import { guestConversations, unreadAnswers, guestMessageAnswerText } from './guestMessages.js';
 import { resolveGuestRequest, guestRequestChange, describeGuestRequest, guestAnswerText } from './guestRequests.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from './pushUtil.js';
 import { notificationsFor, notifySettings, NOTIFY_KINDS } from './notifyRules.js';
@@ -2956,7 +2957,7 @@ function readZip(bytes) {
 
   const { requestsSettingsPage } = await import('./views/settingsRequests.js');
   const requestsNode = requestsSettingsPage({
-    roleFor: () => 'owner', requestsFor: () => [], outboxFor: () => [], guestRequestsFor: () => [askRow, { ...askRow, id: 'r2', status: 'approved', note: null, decided_at: '2027-01-02T00:00:00Z' }],
+    roleFor: () => 'owner', requestsFor: () => [], outboxFor: () => [], guestMessagesFor: () => [], guestRequestsFor: () => [askRow, { ...askRow, id: 'r2', status: 'approved', note: null, decided_at: '2027-01-02T00:00:00Z' }],
     pushState: async () => ({ state: 'off' }), approveGuestRequest: async () => ({ ok: true }), declineGuestRequest: async () => ({ ok: true }), refreshGuestRequests: async () => {},
   }, ctxG.state);
   check('Settings > Requests shows a guest\'s request with Approve and Decline, the answered ones below, and the notifications card',
@@ -3178,7 +3179,7 @@ function readZip(bytes) {
   const row = { id: 'rq1', trip_id: tr.id, status: 'failed', requested_by: 'u-test', note: `"${act.name}" is full (20 / 20).`, requested_at: '2027-01-01T00:00:00Z', requester_name: 'Ben',
     changes: [{ type: 'move', guestId: tr.guests[0].id, slotId: slotR.id, to: { kind: 'activity', activityId: act.id } }] };
   const { requestsSettingsPage: page } = await import('./views/settingsRequests.js');
-  const base = { requestsFor: () => [row], outboxFor: () => [], guestRequestsFor: () => [], pushState: async () => ({ state: 'off' }), needsOwnerDecision: () => false, canApprove: () => false, holdReason: () => null, owner: { id: 'u-test' } };
+  const base = { requestsFor: () => [row], outboxFor: () => [], guestMessagesFor: () => [], guestRequestsFor: () => [], pushState: async () => ({ state: 'off' }), needsOwnerDecision: () => false, canApprove: () => false, holdReason: () => null, owner: { id: 'u-test' } };
   const asTeam = page({ ...base, roleFor: () => 'team' }, tr).textContent;
   const asOwner = page({ ...base, roleFor: () => 'owner' }, tr).textContent;
   check('A colleague whose request found the tour full can put the guest on the waiting list or ask the owner to force it', /Waiting list instead/.test(asTeam) && /Ask the owner to force/.test(asTeam));
@@ -3636,6 +3637,16 @@ function readZip(bytes) {
 {
   const jetFile = await (await fetch('./data/tour_docs_sample_trip_JET-01.json')).json();
   const jetT = buildTrip(jetFile);
+// Messages from guests to the team (v0.127.0)
+{
+  const m = (id, guest, direction, at, read = null) => ({ id, trip_id: 't', guest_id: guest, direction, topic: 'question', body: `m${id}`, created_at: at, read_at: read });
+  const convos = guestConversations([m(1, 'g1', 'guest', '2027-01-01T10:00:00Z'), m(2, 'g2', 'guest', '2027-01-01T11:00:00Z'), m(3, 'g2', 'staff', '2027-01-01T12:00:00Z'), m(4, 'g1', 'guest', '2027-01-01T13:00:00Z', '2027-01-01T13:05:00Z')]);
+  check('Guest messages are grouped per guest, the most recent conversation first', convos.length === 2 && convos[0].guestId === 'g1' && convos[1].guestId === 'g2');
+  check('A conversation is unanswered when the guest spoke last, and counts only messages the owner has not opened', convos[0].unanswered === true && convos[0].unread === 1 && convos[1].unanswered === false && convos[1].unread === 1);
+  check('A guest counts the answers they have not opened', unreadAnswers([m(5, 'g1', 'staff', '2027-01-02T10:00:00Z'), m(6, 'g1', 'staff', '2027-01-02T11:00:00Z', '2027-01-02T12:00:00Z'), m(7, 'g1', 'guest', '2027-01-02T09:00:00Z')]) === 1);
+  check('The notification to the guest carries the answer, shortened when long', guestMessageAnswerText('See you at 8').body === 'See you at 8' && guestMessageAnswerText('x'.repeat(300)).body.length === 120);
+}
+
   check('The jet sample has Passport Explorer content for all 12 destinations: the ten the owner reviewed are validated, Kathmandu and Washington are still draft', jetT.destinations.length === 12 && jetT.destinations.every((d) => d.explorer?.status === (['Kathmandu', 'Washington'].includes(d.name) ? 'draft' : 'validated')));
   check('Every destination has two steps and at least 2 questions per category, and nothing to fix (no metric units)', jetT.destinations.every((d) => explorerProblems(d.explorer).length === 0 && d.explorer.steps.length === 2 && QUIZ_CATEGORIES.every((c) => d.explorer.questions.filter((q) => q.category === c).length >= 2)));
   check('No real company name in the explorer content (NGE instead)', !/national geographic/i.test(JSON.stringify(jetFile)));

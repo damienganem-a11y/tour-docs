@@ -303,7 +303,7 @@ function todayView(sheet, offline) {
   const facts = place?.facts ?? [];
   const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
   const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
-  return [hero, title, h('div', { class: 'atl-body' }, offline, nextBar(sheet), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+  return [hero, title, h('div', { class: 'atl-body' }, offline, nextBar(sheet), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), messageRow(), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -772,6 +772,66 @@ function myRequestsBlock() {
       h('div', { class: 'request-state' }, REQUEST_STATUS[r.status] ?? r.status, r.note ? ` · ${r.note}` : ''),
       h('div', { class: 'request-when' }, requestTimes(r)),
       r.status === 'pending' ? h('button', { class: 'link-btn', type: 'button', onclick: async () => { try { await callRpc('cancel_guest_request', { p_token: currentToken(), p_id: r.id }); await loadMyRequests(); paint(); } catch { /* offline */ } } }, 'Take it back') : null)));
+}
+
+// ---------- messages to the team (owner's request, 26 Oct 2026) ----------
+// A guest can write to the staff team; the owner answers from Settings > Requests and the answer shows here. Free text, so the screen says
+// plainly: no allergies or medical details here (they have their own field, which the team can read).
+const MESSAGES_KEY = 'tourdocs.guest.messages';
+const MESSAGE_ERRORS = { link: 'This link is no longer active.', message: 'Please write a message first.', too_many: 'You have sent many messages today. Please wait for an answer.' };
+let myMessages = (() => { try { return JSON.parse(store.get(MESSAGES_KEY)) ?? []; } catch { return []; } })();
+async function loadMyMessages() {
+  const token = currentToken();
+  if (!token || PREVIEW) return;
+  try {
+    const list = await callRpc('list_guest_messages', { p_token: token });
+    if (!Array.isArray(list)) return;
+    const changed = JSON.stringify(list.map((m) => [m.id, m.read_at])) !== JSON.stringify(myMessages.map((m) => [m.id, m.read_at]));
+    myMessages = list; store.set(MESSAGES_KEY, JSON.stringify(list));
+    if (changed && currentSheet && !currentSheet.ended && !view.rest && view.tour === undefined && !view.options) paint();
+  } catch { /* offline: the kept conversation stays */ }
+}
+const unreadFromTeam = () => myMessages.filter((m) => m.direction === 'staff' && !m.read_at).length;
+
+function messageTimes(iso) { return new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+
+// The row on the Today page.
+function messageRow() {
+  const unread = unreadFromTeam();
+  return h('p', { class: 'foot' }, h('button', { class: 'link-btn', type: 'button', onclick: openMessages },
+    'Message the team', unread ? h('span', { class: 'msg-dot', 'aria-label': `${unread} new answer${unread === 1 ? '' : 's'}` }, ` · ${unread} new`) : null));
+}
+
+function openMessages() {
+  if (PREVIEW) { modal('Preview', [h('p', {}, 'In the real app, a guest can write to the staff team here. Nothing is sent from a preview.')], [h('button', { class: 'btn-link', type: 'button', onclick: (e) => e.target.closest('.modal').remove() }, 'OK')]); return; }
+  const topic = h('select', { class: 'note-input', 'aria-label': 'About' }, [['question', 'A question'], ['problem', 'A problem here'], ['other', 'Something else']].map(([v, t]) => h('option', { value: v }, t)));
+  const text = h('textarea', { class: 'note-input', rows: '4', maxlength: '1000', placeholder: 'Write to the team…', 'aria-label': 'Your message' });
+  const error = h('p', { class: 'modal-error', hidden: '' });
+  const send = h('button', { class: 'btn-link', type: 'button' }, 'Send');
+  const thread = h('div', { class: 'msg-thread' });
+  const drawThread = () => thread.replaceChildren(...(myMessages.length ? myMessages.slice(-20).map((m) => h('div', { class: `msg msg--${m.direction}` },
+    h('div', { class: 'msg-who' }, m.direction === 'staff' ? 'Your leader' : 'You'), h('div', {}, m.body), h('div', { class: 'request-when' }, messageTimes(m.created_at))))
+    : [h('p', { class: 'muted' }, 'Nothing yet. Your leader and the team will answer here.')]));
+  drawThread();
+  const overlay = modal('Message the team', [
+    thread,
+    h('p', { class: 'muted' }, 'Your message goes to the staff team only. Please do not write allergies or medical details here: they have their own place in your profile.'),
+    topic, text, error,
+  ], [send, h('button', { class: 'plain-link', type: 'button', onclick: () => { overlay.remove(); paint(); } }, 'Close')]);
+  callRpc('read_guest_messages', { p_token: currentToken() }).then(() => loadMyMessages()).catch(() => {});
+  send.addEventListener('click', async () => {
+    if (!text.value.trim()) { error.hidden = false; error.textContent = MESSAGE_ERRORS.message; return; }
+    send.disabled = true; send.textContent = 'Sending…';
+    try {
+      const result = await callRpc('send_guest_message', { p_token: currentToken(), p_topic: topic.value, p_body: text.value.trim() });
+      if (!result.ok) throw new Error(MESSAGE_ERRORS[result.error] ?? 'The message could not be sent.');
+      text.value = ''; error.hidden = true; await loadMyMessages(); drawThread();
+      send.textContent = 'Sent. Send another'; send.disabled = false;
+    } catch (e) {
+      error.hidden = false; error.textContent = /Failed to fetch|HTTP|NetworkError/i.test(String(e.message)) ? 'No connection. Please try again when you are online.' : e.message;
+      send.disabled = false; send.textContent = 'Send';
+    }
+  });
 }
 
 // Notifications: turned on and off from the guest's own panel (tap the initials) or from the Messages page. On an iPhone the app must be on the Home Screen first.
@@ -1253,6 +1313,7 @@ async function refresh() {
     lastChecked = new Date();
     status = 'ok';
     loadMyRequests();
+    loadMyMessages();
     syncPushZone();
     const label = document.querySelector('.updated-text'); // the "checked" time moves on without redrawing the page
     if (label && !refreshNote && currentSheet?.updatedAt) label.textContent = `Updated ${updatedText(currentSheet.updatedAt)} · checked ${clockOf(lastChecked)}`;
