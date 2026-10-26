@@ -1,6 +1,6 @@
 // The guest app's service worker: keeps the app's own files on the phone so it opens with no internet. (The programme itself is kept by
 // guest.js.) Network first, with the kept copy as the fallback. Its scope is this folder only: it never touches the leader's app.
-const VERSION = '0.128.2'; // keep equal to GUEST_VERSION in the tests
+const VERSION = '0.128.3'; // keep equal to GUEST_VERSION in the tests
 const CACHE = `tour-docs-guest-${VERSION}`;
 const FILES = ['./', 'index.html', 'guest.css', 'guest.js', 'passport.js', 'explorer/state.js', 'explorer/themes.js', 'explorer/common.js', 'explorer/runner.js', 'explorer/fit.js', 'explorer/sequence.js', 'explorer/pour.js', 'explorer/mirror.js', 'explorer/rhythm.js', 'explorer/catch.js', 'explorer/flap.js', 'explorer/hidden.js', 'explorer/spot.js', 'explorer/archery.js', 'explorer/maze.js', 'explorer/carve.js', 'explorer/pipes.js', 'explorer/games.js', 'stamps.js', 'album.js', 'greetings.js', 'manifest.webmanifest', '../js/supabase-config.js', '../js/pushUtil.js', '../js/albumImage.js',
   '../icons/apple-touch-icon.png', '../icons/apple-touch-icon-2.png', '../icons/icon-192.png', '../icons/icon-512.png'];

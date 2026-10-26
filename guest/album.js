@@ -177,12 +177,19 @@ function saveSheet(list, title) {
 // The "Add photos" button is a real <label> around the file field, so the phone's own tap opens the picker (a button that clicks the field by code is not
 // reliable on every phone). The privacy notice is written under it, always visible.
 function addButton() {
-  const input = d.h('input', { type: 'file', accept: 'image/*', multiple: '', 'aria-label': 'Choose photos' });
-  input.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px';
-  input.addEventListener('change', () => { const files = [...input.files]; input.value = ''; if (files.length) { setStatus(`${files.length} chosen…`); addFiles(files); } });
-  const label = d.h('label', { class: 'btn-link' }, 'Add photos', input);
-  label.style.cssText = 'position:relative;display:inline-block;overflow:hidden';
-  return label;
+  const make = (text, many, className) => {
+    const input = d.h('input', { type: 'file', accept: 'image/*', ...(many ? { multiple: '' } : {}), 'aria-label': text });
+    input.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px';
+    input.addEventListener('change', () => {
+      const files = [...input.files]; input.value = '';
+      setStatus(files.length ? `${files.length} chosen (${files.slice(0, 2).map((f) => `${f.type || 'unknown type'}, ${Math.round(f.size / 1024)} KB`).join('; ')})…` : 'The phone did not give any photo.');
+      if (files.length) addFiles(files);
+    });
+    const label = d.h('label', { class: className }, text, input);
+    label.style.cssText = 'position:relative;display:inline-block;overflow:hidden';
+    return label;
+  };
+  return d.h('span', { class: 'album-adders' }, make('Add photos', true, 'btn-link'), make('Add one photo', false, 'plain-link'));
 }
 
 function viewer(photo) {

@@ -20,13 +20,23 @@ const DOWNLOAD_CHOICES = [30, 60, 90, 180];
 // Adding photos. The "button" is a real <label> wrapped around the file field, so the phone's own tap opens the picker (a button that calls input.click() by
 // code is not reliable on every phone). The sending runs from here and reports with toasts, which stay on screen even if the screen behind is redrawn.
 let sending = false;
-function photoPicker(ctx, trip) {
-  const input = h('input', { type: 'file', accept: 'image/*', multiple: '', 'aria-label': 'Choose photos' });
+// The name written under a staff photo. A name that was never filled in can be stored as the words "null null": that is never shown.
+const cleanName = (name) => { const text = String(name ?? '').trim(); return !text || /\b(null|undefined)\b/i.test(text) ? 'Staff' : text.slice(0, 40); };
+// One tap target that opens the phone's picker. `many`: several photos at once from the library (the phone's own choice of "Photo Library", "Take Photo", "Choose File").
+function pickerLabel(ctx, trip, text, many, plain) {
+  const input = h('input', { type: 'file', accept: 'image/*', ...(many ? { multiple: '' } : {}), 'aria-label': text });
   input.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px';
-  input.addEventListener('change', () => { const files = [...input.files]; showToast(files.length ? `${plural(files.length, 'photo')} chosen…` : 'No photo chosen'); if (files.length) uploadFiles(ctx, trip, files); });
-  const label = h('label', { class: 'btn' }, 'Add photos as staff', input);
+  input.addEventListener('change', () => {
+    const files = [...input.files]; input.value = '';
+    showToast(files.length ? `${plural(files.length, 'photo')} chosen (${files.slice(0, 2).map((f) => `${f.type || 'unknown type'}, ${Math.round(f.size / 1024)} KB`).join('; ')})…` : 'No photo was given by the phone');
+    if (files.length) uploadFiles(ctx, trip, files);
+  });
+  const label = h('label', { class: `btn${plain ? ' btn--plain' : ''}` }, text, input);
   label.style.cssText = 'position:relative;display:block;text-align:center;overflow:hidden';
   return label;
+}
+function photoPicker(ctx, trip) {
+  return h('div', {}, pickerLabel(ctx, trip, 'Add photos as staff', true, false), pickerLabel(ctx, trip, 'Add one photo (if the first button does not open your library)', false, true));
 }
 async function uploadFiles(ctx, trip, files) {
   if (sending) { showToast('Photos are still being sent. Please wait.'); return; }
@@ -36,7 +46,7 @@ async function uploadFiles(ctx, trip, files) {
     showToast(`Sending photo ${i + 1} of ${files.length}…`);
     try {
       const full = await shrinkPhoto(file, 2000, 0.82); const thumb = await shrinkPhoto(file, 420, 0.7);
-      const r = await ctx.album.upload(trip.id, ctx.userFor(trip.id).name ?? 'Staff', { full: full.blob, thumb: thumb.blob, width: full.width, height: full.height });
+      const r = await ctx.album.upload(trip.id, cleanName(ctx.userFor(trip.id).name), { full: full.blob, thumb: thumb.blob, width: full.width, height: full.height });
       if (r.ok) sent++;
       else { problem = r.error === 'closed' ? 'The album is closed for new photos.' : r.error === 'off' ? 'The album is switched off, or its dates are not saved on the server yet. Open the app online as the owner and try again.' : r.error === 'link' ? 'You are not signed in online: sign in, then try again.' : `The server refused a photo (${r.error ?? r.message ?? r.msg ?? 'unknown'}).`; break; }
     } catch (e) { problem = `A photo could not be sent: ${String(e?.message ?? e).slice(0, 120)}`; break; }
@@ -72,7 +82,7 @@ export function albumSettingsPage(ctx, trip) {
   function photoSheet(photo) {
     const img = h('img', { class: 'album-big', alt: '', src: links[photo.id] ?? '' });
     ctx.album.links(trip.id, [photo.id], 'full').then((u) => { if (u[photo.id]) img.src = u[photo.id]; }).catch(() => {});
-    const by = photo.guest_id ? (displayNames(trip.guests).get(photo.guest_id) ?? 'A guest') : (photo.author_name || 'Staff');
+    const by = photo.guest_id ? (displayNames(trip.guests).get(photo.guest_id) ?? 'A guest') : cleanName(photo.author_name);
     openSheet({
       eyebrow: 'Photo', title: by, subtitle: new Date(photo.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
       body: [img,
