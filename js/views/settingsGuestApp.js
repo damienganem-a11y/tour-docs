@@ -57,7 +57,10 @@ export function guestAppSettingsPage(ctx, trip) {
   const explorerDestinations = trip.destinations.filter((d) => d.explorer).sort((a, b) => a.order - b.order);
   const explorerCard = explorerDestinations.length === 0 ? null : h('div', { class: 'card team-member' },
     h('div', { class: 'act-name' }, 'Passport Explorer'),
-    h('div', { class: 'muted' }, 'Guests earn each passport stamp by playing: two games and a five-question quiz per place, opening on the travel day. Switch on the places that are ready. Switched off, the stamp arrives by itself on the first day.'),
+    h('div', { class: 'muted' }, 'Guests earn each passport stamp by playing: two games and a five-question quiz per place. Switch on the places that are ready. Switched off, the stamp arrives by itself on the first day.'),
+    h('div', { class: 'check-row' },
+      h('div', {}, h('b', {}, trip.gamesAnytime === false ? 'Open on the travel day' : 'Open any time'), h('div', { class: 'muted' }, trip.gamesAnytime === false ? 'Each place\'s games open the day before the group arrives there.' : 'Guests can play every place from the start and earn the stamps whenever they like.')),
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => run({ type: 'guest-links', action: 'games-settings', anytime: trip.gamesAnytime === false }, trip.gamesAnytime === false ? 'The games are open any time' : 'The games open on the travel day') }, trip.gamesAnytime === false ? 'Open any time' : 'Open on the travel day')),
     ...explorerDestinations.map((d) => {
       const live = d.explorer.status === 'validated';
       const problems = explorerProblems(d.explorer);

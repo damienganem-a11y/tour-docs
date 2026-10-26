@@ -3750,7 +3750,7 @@ function readZip(bytes) {
 
   // Draft content never reaches the guest; validating needs good content, goes through the one change function, and can be undone.
   const draftJet = structuredClone(jetT); for (const d of draftJet.destinations) d.explorer.status = 'draft'; // this scenario starts from content nobody validated yet
-  const exCtx = { owner, state: draftJet, entries: [], trip: (id) => (id === exCtx.state.id ? exCtx.state : undefined), journal: () => exCtx.entries, async commit(next, entries) { exCtx.state = next; exCtx.entries.push(...entries); } };
+  const exCtx = { owner, state: Object.assign(draftJet, { gamesAnytime: false }), entries: [], trip: (id) => (id === exCtx.state.id ? exCtx.state : undefined), journal: () => exCtx.entries, async commit(next, entries) { exCtx.state = next; exCtx.entries.push(...entries); } };
   const someone = exCtx.state.guests[0];
   check('Draft explorer content is NOT in the guest\'s sheet', buildGuestSheet(exCtx.state, someone, '2027-08-01T00:00:00.000Z').destinations.every((d) => !d.ex));
   const destC = exCtx.state.destinations.find((d) => d.name === 'Cusco');
@@ -3762,6 +3762,13 @@ function readZip(bytes) {
   check('The journal says it in words', /Passport Explorer switched on for guests/.test(summarize(groupBatches(exCtx.entries).at(-1))));
   const undoEx = await applyChange(exCtx, jetT.id, { type: 'undo' });
   check('Undo switches it off again', undoEx.ok && exCtx.state.destinations.find((d) => d.name === 'Cusco').explorer.status === 'draft');
+  const anytime = await applyChange(exCtx, jetT.id, { type: 'guest-links', action: 'games-settings', anytime: true });
+  const anytimeWords = summarize(groupBatches(exCtx.entries).at(-1));
+  const valid = (extra) => { const v = Object.assign(structuredClone(exCtx.state), extra); v.destinations.find((d) => d.name === 'Cusco').explorer.status = 'validated'; return buildGuestSheet(v, someone, '2027-08-01T00:00:00.000Z').destinations.find((d) => d.name === 'Cusco').ex; };
+  const exAny = valid({});
+  check('The games can be open any time (the owner\'s choice): the sheet opens them from the start and still names the travel day; the choice is journaled; a wrong value is refused',
+    anytime.ok && exAny.unlockOn === '2000-01-01' && exAny.travelDay === unlockCusco.on && /Passport games/.test(anytimeWords) && !(await applyChange(exCtx, jetT.id, { type: 'guest-links', action: 'games-settings', anytime: 'yes' })).ok);
+  check('On the travel day is available too, and any time is what a trip does without a choice', valid({ gamesAnytime: false }).unlockOn === unlockCusco.on && valid({ gamesAnytime: undefined }).unlockOn === '2000-01-01');
   const broken = structuredClone(jetT); broken.destinations[1].explorer.questions = broken.destinations[1].explorer.questions.slice(0, 3);
   const exCtx2 = { owner, state: broken, entries: [], trip: (id) => (id === exCtx2.state.id ? exCtx2.state : undefined), journal: () => exCtx2.entries, async commit(next, entries) { exCtx2.state = next; exCtx2.entries.push(...entries); } };
   const refusedOn = await applyChange(exCtx2, jetT.id, { type: 'edit-destination', destinationId: broken.destinations[1].id, name: broken.destinations[1].name, country: broken.destinations[1].country, timeZone: broken.destinations[1].timeZone, explorerStatus: 'validated' });

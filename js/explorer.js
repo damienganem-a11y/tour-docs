@@ -112,5 +112,8 @@ export function explorerForGuest(trip, destination) {
   const unlock = explorerUnlock(trip, destination);
   if (!unlock) return null;
   const { status, ...content } = ex;
-  return { ...content, unlockOn: unlock.on, unlockTz: unlock.tz };
+  // The games open when the guest wants (owner's decision, 26 Oct 2026): any time, from the start. The owner can switch back to "on the travel day" (trip.gamesAnytime = false).
+  // `travelDay` stays the day the games would open, for the card on Today.
+  const anytime = trip.gamesAnytime !== false;
+  return { ...content, unlockOn: anytime ? '2000-01-01' : unlock.on, unlockTz: unlock.tz, travelDay: unlock.on };
 }

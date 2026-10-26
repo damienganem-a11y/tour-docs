@@ -31,7 +31,7 @@ import { guestsSettingsPage } from './settingsGuests.js';
 import { exportsSettingsPage } from './settingsExports.js';
 import { warningsSettingsPage } from './settingsWarnings.js';
 import { sendButton } from './sendSheet.js';
-import { inboxButton } from './inbox.js';
+import { inboxButton, messagesButton } from './inbox.js';
 import { messagesSettingsPage } from './messages.js';
 import { checkSettingsPage } from './settingsCheck.js';
 import { backupSettingsPage } from './settingsBackup.js';
@@ -203,12 +203,12 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
     ? h('div', { class: 'top-bar' },
         h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup')),
         h('span', { class: 'top-trip' }, 'Settings'),
-        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true }), avatarButton(ctx, [{ title: 'Change trip', hint: 'Back to the list of your trips', run: () => ctx.go('#/') }])))
+        h('span', { class: 'top-side' }, messagesButton(ctx, trip), syncDot(ctx, { compact: true }), avatarButton(ctx, [{ title: 'Change trip', hint: 'Back to the list of your trips', run: () => ctx.go('#/') }])))
     : h('div', { class: 'top-bar' },
         ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         // The company's logo (Settings > Company look) next to the trip's code, when there is one.
         h('span', { class: 'top-trip' }, trip.branding?.logo ? h('img', { class: 'top-logo', src: trip.branding.logo.data, alt: '' }) : null, trip.ref || trip.name),
-        h('span', { class: 'top-side' }, inboxButton(ctx, trip), ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
+        h('span', { class: 'top-side' }, messagesButton(ctx, trip), inboxButton(ctx, trip), ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.

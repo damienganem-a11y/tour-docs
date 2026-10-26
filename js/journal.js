@@ -236,6 +236,7 @@ export function summarize(batch) {
     const { action, count, guestName } = batch.entries[0];
     if (action === 'notify-settings') return 'The kinds of notification guests receive were changed';
     if (action === 'auto-settings') return 'The automatic reminders and alerts were changed';
+    if (action === 'games-settings') return 'When the Passport games open was changed';
     if (action === 'album-settings') return 'The settings of Our Album were changed';
     if (action === 'farewell') return 'The message guests read after the trip was changed';
     if (action === 'options-on' || action === 'options-off') return action === 'options-on' ? 'Guests can now see the other options of their tours' : 'Guests can no longer see the other options of their tours';

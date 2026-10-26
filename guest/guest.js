@@ -488,7 +488,7 @@ function progressDots(entry) {
 // On the day a destination's games open (and only that day, no notification): a card on Today that leads to them, until the stamp is earned.
 function explorerCard(sheet) {
   const state = passportOf(sheet);
-  const index = state.findIndex((d) => d.ex && !d.given && d.unlocked && dayIn(d.ex.unlockTz || 'UTC', simulatedDate ?? new Date()) === d.ex.unlockOn);
+  const index = state.findIndex((d) => d.ex && !d.given && d.unlocked && dayIn(d.ex.unlockTz || 'UTC', simulatedDate ?? new Date()) === (d.ex.travelDay ?? d.ex.unlockOn));
   if (index < 0) return null;
   const d = state[index];
   return h('button', { class: 'ex-today', type: 'button', onclick: () => go({ dest: index }) },
