@@ -11,7 +11,7 @@ import { displayNames, alphabetical, plural } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { albumSettings, albumPhase, downloadProgress } from '../album.js';
-import { shrinkPhoto } from '../albumImage.js';
+import { preparePhoto } from '../albumImage.js';
 import { openAlbumViewer } from '../albumViewer.js';
 
 const niceDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'not set');
@@ -22,7 +22,7 @@ const DOWNLOAD_CHOICES = [30, 60, 90, 180];
 // code is not reliable on every phone). The sending runs from here and reports with toasts, which stay on screen even if the screen behind is redrawn.
 // The kinds of file the picker accepts. Naming the iPhone's own format (HEIC) matters: with just "image/*" the iPhone first converts every chosen photo to JPEG
 // by itself, and for large photos (or photos kept in iCloud) that step can hang on the little white wheel and never hand the photo over. Named like this, the
-// phone hands it over at once and the app shrinks it to JPEG itself (shrinkPhoto).
+// phone hands it over at once and the app shrinks it to JPEG itself (preparePhoto).
 const PHOTO_TYPES = 'image/jpeg,image/png,image/heic,image/heif,image/webp';
 let sending = false;
 // The name written under a staff photo. A name that was never filled in can be stored as the words "null null": that is never shown.
@@ -50,8 +50,8 @@ async function uploadFiles(ctx, trip, files) {
   for (const [i, file] of files.entries()) {
     showToast(`Sending photo ${i + 1} of ${files.length}…`);
     try {
-      const full = await shrinkPhoto(file, 2000, 0.82); const thumb = await shrinkPhoto(file, 420, 0.7);
-      const r = await ctx.album.upload(trip.id, cleanName(ctx.userFor(trip.id).name), { full: full.blob, thumb: thumb.blob, width: full.width, height: full.height });
+      const photo = await preparePhoto(file);
+      const r = await ctx.album.upload(trip.id, cleanName(ctx.userFor(trip.id).name), { full: photo.full, thumb: photo.thumb, width: photo.width, height: photo.height });
       if (r.ok) sent++;
       else { problem = r.error === 'closed' ? 'The album is closed for new photos.' : r.error === 'off' ? 'The album is switched off, or its dates are not saved on the server yet. Open the app online as the owner and try again.' : r.error === 'link' ? 'You are not signed in online: sign in, then try again.' : `The server refused a photo (${r.error ?? r.message ?? r.msg ?? 'unknown'}).`; break; }
     } catch (e) { problem = `A photo could not be sent: ${String(e?.message ?? e).slice(0, 120)}`; break; }

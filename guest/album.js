@@ -7,7 +7,7 @@
 //
 // guest.js hands this file what it needs once (initAlbum), so this file does not import guest.js.
 
-import { shrinkPhoto as shrink } from '../js/albumImage.js';
+import { preparePhoto } from '../js/albumImage.js';
 import { openAlbumViewer } from '../js/albumViewer.js';
 
 let d = null; // { h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, repaint, modal, plainHead, firstName }
@@ -16,8 +16,6 @@ export function initAlbum(deps) { d = deps; }
 // Naming HEIC (the iPhone's own format) stops the phone converting each photo itself first, which can hang on the white wheel. See js/views/settingsAlbum.js.
 const PHOTO_TYPES = 'image/jpeg,image/png,image/heic,image/heif,image/webp';
 const BATCH = 10;               // photos saved per tap (the phone's share sheet takes a handful at a time)
-const LONG_SIDE = 2000;         // the longest side of a shared photo, in pixels
-const THUMB_SIDE = 420;
 
 let state = null;               // what album_state last said: { settings, photos, marks, guest_id } (or { error })
 let urls = { thumb: new Map(), full: new Map() };   // photo id -> link (links last an hour)
@@ -119,8 +117,8 @@ async function addFiles(files) {
   for (const file of list) {
     setStatus(`Preparing ${done + 1} of ${list.length}…`);
     try {
-      const full = await shrink(file, LONG_SIDE, 0.82); const thumb = await shrink(file, THUMB_SIDE, 0.7);
-      await QUEUE.add({ author: d.fullName(), width: full.width, height: full.height, full: full.blob, thumb: thumb.blob });
+      const photo = await preparePhoto(file);
+      await QUEUE.add({ author: d.fullName(), width: photo.width, height: photo.height, full: photo.full, thumb: photo.thumb });
       done++;
     } catch { setStatus('One of the files is not a photo this phone can read.'); }
   }
