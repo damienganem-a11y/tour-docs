@@ -12,7 +12,6 @@ import { shrinkPhoto as shrink } from '../js/albumImage.js';
 let d = null; // { h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, repaint, modal, plainHead, firstName }
 export function initAlbum(deps) { d = deps; }
 
-const NOTICE_KEY = 'tourdocs.guest.album.notice';
 const BATCH = 10;               // photos saved per tap (the phone's share sheet takes a handful at a time)
 const LONG_SIDE = 2000;         // the longest side of a shared photo, in pixels
 const THUMB_SIDE = 420;
@@ -32,13 +31,13 @@ async function post(body) {
 }
 
 export async function loadAlbum() {
-  if (!d.currentToken() || loading) return;
+  if (!d.currentToken() || d.isPreview() || loading) return;
   loading = true;
   try {
-    const s = await d.callRpc('album_state', { p_token: d.currentToken() });
-    state = s?.ok ? s : { error: s?.error ?? 'link' };
-    if (state.ok !== false && s?.ok) await fetchLinks(state.photos.map((p) => p.id), 'thumb');
-  } catch { if (!state) state = { error: 'offline' }; }
+    const s = await Promise.race([d.callRpc('album_state', { p_token: d.currentToken() }), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))]);
+    state = s?.ok ? s : { error: s?.error ?? s?.message ?? 'link' };
+    if (s?.ok) await fetchLinks(state.photos.map((p) => p.id), 'thumb');
+  } catch (e) { if (!state || state.error) state = { error: /HTTP 404/.test(String(e?.message)) ? 'missing' : 'offline' }; }
   loading = false;
   d.repaint();
 }
@@ -108,17 +107,6 @@ export async function sendQueue() {
 // throw away the page that was waiting for the answer.
 let statusText = '';
 function setStatus(text) { statusText = text; document.querySelectorAll('.album-status').forEach((el) => { el.textContent = text; }); }
-let picker = null;
-function pickPhotos() {
-  if (!picker) {
-    picker = d.h('input', { type: 'file', accept: 'image/*', multiple: '', 'aria-hidden': 'true', tabindex: '-1' });
-    picker.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0';
-    picker.addEventListener('change', () => { const files = [...picker.files]; picker.value = ''; if (files.length) addFiles(files); });
-    document.body.append(picker);
-  }
-  picker.click();
-}
-
 async function addFiles(files) {
   const list = [...files].filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
   if (!list.length) { setStatus('Please choose photos.'); return; }
@@ -186,10 +174,15 @@ function saveSheet(list, title) {
 }
 
 // ---------- the pages ----------
-function privacyNotice(then) {
-  if (d.store.get(NOTICE_KEY)) { then(); return; }
-  const overlay = d.modal('Before you add photos', [d.h('p', {}, 'Photos you add are shared with everyone on this trip (guests and staff). Please only add photos you are happy to share, and ask people before sharing close-ups of them, especially children.'), d.h('p', { class: 'muted' }, 'You can delete your own photos at any time.')],
-    [d.h('button', { class: 'btn-link', type: 'button', onclick: () => { d.store.set(NOTICE_KEY, '1'); overlay.remove(); then(); } }, 'OK, I understand'), d.h('button', { class: 'plain-link', type: 'button', onclick: () => overlay.remove() }, 'Cancel')]);
+// The "Add photos" button is a real <label> around the file field, so the phone's own tap opens the picker (a button that clicks the field by code is not
+// reliable on every phone). The privacy notice is written under it, always visible.
+function addButton() {
+  const input = d.h('input', { type: 'file', accept: 'image/*', multiple: '', 'aria-label': 'Choose photos' });
+  input.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px';
+  input.addEventListener('change', () => { const files = [...input.files]; input.value = ''; if (files.length) { setStatus(`${files.length} chosen…`); addFiles(files); } });
+  const label = d.h('label', { class: 'btn-link' }, 'Add photos', input);
+  label.style.cssText = 'position:relative;display:inline-block;overflow:hidden';
+  return label;
 }
 
 function viewer(photo) {
@@ -217,6 +210,8 @@ function tile(photo) {
 
 // The Album page: header, what the album allows today, the buttons, then the grid.
 export function albumView(sheet, offline, { backButton } = {}) {
+  if (d.isPreview()) return [header(sheet, backButton), d.h('div', { class: 'atl-body album' }, offline, d.h('p', { class: 'foot' }, 'In the real app, guests add and save photos here. Nothing is shown in a preview.'))];
+  if (!d.currentToken()) return [header(sheet, backButton), d.h('div', { class: 'atl-body album' }, offline, d.h('p', { class: 'foot' }, 'Open your personal link to see Our Album.'))];
   if (!state && !loading) loadAlbum();
   QUEUE.all().then((q) => { if (q.length !== queueCount) { queueCount = q.length; } }).catch(() => {});
   const p = phase();
@@ -225,6 +220,7 @@ export function albumView(sheet, offline, { backButton } = {}) {
 
   if (!state) { body.append(d.h('p', { class: 'foot' }, 'Loading…')); return [header(sheet, backButton), body]; }
   if (state.error === 'offline') { body.append(d.h('p', { class: 'foot' }, 'No connection. Our Album needs the internet to show photos.')); return [header(sheet, backButton), body]; }
+  if (state.error === 'missing') { body.append(d.h('p', { class: 'foot' }, 'Our Album is not ready yet on the server. Please try again later.')); return [header(sheet, backButton), body]; }
   if (state.error) { body.append(d.h('p', { class: 'foot' }, 'Our Album is not available with this link.')); return [header(sheet, backButton), body]; }
   if (p === 'off') { body.append(d.h('p', { class: 'foot' }, 'Our Album is not switched on for this trip.')); return [header(sheet, backButton), body]; }
   if (p === 'over') { body.append(d.h('p', { class: 'foot' }, 'The download period is over: the photos have been erased from the server. Thank you for sharing this trip.')); return [header(sheet, backButton), body]; }
@@ -239,11 +235,12 @@ export function albumView(sheet, offline, { backButton } = {}) {
   body.append(d.h('p', { class: 'muted' }, notes.join(' ')));
 
   const actions = d.h('div', { class: 'album-actions' });
-  if (p === 'open') actions.append(d.h('button', { class: 'btn-link', type: 'button', onclick: () => privacyNotice(pickPhotos) }, 'Add photos'));
+  if (p === 'open') actions.append(addButton());
   const fresh = newOnes();
   actions.append(
     d.h('button', { class: 'btn-link', type: 'button', disabled: fresh.length ? null : '', onclick: () => saveSheet(fresh, 'Download new photos') }, fresh.length ? `Download new (${fresh.length})` : 'Nothing new'),
     d.h('button', { class: 'plain-link', type: 'button', disabled: photos().length ? null : '', onclick: () => saveSheet(photos(), 'Download all photos') }, 'Download all'));
+  if (p === 'open') body.append(d.h('p', { class: 'muted' }, 'Photos you add are shared with everyone on this trip, guests and staff. Please ask before sharing close-ups of people, especially children. You can delete your own photos at any time.'));
   body.append(actions, status);
   if (queueCount) body.append(d.h('p', { class: 'muted' }, `${queueCount} photo${queueCount === 1 ? '' : 's'} waiting to be sent.`, ' ', d.h('button', { class: 'link-btn', type: 'button', onclick: async () => { setStatus('Sending…'); const r = await sendQueue(); setStatus(r.sent ? `${r.sent} sent.` : 'Still no connection.'); d.repaint(); } }, 'Send now')));
 

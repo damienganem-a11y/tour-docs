@@ -17,24 +17,19 @@ const niceDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString(
 const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 const DOWNLOAD_CHOICES = [30, 60, 90, 180];
 
-// The photo picker: ONE hidden file field kept on the page's body (not inside a screen), and the sending runs from here, with its progress shown as toasts.
-// A toast stays on screen even if the screen behind it is redrawn.
-let picker = null;
-let pickerFor = null;      // { ctx, trip } of the page that opened the picker last
+// Adding photos. The "button" is a real <label> wrapped around the file field, so the phone's own tap opens the picker (a button that calls input.click() by
+// code is not reliable on every phone). The sending runs from here and reports with toasts, which stay on screen even if the screen behind is redrawn.
 let sending = false;
-function pickPhotos(ctx, trip) {
-  pickerFor = { ctx, trip };
-  if (!picker) {
-    picker = h('input', { type: 'file', accept: 'image/*', multiple: '', class: 'file-hidden', 'aria-hidden': 'true', tabindex: '-1' });
-    picker.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0';
-    picker.addEventListener('change', () => { const files = [...picker.files]; picker.value = ''; if (files.length) uploadFiles(files); });
-    document.body.append(picker);
-  }
-  picker.click();
+function photoPicker(ctx, trip) {
+  const input = h('input', { type: 'file', accept: 'image/*', multiple: '', 'aria-label': 'Choose photos' });
+  input.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px';
+  input.addEventListener('change', () => { const files = [...input.files]; showToast(files.length ? `${plural(files.length, 'photo')} chosen…` : 'No photo chosen'); if (files.length) uploadFiles(ctx, trip, files); });
+  const label = h('label', { class: 'btn' }, 'Add photos as staff', input);
+  label.style.cssText = 'position:relative;display:block;text-align:center;overflow:hidden';
+  return label;
 }
-async function uploadFiles(files) {
-  if (sending || !pickerFor) return;
-  const { ctx, trip } = pickerFor;
+async function uploadFiles(ctx, trip, files) {
+  if (sending) { showToast('Photos are still being sent. Please wait.'); return; }
   sending = true;
   let sent = 0; let problem = null;
   for (const [i, file] of files.entries()) {
@@ -43,7 +38,7 @@ async function uploadFiles(files) {
       const full = await shrinkPhoto(file, 2000, 0.82); const thumb = await shrinkPhoto(file, 420, 0.7);
       const r = await ctx.album.upload(trip.id, ctx.userFor(trip.id).name ?? 'Staff', { full: full.blob, thumb: thumb.blob, width: full.width, height: full.height });
       if (r.ok) sent++;
-      else { problem = r.error === 'closed' ? 'The album is closed for new photos.' : r.error === 'off' ? 'The album is switched off, or its dates are not saved on the server yet. Open the app online as the owner and try again.' : r.error === 'link' ? 'You are not signed in online: sign in, then try again.' : `The server refused a photo (${r.error ?? 'unknown'}).`; break; }
+      else { problem = r.error === 'closed' ? 'The album is closed for new photos.' : r.error === 'off' ? 'The album is switched off, or its dates are not saved on the server yet. Open the app online as the owner and try again.' : r.error === 'link' ? 'You are not signed in online: sign in, then try again.' : `The server refused a photo (${r.error ?? r.message ?? r.msg ?? 'unknown'}).`; break; }
     } catch (e) { problem = `A photo could not be sent: ${String(e?.message ?? e).slice(0, 120)}`; break; }
   }
   sending = false;
@@ -109,7 +104,7 @@ export function albumSettingsPage(ctx, trip) {
 
     // Add photos (staff). The file picker lives outside this page (see uploadFiles): the app redraws its screens by itself, and a redraw while the phone's
     // photo picker is open used to throw away the page that was waiting for the answer, so nothing happened after "Add".
-    if (ctx.roleFor(trip.id) !== 'viewer' && phase !== 'over') blocks.push(h('div', {}, h('button', { class: 'btn', type: 'button', onclick: () => pickPhotos(ctx, trip) }, 'Add photos as staff')));
+    if (ctx.roleFor(trip.id) !== 'viewer' && phase !== 'over') blocks.push(h('div', {}, photoPicker(ctx, trip)));
 
     // The grid
     const photos = data.photos;
