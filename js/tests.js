@@ -43,6 +43,7 @@ import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
+import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
 import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
 import { guestConversations, unreadAnswers, guestMessageAnswerText, staffDisplayName, messageRecord, messageRecordCsv } from './guestMessages.js';
@@ -3034,6 +3035,19 @@ function readZip(bytes) {
   const albumBad = await applyChange(ctxS, t.id, { type: 'guest-links', action: 'album-settings', settings: { downloadDays: 2 } });
   check('The album settings are saved on the trip through the change function and journaled; a wrong value is refused',
     albumOff.ok && ctxS.state.album.enabled === false && albumSettings(ctxS.state).downloadDays === 90 && !albumBad.ok && ctxS.entries.at(-1).action === 'album-settings');
+  // Add to Home Screen (v0.132.0): which phone is this, and when is the offer made
+  const IOS_SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+  const IOS_INSTAGRAM = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 330.0';
+  const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36';
+  check('The phone is recognised: iPhone Safari, an iPhone in-app browser, Android with and without the install question, a computer, an app already on the Home Screen',
+    installPlatform({ ua: IOS_SAFARI }) === 'ios-safari' && installPlatform({ ua: IOS_INSTAGRAM }) === 'ios-inapp' && installPlatform({ ua: ANDROID, canPrompt: true }) === 'android-prompt'
+    && installPlatform({ ua: ANDROID }) === 'android' && installPlatform({ ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15' }) === 'desktop' && installPlatform({ ua: IOS_SAFARI, standalone: true }) === 'installed'
+    && installPlatform({ ua: 'Mozilla/5.0 (Macintosh) Safari/605', touchMac: true }) === 'ios-safari');
+  const DAY = 86400000;
+  check('The offer opens at once for a new guest, never on a computer or once installed, and comes back after 3 days, at most 3 times',
+    shouldOffer('ios-safari', null) && !shouldOffer('desktop', null) && !shouldOffer('installed', null) && !shouldOffer('android', { dismissedAt: 1000, times: 1 }, 1000 + DAY)
+    && shouldOffer('android', { dismissedAt: 1000, times: 1 }, 1000 + 3 * DAY) && !shouldOffer('android', { dismissedAt: 1000, times: 3 }, 1000 + 30 * DAY));
+  check('Every phone has its steps to write out, and the iPhone Safari steps start with the Share button', Object.values(INSTALL_STEPS).every((steps) => steps.length >= 2) && /Share/.test(INSTALL_STEPS['ios-safari'][0][0]));
   // The full-screen viewer: who posted, "1 of 3", next/previous, an action that goes on by itself, and one that removes the photo
   const viewerPhotos = [{ id: 'a', who: 'Ana Perez' }, { id: 'b', who: 'Ben Hall' }, { id: 'c', who: 'Cy Long' }];
   const seen = [];

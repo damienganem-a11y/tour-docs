@@ -17,6 +17,7 @@ import { setSoundCheck } from './explorer/common.js';
 import { entryOf, totals, stepOpen, finishStep, finishQuiz, drawQuiz, QUIZ_LENGTH, STAMP_NEEDED } from './explorer/state.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
+import { installPlatform, shouldOffer, readOffer, openInstallSheet } from './install.js';
 import { initAlbum, albumView, albumAvailable, albumNewCount, loadAlbum, sendQueue } from './album.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
@@ -124,13 +125,31 @@ function nextUp(sheet, now = simulatedDate ? new Date(`${simulatedDate}T07:00:00
   return null;
 }
 
-// On an iPhone, in Safari (not yet on the Home Screen), a short hint on how to keep the app. Dismissed for good with the button.
+// ---------- add the app to the Home Screen (owner's request, 27 Oct 2026; the pieces are in install.js) ----------
+// Android's browser may hand us its own "install" question: kept here, so a button can open it. iPhones never do (Apple gives websites no way to start it).
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; maybeOfferInstall(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; document.querySelector('.install-sheet')?.remove(); });
+const phone = () => installPlatform({
+  ua: navigator.userAgent, canPrompt: Boolean(installPrompt),
+  standalone: window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches,
+  touchMac: navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1,
+});
+let installOffered = false;
+// Once per opening of the page, a moment after the programme shows: the sheet explains and offers (not in a preview, not once the app is on the Home Screen).
+function maybeOfferInstall() {
+  if (installOffered || PREVIEW || !currentSheet || currentSheet.ended) return;
+  const platform = phone();
+  if (!shouldOffer(platform, readOffer(store))) return;
+  installOffered = true;
+  setTimeout(() => openInstallSheet({ store, tripName: currentSheet?.trip ?? '', platform: phone(), prompt: installPrompt }), 1200);
+}
+// A small row on Today, always there until the app is on the Home Screen, to open the same sheet by hand.
 function installHint() {
-  const iphone = /iphone|ipad/i.test(navigator.userAgent);
-  const installed = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-  if (!iphone || installed || store.get('tourdocs.guest.hintDone')) return null;
-  return h('div', { class: 'banner' }, 'To keep this on your phone: tap the Share button, then "Add to Home Screen". ',
-    h('button', { class: 'link', type: 'button', onclick: (e) => { store.set('tourdocs.guest.hintDone', '1'); e.target.parentNode.remove(); } }, 'OK'));
+  const platform = phone();
+  if (PREVIEW || platform === 'installed' || platform === 'desktop') return null;
+  return h('div', { class: 'banner' }, 'Keep this on your phone: add it to your Home Screen. ',
+    h('button', { class: 'link', type: 'button', onclick: () => openInstallSheet({ store, tripName: currentSheet?.trip ?? '', platform: phone(), prompt: installPrompt, manual: true }) }, 'Show me how'));
 }
 
 // ---------- tours: words and small pieces ----------
@@ -1260,6 +1279,7 @@ function render(sheet, { offline = false } = {}) {
   currentSheet = sheet;
   currentOffline = offline;
   if (sheet.first) store.set('tourdocs.guest.first', sheet.first);
+  maybeOfferInstall();
   if (sheet.first) store.set('tourdocs.guest.fullname', `${sheet.first} ${sheet.last ?? ''}`.trim());
   paint();
   // Keep the pictures for offline use: asking for them once lets the service worker keep them. The tours the guest is booked on get all their

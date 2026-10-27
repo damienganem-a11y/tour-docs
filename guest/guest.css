@@ -901,3 +901,19 @@ input[type=checkbox] { accent-color: #000; }
 .album-chip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line, #cfd8d8); background: transparent; color: inherit; font: inherit; font-size: .85rem; cursor: pointer; }
 .album-chip.is-on { background: var(--atl-accent, #1d5c57); color: #fff; border-color: transparent; }
 .album-tile.is-kept::after { content: '♥'; position: absolute; right: 4px; bottom: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,.92); color: #c2185b; font-size: 12px; line-height: 20px; text-align: center; }
+
+/* Add to Home Screen (v0.132.0) */
+.install-sheet { position: fixed; inset: 0; z-index: 2500; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+.install-card { width: 100%; max-width: 520px; box-sizing: border-box; background: var(--atl-paper, #fff); color: var(--atl-ink, #1b2a2a); border-radius: 24px 24px 0 0; padding: 22px 20px calc(env(safe-area-inset-bottom, 0px) + 18px); box-shadow: 0 -8px 30px rgba(0,0,0,.25); }
+.install-card small { opacity: .65; }
+.install-card h2 { margin: 2px 0 6px; font-size: 1.3rem; }
+.install-benefits { margin: 10px 0 16px; padding-left: 1.1em; }
+.install-benefits li { margin: 4px 0; }
+.install-main { display: block; width: 100%; padding: 14px; border: 0; border-radius: 999px; background: var(--atl-accent, #1d5c57); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.install-link { display: block; width: 100%; margin-top: 8px; padding: 12px; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.install-steps { padding-left: 1.2em; margin: 10px 0; }
+.install-steps li { margin: 12px 0; }
+.install-steps b { display: flex; align-items: center; gap: 8px; }
+.install-steps span { display: block; opacity: .8; font-size: .92rem; }
+.install-steps .install-share { display: inline-flex; opacity: 1; }
+.install-note { font-size: .9rem; opacity: .85; }
