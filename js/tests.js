@@ -43,6 +43,8 @@ import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
+import { clockOf, dayLabel, listTime, groupByDay, initialsOf, inboxList, attentionCount, guestUnread, remindMinutesError } from './chat.js';
+import { openChat } from './chatUi.js';
 import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
 import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
@@ -2963,7 +2965,7 @@ function readZip(bytes) {
 
   const { requestsSettingsPage } = await import('./views/settingsRequests.js');
   const requestsNode = requestsSettingsPage({
-    roleFor: () => 'owner', requestsFor: () => [], outboxFor: () => [], guestMessagesFor: () => [], guestRequestsFor: () => [askRow, { ...askRow, id: 'r2', status: 'approved', note: null, decided_at: '2027-01-02T00:00:00Z' }],
+    roleFor: () => 'owner', requestsFor: () => [], outboxFor: () => [], guestMessagesFor: () => [], guestThreadsFor: () => [], guestRequestsFor: () => [askRow, { ...askRow, id: 'r2', status: 'approved', note: null, decided_at: '2027-01-02T00:00:00Z' }],
     pushState: async () => ({ state: 'off' }), approveGuestRequest: async () => ({ ok: true }), declineGuestRequest: async () => ({ ok: true }), refreshGuestRequests: async () => {},
   }, ctxG.state);
   check('Settings > Requests shows a guest\'s request with Approve and Decline, the answered ones below, and the notifications card',
@@ -3048,6 +3050,33 @@ function readZip(bytes) {
     shouldOffer('ios-safari', null) && !shouldOffer('desktop', null) && !shouldOffer('installed', null) && !shouldOffer('android', { dismissedAt: 1000, times: 1 }, 1000 + DAY)
     && shouldOffer('android', { dismissedAt: 1000, times: 1 }, 1000 + 3 * DAY) && !shouldOffer('android', { dismissedAt: 1000, times: 3 }, 1000 + 30 * DAY));
   check('Every phone has its steps to write out, and the iPhone Safari steps start with the Share button', Object.values(INSTALL_STEPS).every((steps) => steps.length >= 2) && /Share/.test(INSTALL_STEPS['ios-safari'][0][0]));
+  // The inbox and the chat (v0.133.0)
+  const NOW = new Date(2027, 0, 15, 15, 0, 0);
+  const at = (day, h, mi = 0) => new Date(2027, 0, day, h, mi, 0).toISOString();
+  const cm = (id, guest, direction, when, extra = {}) => ({ id, trip_id: 't', guest_id: guest, direction, topic: null, body: `msg ${id}`, created_at: when, read_at: null, sender_name: null, ...extra });
+  check('The time of a conversation is the clock today, "Yesterday", the weekday this week, else the date; a day label says Today or Yesterday',
+    listTime(at(15, 9, 5), NOW) === '09:05' && listTime(at(14, 22), NOW) === 'Yesterday' && listTime(at(12, 10), NOW) === 'Tue' && listTime(at(1, 10), NOW) === '01/01/2027' && dayLabel(at(15, 8), NOW) === 'Today' && dayLabel(at(14, 8), NOW) === 'Yesterday' && clockOf(at(15, 9, 5)) === '09:05');
+  const dayGroups = groupByDay([cm(3, 'a', 'staff', at(15, 9)), cm(1, 'a', 'guest', at(14, 20)), cm(2, 'a', 'guest', at(14, 21))], NOW);
+  check('A chat is cut into days, oldest first', dayGroups.length === 2 && dayGroups[0].label === 'Yesterday' && dayGroups[0].messages.map((m) => m.id).join() === '1,2' && dayGroups[1].label === 'Today' && initialsOf('Anna Alvarez') === 'AA' && initialsOf('Marie') === 'MA');
+  const boxRows = [cm(1, 'a', 'guest', at(15, 10)), cm(2, 'b', 'guest', at(15, 11), { read_at: at(15, 11, 5) }), cm(3, 'b', 'staff', at(15, 11, 30), { read_at: at(15, 11, 40) }), cm(4, 'c', 'guest', at(14, 9), { read_at: at(14, 9, 5) })];
+  const box = inboxList(boxRows, [{ guest_id: 'c', flagged: true }], new Map([['a', 'Anna A'], ['b', 'Ben B'], ['c', 'Cy C']]), NOW);
+  check('The inbox: latest conversation first, a red mark for unopened or hand-marked ones, "waiting" while the guest has the last word',
+    box.map((c) => c.guestId).join() === 'b,a,c' && box[1].dot && box[1].unread === 1 && box[1].waiting && !box[0].dot && !box[0].waiting && box[0].mine && box[2].flagged && box[2].dot && box[2].waiting && attentionCount(box) === 2);
+  check('A guest counts the staff answers they have not opened, and the reminder time must be one of the choices', guestUnread([cm(1, 'a', 'staff', at(15, 9)), cm(2, 'a', 'staff', at(15, 9), { read_at: at(15, 10) }), cm(3, 'a', 'guest', at(15, 9))]) === 1 && remindMinutesError(30) === null && remindMinutesError(7) !== null && remindMinutesError('30') !== null);
+  {
+    const sent = [];
+    const chatRows = [cm(1, 'a', 'guest', at(15, 9)), cm(2, 'a', 'staff', at(15, 9, 30), { read_at: at(15, 9, 40), sender_name: 'Marie' })];
+    const win = openChat({ title: 'Anna A', getMessages: () => chatRows, isMine: (m) => m.direction === 'staff', labelOf: (m) => (m.direction === 'staff' ? m.sender_name : ''), onSend: async (text) => { sent.push(text); chatRows.push(cm(3, 'a', 'staff', at(15, 10))); return { ok: true }; } });
+    const chatEl = document.querySelector('.chat');
+    const bubbles = chatEl.querySelectorAll('.chat-bubble');
+    const ticks = chatEl.querySelector('.chat-bubble.is-mine .chat-ticks');
+    chatEl.querySelector('.chat-input').value = 'On my way';
+    chatEl.querySelector('.chat-send').click(); await new Promise((r) => setTimeout(r, 30));
+    const after = document.querySelectorAll('.chat .chat-bubble').length;
+    win.close();
+    check('The chat window shows bubbles of both sides, the name above an answer, two ticks once read, and sending adds a bubble',
+      bubbles.length === 2 && bubbles[0].classList.contains('is-theirs') && bubbles[1].classList.contains('is-mine') && bubbles[1].textContent.includes('Marie') && ticks?.textContent === '✓✓' && sent.join() === 'On my way' && after === 3 && !document.querySelector('.chat'));
+  }
   // The full-screen viewer: who posted, "1 of 3", next/previous, an action that goes on by itself, and one that removes the photo
   const viewerPhotos = [{ id: 'a', who: 'Ana Perez' }, { id: 'b', who: 'Ben Hall' }, { id: 'c', who: 'Cy Long' }];
   const seen = [];
@@ -3221,7 +3250,7 @@ function readZip(bytes) {
   const row = { id: 'rq1', trip_id: tr.id, status: 'failed', requested_by: 'u-test', note: `"${act.name}" is full (20 / 20).`, requested_at: '2027-01-01T00:00:00Z', requester_name: 'Ben',
     changes: [{ type: 'move', guestId: tr.guests[0].id, slotId: slotR.id, to: { kind: 'activity', activityId: act.id } }] };
   const { requestsSettingsPage: page } = await import('./views/settingsRequests.js');
-  const base = { requestsFor: () => [row], outboxFor: () => [], guestMessagesFor: () => [], guestRequestsFor: () => [], pushState: async () => ({ state: 'off' }), needsOwnerDecision: () => false, canApprove: () => false, holdReason: () => null, owner: { id: 'u-test' } };
+  const base = { requestsFor: () => [row], outboxFor: () => [], guestMessagesFor: () => [], guestThreadsFor: () => [], guestRequestsFor: () => [], pushState: async () => ({ state: 'off' }), needsOwnerDecision: () => false, canApprove: () => false, holdReason: () => null, owner: { id: 'u-test' } };
   const asTeam = page({ ...base, roleFor: () => 'team' }, tr).textContent;
   const asOwner = page({ ...base, roleFor: () => 'owner' }, tr).textContent;
   check('A colleague whose request found the tour full can put the guest on the waiting list or ask the owner to force it', /Waiting list instead/.test(asTeam) && /Ask the owner to force/.test(asTeam));
@@ -3693,8 +3722,8 @@ function readZip(bytes) {
   check('The spreadsheet has a header, one line per message, quotes doubled and the exact UTC time', csv.split('\r\n').filter(Boolean).length === 3 && csv.includes('"Is the ""bus"" late?"') && csv.includes('2027-01-01T10:00:00Z'));
   const pdfBlob = buildTranscriptPdf({ title: 'Record', subtitle: 'made now', note: 'kept', record: rec });
   check('The printable record is a PDF', pdfBlob.type === 'application/pdf' && pdfBlob.size > 800);
-  const gmPage = guestMessagesSettingsPage({ roleFor: () => 'owner', guestMessagesFor: () => recRows.map((r) => ({ ...r, guest_id: structuredClone(jetT).guests[0].id })), refreshGuestMessages: () => {}, openGuestConversation: () => {}, answerGuestMessage: async () => ({ ok: true }) }, structuredClone(jetT));
-  check('Settings > Guest messages lists the conversations and offers the record', gmPage.textContent.includes('Conversations (1)') && gmPage.textContent.includes('Record as PDF') && gmPage.textContent.includes('Write to a guest') && gmPage.textContent.includes('edited or deleted'));
+  const gmPage = guestMessagesSettingsPage({ roleFor: () => 'owner', guestMessagesFor: () => recRows.map((r) => ({ ...r, guest_id: structuredClone(jetT).guests[0].id })), guestThreadsFor: () => [], onGuestMessages: () => () => {}, flagGuestThread: async () => {}, refresh: () => {}, refreshGuestMessages: () => {}, openGuestConversation: () => {}, answerGuestMessage: async () => ({ ok: true }) }, structuredClone(jetT));
+  check('Messages lists the conversations like an inbox, offers a new message, the reminder and the record', gmPage.querySelectorAll('.inbox-item').length === 1 && gmPage.textContent.includes('Five minutes, sorry.') && gmPage.textContent.includes('Record as PDF') && gmPage.textContent.includes('New message') && gmPage.textContent.includes('Reminder for a message nobody answered') && gmPage.textContent.includes('edited or deleted'));
   check('A guest counts the answers they have not opened', unreadAnswers([m(5, 'g1', 'staff', '2027-01-02T10:00:00Z'), m(6, 'g1', 'staff', '2027-01-02T11:00:00Z', '2027-01-02T12:00:00Z'), m(7, 'g1', 'guest', '2027-01-02T09:00:00Z')]) === 1);
   check('The notification to the guest carries the answer, shortened when long', guestMessageAnswerText('See you at 8').body === 'See you at 8' && guestMessageAnswerText('x'.repeat(300)).body.length === 120);
 }

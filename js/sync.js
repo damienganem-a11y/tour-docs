@@ -187,6 +187,7 @@ export async function watchServerChanges(onChange, onStatus) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_requests' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_messages' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_thread_state' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'team_messages' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
 }
@@ -482,6 +483,26 @@ export async function markGuestMessagesRead(tripId, guestId) {
   const supabase = await getClient();
   const { error } = await supabase.from('guest_messages').update({ read_at: new Date().toISOString() })
     .eq('trip_id', tripId).eq('guest_id', guestId).eq('direction', 'guest').is('read_at', null);
+  if (error) throw error;
+}
+
+// ---------- Messaging as an inbox (v0.133.0) ----------
+// The hand-made "unread" marks of the conversations (shared by the staff of a trip, like a shared inbox).
+export async function pullGuestThreads() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('guest_thread_state').select('trip_id, guest_id, flagged, flagged_at').limit(2000);
+  if (error) throw error;
+  return data;
+}
+export async function setGuestThreadFlag(tripId, guestId, flagged, userId) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('guest_thread_state').upsert({ trip_id: tripId, guest_id: guestId, flagged, flagged_by: flagged ? userId : null, flagged_at: flagged ? new Date().toISOString() : null }, { onConflict: 'trip_id,guest_id' });
+  if (error) throw error;
+}
+// How long a guest's message may wait before the staff are reminded (minutes, 0 = never): kept on the server for its timer; the owner's phone saves it.
+export async function saveMessageSettings(tripId, ownerId, remindMinutes) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('message_settings').upsert({ trip_id: tripId, owner_id: ownerId, remind_after_min: remindMinutes, updated_at: new Date().toISOString() }, { onConflict: 'trip_id' });
   if (error) throw error;
 }
 

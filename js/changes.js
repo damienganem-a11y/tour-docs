@@ -107,7 +107,7 @@
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'guest-links', action, guestIds: [id, ...] }      the personal links of the guest app (Settings > Guest links), owner only.
 //       action: 'create' (a guest who has none gets one), 'renew' (a new secret: the old link stops working),
-//       'switch-off' or 'switch-on'; or { action: 'notify-settings', settings: { moved: false, ... } }: which kinds of notification guests get (trip.guestNotify, all on by default); or { action: 'games-settings', anytime }: the Passport Explorer games open any time (default) or on the travel day (trip.gamesAnytime); or { action: 'album-settings', settings: { enabled, downloadDays } }: Our Album on or off and how long guests can download (trip.album); or { action: 'auto-settings', settings: { eveningBefore: false, ... } }: which automatic messages are sent (trip.autoNotify, all on by default); or { action: 'farewell', text, website }: the message guests read after the trip (trip.guestFarewell); or, with no guestIds, 'options-on' / 'options-off': whether guests see the other options of their tours. Never undoable (a renewed link must not come back), and the journal never holds the secret.
+//       'switch-off' or 'switch-on'; or { action: 'notify-settings', settings: { moved: false, ... } }: which kinds of notification guests get (trip.guestNotify, all on by default); or { action: 'message-settings', remindMinutes }: after how many minutes a guest's unanswered message reminds the staff, 0 = never (trip.messageRemindMinutes, default 30); or { action: 'games-settings', anytime }: the Passport Explorer games open any time (default) or on the travel day (trip.gamesAnytime); or { action: 'album-settings', settings: { enabled, downloadDays } }: Our Album on or off and how long guests can download (trip.album); or { action: 'auto-settings', settings: { eveningBefore: false, ... } }: which automatic messages are sent (trip.autoNotify, all on by default); or { action: 'farewell', text, website }: the message guests read after the trip (trip.guestFarewell); or, with no guestIds, 'options-on' / 'options-off': whether guests see the other options of their tours. Never undoable (a renewed link must not come back), and the journal never holds the secret.
 //   { type: 'rename-trip', name }                              the trip's own name (blocked while archived, like any other change)
 // applyChange() accepts one change or a list. A list is all-or-nothing: if any one of them is
 // not allowed, none are applied. (Moving a couple together is a list of two moves.)
@@ -126,6 +126,7 @@ import { programError, cleanProgram, programOf, retimeProgram } from './program.
 import { notifySettingsError } from './notifyRules.js';
 import { autoNotifyError } from './scheduledMessages.js';
 import { albumSettingsError } from './album.js';
+import { remindMinutesError } from './chat.js';
 import { lastUndoable, summarize } from './journal.js';
 import { findRollCall, vehicleLabel, defaultVehicles } from './rollcall.js';
 
@@ -723,7 +724,8 @@ function validateRenameTrip(change) {
 // The card branding: a short name, a #rrggbb colour, a short note, and a small JPEG logo (or none). The
 // size limits keep the trip (and every journal line that carries it) small enough to sync comfortably.
 function validateGuestLinks(trip, change) {
-  if (!['create', 'renew', 'switch-off', 'switch-on', 'options-on', 'options-off', 'farewell', 'notify-settings', 'auto-settings', 'album-settings', 'games-settings'].includes(change.action)) return fail('Unknown action for guest links.');
+  if (!['create', 'renew', 'switch-off', 'switch-on', 'options-on', 'options-off', 'farewell', 'notify-settings', 'auto-settings', 'album-settings', 'games-settings', 'message-settings'].includes(change.action)) return fail('Unknown action for guest links.');
+  if (change.action === 'message-settings') { const problem = remindMinutesError(change.remindMinutes); return problem ? fail(problem) : { ok: true }; }
   if (change.action === 'games-settings') return typeof change.anytime === 'boolean' ? { ok: true } : fail('The games open any time, or on the travel day.');
   if (change.action === 'album-settings') { const problem = albumSettingsError(change.settings); return problem ? fail(problem) : { ok: true }; }
   if (change.action === 'auto-settings') { const problem = autoNotifyError(change.settings); return problem ? fail(problem) : { ok: true }; }
@@ -1508,6 +1510,11 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     const c = changes[0];
     if (c.action === 'auto-settings') {
       next.autoNotify = { ...(next.autoNotify ?? {}), ...c.settings };
+      entries.push({ ...base(), type: 'guest-links', ...guestWhere, action: c.action, count: 0, guestName: null });
+      return save(ctx, next, entries, {});
+    }
+    if (c.action === 'message-settings') {
+      next.messageRemindMinutes = c.remindMinutes;
       entries.push({ ...base(), type: 'guest-links', ...guestWhere, action: c.action, count: 0, guestName: null });
       return save(ctx, next, entries, {});
     }

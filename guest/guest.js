@@ -17,6 +17,7 @@ import { setSoundCheck } from './explorer/common.js';
 import { entryOf, totals, stepOpen, finishStep, finishQuiz, drawQuiz, QUIZ_LENGTH, STAMP_NEEDED } from './explorer/state.js';
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
+import { openChat } from '../js/chatUi.js';
 import { installPlatform, shouldOffer, readOffer, openInstallSheet } from './install.js';
 import { initAlbum, albumView, albumAvailable, albumNewCount, loadAlbum, sendQueue } from './album.js';
 
@@ -832,35 +833,27 @@ function conversationBlock() {
     h('div', { class: 'msg-who' }, m.direction === 'staff' ? `${m.sender || staffWord()} (${staffWord()})` : 'You'), h('div', {}, m.body), h('div', { class: 'request-when' }, messageTimes(m.created_at)))));
 }
 
+// The conversation with the staff: a full-screen chat like WhatsApp (js/chatUi.js). Opening it marks the staff's answers as read and clears the red number
+// on the app's icon.
 function openMessages() {
   if (PREVIEW) { modal('Preview', [h('p', {}, 'In the real app, a guest can write to the staff here. Nothing is sent from a preview.')], [h('button', { class: 'btn-link', type: 'button', onclick: (e) => e.target.closest('.modal').remove() }, 'OK')]); return; }
-  const topic = h('select', { class: 'note-input', 'aria-label': 'About' }, [['question', 'A question'], ['problem', 'A problem here'], ['other', 'Something else']].map(([v, t]) => h('option', { value: v }, t)));
-  const text = h('textarea', { class: 'note-input', rows: '4', maxlength: '1000', placeholder: 'Write to the team…', 'aria-label': 'Your message' });
-  const error = h('p', { class: 'modal-error', hidden: '' });
-  const send = h('button', { class: 'btn-link', type: 'button' }, 'Send');
-  const thread = h('div', { class: 'msg-thread' });
-  const drawThread = () => thread.replaceChildren(...(myMessages.length ? myMessages.slice(-20).map((m) => h('div', { class: `msg msg--${m.direction}` },
-    h('div', { class: 'msg-who' }, m.direction === 'staff' ? `${m.sender || staffWord()} (${staffWord()})` : 'You'), h('div', {}, m.body), h('div', { class: 'request-when' }, messageTimes(m.created_at))))
-    : [h('p', { class: 'muted' }, `Nothing yet. The ${staffWord()} will answer here.`)]));
-  drawThread();
-  const overlay = modal(`Message the ${staffWord()}`, [
-    thread,
-    h('p', { class: 'muted' }, `Your message goes to the ${staffWord()} only. A record of all messages is kept. Please do not write allergies or medical details here: they have their own place in your profile.`),
-    topic, text, error,
-  ], [send, h('button', { class: 'plain-link', type: 'button', onclick: () => { overlay.remove(); paint(); } }, 'Close')]);
-  callRpc('read_guest_messages', { p_token: currentToken() }).then(() => loadMyMessages()).catch(() => {});
-  send.addEventListener('click', async () => {
-    if (!text.value.trim()) { error.hidden = false; error.textContent = MESSAGE_ERRORS.message; return; }
-    send.disabled = true; send.textContent = 'Sending…';
-    try {
-      const result = await callRpc('send_guest_message', { p_token: currentToken(), p_topic: topic.value, p_body: text.value.trim() });
-      if (!result.ok) throw new Error(MESSAGE_ERRORS[result.error] ?? 'The message could not be sent.');
-      text.value = ''; error.hidden = true; await loadMyMessages(); drawThread();
-      send.textContent = 'Sent. Send another'; send.disabled = false;
-    } catch (e) {
-      error.hidden = false; error.textContent = /Failed to fetch|HTTP|NetworkError/i.test(String(e.message)) ? 'No connection. Please try again when you are online.' : e.message;
-      send.disabled = false; send.textContent = 'Send';
-    }
+  const markRead = () => { if (unreadFromTeam()) callRpc('read_guest_messages', { p_token: currentToken() }).then(() => loadMyMessages()).catch(() => {}); try { navigator.clearAppBadge?.(); } catch { /* no badge */ } };
+  markRead();
+  const word = staffWord();
+  openChat({
+    title: word.charAt(0).toUpperCase() + word.slice(1), name: word, subtitle: 'A record of this conversation is kept',
+    getMessages: () => myMessages, isMine: (m) => m.direction === 'guest',
+    labelOf: (m) => (m.direction === 'staff' ? (m.sender || word) : ''),
+    note: 'Please do not write allergies or medical details here: they have their own place in your profile.',
+    placeholder: `Message the ${word}`, emptyText: `Write to the ${word} here: a question, or a problem on the spot. They will answer in this conversation.`,
+    onSend: async (text) => {
+      const result = await callRpc('send_guest_message', { p_token: currentToken(), p_topic: 'other', p_body: text });
+      if (!result.ok) return { ok: false, error: MESSAGE_ERRORS[result.error] ?? 'The message could not be sent.' };
+      await loadMyMessages();
+      return { ok: true };
+    },
+    refresh: async () => { await loadMyMessages(); markRead(); },
+    onClose: () => paint(),
   });
 }
 

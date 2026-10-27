@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './a
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
+  pullGuestRequests, answerGuestRequest, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
@@ -35,6 +35,7 @@ import { inboxItems } from './inbox.js';
 import { APP_VERSION } from './version.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { staffDisplayName } from './guestMessages.js';
+import { inboxList, attentionCount, REMIND_DEFAULT } from './chat.js';
 import { albumSettings } from './album.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
@@ -78,6 +79,8 @@ let previewRole = (() => { try { const r = sessionStorage.getItem('tourdocs.prev
 let requestRows = [];
 // Requests from GUESTS (their app's "Ask to switch to this tour"): what the server last said. Never applied by themselves: the owner decides.
 let guestRequestRows = [];
+let guestThreadRows = [];  // the hand-made "unread" marks of the conversations
+const guestMessageListeners = new Set(); // open chat windows, told when messages arrive
 let guestMessageRows = []; // the guests' messages to the team (all trips this person owns), oldest first
 let outbox = [];
 // The team's conversation (Messages) and what the person has already seen in their inbox (kept on the device).
@@ -327,9 +330,21 @@ const ctx = {
     render({ keepScroll: true });
     return { ok: true };
   },
+  guestThreadsFor: (tripId) => guestThreadRows.filter((r) => r.trip_id === tripId),
+  onGuestMessages(listener) { guestMessageListeners.add(listener); return () => guestMessageListeners.delete(listener); },
+  // "Mark as unread" / "mark as read" by hand, for the whole staff of the trip. Shown at once, saved on the server.
+  async flagGuestThread(tripId, guestId, flagged) {
+    const others = guestThreadRows.filter((r) => !(r.trip_id === tripId && r.guest_id === guestId));
+    guestThreadRows = [...others, { trip_id: tripId, guest_id: guestId, flagged }];
+    updateAppBadge();
+    try { await setGuestThreadFlag(tripId, guestId, flagged, state.owner.id); } catch { /* the next refresh brings the server's version */ }
+    render({ keepScroll: true });
+  },
   async openGuestConversation(tripId, guestId) {
+    if (guestThreadRows.some((r) => r.trip_id === tripId && r.guest_id === guestId && r.flagged)) ctx.flagGuestThread(tripId, guestId, false);
     await markGuestMessagesRead(tripId, guestId).catch(() => {});
     guestMessageRows = guestMessageRows.map((m) => (m.trip_id === tripId && m.guest_id === guestId && m.direction === 'guest' && !m.read_at ? { ...m, read_at: new Date().toISOString() } : m));
+    updateAppBadge();
   },
   async refreshGuestMessages() { await loadGuestMessages(); render({ keepScroll: true }); },
   // The owner says yes to a guest's request. mode: 'move' (needs a free place), 'waitlist' (joins the waiting list), 'force' (over capacity).
@@ -972,13 +987,41 @@ async function syncAlbumSettings(tripId) {
   try { await saveAlbumSettings(tripId, state.owner.id, settings); albumSent.set(tripId, { key, at: Date.now() }); } catch { /* the album tables are not there yet (database not updated), or no connection: the next round tries again */ }
 }
 
+// The red number on the app's icon (Home Screen): the conversations that need the staff (unopened, marked unread, or waiting for an answer), across the trips
+// this person works on. Only on phones that allow it (an app on the Home Screen with notifications allowed).
+function updateAppBadge() {
+  try {
+    if (!navigator.setAppBadge) return;
+    let total = 0;
+    for (const trip of state.trips.values()) {
+      if (ctx.roleFor(trip.id) === 'viewer') continue;
+      total += attentionCount(inboxList(guestMessageRows.filter((m) => m.trip_id === trip.id), guestThreadRows.filter((r) => r.trip_id === trip.id), new Map()));
+    }
+    if (total > 0) navigator.setAppBadge(total).catch(() => {}); else navigator.clearAppBadge?.().catch(() => {});
+  } catch { /* no badge on this phone */ }
+}
+
+// The reminder for a guest's unanswered message: the owner's phone keeps the server's copy (its timer sends the reminder) in step with the trip.
+const messageSettingsSent = new Map();
+async function syncMessageSettings(tripId) {
+  const trip = state.trips.get(tripId);
+  if (!trip || !state.owner || ctx.roleFor(tripId) !== 'owner' || trip.archivedAt || !navigator.onLine || hasSession === false) return;
+  const minutes = Number.isInteger(trip.messageRemindMinutes) ? trip.messageRemindMinutes : REMIND_DEFAULT;
+  const last = messageSettingsSent.get(tripId);
+  if (last && last.minutes === minutes && Date.now() - last.at < 10 * 60000) return;
+  try { await saveMessageSettings(tripId, state.owner.id, minutes); messageSettingsSent.set(tripId, { minutes, at: Date.now() }); } catch { /* the table is not there yet, or no connection: the next round tries again */ }
+}
+
 // Fetches the guests' messages (a missing table, before the database update, or no internet simply leaves the list as it was).
 async function loadGuestMessages() {
   if (!state.owner || hasSession === false || !navigator.onLine) return;
   try {
-    const before = guestMessageRows.length;
+    const before = JSON.stringify(guestMessageRows.map((m) => [m.id, m.read_at]));
     guestMessageRows = await pullGuestMessages();
-    if (guestMessageRows.length !== before && !document.body.classList.contains('sheet-open') && /\/settings/.test(location.hash)) renderQuiet();
+    guestThreadRows = await pullGuestThreads().catch(() => guestThreadRows);
+    updateAppBadge();
+    for (const listener of guestMessageListeners) { try { listener(); } catch { /* a closed window */ } }
+    if (before !== JSON.stringify(guestMessageRows.map((m) => [m.id, m.read_at])) && !document.body.classList.contains('sheet-open') && /\/settings/.test(location.hash)) renderQuiet();
   } catch { /* the next round tries again */ }
 }
 
@@ -1341,7 +1384,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) await syncAlbumSettings(id); for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) { await syncAlbumSettings(id); await syncMessageSettings(id); } for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }

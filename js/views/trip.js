@@ -45,7 +45,7 @@ import { guestMessagesSettingsPage } from './settingsGuestMessages.js';
 import { scheduledSettingsPage } from './settingsScheduled.js';
 import { requestsSettingsPage } from './settingsRequests.js';
 import { notice } from './move.js';
-import { guestConversations } from '../guestMessages.js';
+import { inboxList, attentionCount } from '../chat.js';
 import { openPreviewSheet } from './preview.js';
 import { icon } from './icons.js';
 
@@ -60,7 +60,7 @@ const SETTINGS_SECTIONS = [
     { label: 'Team', page: 'team', ownerOnly: true, hint: 'Colleagues, their role, test access' },
     { label: 'Requests', page: 'requests', hint: 'Changes asked for by the team' },
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
-    { label: 'Guest messages', page: 'guestmessages', hint: 'Every message between guests and staff, kept as a record' },
+    { label: 'Messages', page: 'guestmessages', hint: 'Conversations with guests, like WhatsApp, kept as a record' },
     { label: 'Our Album', page: 'album', hint: 'Guests\' photo circle: add photos, favourites, who has downloaded' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
   ] },
@@ -279,7 +279,7 @@ function settingsSection(ctx, trip, key) {
       h(item.preview ? 'button' : 'a', item.preview ? { class: 'menu-row', type: 'button', onclick: () => openPreviewSheet(ctx, trip) } : { class: 'menu-row', href: `#/trip/${trip.id}/settings/${item.page}` },
         h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, item.label), item.hint ? h('span', { class: 'menu-hint' }, item.hint) : null),
         h('span', { class: 'menu-side' }, item.ownerOnly ? h('span', { class: 'muted' }, 'Owner only') : null,
-          item.page === 'guestmessages' && ctx.guestMessagesFor(trip.id).length && guestConversations(ctx.guestMessagesFor(trip.id)).some((c) => c.unanswered) ? h('span', { class: 'tile-badge tile-badge--row' }, String(guestConversations(ctx.guestMessagesFor(trip.id)).filter((c) => c.unanswered).length)) : null,
+          item.page === 'guestmessages' && attentionCount(inboxList(ctx.guestMessagesFor(trip.id), ctx.guestThreadsFor(trip.id), new Map())) > 0 ? h('span', { class: 'tile-badge tile-badge--row' }, String(attentionCount(inboxList(ctx.guestMessagesFor(trip.id), ctx.guestThreadsFor(trip.id), new Map())))) : null,
           item.page === 'requests' && ctx.roleFor(trip.id) === 'owner' && ctx.guestRequestsFor(trip.id).some((r) => r.status === 'pending') ? h('span', { class: 'tile-badge tile-badge--row' }, String(ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length)) : null,
           h('span', { class: 'row-chev' }, '›'))))));
 }

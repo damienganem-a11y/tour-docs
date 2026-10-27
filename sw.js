@@ -15,7 +15,7 @@
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.132.0'; // keep equal to js/version.js
+const VERSION = '0.133.0'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
 const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)
@@ -55,6 +55,8 @@ const FILES = [
   'js/album.js',
   'js/albumImage.js',
   'js/albumViewer.js',
+  'js/chat.js',
+  'js/chatUi.js',
   'js/views/settingsAlbum.js',
   'js/views/settingsGuestMessages.js',
   'js/pushUtil.js',
@@ -188,6 +190,7 @@ function withTimeout(promise, milliseconds) {
 self.addEventListener('push', (event) => {
   let message = { title: 'Tour Docs', body: '', url: './' };
   try { message = { ...message, ...event.data.json() }; } catch { /* a push with no readable content: show the default */ }
+  if (typeof message.badge === 'number') { try { if (message.badge > 0) self.navigator.setAppBadge?.(message.badge); else self.navigator.clearAppBadge?.(); } catch { /* a phone without app badges */ } } // the red number on the app's icon
   event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: message.url }, silent: message.silent === true }));
 });
 self.addEventListener('notificationclick', (event) => {

@@ -1,0 +1,18 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><link rel=stylesheet href="/styles.css"><body><div id=root style="padding:16px"></div><script type=module>
+import { openChat, avatar } from '/js/chatUi.js';
+import { inboxList } from '/js/chat.js';
+import { h } from '/js/dom.js';
+const t = (d,hh,m)=>new Date(2026,9,d,hh,m).toISOString();
+const rows=[
+ {id:1,guest_id:'a',direction:'guest',body:'Hello! Is the bus to the airport tomorrow still at 6:30?',created_at:t(26,21,7),read_at:t(26,21,9)},
+ {id:2,guest_id:'a',direction:'staff',sender_name:'Marie Dupont',body:'Yes, 06:30 in the lobby. We will wait for you.',created_at:t(26,21,12),read_at:t(26,21,13)},
+ {id:3,guest_id:'a',direction:'guest',body:'Perfect, thank you! One more thing: my husband needs a wheelchair at the airport, can you arrange it?',created_at:t(27,8,40),read_at:null},
+ {id:4,guest_id:'b',direction:'guest',body:'Lost my hat on the boat',created_at:t(27,9,2),read_at:null},
+ {id:5,guest_id:'c',direction:'staff',sender_name:'Marie',body:'See you at the lounge at 18:30',created_at:t(25,17,0),read_at:t(25,17,5)},
+];
+const names=new Map([['a','Anna Alvarez'],['b','Ben Brooks'],['c','Cy Carter']]);
+const list=inboxList(rows,[{guest_id:'c',flagged:true}],names,new Date(2026,9,27,10,0));
+const box=h('div',{class:'inbox-list'}, list.map((c)=>h('button',{class:`inbox-item${c.dot?' is-unread':''}`,type:'button'},avatar(c.name,48),h('div',{class:'inbox-main'},h('div',{class:'inbox-line'},h('span',{class:'inbox-name'},c.name),h('span',{class:'inbox-time'},c.time)),h('div',{class:'inbox-preview'},h('span',{},(c.mine?'You: ':'')+c.preview),c.waiting&&!c.dot?h('span',{class:'inbox-wait'},'Reply needed'):null,c.unread>0?h('span',{class:'inbox-dot'},String(c.unread)):c.flagged?h('span',{class:'inbox-dot inbox-dot--plain'}):null)))));
+document.getElementById('root').append(h('h2',{},'Messages'),box);
+if (location.hash==='#chat') openChat({title:'Anna Alvarez',subtitle:'Kept as a record',getMessages:()=>rows.filter(r=>r.guest_id==='a'),isMine:m=>m.direction==='staff',labelOf:m=>m.direction==='staff'?m.sender_name:'',onSend:async()=>({ok:true}),menu:[{label:'Mark as unread',onClick(){}}],note:'Please do not ask guests for allergies here.'});
+</script>

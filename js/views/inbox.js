@@ -5,7 +5,7 @@ import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { icon } from './icons.js';
 import { inboxCount } from '../inbox.js';
-import { guestConversations } from '../guestMessages.js';
+import { inboxList, attentionCount } from '../chat.js';
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '');
 
@@ -19,8 +19,8 @@ export function inboxButton(ctx, trip) {
 // The envelope in the top bar: straight to the guests' conversations (a red number = conversations waiting for an answer). Not for the Expert role.
 export function messagesButton(ctx, trip) {
   if (ctx.roleFor(trip.id) === 'viewer') return null;
-  const waiting = guestConversations(ctx.guestMessagesFor(trip.id)).filter((c) => c.unanswered).length;
-  return h('a', { class: 'send-btn inbox-btn', href: `#/trip/${trip.id}/settings/guestmessages`, 'aria-label': waiting > 0 ? `Guest messages, ${waiting} waiting for an answer` : 'Guest messages', title: 'Guest messages' },
+  const waiting = attentionCount(inboxList(ctx.guestMessagesFor(trip.id), ctx.guestThreadsFor(trip.id), new Map()));
+  return h('a', { class: 'send-btn inbox-btn', href: `#/trip/${trip.id}/settings/guestmessages`, 'aria-label': waiting > 0 ? `Guest messages, ${waiting} waiting for an answer` : 'Messages', title: 'Messages' },
     icon('envelope'), waiting > 0 ? h('span', { class: 'bell-badge' }, String(waiting > 9 ? '9+' : waiting)) : null);
 }
 
