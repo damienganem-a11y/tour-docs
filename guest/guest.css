@@ -947,7 +947,8 @@ input[type=checkbox] { accent-color: #000; }
 .chat-empty { align-self: center; margin: auto; color: var(--chat-sub); text-align: center; padding: 20px; }
 .chat-note { flex: none; padding: 4px 12px; font-size: .75rem; text-align: center; color: var(--chat-sub); }
 .chat-error { flex: none; padding: 4px 12px; color: #c62828; font-size: .85rem; }
-.chat-compose { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px calc(env(safe-area-inset-bottom, 0px) + 8px); background: var(--chat-bg); }
+.chat-compose { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px calc(max(env(safe-area-inset-bottom, 0px), 14px) + 14px); background: var(--chat-bg); }
+.chat.chat--kb .chat-compose { padding-bottom: 8px; } /* the keyboard is up: it already covers the bottom edge */
 .chat-input { flex: 1; min-width: 0; resize: none; border: 0; border-radius: 22px; padding: 10px 14px; font: inherit; font-size: 16px; line-height: 1.3; background: var(--chat-theirs); color: var(--chat-ink); max-height: 140px; }
 .chat-send { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; background: #1d8a7e; color: #fff; font-size: 18px; cursor: pointer; }
 .chat-send:disabled { opacity: .5; }

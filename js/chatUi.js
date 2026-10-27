@@ -45,7 +45,8 @@ export function openChat(options) {
   document.body.append(root);
 
   // The window follows the part of the screen the keyboard leaves free.
-  const fit = () => { const v = window.visualViewport; root.style.height = `${v?.height ?? window.innerHeight}px`; root.style.top = `${v?.offsetTop ?? 0}px`; };
+  // (`chat--kb` = the keyboard is up: the writing box then sits right on it; otherwise it keeps room above the phone's bottom edge)
+  const fit = () => { const v = window.visualViewport; root.style.height = `${v?.height ?? window.innerHeight}px`; root.style.top = `${v?.offsetTop ?? 0}px`; root.classList.toggle('chat--kb', Boolean(v) && v.height < window.innerHeight * 0.8); };
   fit();
   window.visualViewport?.addEventListener('resize', fit); window.visualViewport?.addEventListener('scroll', fit);
 
