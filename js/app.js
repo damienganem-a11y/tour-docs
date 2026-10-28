@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './a
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
+  pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
@@ -211,7 +211,10 @@ async function sendGuestSheets(trip, { force = false } = {}) {
     const changed = rows.filter((row) => force || beat || before.get(row.token) !== signature(row));
     if (changed.length === 0 && before.size === rows.length) return; // nothing new, no link removed
     for (const row of changed) if (row.sheet) row.sheet.updatedAt = now;
-    await pushGuestSheets(trip.id, changed, rows.map((r) => r.token));
+    // what arrived is remembered group by group: after a failure in the middle, only the rest is sent again
+    const arrived = new Map(before);
+    guestSheetInfo.sent.set(trip.id, arrived);
+    await pushGuestSheets(trip.id, changed, rows.map((r) => r.token), (group) => { for (const row of group) arrived.set(row.token, signature(row)); });
     guestSheetInfo.sent.set(trip.id, new Map(rows.map((r) => [r.token, signature(r)])));
     if (beat || force) guestSheetInfo.heartbeatAt.set(trip.id, Date.now());
     guestSheetInfo.lastOkAt = now;
@@ -307,6 +310,7 @@ const ctx = {
   },
   // Settings > Guest links: how the last sending of the guests' sheets went, and a way to send them again right now.
   guestSheetStatus: () => ({ lastOkAt: guestSheetInfo.lastOkAt, error: guestSheetInfo.error }),
+  checkGuestLinks: (tripId) => guestLinkStatus(tripId),
   async resendGuestSheets(tripId) {
     const trip = state.trips.get(tripId);
     if (trip) await sendGuestSheets(trip, { force: true });

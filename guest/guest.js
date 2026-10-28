@@ -1291,7 +1291,8 @@ function render(sheet, { offline = false } = {}) {
 
 function showProblem(title, text) {
   currentSheet = null;
-  app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
+  app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, title), h('p', { class: 'muted' }, text),
+    h('button', { class: 'btn-link', type: 'button', onclick: () => { refresh(); } }, 'Try again')));
 }
 
 // No link on this phone yet (for instance an app just put on the Home Screen, which starts empty): the guest types the 4-digit one-time code the leader makes for this device, or pastes the link they were sent. The code is swapped for the long secret by the server (claim_guest_code).
@@ -1360,7 +1361,7 @@ async function refresh() {
   } else if (result.off) {
     status = 'off';
     store.remove(SHEET_KEY);
-    showProblem('This link is not active', 'Ask your tour leader for a new link.');
+    showProblem('This link is not active', 'Your programme may not have reached the server yet, or this link was switched off. Try again in a minute; if it still says this, ask your tour leader.');
   } else if (result.tooNew) {
     status = 'tooNew';
     showProblem('Please update', 'Close this app and open it again with internet to get the latest version.');
@@ -1369,7 +1370,7 @@ async function refresh() {
     render(kept, { offline: true });
   } else {
     status = 'offline';
-    showProblem('No connection', 'Connect to the internet once to receive your programme. After that it works without.');
+    showProblem('No connection', 'Your phone could not reach the server (a weak signal is enough). Connect to the internet once to receive your programme. After that it works without.');
   }
   if (!scrolledToToday) {
     const todayDay = currentSheet?.days.find((d) => d.date === todayAt(currentSheet, d.destination));

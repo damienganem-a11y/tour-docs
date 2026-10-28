@@ -187,3 +187,22 @@ export function guestSheetRows(trip, now, today = new Date().toISOString().slice
   }
   return rows;
 }
+
+// "Check the links" (Settings > Guest links): what a guest's phone would find on the server for each guest who has a link, from guest_link_status.
+// Returns { total, ready, problems: [{ guestId, reason }] }; a guest whose link is switched off on purpose is not a problem.
+export function linkCheck(trip, serverRows) {
+  const byGuest = new Map(serverRows.map((r) => [r.guest_id, r]));
+  const problems = [];
+  let ready = 0; let total = 0;
+  for (const [guestId, link] of Object.entries(trip.guestLinks ?? {})) {
+    const guest = trip.guests.find((g) => g.id === guestId);
+    if (!guest || guest.leftAt || link.active !== true) continue; // off on purpose
+    total++;
+    const row = byGuest.get(guestId);
+    if (!row) problems.push({ guestId, reason: 'not on the server yet' });
+    else if (!row.active) problems.push({ guestId, reason: 'switched off on the server' });
+    else if (!row.has_sheet) problems.push({ guestId, reason: 'on the server but with no programme' });
+    else ready++;
+  }
+  return { total, ready, problems };
+}

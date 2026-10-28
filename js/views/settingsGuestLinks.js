@@ -15,6 +15,7 @@ import { formatFullMoment } from '../time.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { qrSvg } from '../qr.js';
+import { linkCheck } from '../guestSheet.js';
 
 // Where the guest app lives: the "guest" folder next to this app. The secret goes after the "#", which a browser never sends to
 // the web server, so it does not appear in any server log.
@@ -112,12 +113,29 @@ export function guestLinksSettingsPage(ctx, trip) {
     ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async () => { const s = await ctx.resendGuestSheets(trip.id); ctx.refresh(); showToast(s.error ? 'Could not send. Are you online?' : 'Programmes sent', Boolean(s.error)); } }, 'Send programmes now')
     : null;
 
+  // "Check the links": asks the server what a guest's phone would find, and says which links are not ready (the usual cause is a sending that did not finish).
+  const checkBox = h('div', {});
+  const checkButton = Object.keys(links).length > 0
+    ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async (e) => {
+      e.target.disabled = true; checkBox.replaceChildren(h('p', { class: 'muted' }, 'Asking the server…'));
+      try {
+        const result = linkCheck(trip, await ctx.checkGuestLinks(trip.id));
+        const names = displayNames(trip.guests);
+        checkBox.replaceChildren(
+          h('p', { class: result.problems.length ? 'form-error' : 'muted' }, result.problems.length === 0 ? `All ${result.total} links are ready on the server.` : `${result.ready} of ${result.total} links are ready on the server.`),
+          ...result.problems.map((p) => h('div', { class: 'muted' }, `${names.get(p.guestId) ?? 'A guest'}: ${p.reason}`)),
+          result.problems.length ? h('p', { class: 'muted' }, 'Tap "Send programmes now" with a good connection, then check again.') : null);
+      } catch { checkBox.replaceChildren(h('p', { class: 'form-error' }, 'The server could not be asked (offline, or the database is not updated yet).')); }
+      e.target.disabled = false;
+    } }, 'Check the links')
+    : null;
+
   return h('div', {}, head,
     notice('A guest sees only their own programme. Never allergies, notes or other guests.'),
     without.length > 0
       ? h('button', { class: 'btn', type: 'button', onclick: () => run({ type: 'guest-links', action: 'create', guestIds: without.map((g) => g.id) }, `${plural(without.length, 'link')} created`) },
         without.length === guests.length ? 'Create links for everyone' : `Create links for the ${without.length} without one`)
       : null,
-    statusLine, sendNow,
+    statusLine, h('div', { class: 'card-actions' }, sendNow, checkButton), checkBox,
     h('div', {}, ...guests.map(guestCard)));
 }

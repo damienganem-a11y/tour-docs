@@ -43,6 +43,8 @@ import { newToken } from './ids.js';
 import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuCard.js';
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
+import { pushGuestSheets, sheetGroups } from './sync.js';
+import { linkCheck } from './guestSheet.js';
 import { clockOf, dayLabel, listTime, groupByDay, initialsOf, inboxList, attentionCount, guestUnread, remindMinutesError } from './chat.js';
 import { openChat } from './chatUi.js';
 import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
@@ -3077,6 +3079,14 @@ function readZip(bytes) {
     check('The chat window shows bubbles of both sides, the name above an answer, two ticks once read, and sending adds a bubble',
       bubbles.length === 2 && bubbles[0].classList.contains('is-theirs') && bubbles[1].classList.contains('is-mine') && bubbles[1].textContent.includes('Marie') && ticks?.textContent === '✓✓' && sent.join() === 'On my way' && after === 3 && !document.querySelector('.chat'));
   }
+  // Guest sheets go in small groups, and "Check the links" says which links are not ready
+  const bigRows = Array.from({ length: 10 }, (_, i) => ({ token: `t${i}`, guestId: `g${i}`, active: true, sheet: { v: 1, days: [], filler: 'x'.repeat(100 * 1024) } }));
+  const groups = sheetGroups(bigRows);
+  check('Sheets of about 100 KB are sent in groups of at most 400 KB (3 sheets) (never all in one request), none lost, in order', groups.length === 4 && groups.flat().length === 10 && groups.flat().map((r) => r.token).join() === bigRows.map((r) => r.token).join() && groups.every((g) => g.length <= 3) && sheetGroups([{ token: 'a', sheet: { big: 'x'.repeat(500 * 1024) } }]).length === 1);
+  const checkTrip = { guests: [{ id: 'g1' }, { id: 'g2' }, { id: 'g3' }, { id: 'g4' }, { id: 'g5' }], guestLinks: { g1: { active: true }, g2: { active: true }, g3: { active: true }, g4: { active: false }, g5: { active: true } } };
+  const lc = linkCheck(checkTrip, [{ guest_id: 'g1', active: true, has_sheet: true }, { guest_id: 'g2', active: true, has_sheet: false }, { guest_id: 'g3', active: false, has_sheet: true }]);
+  check('"Check the links" counts the ready ones and names what is wrong: not on the server, empty, switched off there; a link switched off on purpose is no problem',
+    lc.total === 4 && lc.ready === 1 && lc.problems.map((p) => `${p.guestId}:${p.reason}`).join('|') === 'g2:on the server but with no programme|g3:switched off on the server|g5:not on the server yet');
   // The full-screen viewer: who posted, "1 of 3", next/previous, an action that goes on by itself, and one that removes the photo
   const viewerPhotos = [{ id: 'a', who: 'Ana Perez' }, { id: 'b', who: 'Ben Hall' }, { id: 'c', who: 'Cy Long' }];
   const seen = [];

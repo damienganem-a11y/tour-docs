@@ -76,17 +76,47 @@ export async function pullJournalEntries(tripId, afterSeq = 0) {
 // The guests' personal sheets (Phase 5): one row per link. `rows` is [{ token, guestId, active, sheet }] from guestSheet.js. A switched-off
 // link keeps no content. Rows of this trip whose secret is no longer on the trip (a renewed link) are deleted, so an old link
 // stops working at once. `rows` may be only the sheets that changed; `currentTokens` is every secret the trip has now. Owner only (the server's rules say so too).
-export async function pushGuestSheets(tripId, rows, currentTokens = rows.map((r) => r.token)) {
+// The sheets go in small groups, never all in one request: with the Passport games a sheet is about 100 KB, so 40 guests are 4 MB, and one request that size
+// can fail on a weak signal or run past the server's time limit, leaving every guest with an old programme or none (27 Oct 2026). A group that fails is tried
+// again twice, with a pause; `onSent(rows)` is told after each group, so what already arrived is not sent again next time.
+const SHEET_GROUP_BYTES = 400 * 1024;
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export function sheetGroups(rows, limit = SHEET_GROUP_BYTES) {
+  const groups = []; let group = []; let size = 0;
+  for (const row of rows) {
+    const bytes = JSON.stringify(row.sheet ?? {}).length;
+    if (group.length > 0 && size + bytes > limit) { groups.push(group); group = []; size = 0; }
+    group.push(row); size += bytes;
+  }
+  if (group.length > 0) groups.push(group);
+  return groups;
+}
+export async function pushGuestSheets(tripId, rows, currentTokens = rows.map((r) => r.token), onSent = () => {}) {
   const supabase = await getClient();
-  if (rows.length > 0) {
-    const { error } = await supabase.from('guest_links').upsert(
-      rows.map((r) => ({ token: r.token, trip_id: tripId, guest_id: r.guestId, active: r.active, data: r.sheet ?? {}, updated_at: new Date().toISOString() })),
-      { onConflict: 'token' });
-    if (error) throw error;
+  for (const group of sheetGroups(rows)) {
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = await supabase.from('guest_links').upsert(
+        group.map((r) => ({ token: r.token, trip_id: tripId, guest_id: r.guestId, active: r.active, data: r.sheet ?? {}, updated_at: new Date().toISOString() })),
+        { onConflict: 'token' });
+      lastError = error;
+      if (!error) break;
+      await pause(1500 * 2 ** attempt);
+    }
+    if (lastError) throw lastError;
+    onSent(group);
   }
   const query = supabase.from('guest_links').delete().eq('trip_id', tripId);
   const { error } = await (currentTokens.length > 0 ? query.not('token', 'in', `(${currentTokens.join(',')})`) : query);
   if (error) throw error;
+}
+
+// What the server holds for each of the trip's guest links (owner only): [{ guest_id, token_start, active, has_sheet, bytes, updated_at }].
+export async function guestLinkStatus(tripId) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc('guest_link_status', { p_trip: tripId });
+  if (error) throw error;
+  return data;
 }
 
 // A purged trip (deleted locally 30 days ago) is erased on the server too, so no other phone on the
