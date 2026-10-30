@@ -139,7 +139,7 @@ const phone = () => installPlatform({
 let installOffered = false;
 // Once per opening of the page, a moment after the programme shows: the sheet explains and offers (not in a preview, not once the app is on the Home Screen).
 function maybeOfferInstall() {
-  if (installOffered || PREVIEW || !currentSheet || currentSheet.ended) return;
+  if (installOffered || PREVIEW || !currentSheet || currentSheet.ended || boardAsked) return; // opened from a boarding-card notification: the card comes first
   const platform = phone();
   if (!shouldOffer(platform, readOffer(store))) return;
   installOffered = true;
@@ -334,8 +334,20 @@ function ticketChip(part) {
   return h('button', { class: 'ticket-chip', type: 'button', onclick: (e) => { e.stopPropagation(); openBoarding(part); } },
     h('i', { style: `background:${t.color}` }), `${t.colorName || t.group} group · ${ticketsWord(t.count)}`);
 }
+// Opened from the notification (address ?board=1): the card showing now, else the next one of today, opens full screen straight away.
+let boardAsked = new URLSearchParams(window.location.search).has('board');
+function openAskedBoarding(sheet) {
+  if (!boardAsked || !sheet || sheet.ended) return;
+  boardAsked = false;
+  try { history.replaceState(history.state, '', `${window.location.pathname}${window.location.hash}`); } catch { /* the address keeps ?board */ }
+  const now = ticketsNow(sheet)[0]
+    ?? (sheet.days ?? []).flatMap((day) => day.parts.filter((p) => p.ticket && !p.cancelled && todayAt(sheet, day.destination) === day.date).map((part) => ({ part })))[0];
+  if (now) openBoarding(now.part);
+}
+
 // Full screen, for the reception desk. The clock moves every second.
 function openBoarding(part) {
+  document.querySelector('.board')?.remove();
   const t = part.ticket;
   const clock = h('b', { class: 'board-clock' });
   const tick = () => { const n = new Date(); clock.textContent = n.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
@@ -1332,6 +1344,7 @@ function render(sheet, { offline = false } = {}) {
   currentOffline = offline;
   if (sheet.first) store.set('tourdocs.guest.first', sheet.first);
   maybeOfferInstall();
+  openAskedBoarding(sheet);
   if (sheet.first) store.set('tourdocs.guest.fullname', `${sheet.first} ${sheet.last ?? ''}`.trim());
   paint();
   // Keep the pictures for offline use: asking for them once lets the service worker keep them. The tours the guest is booked on get all their

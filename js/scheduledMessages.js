@@ -117,9 +117,16 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
         families.get(key).ids.push(id);
       }
       for (const [key, { ticket, ids }] of families) {
+        // As much as a lock screen shows (title + about four lines): the colour first, then the time and place, the tickets and who they are for.
+        // Tapping it opens the big colour card in the app (send-push gives ticket notifications the address ./?board=1).
+        const colour = (ticket.colorName || ticket.groupName).toUpperCase();
+        const lines = [
+          [clock ? `Departs ${clock}` : null, activity.meeting ? `Meet: ${activity.meeting}` : null].filter(Boolean).join(' · '),
+          `Take ${ticket.count} ticket${ticket.count === 1 ? '' : 's'}${ticket.names.length ? `: ${ticket.names.join(', ')}` : ''}`,
+          'Tap to show your card at reception.',
+        ].filter(Boolean);
         add({ auto_key: `ticket|${activity.id}|${key}`, send_at: new Date(Date.parse(activity.startsAt) - 30 * 60000).toISOString(), audience: 'guests', guest_ids: ids, category: 'reminders', priority: 'info',
-          title: clip(`${activity.name} in 30 min: ${(ticket.colorName || ticket.groupName).toUpperCase()} group`, 80),
-          body: clip(`Take ${ticket.count} ticket${ticket.count === 1 ? '' : 's'} at reception${ticket.names.length > 1 ? ` (${ticket.names.join(', ')})` : ''}. Open Tour Docs to show your card.`, 200) });
+          title: clip(`${colour} group · ${activity.name}`, 80), body: clip(lines.join('\n'), 200) });
       }
     }
     if (settings.rollCallAlert && guestIds.length > 0 && activity.startsAt && !findRollCall(trip, activity.id)?.endedAt) {
