@@ -76,3 +76,12 @@ export const guestUnread = (rows) => rows.filter((m) => m.direction === 'staff' 
 export const REMIND_CHOICES = [[0, 'No reminder'], [15, 'After 15 minutes'], [30, 'After 30 minutes'], [60, 'After 1 hour'], [120, 'After 2 hours']];
 export const REMIND_DEFAULT = 30;
 export const remindMinutesError = (value) => (Number.isInteger(value) && REMIND_CHOICES.some(([m]) => m === value) ? null : 'Choose one of the reminder times.');
+
+// Saved answers the staff tap in a chat (the owner edits them; these until then). Plain sentences, no allergies or private details.
+export const DEFAULT_QUICK_REPLIES = [
+  'Thank you, we are on it and will come back to you shortly.',
+  'Please come and see us at reception.',
+  'Yes, see you in the lounge.',
+  'No problem at all, enjoy your day!',
+];
+export const quickRepliesOf = (trip) => (Array.isArray(trip?.quickReplies) && trip.quickReplies.length ? trip.quickReplies : DEFAULT_QUICK_REPLIES);

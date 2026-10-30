@@ -515,6 +515,20 @@ export async function answerGuestMessage(tripId, guestId, body, sender) {
   if (error) throw error;
   return data;
 }
+// The same message to several guests at once (a tour, a colour group...): one row per guest, so it sits in each guest's own conversation, as a record.
+export async function sendGuestMessages(tripId, guestIds, body, sender) {
+  const supabase = await getClient();
+  const text = String(body).trim().slice(0, 1000);
+  const rows = guestIds.map((guestId) => ({ trip_id: tripId, guest_id: guestId, direction: 'staff', body: text, sender_id: sender.id, sender_name: sender.name }));
+  const saved = [];
+  for (let i = 0; i < rows.length; i += 50) {
+    const { data, error } = await supabase.from('guest_messages').insert(rows.slice(i, i + 50)).select('id, trip_id, guest_id, direction, topic, body, sender_id, sender_name, created_at, read_at');
+    if (error) throw error;
+    saved.push(...data);
+  }
+  return saved;
+}
+
 // The owner opened a guest's conversation: its messages are marked as read.
 export async function markGuestMessagesRead(tripId, guestId) {
   const supabase = await getClient();

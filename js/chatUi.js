@@ -36,8 +36,12 @@ export function openChat(options) {
   const header = el('div', { class: 'chat-head' }, back, avatar(options.name ?? options.title, 38),
     el('div', { class: 'chat-who' }, el('b', {}, options.title), options.subtitle ? el('small', {}, options.subtitle) : null),
     options.menu?.length ? el('button', { class: 'chat-more', type: 'button', 'aria-label': 'More', onclick: () => { menuBox.hidden = !menuBox.hidden; } }, '⋯') : null);
+  // Saved answers (staff side): a ⚡ button opens them above the writing box; one tap puts the sentence in the box, ready to send or to change.
+  const replies = options.quickReplies?.() ?? [];
+  const repliesBox = el('div', { class: 'chat-replies', hidden: '' }, replies.map((text) => el('button', { type: 'button', onclick: () => { input.value = input.value.trim() ? `${input.value.trim()} ${text}` : text; repliesBox.hidden = true; grow(); input.focus(); } }, text)));
+  const repliesButton = replies.length ? el('button', { class: 'chat-quick', type: 'button', 'aria-label': 'Quick replies', onclick: () => { repliesBox.hidden = !repliesBox.hidden; } }, '⚡') : null;
   const root = el('div', { class: 'chat', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Conversation with ${options.title}` },
-    header, menuBox, scroll, options.note ? el('div', { class: 'chat-note' }, options.note) : null, error, el('div', { class: 'chat-compose' }, input, send));
+    header, menuBox, scroll, options.note ? el('div', { class: 'chat-note' }, options.note) : null, error, repliesBox, el('div', { class: 'chat-compose' }, repliesButton, input, send));
   for (const item of options.menu ?? []) menuBox.append(el('button', { type: 'button', onclick: async () => { menuBox.hidden = true; await item.onClick(); } }, item.label));
 
   const previousOverflow = document.body.style.overflow;

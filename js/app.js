@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './a
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pushGuestShared, pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
+  pushGuestShared, pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, sendGuestMessages, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
@@ -354,6 +354,17 @@ const ctx = {
     catch { return { ok: false, error: 'The message could not be sent. Check your connection and try again.' }; }
     render({ keepScroll: true });
     return { ok: true };
+  },
+  // One message to a whole group of guests (everyone, a tour, a colour group, a travelling-together group): it lands in each guest's own conversation.
+  async messageGuests(tripId, guestIds, body) {
+    const text = String(body ?? '').trim();
+    if (!text) return { ok: false, error: 'Write your message first.' };
+    if (guestIds.length === 0) return { ok: false, error: 'Nobody is in that group.' };
+    const me = ctx.userFor(tripId);
+    try { guestMessageRows = [...guestMessageRows, ...(await sendGuestMessages(tripId, guestIds, text, { id: state.owner.id, name: staffDisplayName(me.name, teamLabel(state.trips.get(tripId))) }))]; }
+    catch { return { ok: false, error: 'The message could not be sent. Check your connection and try again.' }; }
+    render({ keepScroll: true });
+    return { ok: true, count: guestIds.length };
   },
   guestThreadsFor: (tripId) => guestThreadRows.filter((r) => r.trip_id === tripId),
   onGuestMessages(listener) { guestMessageListeners.add(listener); return () => guestMessageListeners.delete(listener); },

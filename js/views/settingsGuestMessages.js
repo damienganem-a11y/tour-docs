@@ -11,11 +11,11 @@
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
-import { displayNames, alphabetical, plural, teamLabel } from '../rules.js';
+import { displayNames, alphabetical, plural, teamLabel, bookedOnActivity, colorOf, slotLabel } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { staffDisplayName } from '../guestMessages.js';
-import { inboxList, attentionCount, REMIND_CHOICES, REMIND_DEFAULT } from '../chat.js';
+import { inboxList, attentionCount, REMIND_CHOICES, REMIND_DEFAULT, quickRepliesOf } from '../chat.js';
 import { openChat, avatar } from '../chatUi.js';
 import { exportMessageRecord } from '../export.js';
 
@@ -46,7 +46,7 @@ export function guestMessagesSettingsPage(ctx, trip) {
       getMessages: forGuest, isMine: mineOf,
       labelOf: (m) => (m.direction === 'staff' ? staffDisplayName(m.sender_name, label) : ''),
       note: 'Please do not ask guests for allergies or medical details here: they have their own field.',
-      placeholder: `Message to ${fullName(guestId).split(' ')[0]}`, emptyText: 'No message yet. Write the first one below.',
+      placeholder: `Message to ${fullName(guestId).split(' ')[0]}`, quickReplies: () => quickRepliesOf(ctx.trip?.(trip.id) ?? trip), emptyText: 'No message yet. Write the first one below.',
       onSend: (text) => ctx.answerGuestMessage(trip.id, guestId, text),
       menu: [{ label: 'Mark as unread', onClick: async () => { chat.close(); await ctx.flagGuestThread(trip.id, guestId, true); showToast('Marked as unread'); } }],
       onClose: () => { stop(); ctx.refresh(); },
@@ -59,6 +59,64 @@ export function guestMessagesSettingsPage(ctx, trip) {
     const select = h('select', { class: 'text-input', 'aria-label': 'Guest' }, h('option', { value: '' }, 'Choose a guest…'), ...guests.map((g) => h('option', { value: g.id }, `${g.first} ${g.last ?? ''}`.trim())));
     openSheet({ eyebrow: 'New message', title: 'Write to a guest', subtitle: 'The guest sees it in Messages in their app, and by notification if they turned those on.',
       body: [select, h('button', { class: 'btn', type: 'button', onclick: () => { if (!select.value) return; closeSheet(); openConversation(select.value); } }, 'Open the conversation')], cancelLabel: 'Close' });
+  }
+
+  // ---- one message to a whole group (owner's request, 30 Oct 2026) ----
+  // Everyone, the guests of one tour, one colour group of a tour, or a group travelling together. The message lands in each guest's own conversation
+  // (a record, like any other message), and each guest is notified.
+  function audiences() {
+    const active = trip.guests.filter((g) => !g.leftAt);
+    const list = [{ key: 'all', label: `Everyone (${active.length})`, ids: active.map((g) => g.id) }];
+    const tours = trip.activities.filter((a) => !a.cancelled).map((a) => ({ a, slot: trip.slots.find((x) => x.id === a.slotId) })).filter((t) => t.slot)
+      .sort((x, y) => x.slot.date.localeCompare(y.slot.date) || x.slot.half.localeCompare(y.slot.half));
+    for (const { a, slot } of tours) {
+      const booked = bookedOnActivity(trip, a.id);
+      if (booked.length === 0) continue;
+      list.push({ key: `t:${a.id}`, label: `${slotLabel(trip, slot)} · ${a.name} (${booked.length})`, ids: booked.map((g) => g.id) });
+      const split = (trip.splits ?? []).find((x) => x.activityId === a.id);
+      for (const g of split?.groups ?? []) {
+        const ids = booked.filter((b) => split.assignments[b.id] === g.id).map((b) => b.id);
+        if (ids.length) list.push({ key: `g:${a.id}:${g.id}`, label: `    ${colorOf(g.color)?.emoji ?? '•'} ${g.name}, ${a.name} (${ids.length})`, ids });
+      }
+    }
+    for (const t of trip.together ?? []) {
+      const ids = t.guestIds.filter((id) => active.some((g) => g.id === id));
+      if (ids.length) list.push({ key: `w:${t.id}`, label: `Travelling together: ${t.name} (${ids.length})`, ids });
+    }
+    return list;
+  }
+  function groupMessageSheet() {
+    const options = audiences();
+    const select = h('select', { class: 'text-input', 'aria-label': 'Who receives it' }, options.map((o) => h('option', { value: o.key }, o.label)));
+    const text = h('textarea', { class: 'text-input', rows: '4', maxlength: '1000', placeholder: 'Your message', 'aria-label': 'Your message' });
+    const chips = h('div', { class: 'chips' }, quickRepliesOf(trip).map((r) => h('button', { class: 'chip', type: 'button', onclick: () => { text.value = text.value.trim() ? `${text.value.trim()} ${r}` : r; text.focus(); } }, r.length > 40 ? `${r.slice(0, 38)}…` : r)));
+    const error = h('p', { class: 'form-error', hidden: '' });
+    const send = h('button', { class: 'btn', type: 'button' }, 'Send to this group');
+    send.addEventListener('click', async () => {
+      const chosen = options.find((o) => o.key === select.value);
+      send.disabled = true;
+      const result = await ctx.messageGuests(trip.id, chosen.ids, text.value);
+      if (result.ok) { closeSheet(); showToast(`Sent to ${plural(result.count, 'guest')}`); return; }
+      error.hidden = false; error.textContent = result.error; send.disabled = false;
+    });
+    openSheet({ eyebrow: 'Messages', title: 'Message a group', subtitle: 'It goes into each guest\'s own conversation, kept as a record, and each guest is notified.',
+      body: [select, text, h('div', { class: 'form-hint' }, 'Quick replies:'), chips, error], footer: send });
+  }
+
+  // ---- the quick replies (owner): the saved answers under ⚡ in a chat ----
+  function quickRepliesSheet() {
+    const rows = [...quickRepliesOf(trip)];
+    const list = h('div', {});
+    const draw = () => list.replaceChildren(...rows.map((r, i) => h('div', { class: 'group-edit-row' },
+      h('textarea', { class: 'text-input', rows: '2', maxlength: '300', 'aria-label': `Quick reply ${i + 1}`, oninput: (e) => { rows[i] = e.target.value; } }, r),
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', 'aria-label': `Remove quick reply ${i + 1}`, onclick: () => { rows.splice(i, 1); draw(); } }, '×'))));
+    draw();
+    openSheet({ eyebrow: 'Messages', title: 'Quick replies', subtitle: 'Saved answers the staff tap (⚡) in a conversation. No allergies or private details.',
+      body: [list, h('button', { class: 'btn btn--plain btn--small', type: 'button', disabled: rows.length >= 20, onclick: () => { rows.push(''); draw(); } }, '+ Add a reply')],
+      footer: h('button', { class: 'btn', type: 'button', onclick: async () => {
+        const r = await applyChange(ctx, trip.id, { type: 'guest-links', action: 'quick-replies', replies: rows.map((x) => x.trim()).filter(Boolean) });
+        if (r.ok) { closeSheet(); ctx.refresh(); showToast('Quick replies saved'); } else showToast(r.error, true);
+      } }, 'Save') });
   }
 
   // ---- press and hold ----
@@ -112,11 +170,13 @@ export function guestMessagesSettingsPage(ctx, trip) {
   return h('div', {}, head,
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small', type: 'button', onclick: writeFirstSheet }, 'New message'),
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: groupMessageSheet }, 'Message a group'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: () => ctx.refreshGuestMessages() }, 'Check for new messages')),
     needing ? h('p', { class: 'muted' }, `${plural(needing, 'conversation')} to look at.`) : null,
     list.length > 5 ? search : null,
     listBox,
     remindCard,
+    ctx.roleFor(trip.id) === 'owner' ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: quickRepliesSheet }, `Quick replies (${quickRepliesOf(trip).length})`) : null,
     list.length ? h('div', {}, h('h2', { class: 'section-title' }, 'The record'),
       h('p', { class: 'muted' }, 'Every message is kept exactly as it was sent, with its time, who wrote it and when it was read. Nothing can be edited or deleted. Make a copy to keep on file:'),
       h('div', { class: 'card-actions' },

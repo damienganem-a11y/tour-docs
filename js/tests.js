@@ -48,7 +48,7 @@ import { linkCheck, slimSheet, hydrateSheet, contentKey, SLIM_SHEET_VERSION } fr
 import { groupsSettingsPage } from './views/settingsGroups.js';
 import { togetherSettingsPage } from './views/settingsTogether.js';
 import { tourSplitPlan, tourSplitState, ticketFor, bookedOnActivity, GROUP_COLORS } from './rules.js';
-import { clockOf, dayLabel, listTime, groupByDay, initialsOf, inboxList, attentionCount, guestUnread, remindMinutesError } from './chat.js';
+import { clockOf, dayLabel, listTime, groupByDay, initialsOf, inboxList, attentionCount, guestUnread, remindMinutesError, quickRepliesOf, DEFAULT_QUICK_REPLIES } from './chat.js';
 import { openChat } from './chatUi.js';
 import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
@@ -3067,6 +3067,12 @@ function readZip(bytes) {
   const box = inboxList(boxRows, [{ guest_id: 'c', flagged: true }], new Map([['a', 'Anna A'], ['b', 'Ben B'], ['c', 'Cy C']]), NOW);
   check('The inbox: latest conversation first, a red mark for unopened or hand-marked ones, "waiting" while the guest has the last word',
     box.map((c) => c.guestId).join() === 'b,a,c' && box[1].dot && box[1].unread === 1 && box[1].waiting && !box[0].dot && !box[0].waiting && box[0].mine && box[2].flagged && box[2].dot && box[2].waiting && attentionCount(box) === 2);
+  {
+    const qc = makeCtx();
+    const okQ = await applyChange(qc, qc.state.id, { type: 'guest-links', action: 'quick-replies', replies: ['  See you at 8.  ', 'On our way'] });
+    const badQ = await applyChange(qc, qc.state.id, { type: 'guest-links', action: 'quick-replies', replies: ['x'.repeat(301)] });
+    check('Quick replies: the defaults until the owner saves some, saved trimmed and journaled, a too-long one refused', quickRepliesOf({}) === DEFAULT_QUICK_REPLIES && okQ.ok && quickRepliesOf(qc.state).join('|') === 'See you at 8.|On our way' && !badQ.ok && /quick replies/.test(summarize(groupBatches(qc.entries).at(-1))));
+  }
   check('A guest counts the staff answers they have not opened, and the reminder time must be one of the choices', guestUnread([cm(1, 'a', 'staff', at(15, 9)), cm(2, 'a', 'staff', at(15, 9), { read_at: at(15, 10) }), cm(3, 'a', 'guest', at(15, 9))]) === 1 && remindMinutesError(30) === null && remindMinutesError(7) !== null && remindMinutesError('30') !== null);
   {
     const sent = [];
@@ -3090,6 +3096,15 @@ function readZip(bytes) {
   const lc = linkCheck(checkTrip, [{ guest_id: 'g1', active: true, has_sheet: true }, { guest_id: 'g2', active: true, has_sheet: false }, { guest_id: 'g3', active: false, has_sheet: true }]);
   check('"Check the links" counts the ready ones and names what is wrong: not on the server, empty, switched off there; a link switched off on purpose is no problem',
     lc.total === 4 && lc.ready === 1 && lc.problems.map((p) => `${p.guestId}:${p.reason}`).join('|') === 'g2:on the server but with no programme|g3:switched off on the server|g5:not on the server yet');
+  {
+    const w = openChat({ title: 'T', getMessages: () => [], isMine: () => true, onSend: async () => ({ ok: true }), quickReplies: () => ['Please come to reception.'] });
+    const box = document.querySelector('.chat');
+    box.querySelector('.chat-quick').click();
+    box.querySelector('.chat-replies button').click();
+    const filled = box.querySelector('.chat-input').value;
+    w.close();
+    check('In a chat, ⚡ opens the quick replies and one tap puts the sentence in the writing box', filled === 'Please come to reception.');
+  }
   // The full-screen viewer: who posted, "1 of 3", next/previous, an action that goes on by itself, and one that removes the photo
   const viewerPhotos = [{ id: 'a', who: 'Ana Perez' }, { id: 'b', who: 'Ben Hall' }, { id: 'c', who: 'Cy Long' }];
   const seen = [];
