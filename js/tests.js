@@ -44,7 +44,7 @@ import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuC
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
 import { pushGuestSheets, sheetGroups } from './sync.js';
-import { linkCheck } from './guestSheet.js';
+import { linkCheck, slimSheet, hydrateSheet, contentKey, SLIM_SHEET_VERSION } from './guestSheet.js';
 import { groupsSettingsPage } from './views/settingsGroups.js';
 import { togetherSettingsPage } from './views/settingsTogether.js';
 import { tourSplitPlan, tourSplitState, ticketFor, bookedOnActivity, GROUP_COLORS } from './rules.js';
@@ -3814,6 +3814,19 @@ function readZip(bytes) {
   check('Three automatic album reminders are planned for every guest, in the future only', albumReminders(jetT).length === 3 && albumReminders({ ...jetT, album: { enabled: false } }).length === 0);
   const early = plannedAutoMessages(jetT, new Date(`${addDays(lastDay, 3)}T00:00:00Z`));
   check('The reminders reach the server list when they are still to come (one week before closing is already past here, the other two are not)', ['album-download', 'album-last-call'].every((k) => early.some((r) => r.auto_key === k && r.audience === 'guests')) && !early.some((r) => r.auto_key === 'album-closing'));
+  // Lighter programmes (v0.136.0): the slim sheet + the shared part give back exactly the same sheet, and the slim one is much smaller
+  {
+    const full = buildGuestSheet(jetT, jetT.guests[0], '2027-08-01T00:00:00Z');
+    const other = buildGuestSheet(jetT, jetT.guests[5], '2027-08-01T00:00:00Z');
+    const a = slimSheet(full); const b = slimSheet(other);
+    const shared = { tours: { ...a.shared.tours, ...b.shared.tours }, ex: { ...a.shared.ex, ...b.shared.ex } };
+    const back = hydrateSheet({ ...a.slim, shared: 'x' }, shared);
+    check('A slim sheet put back together with the trip\'s shared part is exactly the original sheet', JSON.stringify(back) === JSON.stringify(full) && a.slim.v === SLIM_SHEET_VERSION && back.v === 1);
+    check('The slim sheet is much smaller (the games and tours are sent once per trip)', JSON.stringify(a.slim).length < JSON.stringify(full).length * 0.35 && Object.keys(shared.ex).length === full.destinations.filter((d) => d.ex).length);
+    const missing = hydrateSheet({ ...a.slim }, { tours: {}, ex: {} });
+    check('A shared part that is missing pieces leaves tours with their name and places without games, without failing', missing.tours.every((t, i) => t.name === full.tours[i].name) && missing.destinations.every((d) => !d.ex));
+    check('The same content always gives the same key, and different content a different one', contentKey('abc') === contentKey('abc') && contentKey('abc') !== contentKey('abd') && slimSheet({ ended: true, v: 1 }).slim.v === 1);
+  }
   check('The guest sheet carries the word guests use for the staff', buildGuestSheet(jetT, jetT.guests[0], 'x').staffLabel === 'Jet Staff');
   check('The guest sheet says whether the album is on', buildGuestSheet(jetT, jetT.guests[0], 'x').album === true && buildGuestSheet({ ...jetT, album: { enabled: false } }, jetT.guests[0], 'x').album === false);
 }

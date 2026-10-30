@@ -19,7 +19,7 @@ import {
   getPushedChangeCount, bumpPushedChangeCount,
 } from './db.js';
 import { newId } from './ids.js';
-import { guestSheetRows } from './guestSheet.js';
+import { guestSheetRows, slimSheet, contentKey, SLIM_SHEET_VERSION } from './guestSheet.js';
 import { defaultBranding, tripAccent } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast, onSheetClosed } from './ui.js';
@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './a
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
+  pushGuestShared, pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
 import { enqueue, applyChange, outsideScope, StaleTripError } from './changes.js';
@@ -203,7 +203,7 @@ async function sendGuestSheets(trip, { force = false } = {}) {
   if (!trip.guestLinks) return;
   try {
     const now = new Date().toISOString();
-    const rows = guestSheetRows(trip, '');
+    const rows = await slimRows(trip, guestSheetRows(trip, ''), force);
     const before = guestSheetInfo.sent.get(trip.id) ?? new Map();
     const signature = (row) => JSON.stringify(row);
     // Only the sheets that changed since this session last sent them (all of them after a forced send or on the first send).
@@ -222,6 +222,27 @@ async function sendGuestSheets(trip, { force = false } = {}) {
   } catch (error) {
     guestSheetInfo.error = plainSyncError(error?.message);
   }
+}
+
+// Lighter programmes (v0.136.0): the part that is the same for every guest (tours, Passport games) goes once to the server, then each guest's own slim
+// sheet (about 15 KB instead of 105). If the shared part cannot be saved (the database not updated yet), the full sheets are sent as before, so guests are
+// never left with a programme that points to nothing.
+const sharedSent = new Map(); // tripId -> the version of the shared part this session saved
+async function slimRows(trip, rows, force) {
+  const tours = {}; const ex = {};
+  const slimmed = rows.map((row) => {
+    if (!row.sheet || row.sheet.ended) return row;
+    const { slim, shared } = slimSheet(row.sheet);
+    Object.assign(tours, shared.tours); Object.assign(ex, shared.ex);
+    return { ...row, sheet: slim };
+  });
+  if (!slimmed.some((r) => r.sheet?.v === SLIM_SHEET_VERSION)) return rows;
+  const data = { tours, ex };
+  const version = contentKey(JSON.stringify(data));
+  try {
+    if (force || sharedSent.get(trip.id) !== version) { await pushGuestShared(trip.id, version, data); sharedSent.set(trip.id, version); }
+  } catch { return rows; } // the full sheets, as before
+  return slimmed.map((r) => (r.sheet?.v === SLIM_SHEET_VERSION ? { ...r, sheet: { ...r.sheet, shared: version } } : r));
 }
 
 // What the "Sync details" sheet (behind the sync light) reports as the last success and last problem.

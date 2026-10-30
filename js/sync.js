@@ -111,6 +111,13 @@ export async function pushGuestSheets(tripId, rows, currentTokens = rows.map((r)
   if (error) throw error;
 }
 
+// The part of the guests' programmes that is the same for everyone (tours, Passport games), kept once per trip (v0.136.0, migration 0030).
+export async function pushGuestShared(tripId, version, data) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('guest_shared').upsert({ trip_id: tripId, version, data, updated_at: new Date().toISOString() }, { onConflict: 'trip_id' });
+  if (error) throw error;
+}
+
 // What the server holds for each of the trip's guest links (owner only): [{ guest_id, token_start, active, has_sheet, bytes, updated_at }].
 export async function guestLinkStatus(tripId) {
   const supabase = await getClient();

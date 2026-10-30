@@ -215,3 +215,6 @@ export function linkCheck(trip, serverRows) {
   }
   return { total, ready, problems };
 }
+
+// Lighter programmes on the server (v0.136.0): see sheetSlim.js (kept apart, with no import, so the guest app can use it too).
+export { SLIM_SHEET_VERSION, contentKey, slimSheet, hydrateSheet } from './sheetSlim.js';

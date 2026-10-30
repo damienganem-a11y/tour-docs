@@ -18,6 +18,7 @@ import { entryOf, totals, stepOpen, finishStep, finishQuiz, drawQuiz, QUIZ_LENGT
 import { urlBase64ToUint8Array, subscriptionFields, pushCapability } from '../js/pushUtil.js';
 import { greetingFor } from './greetings.js';
 import { openChat } from '../js/chatUi.js';
+import { SLIM_SHEET_VERSION, hydrateSheet } from '../js/sheetSlim.js';
 import { installPlatform, shouldOffer, readOffer, openInstallSheet } from './install.js';
 import { initAlbum, albumView, albumAvailable, albumNewCount, loadAlbum, sendQueue } from './album.js';
 
@@ -81,6 +82,19 @@ function currentToken() {
 }
 
 // ---------- asking the server ----------
+// The trip's shared part of the programme (tours, Passport games): from the phone's memory when it is the version the sheet names, else from the server.
+const SHARED_KEY = 'tourdocs.guest.shared';
+async function sharedPart(token, version) {
+  let kept = null;
+  try { kept = JSON.parse(store.get(SHARED_KEY)); } catch { kept = null; }
+  if (kept?.version && kept.version === version) return kept.data;
+  try {
+    const answer = await callRpc('get_guest_shared', { p_token: token, p_version: kept?.version ?? '' });
+    if (answer?.ok && answer.same && kept) return kept.data;
+    if (answer?.ok && answer.data) { store.set(SHARED_KEY, JSON.stringify({ version: answer.version, data: answer.data })); return answer.data; }
+  } catch { /* no connection */ }
+  return kept?.data ?? null; // an older shared part is better than nothing; none at all: the caller keeps the programme it has
+}
 // Returns { sheet } (a sheet), { off: true } (the server says: no such active link) or { offline: true } (could not reach it).
 async function fetchSheet(token) {
   try {
@@ -90,7 +104,13 @@ async function fetchSheet(token) {
       body: JSON.stringify({ p_token: token }),
     });
     if (!response.ok) return { offline: true };
-    const data = await response.json();
+    let data = await response.json();
+    // A slim programme (v0.136.0): the part that is the same for every guest comes once per trip, and is kept on the phone until it changes.
+    if (data && typeof data === 'object' && data.v === SLIM_SHEET_VERSION && Array.isArray(data.days)) {
+      const shared = await sharedPart(token, data.shared);
+      if (!shared) return { offline: true }; // could not get it: show the programme kept on the phone
+      data = hydrateSheet(data, shared);
+    }
     if (data && typeof data === 'object' && data.v === SUPPORTED_SHEET && Array.isArray(data.days)) return { sheet: data };
     return data && data.v !== undefined && data.v !== SUPPORTED_SHEET ? { tooNew: true } : { off: true };
   } catch { return { offline: true }; }
