@@ -234,7 +234,7 @@ function splitPage(ctx, trip, split) {
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => autoSplitSheet(ctx, trip, split) }, 'Auto-split')),
     ...groupCards, unplacedCard, staleCard,
     h('h2', { class: 'section-title' }, 'Print or share'),
-    exportButton(ctx, trip, split, 'Overview: all groups on one page (PDF)', exportGroupsOverviewPdf, true),
+    exportButton(ctx, trip, split, tour ? 'Reception list: every colour on one page (PDF)' : 'Overview: all groups on one page (PDF)', exportGroupsOverviewPdf, true),
     exportButton(ctx, trip, split, 'Checklists: one page per group, with tick boxes (PDF)', exportGroupsPdf),
     exportButton(ctx, trip, split, 'Excel list, to edit', exportGroupsXlsx),
     exportButton(ctx, trip, split, 'Cards with each group\'s name (PDF)', exportGroupCards),

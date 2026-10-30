@@ -995,9 +995,10 @@ function drawOverviewPage(fit, pageIndex, columns, data, brand, accent, logoImag
   columns.forEach((col, c) => {
     const x = OVERVIEW_MARGIN + c * (colW + OVERVIEW_GAP);
     // the column's head: the group's name and count on its colour
-    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD, w: colW, h: OVERVIEW_HEAD, gray: 0.9 });
-    put(col.name, x + 8, top - 15, { font: FONT_BOLD, size: fitSize(col.name, FONT_BOLD, 13, 8, colW - 16), gray: 0.05, maxWidth: colW - 16 });
-    put(col.countText, x + 8, top - 28, { size: 8, gray: 0.4, maxWidth: colW - 16 });
+    // (a tour's colour group: the head is printed in its colour, writing in the colour's own ink)
+    items.push({ type: 'rect', x, y: top - OVERVIEW_HEAD, w: colW, h: OVERVIEW_HEAD, ...(col.rgb ? { rgb: col.rgb } : { gray: 0.9 }) });
+    put(col.name, x + 8, top - 15, { font: FONT_BOLD, size: fitSize(col.name, FONT_BOLD, 13, 8, colW - 16), ...(col.rgb ? { rgb: col.inkRgb } : { gray: 0.05 }), maxWidth: colW - 16 });
+    put(col.countText, x + 8, top - 28, { size: 8, ...(col.rgb ? { rgb: col.inkRgb } : { gray: 0.4 }), maxWidth: colW - 16 });
     const slice = col.rows.slice(pageIndex * perPage, (pageIndex + 1) * perPage);
     slice.forEach((row, i) => {
       const rowTop = top - OVERVIEW_HEAD - i * rowH;
@@ -1020,8 +1021,8 @@ function drawOverviewPage(fit, pageIndex, columns, data, brand, accent, logoImag
 export function buildGroupsOverviewPdf(data, brand = {}) {
   const accent = accentOf(brand);
   const logoImage = logoImageOf(brand);
-  const columns = data.groups.map((g) => ({ name: g.name, countText: g.countText, rows: g.rows }));
-  if (data.unplaced.length > 0) columns.push({ name: 'Not in a group', countText: `${data.unplaced.length} ${data.unplaced.length === 1 ? 'guest' : 'guests'}`, rows: data.unplaced, unplaced: true });
+  const columns = data.groups.map((g) => ({ name: g.name, countText: g.countText, rows: g.rows, rgb: g.rgb, inkRgb: g.inkRgb })); // rgb: a tour's colour group
+  if (data.unplaced.length > 0) columns.push({ name: data.unplacedLabel ?? 'Not in a group', countText: `${data.unplaced.length} ${data.unplaced.length === 1 ? 'guest' : 'guests'}`, rows: data.unplaced, unplaced: true });
   // Try both page shapes and every size from big to small: fewest pages first, then the biggest writing.
   let best = null;
   for (const shape of OVERVIEW_SHAPES) {

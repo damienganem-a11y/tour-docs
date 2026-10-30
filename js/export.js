@@ -15,7 +15,7 @@
 import { buildTranscriptPdf, buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx } from './xlsx.js';
 import { formatTime, formatFullMoment, formatWeekdayDate } from './time.js';
-import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural, displayNames, teamLabel } from './rules.js';
+import { whoIsWhere, capacityInfo, byName, bySlotOrder, guestPlace, dinnerCountIn, dinnerGuests, plural, displayNames, teamLabel, colorOf, tourSplitState } from './rules.js';
 import { newId } from './ids.js';
 import { showToast, shareOrDownloadFile, openFullScreen, closeSheet } from './ui.js';
 import { lastPdfPages } from './pdf.js';
@@ -213,15 +213,25 @@ export function groupsExportData(trip, split, updatedBy) {
     const others = members.filter((m) => m.partyId === guest.partyId && m.id !== guest.id);
     return others.length > 0 ? `with ${others.map((m) => m.first).join(', ')}` : undefined;
   };
-  const membersOf = (groupId) => activeGuestsOf(trip).filter((g) => split.assignments[g.id] === groupId).sort(byName);
+  // A tour's colour groups (v0.137.1): only the guests booked on that tour (someone who changed tour is left out), and each column wears its colour, so the
+  // reception desk sees "Red" at a glance on the printed list too.
+  const tourState = split.activityId ? tourSplitState(trip, split) : null;
+  const booked = tourState ? new Set(tourState.booked.map((g) => g.id)) : null;
+  const membersOf = (groupId) => activeGuestsOf(trip).filter((g) => split.assignments[g.id] === groupId && (!booked || booked.has(g.id))).sort(byName);
+  const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
   return {
     title: split.name, details: split.details,
     updatedLine: `Updated ${formatFullMoment(new Date().toISOString(), localTimeZone())} (local time), by ${updatedBy}`,
     groups: split.groups.map((group) => {
       const members = membersOf(group.id);
-      return { name: group.name, countText: group.capacity === null ? plural(members.length, 'guest') : capacityInfo(members.length, group.capacity).text, rows: members.map((m) => ({ ...rowOf(m), note: noteFor(m, members) })) };
+      const color = colorOf(group.color);
+      return {
+        name: group.name, countText: group.capacity === null ? plural(members.length, 'guest') : capacityInfo(members.length, group.capacity).text, rows: members.map((m) => ({ ...rowOf(m), note: noteFor(m, members) })),
+        ...(color ? { rgb: rgbOf(color.hex), inkRgb: rgbOf(color.ink) } : {}),
+      };
     }),
-    unplaced: activeGuestsOf(trip).filter((g) => split.assignments[g.id] === undefined).sort(byName).map(rowOf),
+    unplacedLabel: tourState ? 'No colour yet' : 'Not in a group',
+    unplaced: (tourState ? tourState.unplaced : activeGuestsOf(trip).filter((g) => split.assignments[g.id] === undefined)).sort(byName).map(rowOf),
   };
 }
 
