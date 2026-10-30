@@ -298,7 +298,7 @@ function profileModal(sheet) {
 }
 
 // ---------- the boarding card (v0.135.0, owner's request 30 Oct 2026) ----------
-// A tour with colour groups gives the guest a "boarding card": the colour, how many tickets the family takes at reception, their first names, the tour and
+// A tour with colour groups gives the guest a "boarding card": the colour, how many guests of the family are in it, their first names, the tour and
 // the time. It shows on Today from 2 hours before the start until 1 hour after (all day when the tour has no time), and in the programme on the tour's line.
 // Tapped, it fills the screen to be shown at reception, with today's date and a clock that moves: a screenshot of another day or another guest is seen at once.
 const TICKET_BEFORE_MS = 2 * 3600000;
@@ -314,17 +314,18 @@ function ticketsNow(sheet, now = Date.now()) {
   }
   return list;
 }
-const ticketsWord = (n) => `${n} ticket${n === 1 ? '' : 's'}`;
-function familyLine(t) { return t.names.length <= 1 ? (t.names[0] ? `for ${t.names[0]}` : '') : `for ${t.names.slice(0, -1).join(', ')} and ${t.names.at(-1)}`; }
+// The card replaces the paper tickets (owner, 30 Oct 2026): it says how many guests the family is in that colour, and who.
+const guestsWord = (n) => `${n} guest${n === 1 ? '' : 's'}`;
+function familyLine(t) { return t.names.length <= 1 ? (t.names[0] ?? '') : `${t.names.slice(0, -1).join(', ')} and ${t.names.at(-1)}`; }
 function boardingCards(sheet) {
   return ticketsNow(sheet).map(({ part }) => ticketCard(part));
 }
 function ticketCard(part) {
   const t = part.ticket;
-  return h('button', { class: 'ticket-card', type: 'button', style: `background:${t.color};color:${t.ink}`, onclick: () => openBoarding(part), 'aria-label': `${t.colorName} group, ${ticketsWord(t.count)}. Tap to show it at reception.` },
+  return h('button', { class: 'ticket-card', type: 'button', style: `background:${t.color};color:${t.ink}`, onclick: () => openBoarding(part), 'aria-label': `${t.colorName} group, ${guestsWord(t.count)}: ${familyLine(t)}. Tap to show it at reception.` },
     h('small', {}, `${part.name}${part.time ? ` · ${part.time}` : ''}`),
-    h('b', { class: 'ticket-color' }, (t.colorName || t.group).toUpperCase()),
-    h('span', { class: 'ticket-count' }, `Take ${ticketsWord(t.count)}`),
+    h('b', { class: 'ticket-color' }, (t.colorName || t.group).toUpperCase(), t.colorName ? h('span', {}, ' GROUP') : null),
+    h('span', { class: 'ticket-count' }, guestsWord(t.count)),
     h('span', { class: 'ticket-names' }, familyLine(t)),
     h('span', { class: 'ticket-tap' }, 'Tap to show at reception ›'));
 }
@@ -332,7 +333,7 @@ function ticketCard(part) {
 function ticketChip(part) {
   const t = part.ticket;
   return h('button', { class: 'ticket-chip', type: 'button', onclick: (e) => { e.stopPropagation(); openBoarding(part); } },
-    h('i', { style: `background:${t.color}` }), `${t.colorName || t.group} group · ${ticketsWord(t.count)}`);
+    h('i', { style: `background:${t.color}` }), `${t.colorName || t.group} group · ${guestsWord(t.count)}`);
 }
 // Opened from the notification (address ?board=1): the card showing now, else the next one of today, opens full screen straight away.
 let boardAsked = new URLSearchParams(window.location.search).has('board');
@@ -358,9 +359,9 @@ function openBoarding(part) {
     h('button', { class: 'board-close', type: 'button', 'aria-label': 'Close', style: `color:${t.ink}`, onclick: close }, '✕'),
     h('small', { class: 'board-tour' }, part.name),
     h('span', { class: 'board-when' }, [t.date ? dayDate(t.date) : null, part.time ? `departs ${part.time}` : null, part.meeting ? `meet: ${part.meeting}` : null].filter(Boolean).join(' · ')),
-    h('b', { class: 'board-color' }, (t.colorName || t.group).toUpperCase()),
+    h('b', { class: 'board-color' }, (t.colorName || t.group).toUpperCase(), t.colorName ? h('small', {}, 'GROUP') : null),
     t.easy ? h('span', { class: 'board-easy' }, 'Easy Walker group') : null,
-    h('span', { class: 'board-count' }, ticketsWord(t.count)),
+    h('span', { class: 'board-count' }, guestsWord(t.count)),
     h('span', { class: 'board-names' }, familyLine(t)),
     t.count > 1 ? h('span', { class: 'board-note' }, 'One phone is enough for the whole family.') : null,
     h('div', { class: 'board-foot' }, h('span', {}, new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })), clock));

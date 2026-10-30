@@ -105,7 +105,7 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
       add({ auto_key: `hour|${activity.id}`, send_at: new Date(Date.parse(activity.startsAt) - 3600000).toISOString(), audience: 'guests', guest_ids: guestIds, category: 'reminders', priority: 'info',
         title: clip(`In one hour: ${activity.name}`, 80), body: clip(`Leaves at ${clock}${meet ? `, ${meet}` : ''}.`, 200) });
     }
-    // The boarding card on the lock screen (v0.135.0): 30 minutes before a tour with colour groups, each family gets its colour and its number of tickets.
+    // The boarding card on the lock screen (v0.135.0): 30 minutes before a tour with colour groups, each family gets its colour, how many guests and who.
     if (settings.ticketBefore && guestIds.length > 0 && activity.startsAt && (trip.splits ?? []).some((x) => x.activityId === activity.id)) {
       const families = new Map();
       for (const id of guestIds) {
@@ -124,7 +124,7 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
         const square = ticket.emoji ? `${ticket.emoji} ` : '';
         const lines = [
           [activity.name, clock ? `departs ${clock}` : null, activity.meeting ? `meet: ${activity.meeting}` : null].filter(Boolean).join(' · '),
-          `Take ${ticket.count} ticket${ticket.count === 1 ? '' : 's'}${ticket.names.length ? `: ${ticket.names.join(', ')}` : ''}`,
+          `${ticket.count} guest${ticket.count === 1 ? '' : 's'}${ticket.names.length ? `: ${ticket.names.length > 1 ? `${ticket.names.slice(0, -1).join(', ')} and ${ticket.names.at(-1)}` : ticket.names[0]}` : ''}`,
           'Tap to show your card at reception.',
         ].filter(Boolean);
         add({ auto_key: `ticket|${activity.id}|${key}`, send_at: new Date(Date.parse(activity.startsAt) - 30 * 60000).toISOString(), audience: 'guests', guest_ids: ids, category: 'reminders', priority: 'info',

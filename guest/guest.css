@@ -989,3 +989,5 @@ input[type=checkbox] { accent-color: #000; }
 .board-note { font-size: .9rem; opacity: .9; }
 .board-foot { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); display: flex; flex-direction: column; gap: 2px; font-size: 1rem; }
 .board-clock { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.ticket-color span { font-size: .55em; letter-spacing: .06em; }
+.board-color small { display: block; font-size: .38em; letter-spacing: .14em; margin-top: 4px; }
