@@ -11,6 +11,7 @@
 import { addDays, formatTime, localToInstant, offsetMinutes } from './time.js';
 import { findRollCall } from './rollcall.js';
 import { albumReminders } from './album.js';
+import { ticketFor } from './rules.js';
 
 export const MESSAGE_TEMPLATES = [
   { key: 'clocks', label: 'Clocks change tonight', title: 'Clocks change tonight', body: 'Tonight, remember to change your clock or watch before you go to bed.' },
@@ -25,6 +26,7 @@ export const MESSAGE_TEMPLATES = [
 export const AUTO_KINDS = [
   { key: 'eveningBefore', label: 'Guests: the evening before each tour (19:00)', audience: 'guests' },
   { key: 'hourBefore', label: 'Guests: one hour before a tour that starts after 07:30', audience: 'guests' },
+  { key: 'ticketBefore', label: 'Guests: 30 minutes before a tour with colour groups, their colour and tickets (lock screen)', audience: 'guests' },
   { key: 'dinnerAlert', label: 'You: at 15:00, guests with no dinner booked tonight', audience: 'owner' },
   { key: 'rollCallAlert', label: 'You: a roll call still open 15 minutes after a tour left', audience: 'owner' },
 ];
@@ -102,6 +104,23 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
     if (settings.hourBefore && guestIds.length > 0 && activity.startsAt && clock >= '07:30') {
       add({ auto_key: `hour|${activity.id}`, send_at: new Date(Date.parse(activity.startsAt) - 3600000).toISOString(), audience: 'guests', guest_ids: guestIds, category: 'reminders', priority: 'info',
         title: clip(`In one hour: ${activity.name}`, 80), body: clip(`Leaves at ${clock}${meet ? `, ${meet}` : ''}.`, 200) });
+    }
+    // The boarding card on the lock screen (v0.135.0): 30 minutes before a tour with colour groups, each family gets its colour and its number of tickets.
+    if (settings.ticketBefore && guestIds.length > 0 && activity.startsAt && (trip.splits ?? []).some((x) => x.activityId === activity.id)) {
+      const families = new Map();
+      for (const id of guestIds) {
+        const guest = trip.guests.find((g) => g.id === id);
+        const ticket = ticketFor(trip, guest, activity.id);
+        if (!ticket) continue;
+        const key = `${guest.partyId ?? guest.id}|${ticket.groupName}`;
+        if (!families.has(key)) families.set(key, { ticket, ids: [] });
+        families.get(key).ids.push(id);
+      }
+      for (const [key, { ticket, ids }] of families) {
+        add({ auto_key: `ticket|${activity.id}|${key}`, send_at: new Date(Date.parse(activity.startsAt) - 30 * 60000).toISOString(), audience: 'guests', guest_ids: ids, category: 'reminders', priority: 'info',
+          title: clip(`${activity.name} in 30 min: ${(ticket.colorName || ticket.groupName).toUpperCase()} group`, 80),
+          body: clip(`Take ${ticket.count} ticket${ticket.count === 1 ? '' : 's'} at reception${ticket.names.length > 1 ? ` (${ticket.names.join(', ')})` : ''}. Open Tour Docs to show your card.`, 200) });
+      }
     }
     if (settings.rollCallAlert && guestIds.length > 0 && activity.startsAt && !findRollCall(trip, activity.id)?.endedAt) {
       add({ auto_key: `roll|${activity.id}`, send_at: new Date(Date.parse(activity.startsAt) + 15 * 60000).toISOString(), audience: 'owner', guest_ids: null, category: 'reminders', priority: 'info',

@@ -175,6 +175,7 @@ function partView(part, sheet) {
     const tour = part.tour >= 0 ? sheet.tours?.[part.tour] : null;
     if (tour?.info?.duration) lines.push(h('div', { class: 'line' }, tour.info.duration));
     if (part.cancelled) lines.push(h('span', { class: 'tag warn' }, 'Cancelled: your leader will tell you what happens instead'));
+    else if (part.ticket) lines.push(ticketChip(part));
     if (tour) { cls += ' part--tap'; lines.push(h('div', { class: 'more' }, 'Details ›')); }
     if (part.alt?.length) {
       const other = h('button', { class: 'other-btn', type: 'button' }, `Other options (${part.alt.length})`);
@@ -296,6 +297,64 @@ function profileModal(sheet) {
     [h('button', { class: 'atl-pill-btn', type: 'button', onclick: () => overlay.remove() }, 'Close')]);
 }
 
+// ---------- the boarding card (v0.135.0, owner's request 30 Oct 2026) ----------
+// A tour with colour groups gives the guest a "boarding card": the colour, how many tickets the family takes at reception, their first names, the tour and
+// the time. It shows on Today from 2 hours before the start until 1 hour after (all day when the tour has no time), and in the programme on the tour's line.
+// Tapped, it fills the screen to be shown at reception, with today's date and a clock that moves: a screenshot of another day or another guest is seen at once.
+const TICKET_BEFORE_MS = 2 * 3600000;
+const TICKET_AFTER_MS = 3600000;
+function ticketsNow(sheet, now = Date.now()) {
+  const list = [];
+  for (const day of sheet.days ?? []) for (const part of day.parts) {
+    const t = part.kind === 'activity' && !part.cancelled ? part.ticket : null;
+    if (!t) continue;
+    const at = t.at ? Date.parse(t.at) : null;
+    const showing = at ? now >= at - TICKET_BEFORE_MS && now <= at + TICKET_AFTER_MS : todayAt(sheet, day.destination) === day.date;
+    if (showing) list.push({ part, day });
+  }
+  return list;
+}
+const ticketsWord = (n) => `${n} ticket${n === 1 ? '' : 's'}`;
+function familyLine(t) { return t.names.length <= 1 ? (t.names[0] ? `for ${t.names[0]}` : '') : `for ${t.names.slice(0, -1).join(', ')} and ${t.names.at(-1)}`; }
+function boardingCards(sheet) {
+  return ticketsNow(sheet).map(({ part }) => ticketCard(part));
+}
+function ticketCard(part) {
+  const t = part.ticket;
+  return h('button', { class: 'ticket-card', type: 'button', style: `background:${t.color};color:${t.ink}`, onclick: () => openBoarding(part), 'aria-label': `${t.colorName} group, ${ticketsWord(t.count)}. Tap to show it at reception.` },
+    h('small', {}, `${part.name}${part.time ? ` · ${part.time}` : ''}`),
+    h('b', { class: 'ticket-color' }, (t.colorName || t.group).toUpperCase()),
+    h('span', { class: 'ticket-count' }, `Take ${ticketsWord(t.count)}`),
+    h('span', { class: 'ticket-names' }, familyLine(t)),
+    h('span', { class: 'ticket-tap' }, 'Tap to show at reception ›'));
+}
+// The small line under a tour in the programme: the colour square and the tickets, always there once the colours are given.
+function ticketChip(part) {
+  const t = part.ticket;
+  return h('button', { class: 'ticket-chip', type: 'button', onclick: (e) => { e.stopPropagation(); openBoarding(part); } },
+    h('i', { style: `background:${t.color}` }), `${t.colorName || t.group} group · ${ticketsWord(t.count)}`);
+}
+// Full screen, for the reception desk. The clock moves every second.
+function openBoarding(part) {
+  const t = part.ticket;
+  const clock = h('b', { class: 'board-clock' });
+  const tick = () => { const n = new Date(); clock.textContent = n.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+  tick();
+  const timer = setInterval(tick, 1000);
+  const close = () => { clearInterval(timer); overlay.remove(); };
+  const overlay = h('div', { class: 'board', style: `background:${t.color};color:${t.ink}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': `${t.colorName} group` },
+    h('button', { class: 'board-close', type: 'button', 'aria-label': 'Close', style: `color:${t.ink}`, onclick: close }, '✕'),
+    h('small', { class: 'board-tour' }, part.name),
+    h('span', { class: 'board-when' }, [t.date ? dayDate(t.date) : null, part.time ? `departs ${part.time}` : null, part.meeting ? `meet: ${part.meeting}` : null].filter(Boolean).join(' · ')),
+    h('b', { class: 'board-color' }, (t.colorName || t.group).toUpperCase()),
+    t.easy ? h('span', { class: 'board-easy' }, 'Easy Walker group') : null,
+    h('span', { class: 'board-count' }, ticketsWord(t.count)),
+    h('span', { class: 'board-names' }, familyLine(t)),
+    t.count > 1 ? h('span', { class: 'board-note' }, 'One phone is enough for the whole family.') : null,
+    h('div', { class: 'board-foot' }, h('span', {}, new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })), clock));
+  document.body.append(overlay);
+}
+
 function todayView(sheet, offline) {
   const { day, label } = dayShown(sheet);
   const last = sheet.days[sheet.days.length - 1];
@@ -325,7 +384,7 @@ function todayView(sheet, offline) {
   const facts = place?.facts ?? [];
   const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
   const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
-  return [hero, title, h('div', { class: 'atl-body' }, offline, nextBar(sheet), messageCard(), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+  return [hero, title, h('div', { class: 'atl-body' }, offline, ...boardingCards(sheet), nextBar(sheet), messageCard(), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -1383,6 +1442,13 @@ async function refresh() {
 
 refresh();
 setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, REFRESH_EVERY);
+// The boarding card appears 2 hours before a tour and goes 1 hour after: Today is redrawn when that changes (checked every minute).
+let ticketKey = '';
+setInterval(() => {
+  if (!currentSheet || currentSheet.ended) return;
+  const key = ticketsNow(currentSheet).map(({ part }) => `${part.name}|${part.ticket.at}`).join(',');
+  if (key !== ticketKey) { ticketKey = key; if ((view.tab ?? 'today') === 'today' && view.tour === undefined && !view.inbox) paint(); }
+}, 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 window.addEventListener('online', refresh);
 window.addEventListener('hashchange', () => { scrolledToToday = false; refresh(); });

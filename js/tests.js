@@ -3751,6 +3751,16 @@ function readZip(bytes) {
     const ticket = ticketFor(cx.state, ewMate, tour.id);
     const family = booked.filter((o) => o.partyId === ewMate.partyId && groupOf.get(o.id) === groupOf.get(ewMate.id));
     check('The guest\'s ticket: their colour, and the tickets their family takes in that group, with the first names', ticket && ticket.colorName && ticket.count === family.length && ticket.names.length === family.length && ticketFor(cx.state, ew, tour.id).easy === true);
+    // Step 2: the boarding card in the guest's sheet, and the notification 30 minutes before
+    const sheetT = buildGuestSheet(cx.state, ewMate, '2027-01-01T00:00:00Z');
+    const partT = sheetT.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity' && p.name === tour.name);
+    check('The guest\'s sheet carries the boarding card of the tour: colour, tickets of the family, first names, the start and the date', partT?.ticket && partT.ticket.count === ticket.count && partT.ticket.colorName === ticket.colorName && partT.ticket.names.join() === ticket.names.join() && partT.ticket.date && ('at' in partT.ticket));
+    if (tour.startsAt) {
+      const planned = plannedAutoMessages(cx.state, new Date(Date.parse(tour.startsAt) - 2 * 86400000));
+      const mine = planned.filter((r) => r.auto_key.startsWith(`ticket|${tour.id}|`));
+      check('30 minutes before, each family of the tour gets a notification with its colour and its tickets', mine.length > 0 && mine.every((r) => Date.parse(r.send_at) === Date.parse(tour.startsAt) - 30 * 60000 && /in 30 min: [A-Z]+/.test(r.title) && /Take \d+ ticket/.test(r.body))
+        && mine.some((r) => r.guest_ids.includes(ewMate.id)) && mine.flatMap((r) => r.guest_ids).length === new Set(mine.flatMap((r) => r.guest_ids)).size);
+    } else check('The test tour has a start time', false);
     const slot = cx.state.slots.find((x) => x.id === tour.slotId);
     const other = cx.state.activities.find((a) => a.slotId === slot.id && a.id !== tour.id && !a.cancelled);
     check('The test tour has another tour in the same half-day', Boolean(other));

@@ -11,7 +11,7 @@
 //
 // Times are exact moments in the trip, shown here as clock times in the destination's own time zone (CLAUDE.md rule).
 
-import { guestPlace, samePlace, bySlotOrder, teamLabel } from './rules.js';
+import { guestPlace, samePlace, bySlotOrder, teamLabel, ticketFor } from './rules.js';
 import { formatTime } from './time.js';
 import { guestMenuCard } from './menuCard.js';
 import { tripAccent } from './loader.js';
@@ -69,6 +69,13 @@ function toursOf(trip, guest, destinationOf) {
   return list;
 }
 
+// The colour of the guest on a tour, for their boarding card (rules.js ticketFor), with the exact start. Nothing when the tour has no colour groups.
+function ticketPart(trip, guest, activity, slot) {
+  const ticket = ticketFor(trip, guest, activity.id);
+  if (!ticket) return {};
+  return { ticket: { color: ticket.color, ink: ticket.ink, colorName: ticket.colorName, group: ticket.groupName, count: ticket.count, names: ticket.names, easy: ticket.easy, at: activity.startsAt ?? null, date: slot.date } };
+}
+
 // What the guest sees for one half-day. `kind` is one of: activity, leisure, dinner, waitlist, open (nothing confirmed yet).
 function partOf(trip, guest, slot, destination, tours, restaurants) {
   const place = guestPlace(trip, guest, slot);
@@ -80,6 +87,8 @@ function partOf(trip, guest, slot, destination, tours, restaurants) {
       tour: tours.findIndex((t) => t._id === a.id), // which entry of the sheet's tours opens when the guest taps it (-1: none)
       // The other tours offered in the same half-day, for the guest's "Other options" button (the operator can switch this off for the trip).
       ...(trip.guestOptions !== false ? { alt: tours.map((t, i) => (t._slot === slot.id && t._id !== a.id ? i : -1)).filter((i) => i >= 0) } : {}),
+      // The "boarding card" (v0.135.0): the guest's colour on this tour and the tickets their family takes. `at`: the exact start, to show the card from 2 hours before.
+      ...(ticketPart(trip, guest, a, slot)),
     };
   }
   if (place.kind === 'leisure') return { kind: 'leisure' };
