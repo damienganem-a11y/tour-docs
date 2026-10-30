@@ -56,6 +56,9 @@ export function groupBatches(entries) {
         : types.has('add-to-dinner-table') ? 'add-to-dinner-table'
         : types.has('move-dinner-table') ? 'move-dinner-table'
         : types.has('edit-guest') ? 'edit-guest'
+        : types.has('set-easy-walker') ? 'set-easy-walker'
+        : types.has('save-together') ? 'save-together'
+        : types.has('delete-together') ? 'delete-together'
         : types.has('guest-left') ? 'guest-left'
         : types.has('guest-return') ? 'guest-return'
         : types.has('make-solo') ? 'make-solo'
@@ -95,7 +98,7 @@ export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant', 'restaura
 export const DINING_USE_UNDO_SCOPE = ['book-dinner', 'add-to-dinner-table', 'move-dinner-table'];
 export const GROUPS_UNDO_SCOPE = ['add-split', 'edit-split', 'delete-split', 'assign-guests']; // Settings > Groups
 export const BRANDING_UNDO_SCOPE = ['set-branding'];                 // Settings > Brand
-export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']; // Settings > Guests, Travel parties
+export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party', 'set-easy-walker', 'save-together', 'delete-together']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
 
 // scope narrows which action counts as "the last one", so each screen's Undo only offers to take back
@@ -203,6 +206,9 @@ export function summarize(batch) {
   if (batch.kind === 'add-to-dinner-table') return summarizeAddToDinnerTable(batch);
   if (batch.kind === 'move-dinner-table') return summarizeMoveDinnerTable(batch);
   if (batch.kind === 'edit-guest') return summarizeEditGuest(batch.entries[0]);
+  if (batch.kind === 'set-easy-walker') return batch.entries[0].easyWalker ? `${batch.entries[0].guestName} is an Easy Walker` : `${batch.entries[0].guestName} is no longer an Easy Walker`;
+  if (batch.kind === 'save-together') return `Travelling together: "${batch.entries[0].togetherName}" (${plural(batch.entries[0].count, 'guest')})`;
+  if (batch.kind === 'delete-together') return `Removed the group travelling together "${batch.entries[0].togetherName}"`;
   if (batch.kind === 'guest-left') return `${batch.entries[0].guestName} left the trip`;
   if (batch.kind === 'guest-return') return `${batch.entries[0].guestName} is back on the trip`;
   if (batch.kind === 'make-solo') return `${batch.entries[0].guestName} now has their own travel party (solo)`;

@@ -433,6 +433,124 @@ export function autoSplitPlan(trip, split, guestIds) {
   return plan;
 }
 
+// ---------- Colour groups on a tour (v0.134.0, owner's request 30 Oct 2026) ----------
+// A split can belong to ONE tour (split.activityId): its groups are then the tour's colour groups ("Red", "Blue"...). The guest's app shows their colour and how
+// many tickets their family takes, so nobody takes a colour they are not booked on. A group may be kept for the Easy Walkers (group.reserved = 'easy': only
+// the Easy Walkers; 'easy-family': the Easy Walkers and their travel party).
+
+// The colours a group can wear. `ink` is the colour of writing on it.
+export const GROUP_COLORS = [
+  { key: 'red', name: 'Red', hex: '#d32f2f', ink: '#ffffff' },
+  { key: 'blue', name: 'Blue', hex: '#1565c0', ink: '#ffffff' },
+  { key: 'green', name: 'Green', hex: '#2e7d32', ink: '#ffffff' },
+  { key: 'yellow', name: 'Yellow', hex: '#fbc02d', ink: '#1b1b1b' },
+  { key: 'orange', name: 'Orange', hex: '#ef6c00', ink: '#ffffff' },
+  { key: 'purple', name: 'Purple', hex: '#6a1b9a', ink: '#ffffff' },
+  { key: 'pink', name: 'Pink', hex: '#d81b60', ink: '#ffffff' },
+  { key: 'teal', name: 'Teal', hex: '#00838f', ink: '#ffffff' },
+  { key: 'brown', name: 'Brown', hex: '#6d4c41', ink: '#ffffff' },
+  { key: 'grey', name: 'Grey', hex: '#607d8b', ink: '#ffffff' },
+  { key: 'black', name: 'Black', hex: '#212121', ink: '#ffffff' },
+  { key: 'white', name: 'White', hex: '#f5f5f5', ink: '#1b1b1b' },
+];
+export const colorOf = (key) => GROUP_COLORS.find((c) => c.key === key) ?? null;
+export const RESERVED_KINDS = { easy: 'Easy Walkers only', 'easy-family': 'Easy Walkers and their travel party' };
+
+// The guests booked on a tour (not cancelled, still on the trip).
+export function bookedOnActivity(trip, activityId) {
+  const activity = trip.activities.find((a) => a.id === activityId);
+  if (!activity) return [];
+  const slot = trip.slots.find((s) => s.id === activity.slotId);
+  return trip.guests.filter((g) => !g.leftAt && guestPlace(trip, g, slot).kind === 'activity' && guestPlace(trip, g, slot).activity.id === activityId);
+}
+
+// For a tour's split: who still needs a group, and who is in a group but no longer on the tour (they changed tour): { unplaced, stale }.
+export function tourSplitState(trip, split) {
+  const booked = bookedOnActivity(trip, split.activityId);
+  const bookedIds = new Set(booked.map((g) => g.id));
+  return {
+    booked,
+    unplaced: booked.filter((g) => split.assignments[g.id] === undefined),
+    stale: trip.guests.filter((g) => split.assignments[g.id] !== undefined && !bookedIds.has(g.id)),
+  };
+}
+
+// The "travel together" group of a guest (trip.together = [{ id, name, guestIds }]), or null.
+export const togetherOf = (trip, guestId) => (trip.together ?? []).find((t) => t.guestIds.includes(guestId)) ?? null;
+
+// Spreads the guests of a tour over its colour groups. Like autoSplitPlan (fewest people first, never over a size when another group has room, the same
+// input always gives the same result), and also:
+//   - a group kept for the Easy Walkers takes the Easy Walkers (and, for 'easy-family', their travel party); nobody else goes there;
+//   - a "travel together" group is kept whole when one group has room for all of it; otherwise it is split by travel party, and the warning says so.
+// A travel party is never split. Returns { plan: [{ guestId, groupId }], warnings: [sentences] }.
+export function tourSplitPlan(trip, split, guestIds) {
+  const counts = new Map(split.groups.map((g) => [g.id, Object.entries(split.assignments).filter(([id, gid]) => gid === g.id && !guestIds.includes(id)).length]));
+  const guests = trip.guests.filter((g) => guestIds.includes(g.id));
+  const partyKey = (g) => g.partyId ?? g.id;
+  const reserved = split.groups.filter((g) => g.reserved);
+  const open = split.groups.filter((g) => !g.reserved);
+  const plan = []; const warnings = [];
+  const fits = (group, n) => group.capacity === null || counts.get(group.id) + n <= group.capacity;
+  const place = (members, pool) => {
+    const roomy = pool.filter((g) => fits(g, members.length));
+    const choice = (roomy.length ? roomy : pool).reduce((best, g) => (counts.get(g.id) < counts.get(best.id) ? g : best), (roomy.length ? roomy : pool)[0]);
+    counts.set(choice.id, counts.get(choice.id) + members.length);
+    for (const m of members) plan.push({ guestId: m.id, groupId: choice.id });
+    return choice;
+  };
+
+  // 1. The Easy Walkers (and their family when the group says so) into the kept group(s).
+  let rest = guests;
+  if (reserved.length > 0) {
+    const withFamily = reserved.some((g) => g.reserved === 'easy-family');
+    const easyParties = new Set(guests.filter((g) => g.easyWalker).map(partyKey));
+    const going = guests.filter((g) => (withFamily ? easyParties.has(partyKey(g)) : g.easyWalker));
+    const byParty = new Map();
+    for (const g of going) byParty.set(withFamily ? partyKey(g) : g.id, [...(byParty.get(withFamily ? partyKey(g) : g.id) ?? []), g]);
+    for (const members of [...byParty.values()].sort((a, b) => b.length - a.length)) place(members, reserved);
+    const goingIds = new Set(going.map((g) => g.id));
+    rest = guests.filter((g) => !goingIds.has(g.id));
+  }
+  const pool = open.length > 0 ? open : split.groups;
+
+  // 2. Everyone else: travel parties joined by their "travel together" group.
+  const parties = new Map();
+  for (const g of rest) parties.set(partyKey(g), [...(parties.get(partyKey(g)) ?? []), g]);
+  const units = new Map(); // key -> [parties]
+  for (const [key, members] of parties) {
+    const together = members.map((m) => togetherOf(trip, m.id)).find(Boolean);
+    const unitKey = together ? `t:${together.id}` : `p:${key}`;
+    units.set(unitKey, [...(units.get(unitKey) ?? []), members]);
+  }
+  const ordered = [...units.entries()].sort((a, b) => b[1].flat().length - a[1].flat().length || a[0].localeCompare(b[0]));
+  for (const [key, partyList] of ordered) {
+    const all = partyList.flat();
+    if (partyList.length === 1 || pool.some((g) => fits(g, all.length))) { place(all, pool); continue; }
+    const name = key.startsWith('t:') ? (trip.together ?? []).find((t) => `t:${t.id}` === key)?.name : null;
+    warnings.push(`"${name ?? 'Travel together'}" (${all.length} people) did not fit in one group: its families were placed separately.`);
+    for (const members of [...partyList].sort((a, b) => b.length - a.length)) place(members, pool);
+  }
+  return { plan, warnings };
+}
+
+// What a guest's app shows for one tour: their colour and the tickets their family takes, or null when they have no colour on that tour.
+// { color, colorName, ink, groupName, count, names: [first names], easy }  (count = their travel party in the same group of that tour)
+export function ticketFor(trip, guest, activityId) {
+  const activity = trip.activities.find((a) => a.id === activityId);
+  const slot = activity && trip.slots.find((x) => x.id === activity.slotId);
+  if (!slot || activity.cancelled) return null;
+  const onIt = (g) => { const place = guestPlace(trip, g, slot); return place.kind === 'activity' && place.activity.id === activityId; };
+  if (!onIt(guest)) return null; // moved to another tour: the colour of this one is not theirs any more
+  const split = (trip.splits ?? []).find((s) => s.activityId === activityId && s.assignments[guest.id] !== undefined);
+  if (!split) return null;
+  const group = split.groups.find((g) => g.id === split.assignments[guest.id]);
+  if (!group) return null;
+  const color = colorOf(group.color);
+  const family = trip.guests.filter((g) => !g.leftAt && (g.partyId ?? g.id) === (guest.partyId ?? guest.id) && split.assignments[g.id] === group.id && onIt(g));
+  return { color: color?.hex ?? '#455a64', ink: color?.ink ?? '#ffffff', colorName: color?.name ?? '', groupName: group.name, count: family.length,
+    names: family.map((g) => g.first), easy: Boolean(group.reserved) };
+}
+
 // ---------- Warnings (SPEC.md, "7. Warnings screen") ----------
 
 // Everything across the whole trip that needs a human to look at it:

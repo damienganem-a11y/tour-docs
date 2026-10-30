@@ -45,6 +45,9 @@ import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
 import { pushGuestSheets, sheetGroups } from './sync.js';
 import { linkCheck } from './guestSheet.js';
+import { groupsSettingsPage } from './views/settingsGroups.js';
+import { togetherSettingsPage } from './views/settingsTogether.js';
+import { tourSplitPlan, tourSplitState, ticketFor, bookedOnActivity, GROUP_COLORS } from './rules.js';
 import { clockOf, dayLabel, listTime, groupByDay, initialsOf, inboxList, attentionCount, guestUnread, remindMinutesError } from './chat.js';
 import { openChat } from './chatUi.js';
 import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
@@ -3712,6 +3715,56 @@ function readZip(bytes) {
   const cj2 = rnCtx(); cj2.state.bookings[child.id][juniorTour.slotId] = { kind: 'leisure' };
   r = await applyChange(cj2, rn.id, { type: 'move', guestId: child.id, slotId: juniorTour.slotId, to: { kind: 'activity', activityId: juniorTour.id } });
   check('A child may join the children\'s programme without a parent', r.ok, r.error);
+
+  // --- Colour groups on a tour, Easy Walkers, travel together (v0.134.0) ---
+  {
+    const cx = rnCtx();
+    // the busiest tour of a half-day that offers another tour too (to test a guest changing tour)
+    const tour = [...cx.state.activities].filter((a) => !a.cancelled && cx.state.activities.some((o) => o.slotId === a.slotId && o.id !== a.id && !o.cancelled)).map((a) => ({ a, n: bookedOnActivity(cx.state, a.id).length })).sort((x, y) => y.n - x.n)[0].a;
+    const booked = bookedOnActivity(cx.state, tour.id);
+    const ew = booked.find((g) => cx.state.guests.some((o) => o.partyId === g.partyId && o.id !== g.id && booked.includes(o)));
+    const ewMate = booked.find((o) => o.partyId === ew.partyId && o.id !== ew.id);
+    const setEw = await applyChange(cx, cx.state.id, { type: 'set-easy-walker', guestId: ew.id, easyWalker: true });
+    check('A guest can be marked Easy Walker (journaled, and it cannot be marked twice)', setEw.ok && cx.state.guests.find((g) => g.id === ew.id).easyWalker === true && !(await applyChange(cx, cx.state.id, { type: 'set-easy-walker', guestId: ew.id, easyWalker: true })).ok && /Easy Walker/.test(summarize(groupBatches(cx.entries).at(-1))));
+    const otherParties = [...new Set(booked.filter((g) => g.partyId !== ew.partyId).map((g) => g.partyId))].slice(0, 2);
+    const togetherIds = booked.filter((g) => otherParties.includes(g.partyId)).map((g) => g.id);
+    const tg = await applyChange(cx, cx.state.id, { type: 'save-together', togetherId: null, name: 'Kids friends', guestIds: togetherIds });
+    check('A "travel together" group is saved with its people, and a guest is in one such group at most', tg.ok && cx.state.together.length === 1 && cx.state.together[0].guestIds.length === togetherIds.length && !(await applyChange(cx, cx.state.id, { type: 'save-together', togetherId: null, name: 'Solo', guestIds: [togetherIds[0]] })).ok);
+    const groups = GROUP_COLORS.slice(0, 4).map((c, i) => ({ name: c.name, color: c.key, capacity: Math.ceil(booked.length / 3) + 2, ...(i === 3 ? { reserved: 'easy' } : {}) }));
+    const add = await applyChange(cx, cx.state.id, { type: 'add-split', name: tour.name, details: '', activityId: tour.id, groups });
+    const split = cx.state.splits.find((x) => x.id === add.splitId);
+    check('A tour gets its colour groups (a split tied to the tour, groups with colours, one kept for the Easy Walkers), and only once', add.ok && split.activityId === tour.id && split.groups[0].color === 'red' && split.groups[3].reserved === 'easy' && !(await applyChange(cx, cx.state.id, { type: 'add-split', name: 'Again', details: '', activityId: tour.id, groups: [{ name: 'Red', color: 'red' }] })).ok
+      && !(await applyChange(cx, cx.state.id, { type: 'add-split', name: 'Bad', details: '', groups: [{ name: 'X', color: 'gold' }] })).ok);
+    const { plan, warnings } = tourSplitPlan(cx.state, split, booked.map((g) => g.id));
+    const groupOf = new Map(plan.map((p) => [p.guestId, p.groupId]));
+    const easyGroup = split.groups[3].id;
+    const partiesKept = booked.filter((g) => !g.easyWalker && g.partyId !== ew.partyId).every((g) => booked.filter((o) => o.partyId === g.partyId).every((o) => groupOf.get(o.id) === groupOf.get(g.id)));
+    check('Spreading a tour: everyone booked gets a colour, the Easy Walker goes to the kept group (alone here: "Easy Walkers only"), nobody else does, families stay together, the travel-together group stays whole',
+      plan.length === booked.length && groupOf.get(ew.id) === easyGroup && groupOf.get(ewMate.id) !== easyGroup && plan.filter((p) => p.groupId === easyGroup).length === 1 && partiesKept
+      && new Set(togetherIds.map((id) => groupOf.get(id))).size === 1 && warnings.length === 0);
+    const withFamily = { ...split, groups: split.groups.map((g, i) => (i === 3 ? { ...g, reserved: 'easy-family' } : g)) };
+    const plan2 = tourSplitPlan(cx.state, withFamily, booked.map((g) => g.id)).plan;
+    check('"Easy Walkers and their travel party": the family goes with them', plan2.find((p) => p.guestId === ewMate.id).groupId === easyGroup);
+    const tight = { ...split, groups: split.groups.map((g) => ({ ...g, capacity: g.reserved ? g.capacity : 1 })) };
+    check('A travel-together group that fits nowhere is split by family, with a warning that says so', tourSplitPlan(cx.state, tight, booked.map((g) => g.id)).warnings.some((w) => w.includes('Kids friends')));
+    await applyChange(cx, cx.state.id, { type: 'assign-guests', splitId: split.id, assignments: plan });
+    const ticket = ticketFor(cx.state, ewMate, tour.id);
+    const family = booked.filter((o) => o.partyId === ewMate.partyId && groupOf.get(o.id) === groupOf.get(ewMate.id));
+    check('The guest\'s ticket: their colour, and the tickets their family takes in that group, with the first names', ticket && ticket.colorName && ticket.count === family.length && ticket.names.length === family.length && ticketFor(cx.state, ew, tour.id).easy === true);
+    const slot = cx.state.slots.find((x) => x.id === tour.slotId);
+    const other = cx.state.activities.find((a) => a.slotId === slot.id && a.id !== tour.id && !a.cancelled);
+    check('The test tour has another tour in the same half-day', Boolean(other));
+    {
+      await applyChange(cx, cx.state.id, { type: 'move', guestId: ewMate.id, slotId: slot.id, to: { kind: 'activity', activityId: other.id }, force: true });
+      const st = tourSplitState(cx.state, cx.state.splits.find((x) => x.id === split.id));
+      const pageCtx = { ...cx, refresh() {}, go() {}, roleFor: () => 'owner', journal: () => cx.entries, trip: (id) => cx.trip(id) };
+      const gp = groupsSettingsPage(pageCtx, cx.state, split.id);
+      const tp = togetherSettingsPage(pageCtx, cx.state);
+      check('The colour groups page shows the tour, each colour with its square, the Easy Walker group, and who changed tour; Travelling together lists its groups',
+        gp.textContent.includes('Colour groups') && gp.querySelectorAll('.swatch').length >= 4 && gp.textContent.includes('Easy Walkers') && gp.textContent.includes('No longer on this tour') && tp.textContent.includes('Kids friends'));
+      check('A guest who changes tour loses that tour\'s colour on their ticket and is listed to take out of the group', ticketFor(cx.state, ewMate, tour.id) === null && st.stale.some((g) => g.id === ewMate.id));
+    }
+  }
 }
 
 // --- Passport Explorer, step 1: content, validation, unlock, progress (v0.99.0) ---

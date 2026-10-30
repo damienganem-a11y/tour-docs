@@ -79,6 +79,9 @@
 //       itself). Applied alone. Same move()-reuse as book-dinner.
 //   Guests and travel parties (step 7c/7d), each on its own:
 //   { type: 'edit-guest', guestId, first, last }             the guest's own name (the shown name is worked out from it)
+//   { type: 'set-easy-walker', guestId, easyWalker }         the guest walks slowly: a tour's Easy Walker group is kept for them (v0.134.0)
+//   { type: 'save-together', togetherId | null, name, guestIds }   a "travel together" group: families who want the same tour groups (trip.together);
+//       a guest is in one such group at most (adding them elsewhere takes them out of the other). { type: 'delete-together', togetherId }
 //   { type: 'guest-left', guestId }                          "Guest left the trip": removed from every day-to-day
 //       list and count from now on, without touching a single booking. Reversible (guest-return, or Undo).
 //   { type: 'guest-return', guestId }                        brings a guest back who had left
@@ -93,7 +96,8 @@
 //   { type: 'delete-trip' }                                   only an archived trip can be deleted; it moves to
 //       "Recently deleted" and is purged for good after 30 days
 //   { type: 'reinstate-trip' }                                brings a deleted trip back (still archived)
-//   { type: 'add-split', name, details, groups: [{ name, capacity }] }   a named split of the guests into groups
+//   { type: 'add-split', name, details, activityId?, groups: [{ name, capacity, color?, reserved? }] }   a named split of the guests into groups
+//       (activityId: the split is a TOUR's colour groups; color: a key of rules.js GROUP_COLORS; reserved: 'easy' | 'easy-family', a group kept for the Easy Walkers)
 //       (bus groups, a boat, a guided tour...). A guest is in ONE group of a given split, and can be in a group of
 //       each of several splits. capacity is optional (a bus's seats): over it is flagged, never refused.
 //   { type: 'edit-split', splitId, name, details, groups: [{ id | null, name, capacity }] }   renames, adds and
@@ -118,7 +122,7 @@
 import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { explorerProblems } from './explorer.js';
-import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn, eligibilityProblems } from './rules.js';
+import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn, eligibilityProblems, colorOf, RESERVED_KINDS } from './rules.js';
 import { isValidTimeZone, localToInstant, formatTime } from './time.js';
 import { tourInfoError, cleanTourInfo } from './tourInfo.js';
 import { menuCardError, cleanMenuCard } from './menuCard.js';
@@ -138,7 +142,8 @@ const SETTINGS_TYPES = new Set(['edit-destination', 'add-activity', 'edit-activi
 // like cancel-tour.
 const DINING_BOOKING_TYPES = new Set(['book-dinner', 'add-to-dinner-table', 'move-dinner-table']);
 // Guest and travel party changes (step 7c/7d): also each on its own.
-const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party']);
+const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party', 'set-easy-walker']);
+const TOGETHER_TYPES = new Set(['save-together', 'delete-together']);
 // The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own. Allowed even when
 // the trip is archived (see validateChanges below) — that is how these get taken back.
 const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 'reinstate-trip']);
@@ -212,7 +217,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type) || GUEST_LINK_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || TOGETHER_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type) || GUEST_LINK_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
@@ -233,6 +238,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   if (DIETARY_TYPES.has(changes[0].type)) return { ok: true };
   if (GUEST_LINK_TYPES.has(changes[0].type)) return validateGuestLinks(trip, changes[0]);
   if (SPLIT_TYPES.has(changes[0].type)) return validateSplitChange(trip, changes[0]);
+  if (TOGETHER_TYPES.has(changes[0].type)) return validateTogether(trip, changes[0]);
   if (ROLLCALL_TYPES.has(changes[0].type)) {
     if (changes.some((c) => c.activityId !== changes[0].activityId)) return fail('A roll call change concerns one tour at a time.');
     if (new Set(changes.map((c) => c.guestId)).size !== changes.length) return fail('The same guest appears twice in the same change.');
@@ -398,6 +404,13 @@ function validateUndo(trip, journal, scope) {
     }
     if (entry.type === 'book-dinner' || entry.type === 'add-to-dinner-table' || entry.type === 'move-dinner-table') {
       if (!trip.dinnerBookings.some((b) => b.id === entry.bookingId)) return fail('This action cannot be undone: the table no longer exists.');
+    }
+    if (entry.type === 'set-easy-walker') {
+      const guest = trip.guests.find((g) => g.id === entry.guestId);
+      if (!guest || Boolean(guest.easyWalker) !== entry.easyWalker) return fail(`This action cannot be undone: ${entry.guestName} has changed since.`);
+    }
+    if (entry.type === 'save-together' || entry.type === 'delete-together') {
+      if (JSON.stringify(trip.together ?? []) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the groups travelling together have changed since.');
     }
     if (entry.type === 'edit-guest') {
       const guest = trip.guests.find((g) => g.id === entry.guestId);
@@ -687,6 +700,10 @@ function validateGuestChange(trip, change) {
     if (isBlank(change.first) || isBlank(change.last)) return fail('A guest needs a first name and a last name.');
     return { ok: true };
   }
+  if (change.type === 'set-easy-walker') {
+    if (typeof change.easyWalker !== 'boolean') return fail('Easy Walker is yes or no.');
+    return Boolean(guest.easyWalker) === change.easyWalker ? fail(change.easyWalker ? 'That guest is already an Easy Walker.' : 'That guest is not an Easy Walker.') : { ok: true };
+  }
   if (change.type === 'guest-left') {
     return guest.leftAt ? fail('That guest has already left the trip.') : { ok: true };
   }
@@ -759,6 +776,17 @@ function validateBranding(change) {
   return { ok: true };
 }
 
+// Checks a "travel together" change.
+function validateTogether(trip, change) {
+  const list = trip.together ?? [];
+  if (change.type === 'delete-together') return list.some((t) => t.id === change.togetherId) ? { ok: true } : fail('That group does not exist.');
+  if (typeof change.name !== 'string' || isBlank(change.name) || change.name.trim().length > 60) return fail('Give the group a name of 60 letters or fewer.');
+  if (change.togetherId && !list.some((t) => t.id === change.togetherId)) return fail('That group does not exist.');
+  if (!Array.isArray(change.guestIds) || change.guestIds.length < 2) return fail('A group travelling together has at least two people.');
+  if (change.guestIds.some((id) => !trip.guests.some((g) => g.id === id))) return fail('One of those guests is not in this trip.');
+  return { ok: true };
+}
+
 // Checks one groups change (see the list at the top). A group over its size is never refused, only
 // flagged on screen, like every other count in the app.
 function validateSplitChange(trip, change) {
@@ -775,6 +803,13 @@ function validateSplitChange(trip, change) {
       seen.add(name.toLowerCase());
       const size = group.capacity;
       if (size !== null && size !== undefined && !(Number.isInteger(size) && size >= 1 && size <= 500)) return fail(`The size of "${name}" must be a whole number from 1 to 500, or left empty.`);
+      if (group.color !== undefined && group.color !== null && !colorOf(group.color)) return fail(`"${group.color}" is not one of the colours.`);
+      if (group.reserved !== undefined && group.reserved !== null && !RESERVED_KINDS[group.reserved]) return fail('A group is kept for the Easy Walkers alone, or with their travel party.');
+    }
+    if (change.type === 'add-split' && change.activityId !== undefined && change.activityId !== null) {
+      const activity = trip.activities.find((a) => a.id === change.activityId);
+      if (!activity) return fail('That tour does not exist.');
+      if (splits.some((sp) => sp.activityId === change.activityId)) return fail(`"${activity.name}" already has its colour groups.`);
     }
   }
   if (change.type === 'add-split') return { ok: true };
@@ -1401,6 +1436,9 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
       guest.last = change.last.trim();
       guest.seat = String(change.seat ?? '').trim() || null;
       entries.push({ ...base(), type: 'edit-guest', ...guestWhere, guestId: guest.id, guestName, from, to: { first: guest.first, last: guest.last, seat: guest.seat } });
+    } else if (change.type === 'set-easy-walker') {
+      if (change.easyWalker) guest.easyWalker = true; else delete guest.easyWalker;
+      entries.push({ ...base(), type: 'set-easy-walker', ...guestWhere, guestId: guest.id, guestName, easyWalker: change.easyWalker });
     } else if (change.type === 'guest-left') {
       guest.leftAt = at;
       entries.push({ ...base(), type: 'guest-left', ...guestWhere, guestId: guest.id, guestName });
@@ -1453,12 +1491,34 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
 
   // Groups (Settings > Groups). Like the guest changes they belong to no half-day, so they use the
   // "local, right now" place too. Snapshots (from/to) make Undo exact, whatever changed inside a split.
+  // "Travel together" groups: the whole list is kept before and after, so Undo puts it back exactly.
+  if (TOGETHER_TYPES.has(changes[0].type)) {
+    const c = changes[0];
+    const before = structuredClone(next.together ?? []);
+    let list = structuredClone(before);
+    let name;
+    if (c.type === 'delete-together') {
+      name = list.find((t) => t.id === c.togetherId).name;
+      list = list.filter((t) => t.id !== c.togetherId);
+    } else {
+      const ids = [...new Set(c.guestIds)];
+      name = c.name.trim();
+      for (const t of list) if (t.id !== c.togetherId) t.guestIds = t.guestIds.filter((id) => !ids.includes(id)); // one group per guest
+      const existing = list.find((t) => t.id === c.togetherId);
+      if (existing) { existing.name = name; existing.guestIds = ids; } else list.push({ id: newId(), name, guestIds: ids });
+      list = list.filter((t) => t.guestIds.length > 0);
+    }
+    next.together = list;
+    entries.push({ ...base(), type: c.type, ...guestWhere, togetherName: name, count: c.type === 'delete-together' ? 0 : new Set(c.guestIds).size, from: before, to: structuredClone(list) });
+    return save(ctx, next, entries, {});
+  }
+
   if (SPLIT_TYPES.has(changes[0].type)) {
     const c = changes[0];
     next.splits ??= [];
-    const cleanGroups = (list) => list.map((g) => ({ id: g.id ?? newId(), name: g.name.trim(), capacity: g.capacity ?? null }));
+    const cleanGroups = (list) => list.map((g) => ({ id: g.id ?? newId(), name: g.name.trim(), capacity: g.capacity ?? null, ...(g.color ? { color: g.color } : {}), ...(g.reserved ? { reserved: g.reserved } : {}) }));
     if (c.type === 'add-split') {
-      const split = { id: newId(), name: c.name.trim(), details: String(c.details ?? '').trim(), groups: cleanGroups(c.groups), assignments: {} };
+      const split = { id: newId(), name: c.name.trim(), details: String(c.details ?? '').trim(), ...(c.activityId ? { activityId: c.activityId } : {}), groups: cleanGroups(c.groups), assignments: {} };
       next.splits.push(split);
       entries.push({ ...base(), type: 'add-split', ...guestWhere, splitId: split.id, splitName: split.name, to: structuredClone(split) });
       return save(ctx, next, entries, { splitId: split.id });
@@ -1806,6 +1866,17 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'move-dinner-table') {
     next.dinnerBookings = next.dinnerBookings.filter((b) => b.id !== entry.bookingId);
     entries.push({ ...base(), type: 'dinner-remove', cause: 'undo', bookingId: entry.bookingId, restaurantLabel: entry.restaurantLabel, slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place });
+    return;
+  }
+  if (entry.type === 'set-easy-walker') {
+    const guest = next.guests.find((g) => g.id === entry.guestId);
+    if (entry.easyWalker) delete guest.easyWalker; else guest.easyWalker = true;
+    entries.push({ ...base(), type: 'set-easy-walker', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestId: entry.guestId, guestName: entry.guestName, easyWalker: !entry.easyWalker });
+    return;
+  }
+  if (entry.type === 'save-together' || entry.type === 'delete-together') {
+    next.together = structuredClone(entry.from);
+    entries.push({ ...base(), type: entry.type, cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, togetherName: entry.togetherName, count: entry.count, from: entry.to, to: structuredClone(entry.from) });
     return;
   }
   if (entry.type === 'edit-guest') {

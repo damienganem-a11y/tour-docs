@@ -8,14 +8,14 @@
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
-import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn, slotLabel } from '../rules.js';
+import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn, slotLabel, colorOf, tourSplitState } from '../rules.js';
 import { pageHead, accentTitle, destinationMenu, destinationSub } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo, proposePromotion } from './move.js';
 import { undoButton } from './undo.js';
 import { forcedPlacements, waitlistOrder, USE_UNDO_SCOPE } from '../journal.js';
 import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
-import { showToast, openSheet } from '../ui.js';
+import { showToast, openSheet, closeSheet } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
 
 
@@ -66,12 +66,14 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
         ...rollCallActions(ctx, trip, activity),
         ...(trip.archivedAt ? [] : [
           { label: '+ Add guest', run: () => startAddGuest(ctx, trip, slot, activity) },
+          ...(ctx.roleFor(trip.id) === 'viewer' ? [] : [{ label: (trip.splits ?? []).some((x) => x.activityId === activity.id) ? 'Colour groups' : '+ Colour groups', run: () => { closeSheet(); ctx.go(`#/trip/${trip.id}/settings/groups/for-${activity.id}`); } }]),
           { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
         ]),
       ],
       // Part of this same tour's card (not a card of its own — it is a queue for THIS tour, not a
       // second tour), waiting.length > 0 checked by guestCard itself.
       waitlist: { activity, waiting },
+      colours: colourLine(trip, activity),
     })];
   });
 
@@ -140,7 +142,7 @@ function strip(items, small = false) {
 // this same card, set off by a divider, never as a card of its own: it is this tour's own queue, not
 // a second tour, and a separate card next to it reads as exactly that at a glance (the owner's own
 // feedback, 25 Sep 2026).
-function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist }) {
+function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist, colours = null }) {
   // Alphabetical. Guests who are here by force (orange) come first as a group, so they are seen first in the list.
   const isForced = (g) => Boolean(forcedOf?.(g));
   const inOrder = alphabetical(names);
@@ -180,9 +182,22 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
     // A tour with someone in it by force says so on the closed card, so it is not missed.
     sorted.some(isForced) ? h('div', { class: 'forced-note' }, 'Someone is here by force') : null,
     // Guests are waiting for this tour: said on the closed card, and louder when a seat has freed up (like a tour over capacity is flagged).
-    waitlistNote(trip, waitlist));
+    waitlistNote(trip, waitlist),
+    colours);
 
   return h('div', { class: `card${soft ? ' card--soft' : ''}${cancelled ? ' card--cancelled' : ''}` }, head);
+}
+
+// The tour's colour groups on its closed card: a square of each colour with how many people are in it, and how many still need a colour.
+function colourLine(trip, activity) {
+  const split = (trip.splits ?? []).find((x) => x.activityId === activity.id);
+  if (!split) return null;
+  const state = tourSplitState(trip, split);
+  const booked = new Set(state.booked.map((g) => g.id));
+  return h('div', { class: 'swatch-row' },
+    ...split.groups.map((g) => { const c = colorOf(g.color); const n = Object.entries(split.assignments).filter(([id, gid]) => gid === g.id && booked.has(id)).length;
+      return h('span', { class: 'swatch-label' }, c ? h('span', { class: 'swatch', style: `background:${c.hex}`, role: 'img', 'aria-label': c.name }) : null, String(n)); }),
+    state.unplaced.length || state.stale.length ? h('span', { class: 'count--bad' }, `${state.unplaced.length + state.stale.length} to place`) : null);
 }
 
 // "2 on the waiting list", or, once a seat is free, "A seat is free: 2 waiting" in the warning colour. Null when nobody waits.

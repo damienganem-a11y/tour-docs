@@ -7,7 +7,7 @@
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
-import { displayNames, alphabetical, capacityInfo, plural, joinNames, autoSplitPlan } from '../rules.js';
+import { displayNames, alphabetical, capacityInfo, plural, joinNames, autoSplitPlan, GROUP_COLORS, colorOf, RESERVED_KINDS, tourSplitPlan, tourSplitState, bookedOnActivity, slotLabel } from '../rules.js';
 import { pageHead , guestsSwitch } from './chrome.js';
 import { undoButton } from './undo.js';
 import { choiceRow, notice } from './move.js';
@@ -35,8 +35,80 @@ const activeGuests = (trip) => trip.guests.filter((g) => !g.leftAt);
 const membersOf = (trip, split, groupId) => activeGuests(trip).filter((g) => split.assignments[g.id] === groupId);
 
 export function groupsSettingsPage(ctx, trip, splitId) {
+  // "for-<tour id>": opened from a tour's card ("Colour groups"): the tour's split if it has one, else the list with the creation sheet open.
+  if (splitId?.startsWith('for-')) {
+    const activityId = splitId.slice(4);
+    const existing = (trip.splits ?? []).find((s) => s.activityId === activityId);
+    if (existing) return splitPage(ctx, trip, existing);
+    setTimeout(() => newTourSplitSheet(ctx, trip, activityId), 0);
+    return listPage(ctx, trip);
+  }
   const split = splitId ? (trip.splits ?? []).find((s) => s.id === splitId) : null;
   return split ? splitPage(ctx, trip, split) : listPage(ctx, trip);
+}
+
+// ---------- Colour groups of a tour (v0.134.0) ----------
+// A small square of a group's colour (with the colour's name for screen readers).
+export function swatch(group, size = 18) {
+  const color = colorOf(group.color);
+  return color ? h('span', { class: 'swatch', style: `width:${size}px;height:${size}px;background:${color.hex}`, role: 'img', 'aria-label': color.name }) : null;
+}
+const tourOf = (trip, split) => trip.activities.find((a) => a.id === split.activityId) ?? null;
+const tourLabel = (trip, activity) => { const slot = trip.slots.find((x) => x.id === activity.slotId); return `${slot ? `${slotLabel(trip, slot)} · ` : ''}${activity.name}`; };
+
+// Choose the tour, how many groups, the most people per group, and whether one group is kept for the Easy Walkers. The groups get colours in order
+// (Red, Blue, Green...), and the guests booked on the tour are spread at once (families together, travel-together groups whole when there is room).
+function newTourSplitSheet(ctx, trip, activityId = null) {
+  const taken = new Set((trip.splits ?? []).map((x) => x.activityId).filter(Boolean));
+  const tours = trip.activities.filter((a) => !a.cancelled && !taken.has(a.id))
+    .map((a) => ({ a, slot: trip.slots.find((x) => x.id === a.slotId) })).filter((t) => t.slot)
+    .sort((x, y) => x.slot.date.localeCompare(y.slot.date) || x.slot.half.localeCompare(y.slot.half) || x.a.name.localeCompare(y.a.name));
+  if (tours.length === 0) { openSheet({ eyebrow: 'Groups', title: 'Colour groups', body: [h('p', { class: 'empty' }, 'Every tour already has its colour groups.')], cancelLabel: 'Close' }); return; }
+  const tourSelect = h('select', { class: 'text-input', 'aria-label': 'Tour' }, tours.map(({ a }) => h('option', { value: a.id, selected: a.id === activityId ? '' : null }, `${tourLabel(trip, a)} (${bookedOnActivity(trip, a.id).length})`)));
+  const countSelect = h('select', { class: 'text-input', 'aria-label': 'Number of groups' }, [1, 2, 3, 4, 5, 6, 7, 8].map((n) => h('option', { value: String(n) }, n === 1 ? '1 group: the whole tour in one colour' : `${n} groups`)));
+  const sizeInput = h('input', { class: 'text-input', type: 'number', min: '1', max: '500', inputmode: 'numeric', placeholder: 'No limit', 'aria-label': 'Most people per group' });
+  const easy = h('input', { type: 'checkbox', 'aria-label': 'Keep a group for the Easy Walkers' });
+  const easyMode = h('select', { class: 'text-input', 'aria-label': 'Who goes in the Easy Walker group', disabled: '' }, Object.entries(RESERVED_KINDS).map(([k, label]) => h('option', { value: k }, label)));
+  easy.addEventListener('change', () => { easyMode.disabled = !easy.checked; preview(); });
+  const previewBox = h('div', { class: 'swatch-row' });
+  function groupsWanted() {
+    const n = Number(countSelect.value);
+    const size = sizeInput.value === '' ? null : Number(sizeInput.value);
+    return Array.from({ length: n }, (_, i) => {
+      const color = GROUP_COLORS[i % GROUP_COLORS.length];
+      const kept = easy.checked && i === n - 1;
+      return { name: kept ? `Easy Walkers (${color.name})` : color.name, color: color.key, capacity: size, ...(kept ? { reserved: easyMode.value } : {}) };
+    });
+  }
+  function preview() {
+    const booked = bookedOnActivity(trip, tourSelect.value).length;
+    const n = Number(countSelect.value);
+    if (!sizeInput.value && n > 1) sizeInput.placeholder = `For example ${Math.ceil(booked / n)}`;
+    previewBox.replaceChildren(...groupsWanted().map((g) => h('span', { class: 'swatch-label' }, swatch(g), g.name)), h('span', { class: 'muted' }, ` · ${plural(booked, 'guest')} booked`));
+  }
+  for (const el of [tourSelect, countSelect, sizeInput]) el.addEventListener('input', preview);
+  preview();
+  const create = async () => {
+    const activity = trip.activities.find((a) => a.id === tourSelect.value);
+    const result = await save(ctx, trip, { type: 'add-split', name: activity.name, details: tourLabel(trip, activity), activityId: activity.id, groups: groupsWanted() });
+    if (!result) return;
+    const fresh = ctx.trip(trip.id); const split = fresh.splits.find((x) => x.id === result.splitId);
+    const { plan, warnings } = tourSplitPlan(fresh, split, bookedOnActivity(fresh, activity.id).map((g) => g.id));
+    if (plan.length) await save(ctx, fresh, { type: 'assign-guests', splitId: split.id, assignments: plan }, warnings[0] ?? 'Guests spread over the colours');
+    ctx.go(`#/trip/${trip.id}/settings/groups/${result.splitId}`);
+  };
+  openSheet({
+    eyebrow: 'Groups', title: 'Colour groups for a tour',
+    subtitle: 'The guests booked on the tour are spread over the colours: families stay together, groups travelling together too when there is room. You can move people afterwards.',
+    body: [
+      field('Tour', tourSelect),
+      field('How many groups', countSelect),
+      field('Most people per group (optional)', sizeInput, 'Over the size is flagged in red, never refused.'),
+      h('label', { class: 'tick-row' }, easy, h('span', {}, 'Keep the last group for the Easy Walkers')), easyMode,
+      previewBox,
+    ],
+    footer: h('button', { class: 'btn', type: 'button', onclick: create }, 'Create and spread the guests'),
+  });
 }
 
 // ---------- The list of splits ----------
@@ -44,11 +116,16 @@ export function groupsSettingsPage(ctx, trip, splitId) {
 function listPage(ctx, trip) {
   const rows = (trip.splits ?? []).map((split) => {
     const placed = activeGuests(trip).filter((g) => split.assignments[g.id] !== undefined).length;
+    const tour = split.activityId ? tourOf(trip, split) : null;
+    const state = tour ? tourSplitState(trip, split) : null;
+    const sub = tour
+      ? `${tourLabel(trip, tour)} · ${state.booked.length - state.unplaced.length} of ${state.booked.length} placed${state.stale.length ? ` · ${state.stale.length} changed tour` : ''}`
+      : `${plural(split.groups.length, 'group')} · ${placed} of ${activeGuests(trip).length} guests placed`;
     return h('li', {},
       h('button', { class: 'row', type: 'button', onclick: () => ctx.go(`#/trip/${trip.id}/settings/groups/${split.id}`) },
         h('div', { class: 'row-main' },
-          h('div', { class: 'row-title' }, split.name),
-          h('div', { class: 'row-sub' }, `${plural(split.groups.length, 'group')} · ${placed} of ${activeGuests(trip).length} guests placed`)),
+          h('div', { class: 'row-title' }, split.name, ' ', ...split.groups.map((g) => swatch(g, 12))),
+          h('div', { class: `row-sub${state && (state.unplaced.length || state.stale.length) ? ' row-sub--warn' : ''}` }, sub)),
         h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')));
   });
   return h('div', {},
@@ -58,7 +135,8 @@ function listPage(ctx, trip) {
       action: undoButton(ctx, trip, { scope: GROUPS_UNDO_SCOPE }),
     }),
     guestsSwitch(trip, 'groups'),
-    h('button', { class: 'btn', type: 'button', disabled: Boolean(trip.archivedAt), onclick: () => newSplitSheet(ctx, trip) }, '+ New split'),
+    h('button', { class: 'btn', type: 'button', disabled: Boolean(trip.archivedAt), onclick: () => newTourSplitSheet(ctx, trip) }, '+ Colour groups for a tour'),
+    h('button', { class: 'btn btn--plain', type: 'button', disabled: Boolean(trip.archivedAt), onclick: () => newSplitSheet(ctx, trip) }, '+ Other split (buses, a boat...)'),
     rows.length === 0 ? h('p', { class: 'empty' }, 'No split yet.') : h('ul', { class: 'list' }, rows));
 }
 
@@ -109,14 +187,17 @@ function newSplitSheet(ctx, trip) {
 function splitPage(ctx, trip, split) {
   const names = displayNames(trip.guests);
   const locked = Boolean(trip.archivedAt);
-  const unplaced = activeGuests(trip).filter((g) => split.assignments[g.id] === undefined);
+  const tour = split.activityId ? tourOf(trip, split) : null;
+  const state = tour ? tourSplitState(trip, split) : null;
+  // A tour's split only concerns the guests booked on that tour.
+  const unplaced = state ? state.unplaced : activeGuests(trip).filter((g) => split.assignments[g.id] === undefined);
 
   const groupCards = split.groups.map((group) => {
     const members = membersOf(trip, split, group.id);
     const info = group.capacity === null ? null : capacityInfo(members.length, group.capacity);
     return h('div', { class: 'card' },
       h('div', { class: 'card-row' },
-        h('div', { class: 'act-name' }, group.name),
+        h('div', { class: 'act-name' }, swatch(group, 20), ' ', group.name, group.reserved ? h('span', { class: 'ew-tag' }, group.reserved === 'easy' ? 'Easy Walkers' : 'Easy Walkers + family') : null),
         h('div', { class: `count${info?.tone === 'bad' ? ' count--bad' : ''}` }, info ? info.text : String(members.length))),
       h('div', { class: 'chips' }, [...members].sort(alphabetical(names)).map((g) => h('button', {
         class: 'chip', type: 'button', disabled: locked, onclick: () => moveGuestSheet(ctx, trip, split, g),
@@ -132,17 +213,26 @@ function splitPage(ctx, trip, split) {
         h('div', { class: 'chips' }, [...unplaced].sort(alphabetical(names)).map((g) => h('button', {
           class: 'chip', type: 'button', disabled: locked, onclick: () => moveGuestSheet(ctx, trip, split, g),
         }, names.get(g.id)))));
+  // Guests who are in a colour but changed tour since: their ticket no longer shows this tour; take them out to free the place.
+  const staleCard = state && state.stale.length > 0
+    ? h('div', { class: 'card card--warn' },
+        h('div', { class: 'card-row' }, h('div', { class: 'act-name' }, 'No longer on this tour'), h('div', { class: 'count count--bad' }, String(state.stale.length))),
+        h('div', { class: 'muted' }, 'They changed tour after the colours were given. Their phone no longer shows this colour.'),
+        h('div', { class: 'chips' }, [...state.stale].sort(alphabetical(names)).map((g) => h('span', { class: 'chip' }, names.get(g.id)))),
+        h('div', { class: 'card-actions' }, h('button', { class: 'btn btn--small', type: 'button', disabled: locked,
+          onclick: () => save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: state.stale.map((g) => ({ guestId: g.id, groupId: null })) }, 'Taken out of the colours') }, 'Take them out')))
+    : null;
 
   return h('div', {},
     pageHead({
       back: { href: `#/trip/${trip.id}/settings/groups`, label: 'Groups' },
-      eyebrow: 'Split', title: split.name, subtitle: split.details || undefined,
+      eyebrow: tour ? 'Colour groups' : 'Split', title: split.name, subtitle: tour ? `${tourLabel(trip, tour)} · ${plural(state.booked.length, 'guest')} booked` : (split.details || undefined),
       action: undoButton(ctx, trip, { scope: GROUPS_UNDO_SCOPE }),
     }),
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => editSplitSheet(ctx, trip, split) }, 'Edit'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => autoSplitSheet(ctx, trip, split) }, 'Auto-split')),
-    ...groupCards, unplacedCard,
+    ...groupCards, unplacedCard, staleCard,
     h('h2', { class: 'section-title' }, 'Print or share'),
     exportButton(ctx, trip, split, 'Overview: all groups on one page (PDF)', exportGroupsOverviewPdf, true),
     exportButton(ctx, trip, split, 'Checklists: one page per group, with tick boxes (PDF)', exportGroupsPdf),
@@ -153,7 +243,7 @@ function splitPage(ctx, trip, split) {
 
 // Tick people to add to a group. Only guests not yet in any group of this split are offered.
 function addPeopleSheet(ctx, trip, split, group) {
-  const candidates = activeGuests(trip).filter((g) => split.assignments[g.id] === undefined);
+  const candidates = split.activityId ? tourSplitState(trip, split).unplaced : activeGuests(trip).filter((g) => split.assignments[g.id] === undefined);
   const used = membersOf(trip, split, group.id).length;
   pickGuests(trip, {
     candidates, mates: (guest) => candidates.filter((c) => c.partyId === guest.partyId && c.id !== guest.id),
@@ -190,7 +280,7 @@ function moveGuestSheet(ctx, trip, split, guest) {
   const whoText = () => (together.checked && mates.length > 0 ? `${names.get(guest.id)} and their travel party` : names.get(guest.id));
   const assign = (groupId, doneText) => save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: who().map((g) => ({ guestId: g.id, groupId })) }, doneText);
   const rows = split.groups.map((group) => choiceRow({
-    title: group.name, current: group.id === current,
+    title: `${colorOf(group.color) && !group.name.includes(colorOf(group.color).name) ? `${colorOf(group.color).name} · ` : ''}${group.name}`, current: group.id === current,
     side: group.capacity === null ? String(membersOf(trip, split, group.id).length) : capacityInfo(membersOf(trip, split, group.id).length, group.capacity).text,
     onclick: () => assign(group.id, `${whoText()} moved to ${group.name}`),
   }));
@@ -211,13 +301,18 @@ function moveGuestSheet(ctx, trip, split, guest) {
 function editSplitSheet(ctx, trip, split) {
   const name = h('input', { class: 'text-input', type: 'text', maxlength: '60', value: split.name, 'aria-label': 'Name of the split' });
   const details = h('input', { class: 'text-input', type: 'text', maxlength: '200', value: split.details ?? '', 'aria-label': 'Details' });
-  const rows = split.groups.map((g) => ({ id: g.id, name: g.name, capacity: g.capacity }));
+  const rows = split.groups.map((g) => ({ id: g.id, name: g.name, capacity: g.capacity, color: g.color ?? null, reserved: g.reserved ?? null }));
   const list = h('div', {});
+  const colourPicker = (row, i) => h('select', { class: 'text-input group-color-input', 'aria-label': `Group ${i + 1} colour`, onchange: (e) => { row.color = e.target.value || null; } },
+    h('option', { value: '' }, 'No colour'), GROUP_COLORS.map((c) => h('option', { value: c.key, selected: c.key === row.color ? '' : null }, c.name)));
+  const keptPicker = (row, i) => h('select', { class: 'text-input', 'aria-label': `Group ${i + 1}: who goes in it`, onchange: (e) => { row.reserved = e.target.value || null; } },
+    h('option', { value: '' }, 'Everyone'), Object.entries(RESERVED_KINDS).map(([k, label]) => h('option', { value: k, selected: k === row.reserved ? '' : null }, label)));
   const draw = () => {
-    list.replaceChildren(...rows.map((row, i) => h('div', { class: 'group-edit-row' },
+    list.replaceChildren(...rows.map((row, i) => h('div', { class: 'group-edit-block' }, h('div', { class: 'group-edit-row' },
       h('input', { class: 'text-input', type: 'text', maxlength: '40', value: row.name, placeholder: 'Name', 'aria-label': `Group ${i + 1} name`, oninput: (e) => { row.name = e.target.value; } }),
       h('input', { class: 'text-input group-size-input', type: 'number', min: '1', max: '500', inputmode: 'numeric', value: row.capacity ?? '', placeholder: 'Size', 'aria-label': `Group ${i + 1} size`, oninput: (e) => { row.capacity = e.target.value === '' ? null : Number(e.target.value); } }),
-      h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: rows.length === 1, 'aria-label': `Remove group ${i + 1}`, onclick: () => { rows.splice(i, 1); draw(); } }, '×'))));
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: rows.length === 1, 'aria-label': `Remove group ${i + 1}`, onclick: () => { rows.splice(i, 1); draw(); } }, '×')),
+      split.activityId ? h('div', { class: 'group-edit-row' }, colourPicker(row, i), keptPicker(row, i)) : null)));
   };
   draw();
   openSheet({
@@ -229,7 +324,7 @@ function editSplitSheet(ctx, trip, split) {
       h('div', { class: 'form-label' }, 'Groups'),
       h('div', { class: 'form-hint' }, 'Name of each group, and its size (optional: a bus\'s seats).'),
       list,
-      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => { rows.push({ id: null, name: '', capacity: null }); draw(); } }, '+ Add a group'),
+      h('button', { class: 'btn btn--plain btn--small', type: 'button', onclick: () => { rows.push({ id: null, name: '', capacity: null, color: split.activityId ? GROUP_COLORS[rows.length % GROUP_COLORS.length].key : null, reserved: null }); draw(); } }, '+ Add a group'),
     ],
     footer: h('button', {
       class: 'btn', type: 'button',
@@ -240,16 +335,25 @@ function editSplitSheet(ctx, trip, split) {
 
 // Spreads people over the groups, keeping travel parties together (rules.js's autoSplitPlan).
 function autoSplitSheet(ctx, trip, split) {
-  const unplaced = activeGuests(trip).filter((g) => split.assignments[g.id] === undefined);
-  const everyone = activeGuests(trip);
-  const run = (guests, from) => save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: autoSplitPlan(trip, from, guests.map((g) => g.id)) }, 'Guests spread over the groups');
+  const state = split.activityId ? tourSplitState(trip, split) : null;
+  const unplaced = state ? state.unplaced : activeGuests(trip).filter((g) => split.assignments[g.id] === undefined);
+  const everyone = state ? state.booked : activeGuests(trip);
+  const run = (guests, from) => {
+    if (!state) return save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: autoSplitPlan(trip, from, guests.map((g) => g.id)) }, 'Guests spread over the groups');
+    // A tour: Easy Walkers to their group, travel-together groups whole when there is room; anyone who changed tour is taken out at the same time.
+    const { plan, warnings } = tourSplitPlan(trip, from, guests.map((g) => g.id));
+    const out = state.stale.map((g) => ({ guestId: g.id, groupId: null }));
+    return save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: [...plan, ...out] }, warnings[0] ?? 'Guests spread over the colours');
+  };
   openSheet({
     eyebrow: split.name, title: 'Auto-split',
-    subtitle: `Spreads people evenly over ${plural(split.groups.length, 'group')}, keeping each travel party together. One Undo takes it all back.`,
+    subtitle: state
+      ? `Spreads the ${plural(state.booked.length, 'guest')} booked over ${plural(split.groups.length, 'colour')}: families together, groups travelling together whole when there is room, Easy Walkers to their group. One Undo takes it all back.`
+      : `Spreads people evenly over ${plural(split.groups.length, 'group')}, keeping each travel party together. One Undo takes it all back.`,
     body: [
       notice(unplaced.length === 0 ? 'Everybody is already in a group.' : `${plural(unplaced.length, 'guest')} not in a group yet.`),
       h('button', { class: 'btn', type: 'button', disabled: unplaced.length === 0, onclick: () => run(unplaced, split) }, 'Place the people not in a group'),
-      h('button', { class: 'btn btn--plain', type: 'button', onclick: () => run(everyone, { ...split, assignments: {} }) }, `Start over: re-split all ${everyone.length} guests`),
+      h('button', { class: 'btn btn--plain', type: 'button', disabled: everyone.length === 0, onclick: () => run(everyone, { ...split, assignments: {} }) }, `Start over: re-split all ${everyone.length} guests`),
     ],
     cancelLabel: 'Cancel',
   });

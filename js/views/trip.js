@@ -37,6 +37,7 @@ import { checkSettingsPage } from './settingsCheck.js';
 import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
 import { groupsSettingsPage } from './settingsGroups.js';
+import { togetherSettingsPage } from './settingsTogether.js';
 import { teamSettingsPage } from './settingsTeam.js';
 import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { guestAppSettingsPage } from './settingsGuestApp.js';
@@ -156,6 +157,9 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   }
   if (mode === 'settings' && page === 'warnings') {
     return { node: h('div', { class: 'screen' }, warningsSettingsPage(ctx, trip)) };
+  }
+  if (mode === 'settings' && page === 'together') {
+    return { node: h('div', { class: 'screen' }, togetherSettingsPage(ctx, trip)) };
   }
   if (mode === 'settings' && page === 'groups') {
     return { node: h('div', { class: 'screen' }, groupsSettingsPage(ctx, trip, first)) };

@@ -14,7 +14,7 @@
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
-import { alphabetical, displayNames, partyLabel, plain, plural } from '../rules.js';
+import { alphabetical, displayNames, partyLabel, plain, plural, togetherOf } from '../rules.js';
 import { pageHead , guestsSwitch } from './chrome.js';
 import { undoButton } from './undo.js';
 import { notice, choiceRow } from './move.js';
@@ -48,7 +48,7 @@ function listPage(ctx, trip) {
   const left = trip.guests.filter((g) => g.leftAt).sort(inOrder);
 
   const row = (g) => h('a', { class: 'row', href: `#/trip/${trip.id}/settings/guests/${g.id}` },
-    h('div', { class: 'row-main' }, h('div', { class: 'row-title' }, names.get(g.id)), h('div', { class: 'row-sub' }, partyLabel(trip, g, names))),
+    h('div', { class: 'row-main' }, h('div', { class: 'row-title' }, names.get(g.id), g.easyWalker ? h('span', { class: 'ew-tag', title: 'Easy Walker' }, 'EW') : null), h('div', { class: 'row-sub' }, partyLabel(trip, g, names))),
     h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'));
 
   return h('div', {},
@@ -85,6 +85,12 @@ function detailPage(ctx, trip, guest) {
       class: 'btn btn--plain btn--small', type: 'button', disabled: Boolean(trip.archivedAt),
       onclick: () => changeParty(ctx, trip, guest),
     }, 'Change travel party'),
+    // Easy Walker (v0.134.0): walks slowly; a tour's group kept for the Easy Walkers takes them (Settings > Groups).
+    h('label', { class: 'tick-row' },
+      h('input', { type: 'checkbox', checked: guest.easyWalker === true, disabled: Boolean(trip.archivedAt), 'aria-label': 'Easy Walker',
+        onchange: (e) => save(ctx, trip.id, { type: 'set-easy-walker', guestId: guest.id, easyWalker: e.target.checked }, e.target.checked ? `${names.get(guest.id)} is an Easy Walker` : `${names.get(guest.id)} is no longer an Easy Walker`) }),
+      h('span', {}, h('b', {}, 'Easy Walker'), ' · walks slowly: goes in a tour\'s Easy Walker group')),
+    togetherOf(trip, guest.id) ? h('p', { class: 'muted' }, `Travels with the group "${togetherOf(trip, guest.id).name}".`) : null,
     h('button', {
       class: `btn btn--small ${guest.leftAt ? '' : 'btn--danger'}`, type: 'button', style: 'margin-top: 32px;', disabled: Boolean(trip.archivedAt),
       onclick: () => (guest.leftAt

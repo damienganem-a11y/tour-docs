@@ -1391,3 +1391,12 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .inbox-dot { flex: none; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #e53935; color: #fff; font-size: .72rem; font-weight: 700; line-height: 20px; text-align: center; }
 .inbox-dot--plain { min-width: 12px; width: 12px; height: 12px; padding: 0; border-radius: 50%; }
 .inbox-wait { flex: none; font-size: .7rem; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: #fff3cd; color: #7a5b00; }
+
+/* Colour groups on a tour, Easy Walkers (v0.134.0) */
+.swatch { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+.swatch-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; font-size: .85rem; }
+.swatch-label { display: inline-flex; align-items: center; gap: 5px; }
+.ew-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px; background: #e3f2fd; color: #0d47a1; font-size: .7rem; font-weight: 700; vertical-align: middle; }
+.row-sub--warn { color: #b3261e; }
+.group-edit-block { padding: 6px 0; border-bottom: 1px solid rgba(128,128,128,.2); }
+.group-edit-block .group-edit-row + .group-edit-row { margin-top: 6px; }

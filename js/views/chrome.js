@@ -134,6 +134,6 @@ export function exportFormatSheet(run, { dietary = false } = {}) {
 // The three pages about people (Settings > Guests, Travel parties, Groups) switch from one to the other with this row, so none of them is a dead end.
 export function guestsSwitch(trip, active) {
   return h('div', { class: 'switch', role: 'group', 'aria-label': 'Guests, travel parties or groups' },
-    [['guests', 'Guests'], ['parties', 'Travel parties'], ['groups', 'Groups']].map(([page, label]) =>
+    [['guests', 'Guests'], ['parties', 'Parties'], ['together', 'Together'], ['groups', 'Groups']].map(([page, label]) =>
       h('a', { class: `switch-item${page === active ? ' is-active' : ''}`, href: `#/trip/${trip.id}/settings/${page}`, 'aria-current': page === active ? 'page' : null }, label)));
 }

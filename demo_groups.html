@@ -1,0 +1,17 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><link rel=stylesheet href="/styles.css"><body><div class="screen" id=root></div><script type=module>
+import { buildTrip } from '/js/loader.js';
+import { applyChange } from '/js/changes.js';
+import { groupsSettingsPage } from '/js/views/settingsGroups.js';
+import { bookedOnActivity, tourSplitPlan, GROUP_COLORS } from '/js/rules.js';
+const raw = await (await fetch('/data/tour_docs_sample_trip_RN-01.json')).json();
+const owner = { id: 'u1', name: 'Damien', role: 'owner' };
+const c = { owner, state: buildTrip(raw), entries: [], trip: (id) => c.state, journal: () => c.entries, async commit(n, e) { c.state = n; c.entries.push(...e); }, refresh() {}, go() {}, roleFor: () => 'owner' };
+const tour = [...c.state.activities].map((a) => ({ a, n: bookedOnActivity(c.state, a.id).length })).sort((x, y) => y.n - x.n)[0].a;
+const booked = bookedOnActivity(c.state, tour.id);
+await applyChange(c, c.state.id, { type: 'set-easy-walker', guestId: booked[3].id, easyWalker: true });
+const groups = GROUP_COLORS.slice(0, 5).map((col, i) => ({ name: i === 4 ? `Easy Walkers (${col.name})` : col.name, color: col.key, capacity: Math.ceil(booked.length / 4), ...(i === 4 ? { reserved: 'easy-family' } : {}) }));
+const r = await applyChange(c, c.state.id, { type: 'add-split', name: tour.name, details: '', activityId: tour.id, groups });
+const split = c.state.splits.find((x) => x.id === r.splitId);
+await applyChange(c, c.state.id, { type: 'assign-guests', splitId: split.id, assignments: tourSplitPlan(c.state, split, booked.map((g) => g.id)).plan });
+document.getElementById('root').append(groupsSettingsPage(c, c.state, split.id));
+</script>
