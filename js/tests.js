@@ -3758,7 +3758,7 @@ function readZip(bytes) {
     if (tour.startsAt) {
       const planned = plannedAutoMessages(cx.state, new Date(Date.parse(tour.startsAt) - 2 * 86400000));
       const mine = planned.filter((r) => r.auto_key.startsWith(`ticket|${tour.id}|`));
-      check('30 minutes before, each family of the tour gets a notification with its colour and its tickets', mine.length > 0 && mine.every((r) => Date.parse(r.send_at) === Date.parse(tour.startsAt) - 30 * 60000 && /^[A-Z]+ group · /.test(r.title) && /Tap to show your card/.test(r.body) && /Take \d+ ticket/.test(r.body))
+      check('30 minutes before, each family of the tour gets a notification with its colour and its tickets', mine.length > 0 && mine.every((r) => Date.parse(r.send_at) === Date.parse(tour.startsAt) - 30 * 60000 && /^\S+ [A-Z]+ GROUP \S+$/u.test(r.title) && r.body.startsWith(tour.name) && /Tap to show your card/.test(r.body) && /Take \d+ ticket/.test(r.body))
         && mine.some((r) => r.guest_ids.includes(ewMate.id)) && mine.flatMap((r) => r.guest_ids).length === new Set(mine.flatMap((r) => r.guest_ids)).size);
     } else check('The test tour has a start time', false);
     const slot = cx.state.slots.find((x) => x.id === tour.slotId);

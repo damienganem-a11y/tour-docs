@@ -438,20 +438,22 @@ export function autoSplitPlan(trip, split, guestIds) {
 // many tickets their family takes, so nobody takes a colour they are not booked on. A group may be kept for the Easy Walkers (group.reserved = 'easy': only
 // the Easy Walkers; 'easy-family': the Easy Walkers and their travel party).
 
-// The colours a group can wear. `ink` is the colour of writing on it.
+// The colours a group can wear. `ink` is the colour of writing on it. `emoji`: a square of that colour for a notification's text (a notification cannot
+// colour its words or change the app's icon, but an emoji shows in colour everywhere, lock screen and Always On Display included; pink, teal and grey
+// have no square: a heart of that colour, which an older phone may not show).
 export const GROUP_COLORS = [
-  { key: 'red', name: 'Red', hex: '#d32f2f', ink: '#ffffff' },
-  { key: 'blue', name: 'Blue', hex: '#1565c0', ink: '#ffffff' },
-  { key: 'green', name: 'Green', hex: '#2e7d32', ink: '#ffffff' },
-  { key: 'yellow', name: 'Yellow', hex: '#fbc02d', ink: '#1b1b1b' },
-  { key: 'orange', name: 'Orange', hex: '#ef6c00', ink: '#ffffff' },
-  { key: 'purple', name: 'Purple', hex: '#6a1b9a', ink: '#ffffff' },
-  { key: 'pink', name: 'Pink', hex: '#d81b60', ink: '#ffffff' },
-  { key: 'teal', name: 'Teal', hex: '#00838f', ink: '#ffffff' },
-  { key: 'brown', name: 'Brown', hex: '#6d4c41', ink: '#ffffff' },
-  { key: 'grey', name: 'Grey', hex: '#607d8b', ink: '#ffffff' },
-  { key: 'black', name: 'Black', hex: '#212121', ink: '#ffffff' },
-  { key: 'white', name: 'White', hex: '#f5f5f5', ink: '#1b1b1b' },
+  { key: 'red', emoji: '🟥', name: 'Red', hex: '#d32f2f', ink: '#ffffff' },
+  { key: 'blue', emoji: '🟦', name: 'Blue', hex: '#1565c0', ink: '#ffffff' },
+  { key: 'green', emoji: '🟩', name: 'Green', hex: '#2e7d32', ink: '#ffffff' },
+  { key: 'yellow', emoji: '🟨', name: 'Yellow', hex: '#fbc02d', ink: '#1b1b1b' },
+  { key: 'orange', emoji: '🟧', name: 'Orange', hex: '#ef6c00', ink: '#ffffff' },
+  { key: 'purple', emoji: '🟪', name: 'Purple', hex: '#6a1b9a', ink: '#ffffff' },
+  { key: 'pink', emoji: '🩷', name: 'Pink', hex: '#d81b60', ink: '#ffffff' },
+  { key: 'teal', emoji: '🩵', name: 'Teal', hex: '#00838f', ink: '#ffffff' },
+  { key: 'brown', emoji: '🟫', name: 'Brown', hex: '#6d4c41', ink: '#ffffff' },
+  { key: 'grey', emoji: '🩶', name: 'Grey', hex: '#607d8b', ink: '#ffffff' },
+  { key: 'black', emoji: '⬛', name: 'Black', hex: '#212121', ink: '#ffffff' },
+  { key: 'white', emoji: '⬜', name: 'White', hex: '#f5f5f5', ink: '#1b1b1b' },
 ];
 export const colorOf = (key) => GROUP_COLORS.find((c) => c.key === key) ?? null;
 export const RESERVED_KINDS = { easy: 'Easy Walkers only', 'easy-family': 'Easy Walkers and their travel party' };
@@ -547,7 +549,7 @@ export function ticketFor(trip, guest, activityId) {
   if (!group) return null;
   const color = colorOf(group.color);
   const family = trip.guests.filter((g) => !g.leftAt && (g.partyId ?? g.id) === (guest.partyId ?? guest.id) && split.assignments[g.id] === group.id && onIt(g));
-  return { color: color?.hex ?? '#455a64', ink: color?.ink ?? '#ffffff', colorName: color?.name ?? '', groupName: group.name, count: family.length,
+  return { color: color?.hex ?? '#455a64', ink: color?.ink ?? '#ffffff', colorName: color?.name ?? '', emoji: color?.emoji ?? '', groupName: group.name, count: family.length,
     names: family.map((g) => g.first), easy: Boolean(group.reserved) };
 }
 

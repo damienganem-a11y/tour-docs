@@ -119,14 +119,16 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
       for (const [key, { ticket, ids }] of families) {
         // As much as a lock screen shows (title + about four lines): the colour first, then the time and place, the tickets and who they are for.
         // Tapping it opens the big colour card in the app (send-push gives ticket notifications the address ./?board=1).
+        // The colour must be seen at a glance: a square of the colour on each side of the title (an emoji: the only colour a notification can show).
         const colour = (ticket.colorName || ticket.groupName).toUpperCase();
+        const square = ticket.emoji ? `${ticket.emoji} ` : '';
         const lines = [
-          [clock ? `Departs ${clock}` : null, activity.meeting ? `Meet: ${activity.meeting}` : null].filter(Boolean).join(' · '),
+          [activity.name, clock ? `departs ${clock}` : null, activity.meeting ? `meet: ${activity.meeting}` : null].filter(Boolean).join(' · '),
           `Take ${ticket.count} ticket${ticket.count === 1 ? '' : 's'}${ticket.names.length ? `: ${ticket.names.join(', ')}` : ''}`,
           'Tap to show your card at reception.',
         ].filter(Boolean);
         add({ auto_key: `ticket|${activity.id}|${key}`, send_at: new Date(Date.parse(activity.startsAt) - 30 * 60000).toISOString(), audience: 'guests', guest_ids: ids, category: 'reminders', priority: 'info',
-          title: clip(`${colour} group · ${activity.name}`, 80), body: clip(lines.join('\n'), 200) });
+          title: clip(`${square}${colour} GROUP${ticket.emoji ? ` ${ticket.emoji}` : ''}`, 80), body: clip(lines.join('\n'), 200) });
       }
     }
     if (settings.rollCallAlert && guestIds.length > 0 && activity.startsAt && !findRollCall(trip, activity.id)?.endedAt) {
