@@ -1403,3 +1403,12 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .chat-quick { flex: none; width: 40px; height: 44px; border: 0; border-radius: 50%; background: transparent; font-size: 20px; cursor: pointer; }
 .chat-replies { flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; padding: 8px 10px; background: var(--chat-bg); border-top: 1px solid rgba(128,128,128,.25); }
 .chat-replies button { text-align: left; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--chat-theirs); color: var(--chat-ink); font: inherit; font-size: .92rem; cursor: pointer; }
+/* Changing a guest's colour on the spot (v0.138.0) */
+.colour-list { display: flex; flex-direction: column; margin-top: 8px; }
+.colour-row { display: flex; align-items: center; gap: 10px; padding: 12px 4px; border: 0; border-bottom: 1px solid rgba(128,128,128,.2); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.colour-row span:nth-child(2) { flex: 1; font-weight: 600; }
+.colour-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+.colour-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 72px; padding: 12px 14px; border: 0; border-radius: 16px; font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.colour-choice b { font-size: 1.15rem; }
+.colour-choice.is-now { opacity: .45; }
+.state-card { display: flex; flex-direction: column; gap: 8px; }

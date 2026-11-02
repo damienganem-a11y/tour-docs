@@ -3763,6 +3763,9 @@ function readZip(bytes) {
     const tight = { ...split, groups: split.groups.map((g) => ({ ...g, capacity: g.reserved ? g.capacity : 1 })) };
     check('A travel-together group that fits nowhere is split by family, with a warning that says so', tourSplitPlan(cx.state, tight, booked.map((g) => g.id)).warnings.some((w) => w.includes('Kids friends')));
     await applyChange(cx, cx.state.id, { type: 'assign-guests', splitId: split.id, assignments: plan });
+    check('A draft gives the guest no colour yet; the team validates it (journaled, with who and when), and only then the guest has their colour', ticketFor(cx.state, ewMate, tour.id) === null
+      && (await applyChange(cx, cx.state.id, { type: 'set-split-state', splitId: split.id, validated: true })).ok && Boolean(cx.state.splits.find((x) => x.id === split.id).validatedAt)
+      && /Validated the colour groups/.test(summarize(groupBatches(cx.entries).at(-1))) && !(await applyChange(cx, cx.state.id, { type: 'set-split-state', splitId: split.id, validated: true })).ok);
     const ticket = ticketFor(cx.state, ewMate, tour.id);
     const family = booked.filter((o) => o.partyId === ewMate.partyId && groupOf.get(o.id) === groupOf.get(ewMate.id));
     check('The guest\'s ticket: their colour, and the tickets their family takes in that group, with the first names', ticket && ticket.colorName && ticket.count === family.length && ticket.names.length === family.length && ticketFor(cx.state, ew, tour.id).easy === true);

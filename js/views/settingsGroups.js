@@ -13,6 +13,7 @@ import { undoButton } from './undo.js';
 import { choiceRow, notice } from './move.js';
 import { pickGuests } from './guestPicker.js';
 import { GROUPS_UNDO_SCOPE } from '../journal.js';
+import { openColourChange } from './colourQuick.js';
 import { exportGroupsPdf, exportGroupsOverviewPdf, exportGroupsXlsx, exportGroupCards } from '../export.js';
 
 // A labelled field for the sheets: the label above (always readable), the input, then a hint below that wraps (a placeholder
@@ -229,6 +230,17 @@ function splitPage(ctx, trip, split) {
       eyebrow: tour ? 'Colour groups' : 'Split', title: split.name, subtitle: tour ? `${tourLabel(trip, tour)} · ${plural(state.booked.length, 'guest')} booked` : (split.details || undefined),
       action: undoButton(ctx, trip, { scope: GROUPS_UNDO_SCOPE }),
     }),
+    // A tour's colours: prepared as a draft, validated by the person in charge, shown to guests 30 minutes before departure (owner, 2 Nov 2026).
+    tour ? h('div', { class: `card ${split.validatedAt ? 'card--soft' : 'card--warn'} state-card` },
+      h('div', { class: 'act-name' }, split.validatedAt ? 'Validated' : 'Draft: guests do not see their colour yet'),
+      h('div', { class: 'muted' }, split.validatedAt
+        ? `By ${split.validatedBy ?? 'the team'}, ${new Date(split.validatedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}. Guests see their colour 30 minutes before departure, with a notification. A change made now reaches their card at once.`
+        : 'Check the colours, then validate: each guest sees their colour 30 minutes before departure, with a notification.'),
+      h('div', { class: 'card-actions' },
+        h('button', { class: `btn btn--small${split.validatedAt ? ' btn--plain' : ''}`, type: 'button', disabled: locked,
+          onclick: () => save(ctx, trip, { type: 'set-split-state', splitId: split.id, validated: !split.validatedAt }, split.validatedAt ? 'Back to draft: guests no longer see their colour' : 'Validated: guests see their colour 30 minutes before departure') },
+          split.validatedAt ? 'Back to draft' : (unplaced.length ? `Validate (${unplaced.length} without a colour)` : 'Validate the colours')),
+        h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => openColourChange(ctx, trip, split) }, 'Change a guest\'s colour'))) : null,
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => editSplitSheet(ctx, trip, split) }, 'Edit'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => autoSplitSheet(ctx, trip, split) }, 'Auto-split')),

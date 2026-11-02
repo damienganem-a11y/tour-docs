@@ -195,7 +195,7 @@ function partView(part, sheet) {
     const tour = part.tour >= 0 ? sheet.tours?.[part.tour] : null;
     if (tour?.info?.duration) lines.push(h('div', { class: 'line' }, tour.info.duration));
     if (part.cancelled) lines.push(h('span', { class: 'tag warn' }, 'Cancelled: your leader will tell you what happens instead'));
-    else if (part.ticket) lines.push(ticketChip(part));
+    else if (part.ticket && ticketShowing(part.ticket)) lines.push(ticketChip(part));
     if (tour) { cls += ' part--tap'; lines.push(h('div', { class: 'more' }, 'Details ›')); }
     if (part.alt?.length) {
       const other = h('button', { class: 'other-btn', type: 'button' }, `Other options (${part.alt.length})`);
@@ -319,10 +319,16 @@ function profileModal(sheet) {
 
 // ---------- the boarding card (v0.135.0, owner's request 30 Oct 2026) ----------
 // A tour with colour groups gives the guest a "boarding card": the colour, how many guests of the family are in it, their first names, the tour and
-// the time. It shows on Today from 2 hours before the start until 1 hour after (all day when the tour has no time), and in the programme on the tour's line.
+// the time. It shows on Today from 30 minutes before the start until 1 hour after (all day when the tour has no time), and in the programme on the tour's
+// line during that same time. Nothing shows before the team validates the colours (the sheet carries no colour until then).
 // Tapped, it fills the screen to be shown at reception, with today's date and a clock that moves: a screenshot of another day or another guest is seen at once.
-const TICKET_BEFORE_MS = 2 * 3600000;
+const TICKET_BEFORE_MS = 30 * 60000; // owner, 2 Nov 2026: the colours are shared half an hour before departure (and only once the team validated them)
 const TICKET_AFTER_MS = 3600000;
+// Is a colour card to be shown now? From 30 minutes before the start to 1 hour after; a tour with no time: on its day.
+function ticketShowing(t, now = Date.now()) {
+  const at = t.at ? Date.parse(t.at) : null;
+  return at ? now >= at - TICKET_BEFORE_MS && now <= at + TICKET_AFTER_MS : t.date === localToday();
+}
 function ticketsNow(sheet, now = Date.now()) {
   const list = [];
   for (const day of sheet.days ?? []) for (const part of day.parts) {

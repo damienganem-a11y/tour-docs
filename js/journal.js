@@ -72,6 +72,7 @@ export function groupBatches(entries) {
         : types.has('edit-split') ? 'edit-split'
         : types.has('delete-split') ? 'delete-split'
         : types.has('assign-guests') ? 'assign-guests'
+        : types.has('set-split-state') ? 'set-split-state'
         : types.has('set-branding') ? 'set-branding'
         : types.has('erase-dietary') ? 'erase-dietary'
         : types.has('set-dietary') ? 'set-dietary'
@@ -96,7 +97,7 @@ export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant', 'restaura
 // Move sheet is a plain 'move' batch — undoable from Touring/By guest's own Undo, not this one; a
 // known, minor, accepted edge (see the step's plan).
 export const DINING_USE_UNDO_SCOPE = ['book-dinner', 'add-to-dinner-table', 'move-dinner-table'];
-export const GROUPS_UNDO_SCOPE = ['add-split', 'edit-split', 'delete-split', 'assign-guests']; // Settings > Groups
+export const GROUPS_UNDO_SCOPE = ['add-split', 'edit-split', 'delete-split', 'assign-guests', 'set-split-state']; // Settings > Groups
 export const BRANDING_UNDO_SCOPE = ['set-branding'];                 // Settings > Brand
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party', 'set-easy-walker', 'save-together', 'delete-together']; // Settings > Guests, Travel parties
 // (a roll call screen uses { rollCallId } instead, scoped to that one roll call — see rollcall.js)
@@ -221,6 +222,8 @@ export function summarize(batch) {
   if (batch.kind === 'reinstate-trip') return 'Reinstated the trip';
   if (batch.kind === 'add-split') { const e = batch.entries[0]; return `Created the split "${e.splitName}" (${plural(e.to.groups.length, 'group')})`; }
   if (batch.kind === 'edit-split') { const e = batch.entries[0]; return `Edited the split "${e.splitName}"`; }
+  if (batch.kind === 'set-split-state') { const e = batch.entries[0]; return e.validated ? `Validated the colour groups of "${e.splitName}": guests see them 30 minutes before departure` : `Put the colour groups of "${e.splitName}" back to draft`; }
+  if (batch.kind === 'set-split-state') { const e = batch.entries[0]; return e.validated ? `Validated the colour groups of "${e.splitName}": guests see them 30 minutes before departure` : `Put the colour groups of "${e.splitName}" back to draft`; }
   if (batch.kind === 'delete-split') { const e = batch.entries[0]; return `Deleted the split "${e.splitName}"`; }
   if (batch.kind === 'assign-guests') {
     const e = batch.entries[0];

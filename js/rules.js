@@ -544,7 +544,7 @@ export function ticketFor(trip, guest, activityId) {
   const onIt = (g) => { const place = guestPlace(trip, g, slot); return place.kind === 'activity' && place.activity.id === activityId; };
   if (!onIt(guest)) return null; // moved to another tour: the colour of this one is not theirs any more
   const split = (trip.splits ?? []).find((s) => s.activityId === activityId && s.assignments[guest.id] !== undefined);
-  if (!split) return null;
+  if (!split || !split.validatedAt) return null; // a draft: guests do not see their colour until the person in charge validates it
   const group = split.groups.find((g) => g.id === split.assignments[guest.id]);
   if (!group) return null;
   const color = colorOf(group.color);

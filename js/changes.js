@@ -103,6 +103,7 @@
 //   { type: 'edit-split', splitId, name, details, groups: [{ id | null, name, capacity }] }   renames, adds and
 //       removes groups (a group left out is removed, and its members are un-placed)
 //   { type: 'delete-split', splitId }
+//   { type: 'set-split-state', splitId, validated }   a tour's colour groups validated (guests see their colour 30 minutes before departure) or back to draft
 //   { type: 'assign-guests', splitId, assignments: [{ guestId, groupId | null }] }   puts guests in a group of a
 //       split, or (groupId null) takes them out of it — one action for one Undo
 //   { type: 'set-dietary', guestId, dietary }  one guest's allergy / dietary text (the journal says only that it was updated); never undoable
@@ -162,7 +163,7 @@ const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity'
 const DIETARY_TYPES = new Set(['erase-dietary', 'set-dietary']);
 // The guest app's personal links (Settings > Guest links): owner only (not in TEAM_TYPES), on their own, never undoable.
 const GUEST_LINK_TYPES = new Set(['guest-links']);
-const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-guests']);
+const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-guests', 'set-split-state']);
 
 const fail = (error) => ({ ok: false, error });
 
@@ -440,7 +441,7 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'unarchive-trip' && trip.archivedAt) return fail('This action cannot be undone: the trip has been archived again since.');
     if (entry.type === 'delete-trip' && !trip.deletedAt) return fail('This action cannot be undone: the trip is not deleted anymore.');
     if (entry.type === 'reinstate-trip' && trip.deletedAt) return fail('This action cannot be undone: the trip has been deleted again since.');
-    if (entry.type === 'add-split' || entry.type === 'edit-split') {
+    if (entry.type === 'add-split' || entry.type === 'edit-split' || entry.type === 'set-split-state') {
       const split = (trip.splits ?? []).find((s) => s.id === entry.splitId);
       if (!split || JSON.stringify(split) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: that split has changed since.');
     }
@@ -822,6 +823,11 @@ function validateSplitChange(trip, change) {
   const split = splits.find((s) => s.id === change.splitId);
   if (!split) return fail('That split does not exist.');
   if (change.type === 'delete-split') return { ok: true };
+  if (change.type === 'set-split-state') {
+    if (!split.activityId) return fail('Only the colour groups of a tour are validated.');
+    if (typeof change.validated !== 'boolean') return fail('Validated or not: yes or no.');
+    return Boolean(split.validatedAt) === change.validated ? fail(change.validated ? 'These colours are already validated.' : 'These colours are not validated.') : { ok: true };
+  }
   if (change.type === 'edit-split') {
     const ids = change.groups.map((g) => g.id).filter(Boolean);
     if (new Set(ids).size !== ids.length || ids.some((id) => !split.groups.some((g) => g.id === id))) return fail('One of those groups is not in this split.');
@@ -1530,6 +1536,11 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     }
     const split = next.splits.find((s) => s.id === c.splitId);
     const before = structuredClone(split);
+    if (c.type === 'set-split-state') {
+      if (c.validated) { split.validatedAt = at; split.validatedBy = ctx.owner?.name ?? null; } else { delete split.validatedAt; delete split.validatedBy; }
+      entries.push({ ...base(), type: 'set-split-state', ...guestWhere, splitId: split.id, splitName: split.name, validated: c.validated, from: before, to: structuredClone(split) });
+      return save(ctx, next, entries, {});
+    }
     if (c.type === 'delete-split') {
       next.splits = next.splits.filter((s) => s.id !== c.splitId);
       entries.push({ ...base(), type: 'delete-split', ...guestWhere, splitId: split.id, splitName: split.name, from: before });
@@ -1720,6 +1731,12 @@ function undoEntry(next, entry, base, entries) {
   if (entry.type === 'edit-split') {
     next.splits = next.splits.map((s) => (s.id === entry.splitId ? structuredClone(entry.from) : s));
     entries.push({ ...base(), type: 'edit-split', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, splitId: entry.splitId, splitName: entry.from.name, from: entry.to, to: entry.from });
+    return;
+  }
+  if (entry.type === 'set-split-state') {
+    const i = next.splits.findIndex((x) => x.id === entry.splitId);
+    next.splits[i] = structuredClone(entry.from);
+    entries.push({ ...base(), type: 'set-split-state', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, splitId: entry.splitId, splitName: entry.splitName, validated: !entry.validated, from: entry.to, to: structuredClone(entry.from) });
     return;
   }
   if (entry.type === 'delete-split') {

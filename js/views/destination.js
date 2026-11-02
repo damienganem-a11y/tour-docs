@@ -17,6 +17,7 @@ import { applyChange } from '../changes.js';
 import { findRollCall } from '../rollcall.js';
 import { showToast, openSheet, closeSheet } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
+import { openColourChange } from './colourQuick.js';
 
 
 // Cards the owner has opened. Kept here so a card stays open after a change redraws the screen.
@@ -66,7 +67,13 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
         ...rollCallActions(ctx, trip, activity),
         ...(trip.archivedAt ? [] : [
           { label: '+ Add guest', run: () => startAddGuest(ctx, trip, slot, activity) },
-          ...(ctx.roleFor(trip.id) === 'viewer' ? [] : [{ label: (trip.splits ?? []).some((x) => x.activityId === activity.id) ? 'Colour groups' : '+ Colour groups', run: () => { closeSheet(); ctx.go(`#/trip/${trip.id}/settings/groups/for-${activity.id}`); } }]),
+          ...(ctx.roleFor(trip.id) === 'viewer' ? [] : (() => {
+            const split = (trip.splits ?? []).find((x) => x.activityId === activity.id);
+            return [
+              ...(split ? [{ label: 'Change a colour', primary: false, run: () => { closeSheet(); openColourChange(ctx, trip, split); } }] : []),
+              { label: split ? 'Colour groups' : '+ Colour groups', run: () => { closeSheet(); ctx.go(`#/trip/${trip.id}/settings/groups/for-${activity.id}`); } },
+            ];
+          })()),
           { label: 'Cancel tour', run: () => startCancelTour(ctx, trip, slot, activity) },
         ]),
       ],
@@ -74,6 +81,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       // second tour), waiting.length > 0 checked by guestCard itself.
       waitlist: { activity, waiting },
       colours: colourLine(trip, activity),
+      colourOfGuest: (() => { const sp = (trip.splits ?? []).find((x) => x.activityId === activity.id); return sp ? (g) => colorOf(sp.groups.find((x) => x.id === sp.assignments[g.id])?.color) : null; })(),
     })];
   });
 
@@ -142,7 +150,7 @@ function strip(items, small = false) {
 // this same card, set off by a divider, never as a card of its own: it is this tour's own queue, not
 // a second tour, and a separate card next to it reads as exactly that at a glance (the owner's own
 // feedback, 25 Sep 2026).
-function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist, colours = null }) {
+function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist, colours = null, colourOfGuest = null }) {
   // Alphabetical. Guests who are here by force (orange) come first as a group, so they are seen first in the list.
   const isForced = (g) => Boolean(forcedOf?.(g));
   const inOrder = alphabetical(names);
@@ -164,7 +172,7 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
                 disabled: Boolean(trip.archivedAt),
                 'aria-label': entry ? `${names.get(g.id)}, forced into this tour. Tap to see who approved it.` : null,
                 onclick: () => (entry ? showForcedInfo(ctx, trip, g, slot, entry) : startMove(ctx, trip, g, slot)),
-              }, names.get(g.id));
+              }, colourOfGuest?.(g) ? h('span', { class: 'swatch', style: `background:${colourOfGuest(g).hex};margin-right:6px`, role: 'img', 'aria-label': colourOfGuest(g).name }) : null, names.get(g.id));
             })),
         waitlist && waitlist.waiting.length > 0 ? waitlistSection(ctx, trip, slot, waitlist, names) : null,
         actions.length > 0
@@ -197,7 +205,8 @@ function colourLine(trip, activity) {
   return h('div', { class: 'swatch-row' },
     ...split.groups.map((g) => { const c = colorOf(g.color); const n = Object.entries(split.assignments).filter(([id, gid]) => gid === g.id && booked.has(id)).length;
       return h('span', { class: 'swatch-label' }, c ? h('span', { class: 'swatch', style: `background:${c.hex}`, role: 'img', 'aria-label': c.name }) : null, String(n)); }),
-    state.unplaced.length || state.stale.length ? h('span', { class: 'count--bad' }, `${state.unplaced.length + state.stale.length} to place`) : null);
+    state.unplaced.length || state.stale.length ? h('span', { class: 'count--bad' }, `${state.unplaced.length + state.stale.length} to place`) : null,
+    split.validatedAt ? null : h('span', { class: 'muted' }, 'Draft'));
 }
 
 // "2 on the waiting list", or, once a seat is free, "A seat is free: 2 waiting" in the warning colour. Null when nobody waits.
