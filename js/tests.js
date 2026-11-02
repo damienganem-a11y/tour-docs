@@ -44,6 +44,9 @@ import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuC
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
 import { pushGuestSheets, sheetGroups } from './sync.js';
+import { phoneLinks, contactsFromRows, mergeContacts, contactsForTour } from './contacts.js';
+import { buildContactsTemplateXlsx } from './xlsx.js';
+import { contactsSettingsPage } from './views/settingsContacts.js';
 import { linkCheck, slimSheet, hydrateSheet, contentKey, SLIM_SHEET_VERSION } from './guestSheet.js';
 import { groupsSettingsPage } from './views/settingsGroups.js';
 import { togetherSettingsPage } from './views/settingsTogether.js';
@@ -3781,6 +3784,35 @@ function readZip(bytes) {
     } else check('The test tour has a start time', false);
     const slot = cx.state.slots.find((x) => x.id === tour.slotId);
     const other = cx.state.activities.find((a) => a.slotId === slot.id && a.id !== tour.id && !a.cancelled);
+    // --- The local team (v0.139.0): the agency's Excel file, phone links, reconfirming ---
+    {
+      const sl = cx.state.slots.find((x) => x.id === tour.slotId);
+      const sp = cx.state.splits.find((x) => x.activityId === tour.id);
+      const file = buildContactsTemplateXlsx(cx.state.name, [{ date: sl.date, day: sl.day, tour: tour.name, group: 'Red' }, { date: sl.date, day: sl.day, tour: tour.name, group: 'Blue' }]);
+      const sheets = await readXlsx(await file.arrayBuffer());
+      const rows = sheets.Contacts;
+      check('The file for the agency has a Contacts sheet with the tour already written, one line per colour group', rows[0].includes('Phone') && rows.length === 3 && rows[1][2] === tour.name && rows[1][3] === 'Red');
+      rows[1][4] = 'Guide'; rows[1][5] = 'Marie Durand'; rows[1][6] = '+33 6 12 34 56 78'; rows[1][7] = 'Yes'; rows[1][8] = 'French, English';
+      rows[2][4] = 'Driver'; rows[2][5] = 'Paul Bus'; rows[2][6] = '06 11 22 33 44'; rows[2][7] = 'No';
+      rows.push([sl.date, sl.day, 'A tour that does not exist', '', 'Guide', 'Lost Guide', '+33 7 00 00 00 00']);
+      let n = 0; const ids = () => `c${++n}`;
+      const found = contactsFromRows(cx.state, rows, ids);
+      const marie = found.contacts.find((c) => c.name === 'Marie Durand');
+      check('Reading the agency\'s file: each person with their job and phone, put on the tour and its colour group; a line naming no tour of the trip is reported in words',
+        found.contacts.length === 3 && marie.job === 'Guide' && marie.assignments[0].activityId === tour.id && marie.assignments[0].groupId === sp.groups.find((g) => g.name === 'Red').id
+        && found.contacts.find((c) => c.name === 'Paul Bus').whatsapp === false && found.problems.some((p) => p.includes('A tour that does not exist')));
+      const links = phoneLinks('+33 6 12 34 56 78');
+      check('One tap to call, text or WhatsApp: the links are built from the number (WhatsApp needs the country code)', links.tel === 'tel:+33612345678' && links.sms === 'sms:+33612345678' && links.whatsapp === 'https://wa.me/33612345678' && phoneLinks('06 11 22 33 44').whatsapp === null && phoneLinks('') === null);
+      const setC = await applyChange(cx, cx.state.id, { type: 'set-contacts', contacts: found.contacts, what: 'Imported the agency\'s file (3 people)' });
+      const conf = await applyChange(cx, cx.state.id, { type: 'confirm-contact', contactId: marie.id, activityId: tour.id, confirmed: true });
+      const onTour = contactsForTour(cx.state, tour.id);
+      check('The local team is saved and journaled; reconfirming keeps who and when; the tour lists its people, guides first', setC.ok && conf.ok && onTour.length === 2 && onTour[0].contact.job === 'Guide' && Boolean(onTour[0].assignment.confirmedAt) && /reconfirmed/.test(summarize(groupBatches(cx.entries).at(-1))));
+      const again = mergeContacts(cx.state.contacts, [{ ...structuredClone(marie), id: 'new', languages: 'French, English, Italian', assignments: [{ activityId: tour.id, groupId: null }] }], 'merge');
+      check('A second file keeps a known person (same phone) with their reconfirmation, and updates what changed', again.length === 3 && again.find((c) => c.name === 'Marie Durand').id === marie.id && again.find((c) => c.name === 'Marie Durand').languages.includes('Italian') && Boolean(again.find((c) => c.name === 'Marie Durand').assignments[0].confirmedAt));
+      const cpage = contactsSettingsPage({ ...cx, refresh() {}, roleFor: () => 'owner', journal: () => cx.entries, trip: (id) => cx.trip(id) }, cx.state);
+      check('Settings > Local team lists the tour with its people and their Call / Text / WhatsApp buttons', cpage.textContent.includes('Marie Durand') && cpage.querySelector('a[href="tel:+33612345678"]') && cpage.querySelector('a[href="https://wa.me/33612345678"]') && cpage.textContent.includes('File for the agency'));
+      check('Guests never get the local team in their programme', !JSON.stringify(buildGuestSheet(cx.state, ewMate, 'x')).includes('Marie Durand'));
+    }
     check('The test tour has another tour in the same half-day', Boolean(other));
     {
       await applyChange(cx, cx.state.id, { type: 'move', guestId: ewMate.id, slotId: slot.id, to: { kind: 'activity', activityId: other.id }, force: true });

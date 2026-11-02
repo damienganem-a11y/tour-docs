@@ -356,21 +356,23 @@ export function buildEveningXlsx(doc, brand = {}) {
   return assembleWorkbook([{ name: sheetName('Evening', new Set()), xml }], brand.accent);
 }
 
+// A plain sheet: headings in the first row (kept in view), then the rows, every other one tinted.
+const plain = (headers, widths, rows) => {
+  const body = [
+    rowXml(1, headers.map((text, col) => ({ col, text, style: STYLE.HEADING }))),
+    ...rows.map((values, i) => rowXml(2 + i, values.map((text, col) => ({ col, text: text === null ? '' : String(text), style: i % 2 === 0 ? STYLE.TINT : undefined })))),
+  ];
+  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
+    + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>`
+    + `<cols>${cols}</cols><sheetData>${body.join('')}</sheetData>${printSetup(true)}</worksheet>`;
+};
 // The blank trip file to fill in (Trips > "Excel template"): the sheets that xlsxImport.js reads, headings in the first row, and a few
 // invented example lines to replace. Same column names as the sample trip's Excel file.
 export function buildTemplateXlsx() {
-  const plain = (headers, widths, rows) => {
-    const body = [
-      rowXml(1, headers.map((text, col) => ({ col, text, style: STYLE.HEADING }))),
-      ...rows.map((values, i) => rowXml(2 + i, values.map((text, col) => ({ col, text: text === null ? '' : String(text), style: i % 2 === 0 ? STYLE.TINT : undefined })))),
-    ];
-    const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n`
-      + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-      + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`
-      + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>`
-      + `<cols>${cols}</cols><sheetData>${body.join('')}</sheetData>${printSetup(true)}</worksheet>`;
-  };
+
   const readMe = [
     ['Tour Docs trip template'],
     ['Fill in the sheets Itinerary, Guests and Activities (Sign-ups is optional), then in Tour Docs: Trips > Import a trip from Excel.'],
@@ -397,4 +399,26 @@ export function buildTemplateXlsx() {
     { name: 'Sign-ups', xml: plain(['Guest ID', 'Slot ID', 'Activity'], [10, 9, 34], [['G001', 'S01', 'Alfama walking tour'], ['G002', 'S01', 'Alfama walking tour'], ['G003', 'S01', 'At leisure']]) },
   ];
   return assembleWorkbook(sheets, undefined);
+}
+
+// The file for the local agency (v0.139.0): one line per tour of the trip (and per colour group when the tour has them), with the date, day and tour
+// already written; the agency adds who works on it (job, name, phone, WhatsApp, languages, company). Read back by contacts.js contactsFromRows.
+// `tours` = [{ date, day, tour, group }] in trip order; `existing` = lines already known (the same columns), so a second round shows what is in.
+export function buildContactsTemplateXlsx(tripName, tours, existing = []) {
+  const headers = ['Date', 'Day', 'Tour', 'Colour group', 'Job', 'Name', 'Phone', 'WhatsApp', 'Languages', 'Company', 'Notes'];
+  const rows = [
+    ...existing.map((e) => [e.date, e.day, e.tour, e.group, e.job, e.name, e.phone, e.whatsapp ? 'Yes' : 'No', e.languages, e.company, e.notes]),
+    ...tours.map((t) => [t.date, t.day, t.tour, t.group ?? '', '', '', '', '', '', '', '']),
+  ];
+  const readMe = [
+    [`Local team for ${tripName}`],
+    ['One line per person and per tour. The Date, Day, Tour and Colour group columns are already filled in: please add the Job (Guide, Driver, Escort or Other), Name, Phone (with the country code, like +33 6 12 34 56 78), WhatsApp (Yes or No), Languages, Company and any Notes.'],
+    ['A person working on several tours: one line for each tour. Several guides on the same tour: copy the line.'],
+    ['Leave the Name empty on a line nobody works on yet. Do not change the Date and Tour columns.'],
+    ['Then send the file back. In Tour Docs: Settings > Local team > Import the agency\'s file.'],
+  ];
+  return assembleWorkbook([
+    { name: 'Read me', xml: plain(['How to fill this in'], [140], readMe.map((r) => [r[0]])) },
+    { name: 'Contacts', xml: plain(headers, [12, 6, 36, 14, 10, 22, 20, 10, 16, 18, 30], rows) },
+  ], undefined);
 }

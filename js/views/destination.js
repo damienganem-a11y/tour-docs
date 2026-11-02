@@ -18,6 +18,8 @@ import { findRollCall } from '../rollcall.js';
 import { showToast, openSheet, closeSheet } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
 import { openColourChange } from './colourQuick.js';
+import { contactLine } from './contactLine.js';
+import { contactsForTour } from '../contacts.js';
 
 
 // Cards the owner has opened. Kept here so a card stays open after a change redraws the screen.
@@ -81,6 +83,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       // second tour), waiting.length > 0 checked by guestCard itself.
       waitlist: { activity, waiting },
       colours: colourLine(trip, activity),
+      team: contactsForTour(trip, activity.id),
       colourOfGuest: (() => { const sp = (trip.splits ?? []).find((x) => x.activityId === activity.id); return sp ? (g) => colorOf(sp.groups.find((x) => x.id === sp.assignments[g.id])?.color) : null; })(),
     })];
   });
@@ -150,7 +153,7 @@ function strip(items, small = false) {
 // this same card, set off by a divider, never as a card of its own: it is this tour's own queue, not
 // a second tour, and a separate card next to it reads as exactly that at a glance (the owner's own
 // feedback, 25 Sep 2026).
-function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist, colours = null, colourOfGuest = null }) {
+function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false, guests, names, forcedOf, cancelled = false, soft = false, actions, waitlist, colours = null, colourOfGuest = null, team = null }) {
   // Alphabetical. Guests who are here by force (orange) come first as a group, so they are seen first in the list.
   const isForced = (g) => Boolean(forcedOf?.(g));
   const inOrder = alphabetical(names);
@@ -175,6 +178,8 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
               }, colourOfGuest?.(g) ? h('span', { class: 'swatch', style: `background:${colourOfGuest(g).hex};margin-right:6px`, role: 'img', 'aria-label': colourOfGuest(g).name }) : null, names.get(g.id));
             })),
         waitlist && waitlist.waiting.length > 0 ? waitlistSection(ctx, trip, slot, waitlist, names) : null,
+        // The local team of this tour (guides, drivers): call, text, WhatsApp, reconfirm (Settings > Local team).
+        team?.length ? h('div', { class: 'team-tour' }, h('div', { class: 'waitlist-heading' }, `Local team (${team.length})`), ...team.map((item) => contactLine(ctx, trip, item, { canConfirm: ctx.roleFor(trip.id) !== 'viewer' }))) : null,
         actions.length > 0
           ? h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: `btn btn--small${a.primary ? '' : ' btn--plain'}`, type: 'button', onclick: a.run }, a.label)))
           : null,

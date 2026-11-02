@@ -1412,3 +1412,14 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .colour-choice b { font-size: 1.15rem; }
 .colour-choice.is-now { opacity: .45; }
 .state-card { display: flex; flex-direction: column; gap: 8px; }
+/* The local team on a tour (v0.139.0) */
+.contact-line { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-bottom: 1px solid rgba(128,128,128,.2); }
+.contact-who { display: flex; gap: 10px; align-items: flex-start; }
+.contact-who .swatch { margin-top: 3px; }
+.contact-ok { color: #2e7d32; font-size: .85rem; font-weight: 600; }
+.contact-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.contact-btn { display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(128,128,128,.4); background: transparent; color: inherit; font: inherit; font-size: .88rem; font-weight: 600; text-decoration: none; cursor: pointer; }
+.contact-btn--wa { border-color: #25d366; color: #128c4a; }
+.contact-btn--on { background: #e5f2e6; border-color: #2e7d32; color: #2e7d32; }
+.team-tour { margin-top: 14px; }
+.team-tour h3 { margin: 0 0 2px; font-size: 1rem; }

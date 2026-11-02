@@ -1,0 +1,17 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><link rel=stylesheet href="/styles.css"><body><div class="screen" id=root></div><script type=module>
+import { buildTrip } from '/js/loader.js';
+import { applyChange } from '/js/changes.js';
+import { contactsSettingsPage } from '/js/views/settingsContacts.js';
+import { bookedOnActivity, GROUP_COLORS } from '/js/rules.js';
+const c = { owner: { id: 'u1', name: 'Damien', role: 'owner' }, state: buildTrip(await (await fetch('/data/tour_docs_sample_trip_RN-01.json')).json()), entries: [], trip: () => c.state, journal: () => c.entries, async commit(n, e) { c.state = n; c.entries.push(...e); }, refresh() {}, go() {}, roleFor: () => 'owner' };
+const tour = [...c.state.activities].map((a) => ({ a, n: bookedOnActivity(c.state, a.id).length })).sort((x, y) => y.n - x.n)[0].a;
+const r = await applyChange(c, c.state.id, { type: 'add-split', name: tour.name, details: '', activityId: tour.id, groups: GROUP_COLORS.slice(0, 3).map((col) => ({ name: col.name, color: col.key, capacity: 50 })) });
+const sp = c.state.splits.find((x) => x.id === r.splitId);
+const contacts = [
+  { id: 'a', name: 'Marie Durand', job: 'Guide', phone: '+33 6 12 34 56 78', whatsapp: true, languages: 'French, English', company: 'Provence Guides', notes: '', assignments: [{ activityId: tour.id, groupId: sp.groups[0].id, confirmedAt: new Date().toISOString(), confirmedBy: 'Damien' }] },
+  { id: 'b', name: 'Luc Martin', job: 'Guide', phone: '+33 6 98 76 54 32', whatsapp: true, languages: 'English', company: 'Provence Guides', notes: '', assignments: [{ activityId: tour.id, groupId: sp.groups[1].id }] },
+  { id: 'c', name: 'Paul Bus', job: 'Driver', phone: '+33 6 11 22 33 44', whatsapp: false, languages: '', company: 'Cars du Rhône', notes: 'Coach 12, plate AB-123-CD', assignments: [{ activityId: tour.id, groupId: sp.groups[0].id }] },
+];
+await applyChange(c, c.state.id, { type: 'set-contacts', contacts, what: 'demo' });
+document.getElementById('root').append(contactsSettingsPage(c, c.state));
+</script>
