@@ -23,7 +23,7 @@ import { guestSheetRows, slimSheet, contentKey, SLIM_SHEET_VERSION } from './gue
 import { defaultBranding, tripAccent } from './loader.js';
 import { makeOwner } from './users.js';
 import { closeSheet, showToast, onSheetClosed } from './ui.js';
-import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress } from './auth.js';
+import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress, existingSession } from './auth.js';
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
@@ -124,7 +124,9 @@ function syncStatus() {
 }
 
 // Checks once whether this browser holds a live online login, then redraws the light. Never blocks.
+let myEmail = null; // the signed-in address on this device (for "your jobs" on Today)
 async function checkSession() {
+  existingSession().then((me) => { if (me?.email && me.email !== myEmail) { myEmail = me.email; if (state.owner) renderQuiet(); } }).catch(() => {});
   const result = await hasLiveSession();
   if (result === null || result === hasSession) return;
   hasSession = result;
@@ -367,6 +369,7 @@ const ctx = {
     return { ok: true, count: guestIds.length };
   },
   guestThreadsFor: (tripId) => guestThreadRows.filter((r) => r.trip_id === tripId),
+  get myEmail() { return myEmail; },
   onGuestMessages(listener) { guestMessageListeners.add(listener); return () => guestMessageListeners.delete(listener); },
   // "Mark as unread" / "mark as read" by hand, for the whole staff of the trip. Shown at once, saved on the server.
   async flagGuestThread(tripId, guestId, flagged) {

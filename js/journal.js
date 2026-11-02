@@ -249,6 +249,7 @@ export function summarize(batch) {
     const { action, count, guestName } = batch.entries[0];
     if (action === 'notify-settings') return 'The kinds of notification guests receive were changed';
     if (action === 'auto-settings') return 'The automatic reminders and alerts were changed';
+    if (action === 'team-jobs') return `The jobs of ${batch.entries[0].who ?? 'a colleague'} were changed`;
     if (action === 'quick-replies') return 'The quick replies of Messages were changed';
     if (action === 'message-settings') return 'The reminder for unanswered guest messages was changed';
     if (action === 'games-settings') return 'When the Passport games open was changed';

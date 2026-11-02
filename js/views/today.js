@@ -6,6 +6,7 @@ import { tripDates, formatTime, formatWeekdayDate, localDateNow } from '../time.
 import { programOf } from '../program.js';
 import { tripWarnings, countIn } from '../rules.js';
 import { pageHead } from './chrome.js';
+import { jobsOf, jobTodo, TEAM_JOBS } from '../teamJobs.js';
 
 // The next tour that has not started yet (not cancelled, with a start time), across the whole trip. Null when there is none.
 export function nextTour(trip, now = new Date()) {
@@ -41,6 +42,15 @@ export function todayPage(ctx, trip) {
   ].filter(Boolean);
   if (todo.length > 4) attention.push(row(`${base}/settings/requests`, 'And more waiting', `${todo.length - 4} more`));
 
+  // 1b. This person's jobs (Settings > Team): what they ask of them for today's and tomorrow's tours.
+  const jobs = jobsOf(trip, ctx.myEmail);
+  const today = localDateNow(trip.destinations.find((d) => trip.slots.some((x) => x.destinationId === d.id))?.timeZone ?? 'UTC');
+  const jobRows = jobs.length ? jobTodo(trip, jobs, { today, guestMessages: ctx.guestMessagesFor?.(trip.id) ?? [], threads: ctx.guestThreadsFor?.(trip.id) ?? [] }).map((t) => row(t.href, t.title, t.detail)) : [];
+  const jobsBlock = jobs.length ? [
+    h('h3', { class: 'section-title' }, `Your jobs: ${jobs.map((k) => TEAM_JOBS.find((j) => j.key === k)?.label).filter(Boolean).join(', ')}`),
+    jobRows.length ? h('div', { class: 'menu' }, jobRows) : h('p', { class: 'muted' }, 'All done for today and tomorrow.'),
+  ] : [];
+
   // 2. Next up.
   const tour = nextTour(trip);
   let next = h('p', { class: 'muted' }, 'No tour with a start time is coming up.');
@@ -60,6 +70,7 @@ export function todayPage(ctx, trip) {
 
   return h('div', {},
     pageHead({ eyebrow: 'Today', title: trip.name, subtitle: `${tripDates(trip.start, trip.days)} · ${trip.guests.length} guests` }),
+    ...jobsBlock,
     h('h3', { class: 'section-title' }, 'Needs attention'),
     attention.length > 0 ? h('div', { class: 'menu' }, attention) : h('p', { class: 'muted' }, 'Nothing needs your attention.'),
     h('h3', { class: 'section-title' }, 'Next up'),

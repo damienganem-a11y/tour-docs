@@ -12,6 +12,8 @@ import { notice } from './move.js';
 import { sendMagicLink, existingSession } from '../auth.js';
 import { openSheet } from '../ui.js';
 import { qrSvg } from '../qr.js';
+import { applyChange } from '../changes.js';
+import { jobsOf, TEAM_JOBS } from '../teamJobs.js';
 import { listMembers, inviteMember, removeMember, cleanInviteEmail, MEMBER_ROLES } from '../sync.js';
 
 // What each role is called and what it does (the names inside the database are team, advance and viewer).
@@ -106,13 +108,27 @@ function editAccessSheet(ctx, trip, member, reload) {
   });
 }
 
+// What a person is in charge of on this trip (teamJobs.js): each job ticked shows them its to-do on Today. Saved in the trip (journaled).
+function jobsSheet(ctx, trip, email) {
+  const now = new Set(jobsOf(trip, email));
+  const boxes = TEAM_JOBS.map((job) => { const box = h('input', { type: 'checkbox', checked: now.has(job.key), 'aria-label': job.label }); return { job, box, row: h('label', { class: 'tick-row' }, box, h('span', {}, h('b', {}, job.label), ` · ${job.hint}`)) }; });
+  openSheet({ eyebrow: 'Jobs', title: email, subtitle: 'What this person is in charge of on this trip. Their Today page lists what each job asks of them for today and tomorrow.',
+    body: boxes.map((b) => b.row),
+    footer: h('button', { class: 'btn', type: 'button', onclick: async () => {
+      const result = await applyChange(ctx, trip.id, { type: 'guest-links', action: 'team-jobs', email, jobs: boxes.filter((b) => b.box.checked).map((b) => b.job.key) });
+      if (result.ok) { closeSheet(); ctx.refresh(); showToast('Jobs saved'); } else showToast(result.error, true);
+    } }, 'Save'), cancelLabel: 'Cancel' });
+}
+
 // One person of the team: the e-mail address (wraps, however long) with the role under it, then the two buttons side by side.
-export function memberCard(member, { resend, remove, access, scopeName, edit }) {
+export function memberCard(member, { resend, remove, access, scopeName, edit, jobs, editJobs }) {
   return h('div', { class: 'card team-member' },
     h('div', { class: 'act-name team-email' }, member.email),
+    jobs?.length ? h('div', { class: 'muted' }, `Jobs: ${jobs.map((k) => TEAM_JOBS.find((j) => j.key === k)?.label).filter(Boolean).join(', ')}`) : null,
     h('div', { class: 'muted' }, `${ROLE_LABEL[member.role] ?? member.role}${scopeName ? ` · ${scopeName}` : ''}${member.role === 'team' || member.role === 'advance' ? ` · ${member.approval === 'review' ? 'you approve their changes first' : 'changes applied when they fit'} · ${member.ui_mode === 'full' ? 'full version' : 'simple version'}` : ''}`),
     h('div', { class: 'card-actions' },
       edit ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: edit }, 'Access') : null,
+      editJobs ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: editJobs }, 'Jobs') : null,
       h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: access }, 'QR code'),
       resend ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: resend }, 'Re-send email') : null,
       remove ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: remove }, 'Remove') : null));
@@ -131,7 +147,7 @@ export function teamSettingsPage(ctx, trip) {
   const list = h('div', {}, h('p', { class: 'muted count-line' }, 'Loading…'));
   // The owner's own line, with its own QR code, to sign in on a second phone or tablet of the same account (like every colleague's line).
   const mine = h('div', {});
-  existingSession().then((me) => { if (me?.email) mine.replaceChildren(memberCard({ email: me.email, role: 'owner' }, { access: () => accessSheet(ctx, trip, { email: me.email, role: 'owner' }) })); }).catch(() => {});
+  existingSession().then((me) => { if (me?.email) mine.replaceChildren(memberCard({ email: me.email, role: 'owner' }, { access: () => accessSheet(ctx, trip, { email: me.email, role: 'owner' }), jobs: jobsOf(trip, me.email), editJobs: () => jobsSheet(ctx, trip, me.email) })); }).catch(() => {});
   const message = h('div', { class: 'message', role: 'alert', hidden: true });
   const say = (text) => { message.textContent = text; message.hidden = !text; };
 
@@ -144,6 +160,7 @@ export function teamSettingsPage(ctx, trip) {
             scopeName: m.destination_id ? (trip.destinations.find((d) => d.id === m.destination_id)?.name ?? 'one destination') : null,
             access: () => accessSheet(ctx, trip, m),
             edit: () => editAccessSheet(ctx, trip, m, load),
+            jobs: jobsOf(trip, m.email), editJobs: () => jobsSheet(ctx, trip, m.email),
             resend: async () => showToast(await sendSignInEmail(m.email)),
             remove: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
           }))));

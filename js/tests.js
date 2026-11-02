@@ -45,6 +45,7 @@ import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
 import { pushGuestSheets, sheetGroups } from './sync.js';
 import { phoneLinks, contactsFromRows, mergeContacts, contactsForTour } from './contacts.js';
+import { jobsOf, jobTodo } from './teamJobs.js';
 import { buildContactsTemplateXlsx } from './xlsx.js';
 import { contactsSettingsPage } from './views/settingsContacts.js';
 import { linkCheck, slimSheet, hydrateSheet, contentKey, SLIM_SHEET_VERSION } from './guestSheet.js';
@@ -3811,6 +3812,13 @@ function readZip(bytes) {
       check('A second file keeps a known person (same phone) with their reconfirmation, and updates what changed', again.length === 3 && again.find((c) => c.name === 'Marie Durand').id === marie.id && again.find((c) => c.name === 'Marie Durand').languages.includes('Italian') && Boolean(again.find((c) => c.name === 'Marie Durand').assignments[0].confirmedAt));
       const cpage = contactsSettingsPage({ ...cx, refresh() {}, roleFor: () => 'owner', journal: () => cx.entries, trip: (id) => cx.trip(id) }, cx.state);
       check('Settings > Local team lists the tour with its people and their Call / Text / WhatsApp buttons', cpage.textContent.includes('Marie Durand') && cpage.querySelector('a[href="tel:+33612345678"]') && cpage.querySelector('a[href="https://wa.me/33612345678"]') && cpage.textContent.includes('File for the agency'));
+      // Jobs in the team (v0.140.0): each person's to-do for today's and tomorrow's tours
+      const setJobs = await applyChange(cx, cx.state.id, { type: 'guest-links', action: 'team-jobs', email: 'Anna@Example.com', jobs: ['groups', 'reconfirm'] });
+      const badJobs = await applyChange(cx, cx.state.id, { type: 'guest-links', action: 'team-jobs', email: 'anna@example.com', jobs: ['cooking'] });
+      const todo = jobTodo(cx.state, jobsOf(cx.state, 'anna@example.com'), { today: sl.date });
+      check('A colleague\'s jobs are saved (by their address, journaled); their to-do lists the guides still to reconfirm on today\'s tours, and nothing for jobs they do not have',
+        setJobs.ok && !badJobs.ok && jobsOf(cx.state, 'ANNA@example.com').join() === 'groups,reconfirm' && todo.some((t) => t.job === 'reconfirm' && t.title.includes('1 to reconfirm')) && jobTodo(cx.state, [], { today: sl.date }).length === 0
+        && /jobs of anna@example.com/.test(summarize(groupBatches(cx.entries).at(-1))));
       check('Guests never get the local team in their programme', !JSON.stringify(buildGuestSheet(cx.state, ewMate, 'x')).includes('Marie Durand'));
     }
     check('The test tour has another tour in the same half-day', Boolean(other));
