@@ -41,6 +41,7 @@ import { groupsSettingsPage } from './settingsGroups.js';
 import { togetherSettingsPage } from './settingsTogether.js';
 import { contactsSettingsPage } from './settingsContacts.js';
 import { displaysSettingsPage } from './settingsDisplays.js';
+import { exploreListPage, exploreDestinationPage } from './settingsExplore.js';
 import { teamSettingsPage } from './settingsTeam.js';
 import { guestLinksSettingsPage } from './settingsGuestLinks.js';
 import { guestAppSettingsPage } from './settingsGuestApp.js';
@@ -67,6 +68,7 @@ const SETTINGS_SECTIONS = [
     { label: 'Reception & screens', page: 'displays', ownerOnly: true, hint: 'Live tour lists for the reception desk and the lounge TV' },
     { label: 'Local team', page: 'localteam', hint: 'Guides and drivers of the local agency, tour by tour: call, WhatsApp, reconfirm' },
     { label: 'Messages', page: 'guestmessages', hint: 'Conversations with guests, like WhatsApp, kept as a record' },
+    { label: 'Explore maps', page: 'explore', hint: 'A real map of each stop for the guests: your picks, their blue dot, works offline' },
     { label: 'Our Album', page: 'album', hint: 'Guests\' photo circle: add photos, favourites, who has downloaded' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
   ] },
@@ -164,6 +166,9 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   }
   if (mode === 'settings' && page === 'warnings') {
     return { node: h('div', { class: 'screen' }, warningsSettingsPage(ctx, trip)) };
+  }
+  if (mode === 'settings' && page === 'explore') {
+    return { node: h('div', { class: 'screen' }, first ? exploreDestinationPage(ctx, trip, first) : exploreListPage(ctx, trip)) };
   }
   if (mode === 'settings' && page === 'displays') {
     return { node: h('div', { class: 'screen' }, displaysSettingsPage(ctx, trip)) };

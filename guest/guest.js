@@ -20,6 +20,7 @@ import { greetingFor } from './greetings.js';
 import { openChat } from '../js/chatUi.js';
 import { SLIM_SHEET_VERSION, hydrateSheet } from '../js/sheetSlim.js';
 import { installPlatform, shouldOffer, readOffer, openInstallSheet } from './install.js';
+import { initExplore, exploreView, exploreTodayCard, keepUpcomingStreets } from './explore.js';
 import { initAlbum, albumView, albumAvailable, albumNewCount, loadAlbum, sendQueue } from './album.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
@@ -425,7 +426,7 @@ function todayView(sheet, offline) {
   const facts = place?.facts ?? [];
   const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
   const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
-  return [hero, title, h('div', { class: 'atl-body' }, offline, ...boardingCards(sheet), nextBar(sheet), messageCard(), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+  return [hero, title, h('div', { class: 'atl-body' }, offline, ...boardingCards(sheet), nextBar(sheet), messageCard(), exploreTodayCard(sheet, go, simulatedDate ? new Date(`${simulatedDate}T12:00:00Z`) : new Date()), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -1268,11 +1269,14 @@ function updatedRow(sheet) {
 })();
 
 function paint() {
+  // The map is never redrawn by the app's background refreshes (it would jump back to the start and lose the blue dot); leaving the page redraws.
+  if (view.map !== undefined && app.dataset.mapFor === String(view.map) && app.querySelector('.leaflet-container')) return;
+  delete app.dataset.mapFor;
   // A game in progress is never redrawn by the app's background refreshes (the minute check, messages arriving...); leaving the page stops it.
   if (gameRun && view.game !== undefined && gameRun.running) return;
   if (gameRun) { gameRun.stop(); gameRun = null; }
   paintPage();
-  if (view.game !== undefined && pendingMount) { const mount = pendingMount; pendingMount = null; mount(); }
+  if (pendingMount) { const mount = pendingMount; pendingMount = null; mount(); } // a game, or the map: they need their box on the screen first
   // The wide-screen layout (iPad) puts the big photo of a tour or restaurant beside its text: say which kind of page this is.
   app.dataset.page = (view.tour !== undefined || view.rest !== undefined) && !view.options && !view.credits && !view.eat ? 'photo' : 'plain';
 }
@@ -1284,6 +1288,8 @@ function paintPage() {
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
   if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'today' }; }
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
+  if (view.map !== undefined && sheet.destinations?.[view.map]?.map) { const page = exploreView(sheet, view.map, offline); put(page.nodes); app.dataset.mapFor = String(view.map); pendingMount = page.mount; return; }
+  if (view.map !== undefined) view = { tab: 'today' };
   if (view.inbox) { put(inboxView(sheet, offline)); return; }
   if (view.credits) { put(creditsView(sheet, offline)); return; }
   if (view.album) { put(albumView(sheet, offline, { backButton: true })); return; }
@@ -1344,6 +1350,7 @@ function repaintEnded() {
   put((farewellAlbum ? [h('div', { class: 'atl-head atl-head--sub' }, h('button', { class: 'atl-back atl-back--inline', type: 'button', 'aria-label': 'Back', onclick: () => { farewellAlbum = false; repaintEnded(); } }, '‹'), h('small', {}, currentSheet.trip), h('h1', {}, 'Our Album')), ...albumView(currentSheet, null).slice(1)] : farewellView(currentSheet)));
   window.scrollTo(0, 0);
 }
+initExplore({ h, plainHead });
 initAlbum({ h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, modal, plainHead, isPreview: () => PREVIEW, repaint: () => repaintEnded(), fullName: () => store.get('tourdocs.guest.fullname') || store.get('tourdocs.guest.first') || '' });
 
 // After the link's last day the programme is no longer shown and the kept copy is erased (the server has already forgotten it).
@@ -1460,6 +1467,7 @@ async function refresh() {
     if (label && !refreshNote && currentSheet?.updatedAt) label.textContent = `Updated ${updatedText(currentSheet.updatedAt)} · checked ${clockOf(lastChecked)}`;
     store.set(SHEET_KEY, JSON.stringify(result.sheet));
     render(result.sheet);
+    keepUpcomingStreets(result.sheet, new Date().toISOString().slice(0, 10)); // the maps of the next stops, kept for when there is no signal
   } else if (result.off) {
     status = 'off';
     store.remove(SHEET_KEY);

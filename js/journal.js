@@ -58,6 +58,7 @@ export function groupBatches(entries) {
         : types.has('edit-guest') ? 'edit-guest'
         : types.has('set-easy-walker') ? 'set-easy-walker'
         : types.has('save-together') ? 'save-together'
+        : types.has('set-explore') ? 'set-explore'
         : types.has('set-contacts') ? 'set-contacts'
         : types.has('confirm-contact') ? 'confirm-contact'
         : types.has('delete-together') ? 'delete-together'
@@ -100,6 +101,7 @@ export const DINING_UNDO_SCOPE = ['add-restaurant', 'edit-restaurant', 'restaura
 // known, minor, accepted edge (see the step's plan).
 export const DINING_USE_UNDO_SCOPE = ['book-dinner', 'add-to-dinner-table', 'move-dinner-table'];
 export const GROUPS_UNDO_SCOPE = ['add-split', 'edit-split', 'delete-split', 'assign-guests', 'set-split-state'];
+export const EXPLORE_UNDO_SCOPE = ['set-explore'];                   // Settings > Explore maps
 export const CONTACTS_UNDO_SCOPE = ['set-contacts', 'confirm-contact']; // Settings > Local team // Settings > Groups
 export const BRANDING_UNDO_SCOPE = ['set-branding'];                 // Settings > Brand
 export const GUEST_UNDO_SCOPE = ['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party', 'set-easy-walker', 'save-together', 'delete-together']; // Settings > Guests, Travel parties
@@ -211,7 +213,7 @@ export function summarize(batch) {
   if (batch.kind === 'move-dinner-table') return summarizeMoveDinnerTable(batch);
   if (batch.kind === 'edit-guest') return summarizeEditGuest(batch.entries[0]);
   if (batch.kind === 'set-easy-walker') return batch.entries[0].easyWalker ? `${batch.entries[0].guestName} is an Easy Walker` : `${batch.entries[0].guestName} is no longer an Easy Walker`;
-  if (batch.kind === 'set-contacts' || batch.kind === 'confirm-contact') return batch.entries[0].what;
+  if (batch.kind === 'set-contacts' || batch.kind === 'confirm-contact' || batch.kind === 'set-explore') return batch.entries[0].what;
   if (batch.kind === 'save-together') return `Travelling together: "${batch.entries[0].togetherName}" (${plural(batch.entries[0].count, 'guest')})`;
   if (batch.kind === 'delete-together') return `Removed the group travelling together "${batch.entries[0].togetherName}"`;
   if (batch.kind === 'guest-left') return `${batch.entries[0].guestName} left the trip`;

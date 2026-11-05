@@ -82,6 +82,7 @@
 //   { type: 'set-easy-walker', guestId, easyWalker }         the guest walks slowly: a tour's Easy Walker group is kept for them (v0.134.0)
 //   { type: 'save-together', togetherId | null, name, guestIds }   a "travel together" group: families who want the same tour groups (trip.together);
 //       a guest is in one such group at most (adding them elsewhere takes them out of the other). { type: 'delete-together', togetherId }
+//   { type: 'set-explore', destinationId, explore, what }   the guests' map of a stop (explore.js): dock point, back-on-board time, the team's places
 //   { type: 'set-contacts', contacts, what }   the local team (guides, drivers...: contacts.js), the whole list after an import or an edit; `what` says it in words
 //   { type: 'confirm-contact', contactId, activityId, confirmed }   a guide or driver reconfirmed (or not) for one tour, with who and when
 //   { type: 'confirm-contact', contactId, activityId, asked: true }  the reconfirmation message was sent to them (WhatsApp or text), with who and when
@@ -128,6 +129,7 @@ import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { explorerProblems } from './explorer.js';
 import { displayNames, alphabetical, guestPlace, countIn, slotLabel, plural, dinnerFit, dinnerAddFit, dinnerUsedTableIds, dinnerCountIn, eligibilityProblems, colorOf, RESERVED_KINDS } from './rules.js';
+import { exploreError } from './explore.js';
 import { contactsError } from './contacts.js';
 import { teamJobsError } from './teamJobs.js';
 import { isValidTimeZone, localToInstant, formatTime } from './time.js';
@@ -152,6 +154,7 @@ const DINING_BOOKING_TYPES = new Set(['book-dinner', 'add-to-dinner-table', 'mov
 const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-solo', 'join-party', 'create-party', 'set-easy-walker']);
 const TOGETHER_TYPES = new Set(['save-together', 'delete-together']);
 const CONTACT_TYPES = new Set(['set-contacts', 'confirm-contact']);
+const EXPLORE_TYPES = new Set(['set-explore']);
 // The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own. Allowed even when
 // the trip is archived (see validateChanges below) — that is how these get taken back.
 const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 'reinstate-trip']);
@@ -225,7 +228,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || TOGETHER_TYPES.has(c.type) || CONTACT_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type) || GUEST_LINK_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || TOGETHER_TYPES.has(c.type) || CONTACT_TYPES.has(c.type) || EXPLORE_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type) || GUEST_LINK_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
@@ -247,6 +250,11 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   if (GUEST_LINK_TYPES.has(changes[0].type)) return validateGuestLinks(trip, changes[0]);
   if (SPLIT_TYPES.has(changes[0].type)) return validateSplitChange(trip, changes[0]);
   if (TOGETHER_TYPES.has(changes[0].type)) return validateTogether(trip, changes[0]);
+  if (changes[0].type === 'set-explore') {
+    if (!trip.destinations.some((d) => d.id === changes[0].destinationId)) return fail('That destination is not in this trip.');
+    const problem = exploreError(changes[0].explore);
+    return problem ? fail(problem) : { ok: true };
+  }
   if (changes[0].type === 'set-contacts') { const problem = contactsError(trip, changes[0].contacts); return problem ? fail(problem) : { ok: true }; }
   if (changes[0].type === 'confirm-contact') {
     const c = changes[0];
@@ -432,6 +440,10 @@ function validateUndo(trip, journal, scope) {
     }
     if (entry.type === 'set-contacts' || entry.type === 'confirm-contact') {
       if (JSON.stringify(trip.contacts ?? []) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the local team has changed since.');
+    }
+    if (entry.type === 'set-explore') {
+      const d = trip.destinations.find((x) => x.id === entry.destinationId);
+      if (!d || JSON.stringify(d.explore ?? null) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the map has changed since.');
     }
     if (entry.type === 'save-together' || entry.type === 'delete-together') {
       if (JSON.stringify(trip.together ?? []) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the groups travelling together have changed since.');
@@ -1527,6 +1539,17 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
   // Groups (Settings > Groups). Like the guest changes they belong to no half-day, so they use the
   // "local, right now" place too. Snapshots (from/to) make Undo exact, whatever changed inside a split.
   // The local team: the whole list before and after (Undo puts it back exactly). A reconfirmation keeps who and when.
+  // The guests' map of a stop: the destination's whole Explore data before and after (Undo puts it back exactly).
+  if (EXPLORE_TYPES.has(changes[0].type)) {
+    const c = changes[0];
+    const destination = next.destinations.find((d) => d.id === c.destinationId);
+    const before = structuredClone(destination.explore ?? null);
+    destination.explore = c.explore === null ? null : structuredClone(c.explore);
+    if (destination.explore === null) delete destination.explore;
+    entries.push({ ...base(), type: c.type, ...guestWhere, destinationId: c.destinationId, what: String(c.what ?? `Map of ${destination.name} updated`).slice(0, 120), from: before, to: structuredClone(destination.explore ?? null) });
+    return save(ctx, next, entries, {});
+  }
+
   if (CONTACT_TYPES.has(changes[0].type)) {
     const c = changes[0];
     const before = structuredClone(next.contacts ?? []);
@@ -1968,6 +1991,12 @@ function undoEntry(next, entry, base, entries) {
     const guest = next.guests.find((g) => g.id === entry.guestId);
     if (entry.easyWalker) delete guest.easyWalker; else guest.easyWalker = true;
     entries.push({ ...base(), type: 'set-easy-walker', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestId: entry.guestId, guestName: entry.guestName, easyWalker: !entry.easyWalker });
+    return;
+  }
+  if (entry.type === 'set-explore') {
+    const d = next.destinations.find((x) => x.id === entry.destinationId);
+    if (entry.from === null) delete d.explore; else d.explore = structuredClone(entry.from);
+    entries.push({ ...base(), type: entry.type, cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, destinationId: entry.destinationId, what: entry.what, from: entry.to, to: structuredClone(entry.from) });
     return;
   }
   if (entry.type === 'set-contacts' || entry.type === 'confirm-contact') {

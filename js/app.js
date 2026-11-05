@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress, existingSe
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  createConfirmLink, pullContactAnswers, markContactAnswerApplied, listDisplayLinks, createDisplayLink, updateDisplayLink,
+  createConfirmLink, pullContactAnswers, markContactAnswerApplied, listDisplayLinks, createDisplayLink, updateDisplayLink, uploadStreets,
   pushGuestShared, pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, sendGuestMessages, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
@@ -349,6 +349,8 @@ const ctx = {
   guestRequestsFor: (tripId) => guestRequestRows.filter((r) => r.trip_id === tripId),
   // Our Album (staff side): everything goes to the server's album function; the settings of the album are a trip setting (journaled, in the one change function).
   album: { pull: pullAlbum, links: albumLinks, upload: albumUpload, act: albumAct },
+  // Explore maps (v0.145.0): saves a stop's offline street plan as a public file; returns its path in the bucket.
+  uploadStreets: (tripId, destinationId, streets) => uploadStreets(tripId, destinationId, streets),
   // Reception links and lounge screens (v0.144.0): listed, made and changed on the server; what they show is kept up to date by syncDisplays.
   displays: {
     list: (tripId) => listDisplayLinks(tripId),

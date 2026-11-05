@@ -1456,3 +1456,4 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .steps { padding-left: 20px; line-height: 1.5; }
 .steps li { margin: 6px 0; }
 .steps-url { list-style: none; margin-left: -20px; font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; background: rgba(128,128,128,.12); padding: 8px 10px; border-radius: 10px; }
+.small-print { font-size: .75rem; margin-top: 6px; }

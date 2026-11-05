@@ -57,6 +57,9 @@ import { openChat } from './chatUi.js';
 import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
 import { displaySheet, sheetKey, daysToShow } from './display.js';
+import { EXPLORE_UNDO_SCOPE } from './journal.js';
+import { exploreListPage, exploreDestinationPage } from './views/settingsExplore.js';
+import { parseLocation, distanceMeters, walkMinutes, distanceText, bearing, directionsUrl, compactStreets, overpassQuery } from './explore.js';
 import { displaysSettingsPage } from './views/settingsDisplays.js';
 import { staleWarning, redoGroupsChange } from './views/staleColours.js';
 import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
@@ -3807,6 +3810,41 @@ function readZip(bytes) {
       const first = rec.days[0];
       const shownNow = daysToShow(rec, new Date(Date.parse(`${first.date}T12:00:00Z`)));
       check('The page shows today and tomorrow (from the sheet, in the place\'s own time)', shownNow[0].day.date === first.date && shownNow[0].which === 'Today' && (rec.days.length < 2 || shownNow[1].which === 'Tomorrow') && daysToShow(rec, new Date('2099-01-01T00:00:00Z')).length === 0);
+    }
+    // Explore maps (v0.145.0)
+    {
+      check('A map link or the two numbers give the place (the exact place of a Google link wins over the map\'s centre); a short link does not',
+        JSON.stringify(parseLocation('https://www.google.com/maps/place/Arena/@43.6770,4.6300,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d43.6777!4d4.6309')) === '{"lat":43.6777,"lng":4.6309}'
+        && JSON.stringify(parseLocation('43.6777, 4.6309')) === '{"lat":43.6777,"lng":4.6309}' && parseLocation('https://maps.apple.com/?ll=43.6,4.63&q=Arles').lat === 43.6
+        && parseLocation('https://maps.app.goo.gl/abc123') === null && parseLocation('95, 10') === null);
+      const dock = { lat: 43.6797, lng: 4.6255 }; const arena = { lat: 43.6777, lng: 4.6309 };
+      const dm = distanceMeters(dock, arena);
+      check('Distances and walking times (about 480 m, 8 minutes walking), and the direction to walk', dm > 450 && dm < 520 && walkMinutes(dm) === 8 && distanceText(dm).includes('min walk') && Math.round(bearing(dock, arena)) > 100 && Math.round(bearing(dock, arena)) < 130);
+      check('Take me there opens the phone\'s own maps app, walking', directionsUrl(arena, true).startsWith('https://maps.apple.com/?daddr=43.6777,4.6309&dirflg=w') && directionsUrl(arena, false).includes('travelmode=walking'));
+      const dest = cx.state.destinations[0];
+      const explore = { dock: { ...dock, label: 'The ship' }, backBy: '17:30', places: [{ id: 'p1', name: 'The Roman arena', kind: 'sight', ...arena, price: '€9', hours: '9:00 to 18:00', tip: 'Go up the tower.' }], streets: null };
+      const bad = await applyChange(cx, cx.state.id, { type: 'set-explore', destinationId: dest.id, explore: { ...explore, backBy: '25:00' } });
+      const ok = await applyChange(cx, cx.state.id, { type: 'set-explore', destinationId: dest.id, explore, what: 'Map of the stop: places added' });
+      const gs = buildGuestSheet(cx.state, ewMate, '2027-01-01T00:00:00Z');
+      const gd = gs.destinations.find((d) => d.name === dest.name);
+      check('The team\'s map of a stop is saved through the one change function (journaled, a wrong time refused) and reaches the guest\'s programme',
+        !bad.ok && ok.ok && cx.state.destinations[0].explore.places.length === 1 && /places added/.test(summarize(groupBatches(cx.entries).at(-1)))
+        && gd?.map?.dock?.label === 'The ship' && gd.map.backBy === '17:30' && gd.map.places[0].name === 'The Roman arena' && gd.map.streets === null);
+      const ep = exploreDestinationPage({ ...cx, refresh() {}, roleFor: () => 'owner', journal: () => cx.entries, trip: (id) => cx.trip(id) }, cx.state, dest.id);
+      const el2 = exploreListPage({ roleFor: () => 'owner' }, cx.state);
+      check('Settings > Explore maps lists each stop with its state; a stop\'s page shows the ship, the places with their walking distance, and "Prepare the offline map"',
+        el2.textContent.includes(dest.name) && el2.textContent.includes('1 place') && ep.textContent.includes('The ship') && ep.textContent.includes('1. 🏛 The Roman arena') && ep.textContent.includes('min walk') && ep.textContent.includes('Prepare the offline map') && !/null/.test(ep.textContent));
+      const undone = await applyChange(cx, cx.state.id, { type: 'undo', scope: EXPLORE_UNDO_SCOPE });
+      check('Undo takes the map back', undone.ok && !cx.state.destinations[0].explore);
+      const overpass = { elements: [
+        { type: 'way', tags: { highway: 'primary' }, geometry: [{ lat: 43.1234567, lon: 4.1 }, { lat: 43.2, lon: 4.2 }] },
+        { type: 'way', tags: { highway: 'footway' }, geometry: [{ lat: 43.1, lon: 4.1 }, { lat: 43.2, lon: 4.2 }] },
+        { type: 'way', tags: { highway: 'residential', name: 'Rue X' }, geometry: [{ lat: 43.1, lon: 4.1 }, { lat: 43.2, lon: 4.2 }] },
+        { type: 'way', tags: { waterway: 'river' }, geometry: [{ lat: 43.1, lon: 4.1 }, { lat: 43.2, lon: 4.2 }] },
+        { type: 'relation', tags: { natural: 'water' }, members: [{ role: 'outer', geometry: [{ lat: 43.1, lon: 4.1 }, { lat: 43.2, lon: 4.2 }, { lat: 43.3, lon: 4.1 }] }] },
+        { type: 'way', tags: { leisure: 'park' }, geometry: [{ lat: 43.1, lon: 4.1 }, { lat: 43.2, lon: 4.2 }, { lat: 43.3, lon: 4.1 }] }] };
+      const plan = compactStreets(overpass, dock);
+      check('The offline street plan: streets by size, river, water and parks, about one metre precise, without street names', plan.major[0][0] === 43.12346 && plan.paths.length === 1 && plan.minor.length === 1 && plan.rivers.length === 1 && plan.water.length === 1 && plan.green.length === 1 && !JSON.stringify(plan).includes('Rue X') && overpassQuery(dock).includes('around:1600,43.6797,4.6255'));
     }
     // Step 2: the boarding card in the guest's sheet, and the notification 30 minutes before
     const sheetT = buildGuestSheet(cx.state, ewMate, '2027-01-01T00:00:00Z');

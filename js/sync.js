@@ -731,3 +731,13 @@ export async function updateDisplayLink(token, fields) {
   const { error } = await supabase.from('display_links').update(fields).eq('token', token);
   if (error) throw error;
 }
+
+// Explore maps (migration 0034): the offline street plan of one stop, as a public file. A new name each time (the old file is never overwritten), so a
+// guest's phone that kept the old one is never confused. Returns the path inside the bucket.
+export async function uploadStreets(tripId, destinationId, streets) {
+  const supabase = await getClient();
+  const path = `${tripId}/${destinationId}-${Date.now()}.json`;
+  const { error } = await supabase.storage.from('maps').upload(path, new Blob([JSON.stringify(streets)], { type: 'application/json' }), { contentType: 'application/json', cacheControl: '31536000', upsert: false });
+  if (error) throw error;
+  return path;
+}

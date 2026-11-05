@@ -1,3 +1,7 @@
+import { exploreForGuest } from './explore.js';
+import { SUPABASE_URL } from './supabase-config.js';
+// The offline street plans of the guests' maps (Explore) are public files in the storage bucket "maps" (streets only, nothing about anyone).
+const STREETS_BASE = `${SUPABASE_URL}/storage/v1/object/public/maps/`;
 // The "sheet" of one guest: the small piece of information their personal link shows (Phase 5, the guest app).
 //
 // WHY A SHEET AND NOT THE TRIP: the trip file holds every guest, their allergies and the team's notes. A guest must never be
@@ -166,7 +170,7 @@ export function buildGuestSheet(trip, guest, now) {
     // For the passport: each destination with its time zone and the first and last date there (from its half-days), in trip order.
     destinations: [...trip.destinations].sort((a, b) => a.order - b.order).map((d) => {
       const dates = trip.slots.filter((x) => x.destinationId === d.id).map((x) => x.date).sort();
-      return { name: d.name, country: d.country || '', photo: d.photo || '', facts: (d.facts ?? []).slice(0, 6), tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null, ...(explorerForGuest(trip, d) ? { ex: explorerForGuest(trip, d) } : {}) }; // ex: Passport Explorer content, only once the owner validated it
+      return { name: d.name, country: d.country || '', photo: d.photo || '', facts: (d.facts ?? []).slice(0, 6), tz: d.timeZone, firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null, ...(explorerForGuest(trip, d) ? { ex: explorerForGuest(trip, d) } : {}), ...(exploreForGuest(d, STREETS_BASE) ? { map: exploreForGuest(d, STREETS_BASE) } : {}) }; // ex: Passport Explorer content, only once the owner validated it
     }).filter((d) => d.firstDate),
     options: trip.guestOptions !== false,
     theme: tripAccent(trip.branding), // the colour the guest app wears: the company's, else Tour Docs orange
