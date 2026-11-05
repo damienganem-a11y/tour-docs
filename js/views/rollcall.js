@@ -20,6 +20,7 @@ import { openSheet, closeSheet, showToast } from '../ui.js';
 import { formatTime, formatMoment } from '../time.js';
 import { alphabetical, displayNames, plain, plural, joinNames } from '../rules.js';
 import { findRollCall, vehicleLabel, rollCallState } from '../rollcall.js';
+import { openScanner } from './scanRollCall.js';
 import { forcedPlacements } from '../journal.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
@@ -292,6 +293,8 @@ export function rollCallView(ctx, tripId, activityId) {
       runnerNotice,
       search,
       h('div', { class: 'vehicles' }, vehicleButtons, addVehicle),
+      // Scan the guests' boarding passes (v0.146.0): the camera opens, each scan checks a whole family into the chosen vehicle.
+      readOnly ? null : h('button', { class: 'btn rc-scan', type: 'button', onclick: () => openScanner(ctx, trip.id, activity, { vehicleId: selected.id, onVehicle: (id) => chosenVehicle.set(key, id) }) }, '📷 Scan boarding passes'),
       readOnly ? null : undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
       list,
       readOnly ? null : h('p', { class: 'rc-hint' }, 'Long-press a name: At leisure or another tour'),

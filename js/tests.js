@@ -60,6 +60,9 @@ import { displaySheet, sheetKey, daysToShow } from './display.js';
 import { EXPLORE_UNDO_SCOPE } from './journal.js';
 import { exploreListPage, exploreDestinationPage } from './views/settingsExplore.js';
 import { exampleMapFor } from './exploreExamples.js';
+import { passCode, passFamily } from './boardingPass.js';
+import { scanPlan } from './views/scanRollCall.js';
+import { findRollCall as findRollCallT } from './rollcall.js';
 import { exploreError } from './explore.js';
 import { parseLocation, distanceMeters, walkMinutes, distanceText, bearing, directionsUrl, compactStreets, overpassQuery } from './explore.js';
 import { displaysSettingsPage } from './views/settingsDisplays.js';
@@ -1768,6 +1771,10 @@ for (const file of needed) {
   }
 }
 const notListed = [...needed].filter((f) => !listed.includes(f));
+// Scripts loaded only when needed (not by an import): the QR code reader of the roll call scanner (v0.146.0). They must be listed and must exist.
+const onDemand = ['vendor/jsqr/jsQR.js'];
+for (const f of onDemand) needed.add(f);
+check('The scripts loaded on demand are in the offline list and exist', onDemand.every((f) => listed.includes(f)) && (await Promise.all(onDemand.map(async (f) => (await fetch(f)).ok))).every(Boolean));
 const staleEntries = listed.filter((f) => f.endsWith('.js') && f !== 'sw.js' && !needed.has(f));
 check(`Every one of the ${needed.size} scripts the app needs is in the offline list (a missing one would break offline)`, notListed.length === 0, notListed.join(', '));
 check('The offline list has no scripts the app does not use', staleEntries.length === 0, staleEntries.join(', '));
@@ -3812,6 +3819,31 @@ function readZip(bytes) {
       const first = rec.days[0];
       const shownNow = daysToShow(rec, new Date(Date.parse(`${first.date}T12:00:00Z`)));
       check('The page shows today and tomorrow (from the sheet, in the place\'s own time)', shownNow[0].day.date === first.date && shownNow[0].which === 'Today' && (rec.days.length < 2 || shownNow[1].which === 'Tomorrow') && daysToShow(rec, new Date('2099-01-01T00:00:00Z')).length === 0);
+    }
+    // Boarding pass QR code and roll call by scanning (v0.146.0)
+    {
+      const fam = passFamily(cx.state, ewMate, tour.id);
+      const code = passCode(cx.state, ewMate, tour.id);
+      const part = buildGuestSheet(cx.state, ewMate, '2027-01-01T00:00:00Z').days.flatMap((d) => d.parts).find((p) => p.kind === 'activity' && p.pass === code);
+      check('Each guest\'s programme carries a short boarding pass code for their tour: the trip, the tour and the family (no name), small enough for a QR code',
+        code && /^TD1\.[0-9a-f]{8}\.[0-9a-f]{8}\.[0-9a-f]{8}(,[0-9a-f]{8})*$/.test(code) && code.split('.')[3].split(',').length === fam.length && fam.some((g) => g.id === ewMate.id) && Boolean(part) && code.length < 213
+        && !cx.state.guests.some((g) => code.includes(g.first)));
+      await applyChange(cx, cx.state.id, { type: 'rollcall-start', activityId: tour.id });
+      const v1 = findRollCallT(cx.state, tour.id).vehicles[0].id;
+      const plan1 = scanPlan(cx.state, tour.id, v1, code);
+      check('Scanning the pass: the whole family on this tour is checked in at once', plan1.ok && plan1.checkIn.length === fam.length && plan1.elsewhere.length === 0);
+      const done = await applyChange(cx, cx.state.id, plan1.checkIn.map((g) => ({ type: 'checkin', activityId: tour.id, guestId: g.id, vehicleId: v1 })));
+      const plan2 = scanPlan(cx.state, tour.id, v1, code);
+      const added = await applyChange(cx, cx.state.id, { type: 'vehicle-add', activityId: tour.id });
+      const plan3 = scanPlan(cx.state, tour.id, added.entries[0].vehicleId, code);
+      check('Scanned twice: "already in V1"; with another vehicle chosen: offered to move them', done.ok && plan2.checkIn.length === 0 && plan2.alreadyHere.length === fam.length && plan3.inOther.length === fam.length);
+      const slotT = cx.state.slots.find((x) => x.id === tour.slotId);
+      const otherGuest = cx.state.guests.find((g) => { const b = cx.state.bookings[g.id]?.[slotT.id]; return !g.leftAt && b?.kind === 'activity' && b.activityId !== tour.id; });
+      const otherCode = otherGuest ? passCode(cx.state, otherGuest, cx.state.bookings[otherGuest.id][slotT.id].activityId) : null;
+      const plan4 = otherCode ? scanPlan(cx.state, tour.id, v1, otherCode) : null;
+      check('A pass for another tour of the same half-day is flagged (booked elsewhere), never checked in by itself', plan4 && plan4.ok && plan4.checkIn.length === 0 && plan4.elsewhere.length > 0);
+      check('Anything else is refused in words: not a boarding pass, or a pass of another trip', scanPlan(cx.state, tour.id, v1, 'https://example.org').why === 'not-a-pass' && scanPlan(cx.state, tour.id, v1, code.replace(/^TD1\.[0-9a-f]{8}/, 'TD1.ffffffff')).why === 'other-trip');
+      await applyChange(cx, cx.state.id, plan1.checkIn.map((g) => ({ type: 'checkout', activityId: tour.id, guestId: g.id })));
     }
     // Explore maps (v0.145.0)
     {

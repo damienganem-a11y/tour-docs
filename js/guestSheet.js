@@ -1,4 +1,5 @@
 import { exploreForGuest } from './explore.js';
+import { passCode } from './boardingPass.js';
 import { SUPABASE_URL } from './supabase-config.js';
 // The offline street plans of the guests' maps (Explore) are public files in the storage bucket "maps" (streets only, nothing about anyone).
 const STREETS_BASE = `${SUPABASE_URL}/storage/v1/object/public/maps/`;
@@ -93,6 +94,8 @@ function partOf(trip, guest, slot, destination, tours, restaurants) {
       ...(trip.guestOptions !== false ? { alt: tours.map((t, i) => (t._slot === slot.id && t._id !== a.id ? i : -1)).filter((i) => i >= 0) } : {}),
       // The "boarding card" (v0.135.0): the guest's colour on this tour and the tickets their family takes. `at`: the exact start, to show the card from 2 hours before.
       ...(ticketPart(trip, guest, a, slot)),
+      // The boarding pass (v0.146.0): a short code the guest app draws as a QR code; the staff's roll call scans it (the whole family at once).
+      ...(!a.cancelled && passCode(trip, guest, a.id) ? { pass: passCode(trip, guest, a.id) } : {}),
     };
   }
   if (place.kind === 'leisure') return { kind: 'leisure' };

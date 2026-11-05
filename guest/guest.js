@@ -11,6 +11,7 @@
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
 import { APP_VERSION } from '../js/version.js';
+import { qrSvg } from '../js/qr.js';
 import { passportState, stampSvg, dayIn, wallToInstant, hashOf } from './passport.js';
 import { sceneSvg, patternCss } from './explorer/themes.js';
 import { ENGINES, SKINS, hasGame } from './explorer/games.js';
@@ -394,7 +395,31 @@ function openBoarding(part) {
     h('span', { class: 'board-count' }, guestsWord(t.count)),
     h('span', { class: 'board-names' }, familyLine(t)),
     t.count > 1 ? h('span', { class: 'board-note' }, 'One phone is enough for the whole family.') : null,
+    part.pass ? passQr(part.pass) : null,
     h('div', { class: 'board-foot' }, h('span', {}, new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })), clock));
+  document.body.append(overlay);
+}
+
+// The boarding pass QR code (v0.146.0): the staff's roll call scans it and the whole family is checked in. Drawn on the phone (works offline).
+function passQr(code) {
+  const box = h('div', { class: 'pass-qr', role: 'img', 'aria-label': 'Boarding pass QR code' });
+  box.innerHTML = qrSvg(code, { pixels: 200 }); // made by qr.js from the pass code, nothing typed by anyone
+  return box;
+}
+// "Show my boarding pass" on a tour: the colour card when the colours are given, else a plain pass with the same QR code.
+function openPass(part, sheet) {
+  if (part.ticket) { openBoarding(part); return; }
+  document.querySelector('.board')?.remove();
+  const count = part.pass.split('.').pop().split(',').length;
+  const close = () => overlay.remove();
+  const overlay = h('div', { class: 'board board--plain', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Boarding pass' },
+    h('button', { class: 'board-close', type: 'button', 'aria-label': 'Close', onclick: close }, '✕'),
+    h('small', { class: 'board-tour' }, 'Boarding pass'),
+    h('b', { class: 'board-pass-name' }, part.name),
+    h('span', { class: 'board-when' }, [part.date ? dayDate(part.date) : null, part.time ? `departs ${part.time}` : null, part.meeting ? `meet: ${part.meeting}` : null].filter(Boolean).join(' · ')),
+    h('span', { class: 'board-count' }, `${sheet.first ?? ''}${count > 1 ? ` + ${count - 1}` : ''}`.trim() || guestsWord(count)),
+    passQr(part.pass),
+    h('span', { class: 'board-note' }, count > 1 ? 'One scan checks in the whole family.' : 'Show it to the staff when you board.'));
   document.body.append(overlay);
 }
 
@@ -1163,6 +1188,15 @@ function levelBlock(info) {
 
 // ---------- one tour ----------
 // The page reads in this order: the photos, what happens (the story), good to know, then the level and accessibility together at the end.
+// The guest's next booking of this tour that has a boarding pass (with its date, for the pass screen).
+function passButton(sheet, tour) {
+  const index = sheet.tours.indexOf(tour);
+  const today = localToday();
+  const parts = sheet.days.flatMap((d) => d.parts.map((p) => ({ ...p, date: d.date }))).filter((p) => p.kind === 'activity' && p.tour === index && p.pass);
+  const part = parts.find((p) => p.date >= today) ?? parts.at(-1);
+  return part ? h('button', { class: 'pass-btn', type: 'button', onclick: () => openPass(part, sheet) }, 'Show my boarding pass') : null;
+}
+
 function tourView(sheet, tour, offline) {
   const info = tour.info ?? {};
   const photos = info.photos ?? [];
@@ -1181,7 +1215,8 @@ function tourView(sheet, tour, offline) {
         tour.time ? chip(`Leaves ${tour.time}`, 'chip--time') : null,
         tour.meeting ? chip(tour.meeting, 'chip--place') : null,
         info.duration ? chip(info.duration) : null,
-        offersGentleGroup(info) ? gentleChip() : null)),
+        offersGentleGroup(info) ? gentleChip() : null),
+      passButton(sheet, tour)),
     h('div', { class: 'atl-body atl-body--tour' },
       offline,
       section('What happens', info.description, 'atl-story'),
