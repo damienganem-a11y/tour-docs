@@ -3835,7 +3835,7 @@ function readZip(bytes) {
       const ep = exploreDestinationPage({ ...cx, refresh() {}, roleFor: () => 'owner', journal: () => cx.entries, trip: (id) => cx.trip(id) }, cx.state, dest.id);
       const el2 = exploreListPage({ roleFor: () => 'owner' }, cx.state);
       check('Settings > Explore maps lists each stop with its state; a stop\'s page shows the ship, the places with their walking distance, and "Prepare the offline map"',
-        el2.textContent.includes(dest.name) && el2.textContent.includes('1 place') && ep.textContent.includes('The ship') && ep.textContent.includes('1. 🏛 The Roman arena') && ep.textContent.includes('min walk') && ep.textContent.includes('Prepare the offline map') && !/null/.test(ep.textContent));
+        el2.textContent.includes(dest.name) && el2.textContent.includes('1 place') && ep.textContent.includes('The ship') && ep.textContent.includes('1. 🏛 The Roman arena') && ep.textContent.includes('min walk') && ep.textContent.includes('Prepare the offline map') && ep.textContent.includes('See it as a guest') && !/null/.test(ep.textContent));
       const lyonExample = exampleMapFor({ name: 'Lyon' });
       check('The made-up example map of Lyon (ship at Saint-Luc) passes the same checks as a real one, and is offered only on an empty Lyon stop',
         lyonExample && exploreError({ ...lyonExample, streets: null }) === null && lyonExample.places.length >= 5 && lyonExample.places.every((p) => p.name.includes('(example)')) && exampleMapFor({ name: 'Arles' }) === null);

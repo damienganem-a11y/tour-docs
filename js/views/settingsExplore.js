@@ -15,6 +15,8 @@ import { undoButton } from './undo.js';
 import { EXPLORE_UNDO_SCOPE } from '../journal.js';
 import { newId } from '../ids.js';
 import { exampleMapFor } from '../exploreExamples.js';
+import { buildGuestSheet } from '../guestSheet.js';
+import { GUEST_PREVIEW_KEY } from './preview.js';
 import { PLACE_KINDS, kindOf, parseLocation, distanceMeters, distanceText, overpassQuery, compactStreets } from '../explore.js';
 
 const emptyExplore = () => ({ dock: null, backBy: null, places: [], streets: null });
@@ -131,6 +133,22 @@ export function exploreDestinationPage(ctx, trip, destinationId) {
     preparing = false;
   }
 
+  // "See it as a guest" (owner's report, 5 Nov 2026: the map could not be found in the preview): opens the guest preview straight on this map, as a
+  // guest who is there, pretending it is the first day of the stop. Nothing is sent anywhere.
+  function seeAsGuest() {
+    const dates = trip.slots.filter((x) => x.destinationId === destinationId).map((x) => x.date).sort();
+    const guest = trip.guests.find((g) => !g.leftAt);
+    if (!guest || !dates.length) { showToast('No guest or no day at this stop yet.', true); return; }
+    try {
+      const sheet = buildGuestSheet(trip, guest, new Date().toISOString());
+      sheet.previewDate = dates[0];
+      const index = sheet.destinations.findIndex((d) => d.name === destination.name && d.map);
+      if (index < 0) { showToast('Nothing to show yet: set where guests start from, or add a place.', true); return; }
+      localStorage.setItem(GUEST_PREVIEW_KEY, JSON.stringify(sheet));
+      location.href = new URL(`guest/?preview=1&map=${index}`, location.href).href;
+    } catch { showToast('Could not prepare the preview.', true); }
+  }
+
   const offlineButton = h('button', { class: `btn${ex.streets ? ' btn--plain' : ''}`, type: 'button', disabled: locked || !ex.dock, onclick: (e) => prepareOffline(e.currentTarget) }, ex.streets ? 'Prepare it again' : 'Prepare the offline map');
   return h('div', {},
     pageHead({ back: { href: `#/trip/${trip.id}/settings/explore`, label: 'Explore maps' }, eyebrow: 'Explore map', title: destination.name, subtitle: 'What guests see on the map of this stop', action: undoButton(ctx, trip, { scope: EXPLORE_UNDO_SCOPE }) }),
@@ -145,6 +163,7 @@ export function exploreDestinationPage(ctx, trip, destinationId) {
         : 'Not prepared yet: without it, the streets only show with signal (the pins, the blue dot and the distances always work).'),
       h('div', { class: 'card-actions' }, offlineButton),
       h('div', { class: 'muted small-print' }, 'Street data © OpenStreetMap contributors.')),
+    ex.dock || ex.places.length ? h('button', { class: 'btn', type: 'button', onclick: seeAsGuest }, 'See it as a guest') : notice('Guests see nothing until you set where they start from or add a place.'),
     h('h2', { class: 'section-title' }, `Places (${ex.places.length})`),
     ex.places.length === 0 ? h('p', { class: 'empty' }, 'No place yet. Add the sights, cafés, shops and markets the team recommends.') : null,
     ...ex.places.map((p, i) => h('div', { class: 'card' },

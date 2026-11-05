@@ -10,6 +10,7 @@
 // The app can read nothing else: no trip, no other guest. Read only.
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
+import { APP_VERSION } from '../js/version.js';
 import { passportState, stampSvg, dayIn, wallToInstant, hashOf } from './passport.js';
 import { sceneSvg, patternCss } from './explorer/themes.js';
 import { ENGINES, SKINS, hasGame } from './explorer/games.js';
@@ -1433,14 +1434,23 @@ let scrolledToToday = false;
 // Preview (owner, from the leader's app: Preview as Guest): the sheet was put on this phone by the leader's app, nothing is asked of the server and
 // nothing is kept. A bar at the top leads back to the leader's app.
 const PREVIEW = new URLSearchParams(window.location.search).has('preview');
+let previewMapShown = false;
 function showPreview() {
   let sheet = null;
   try { sheet = JSON.parse(store.get('tourdocs.guest.preview')); } catch { sheet = null; }
   if (!sheet || sheet.v !== SUPPORTED_SHEET) { showProblem('No preview', 'Open the preview again from the leader\'s app: Settings, Preview as Guest.'); return; }
   simulatedDate = /^\d{4}-\d{2}-\d{2}$/.test(sheet.previewDate ?? '') ? sheet.previewDate : null;
+  // Opened from a stop's "See it as a guest": straight to that map (once; Back then goes to Today).
+  const mapAsked = Number(new URLSearchParams(window.location.search).get('map'));
+  if (!previewMapShown && Number.isInteger(mapAsked) && new URLSearchParams(window.location.search).has('map') && sheet.destinations?.[mapAsked]?.map) {
+    previewMapShown = true;
+    history.replaceState({ view: { tab: 'today' } }, '');
+    history.pushState({ view: { map: mapAsked } }, '');
+    view = { map: mapAsked };
+  }
   render(sheet);
   if (!document.querySelector('.preview-strip')) {
-    const strip = h('a', { class: 'preview-strip', href: '../' }, `Preview as ${sheet.first}${simulatedDate ? ` · pretending it is ${simulatedDate}` : ''} · back to Tour Docs`);
+    const strip = h('a', { class: 'preview-strip', href: '../' }, `Preview as ${sheet.first}${simulatedDate ? ` · pretending it is ${simulatedDate}` : ''} · v${APP_VERSION} · back to Tour Docs`);
     document.body.prepend(strip);
   }
 }
