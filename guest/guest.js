@@ -28,6 +28,8 @@ const SUPPORTED_SHEET = 1;      // the sheet format this app understands (js/gue
 const REFRESH_EVERY = 60000;    // while the app is open and visible, look for news every minute
 
 const app = document.getElementById('app');
+// Puts a page on the screen. An empty spot (null) is left out: replaceChildren would write it as the word "null" on the page.
+function put(nodes) { app.replaceChildren(...[nodes].flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false)); }
 
 // ---------- small helpers ----------
 // A picture that can fail to load (an old sheet pointing at a picture that has since moved, no connection and never cached): instead of the
@@ -750,7 +752,7 @@ function startQuiz(index, silent = false) {
   if (!silent) go({ quiz: index }); else paintQuiz();
 }
 
-function paintQuiz() { app.replaceChildren(...quizPage(currentSheet, quizRun.index)); }
+function paintQuiz() { put(quizPage(currentSheet, quizRun.index)); }
 
 function soundButton() {
   const button = h('button', { class: 'ex-sound', type: 'button', 'aria-label': soundOn() ? 'Sound on' : 'Sound off', 'aria-pressed': String(soundOn()) }, soundOn() ? '\u{1F50A}' : '\u{1F507}');
@@ -1282,38 +1284,38 @@ function paintPage() {
   const tour = view.tour !== undefined ? sheet.tours?.[view.tour] : null;
   if ((view.tour !== undefined && !tour) || (view.options !== undefined && !sheet.tours?.[view.options])) { view = { tab: 'today' }; }
   const offline = currentOffline ? h('div', { class: 'banner' }, `No internet right now. Showing what was last received (${updatedText(sheet.updatedAt)}).`) : null;
-  if (view.inbox) { app.replaceChildren(...inboxView(sheet, offline)); return; }
-  if (view.credits) { app.replaceChildren(...creditsView(sheet, offline)); return; }
-  if (view.album) { app.replaceChildren(...albumView(sheet, offline, { backButton: true })); return; }
+  if (view.inbox) { put(inboxView(sheet, offline)); return; }
+  if (view.credits) { put(creditsView(sheet, offline)); return; }
+  if (view.album) { put(albumView(sheet, offline, { backButton: true })); return; }
   if (view.rest !== undefined && !sheet.restaurants?.[view.rest]) view = { tab: 'today' };
-  if (view.rest !== undefined) { app.replaceChildren(...restaurantView(sheet, view.rest, offline)); return; }
-  if (view.eat !== undefined) { app.replaceChildren(...eatView(sheet, view.eat, offline)); return; }
+  if (view.rest !== undefined) { put(restaurantView(sheet, view.rest, offline)); return; }
+  if (view.eat !== undefined) { put(eatView(sheet, view.eat, offline)); return; }
   if (view.options !== undefined) {
-    app.replaceChildren(...optionsView(sheet, view.options, offline));
+    put(optionsView(sheet, view.options, offline));
     return;
   }
   if (tour) {
-    app.replaceChildren(...tourView(sheet, tour, offline));
+    put(tourView(sheet, tour, offline));
     return;
   }
   if (view.game !== undefined) {
     const page = gamePage(sheet, view.game, view.step);
-    if (page) { app.replaceChildren(...page.nodes); pendingMount = page.mount; return; }
+    if (page) { put(page.nodes); pendingMount = page.mount; return; }
     view = { tab: 'passport' };
   }
   if (view.quiz !== undefined) {
     const page = quizPage(sheet, view.quiz);
-    if (page.length > 0) { app.replaceChildren(...page); return; }
+    if (page.length > 0) { put(page); return; }
     return; // quizPage drew a fresh quiz by itself
   }
   if (view.dest !== undefined) {
     const page = destinationView(sheet, view.dest, offline);
-    if (page) { app.replaceChildren(...page); return; }
+    if (page) { put(page); return; }
     view = { tab: 'passport' };
   }
   const tabs = { album: () => albumView(sheet, offline), today: () => todayView(sheet, offline), program: () => programView(sheet, offline), trip: () => tripView(sheet, offline), passport: () => passportView(sheet, offline) };
   if (!tabs[view.tab] || (view.tab === 'program' && !sheet.program?.length)) view = { tab: 'today' };
-  app.replaceChildren(...tabs[view.tab](), tabBar(sheet));
+  put([tabs[view.tab](), tabBar(sheet)]);
 }
 
 // The goodbye shown once the link has expired: the trip owner's own message (or the default one) and, if given, a link to the next trips.
@@ -1339,7 +1341,7 @@ function farewellView(sheet) {
 let farewellAlbum = false;
 function repaintEnded() {
   if (!currentSheet?.ended) { paint(); return; }
-  app.replaceChildren(...(farewellAlbum ? [h('div', { class: 'atl-head atl-head--sub' }, h('button', { class: 'atl-back atl-back--inline', type: 'button', 'aria-label': 'Back', onclick: () => { farewellAlbum = false; repaintEnded(); } }, '‹'), h('small', {}, currentSheet.trip), h('h1', {}, 'Our Album')), ...albumView(currentSheet, null).slice(1)] : farewellView(currentSheet)));
+  put((farewellAlbum ? [h('div', { class: 'atl-head atl-head--sub' }, h('button', { class: 'atl-back atl-back--inline', type: 'button', 'aria-label': 'Back', onclick: () => { farewellAlbum = false; repaintEnded(); } }, '‹'), h('small', {}, currentSheet.trip), h('h1', {}, 'Our Album')), ...albumView(currentSheet, null).slice(1)] : farewellView(currentSheet)));
   window.scrollTo(0, 0);
 }
 initAlbum({ h, callRpc, currentToken, store, SUPABASE_URL, SUPABASE_ANON_KEY, modal, plainHead, isPreview: () => PREVIEW, repaint: () => repaintEnded(), fullName: () => store.get('tourdocs.guest.fullname') || store.get('tourdocs.guest.first') || '' });

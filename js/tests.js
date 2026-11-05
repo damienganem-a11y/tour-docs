@@ -3129,6 +3129,17 @@ function readZip(bytes) {
     first === 'Posted by Ana Perez | 1 of 3' && second === 'Posted by Ben Hall | 2 of 3' && third === 'Posted by Cy Long | 3 of 3' && seen.join() === 'b' && afterDelete === 'Posted by Ben Hall | 2 of 2' && !document.querySelector('.albv'));
   const albumPage = albumSettingsPage({ roleFor: () => 'owner', album: { pull: async () => ({ photos: [], marks: [], settings: null }), links: async () => ({}), upload: async () => ({ ok: true }), act: async () => ({ ok: true }) }, refresh: () => {}, userFor: () => ({ name: 'Owner' }) }, structuredClone(t));
   check('Settings > Our Album draws, with the on/off switch for the owner', albumPage.textContent.includes('Our Album is on') && albumPage.textContent.includes('Switch off'));
+  {
+    // One staff photo, nobody saved it yet (the owner's screenshot of 5 Nov 2026 showed "nullnull" above the photo)
+    const tt = structuredClone(t);
+    const onePhoto = [{ id: 'p1', guest_id: null, author_name: 'null null', pinned: false, created_at: '2027-01-01T10:00:00Z' }];
+    const page = albumSettingsPage({ roleFor: () => 'owner', album: { pull: async () => ({ photos: onePhoto, marks: [], settings: { enabled: true } }), links: async () => ({ p1: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }), upload: async () => ({ ok: true }), act: async () => ({ ok: true }) }, refresh: () => {}, notifyGuestList: async () => ({ sent: 0 }), userFor: () => ({ name: 'Owner' }) }, tt);
+    document.body.append(page); await new Promise((r) => setTimeout(r, 50));
+    const who = page.querySelector('details.album-who');
+    check('Our Album (staff): never the word "null" on the page; who has saved is a closed dropdown that says how many, and lists everyone once opened',
+      !/null/.test(page.textContent) && who && !who.open && /0 of \d+ saved everything/.test(who.querySelector('summary').textContent) && who.querySelectorAll('.album-who-row').length === tt.guests.filter((g) => !g.leftAt).length);
+    page.remove();
+  }
 }
 
 // --- Destination fun facts (editor in Settings > Touring) ---

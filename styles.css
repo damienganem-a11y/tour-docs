@@ -1438,3 +1438,14 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .bottom-tab { position: relative; }
 .tab-dot { position: absolute; top: 8px; right: calc(50% - 30px); width: 9px; height: 9px; border-radius: 50%; background: #e53935; box-shadow: 0 0 0 2px var(--bg, #fff); }
 .menu-row--late .menu-hint { color: #c62828; font-weight: 600; }
+
+/* v0.141.1: Our Album, "Who has saved the photos" as a dropdown (owner's request). */
+.album-who { margin: 18px 0 10px; border: 1px solid rgba(128,128,128,.25); border-radius: 16px; padding: 0 14px; background: var(--card, transparent); }
+.album-who > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 0; font-weight: 700; }
+.album-who > summary::-webkit-details-marker { display: none; }
+.album-who > summary::after { content: '▾'; transition: transform .15s; opacity: .6; }
+.album-who[open] > summary::after { transform: rotate(180deg); }
+.album-who-title { flex: 1; }
+.album-who-list { padding-bottom: 12px; }
+.album-who-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(128,128,128,.15); }
+.album-who-left { color: #b26a00; font-weight: 600; white-space: nowrap; }

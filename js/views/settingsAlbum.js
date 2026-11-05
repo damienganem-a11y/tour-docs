@@ -104,6 +104,10 @@ export function albumSettingsPage(ctx, trip) {
     });
   }
 
+  // Puts the blocks on the page. An empty spot (null) is left out: replaceChildren would write it as the word "null" (the "nullnull" the owner saw
+  // above the photos, 5 Nov 2026).
+  const show = (...items) => content.replaceChildren(...items.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false));
+
   function draw() {
     const phase = albumPhase(settings, todayIso());
     const blocks = [];
@@ -119,9 +123,9 @@ export function albumSettingsPage(ctx, trip) {
         settings.enabled ? h('select', { class: 'text-input', 'aria-label': 'Days guests can download after the trip', onchange: (e) => run({ type: 'guest-links', action: 'album-settings', settings: { downloadDays: Number(e.target.value) } }, 'Saved') },
           [...new Set([...DOWNLOAD_CHOICES, settings.downloadDays])].sort((a, b) => a - b).map((n) => h('option', { value: String(n), selected: n === settings.downloadDays ? '' : null }, `Download for ${n} days`))) : null) : null));
 
-    if (!settings.enabled) { content.replaceChildren(...blocks); return; }
-    if (!data) { content.replaceChildren(...blocks, h('p', { class: 'muted' }, 'Loading the photos…')); return; }
-    if (data.error) { content.replaceChildren(...blocks, h('p', { class: 'muted' }, 'The photos could not be loaded. The database may not be updated yet (Settings > Check this phone), or you are offline.'), h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: load }, 'Try again')); return; }
+    if (!settings.enabled) { show(...blocks); return; }
+    if (!data) { show(...blocks, h('p', { class: 'muted' }, 'Loading the photos…')); return; }
+    if (data.error) { show(...blocks, h('p', { class: 'muted' }, 'The photos could not be loaded. The database may not be updated yet (Settings > Check this phone), or you are offline.'), h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: load }, 'Try again')); return; }
     if (!data.settings) blocks.push(notice('The album is not yet saved on the server. It is saved by the owner\'s phone when the app is open and online.'));
 
     // Add photos (staff). The file picker lives outside this page (see uploadFiles): the app redraws its screens by itself, and a redraw while the phone's
@@ -144,9 +148,13 @@ export function albumSettingsPage(ctx, trip) {
       const guests = trip.guests.filter((g) => !g.leftAt).sort(alphabetical(names));
       const progress = downloadProgress(photos, data.marks, guests.map((g) => g.id));
       const missing = progress.filter((p) => !p.complete);
-      blocks.push(h('h2', { class: 'section-title' }, 'Who has saved the photos'),
-        h('p', { class: 'muted' }, missing.length === 0 ? 'Everybody has saved every photo.' : `${plural(progress.length - missing.length, 'guest')} of ${progress.length} saved everything. A photo a guest skipped counts as done.`),
-        ...progress.map((p) => h('div', { class: 'card card--soft' }, h('div', { class: 'act-name' }, names.get(p.guestId)), h('div', { class: 'muted' }, p.complete ? 'Saved everything' : `${p.done} of ${p.total} saved, ${p.missing} to go`))),
+      // A dropdown (owner's request, 5 Nov 2026): closed, it says only how many saved everything; open, the list, those still to go first.
+      const ordered = [...missing, ...progress.filter((p) => p.complete)];
+      blocks.push(h('details', { class: 'album-who' },
+        h('summary', {}, h('span', { class: 'album-who-title' }, 'Who has saved the photos'),
+          h('span', { class: 'muted' }, missing.length === 0 ? 'Everybody saved everything' : `${progress.length - missing.length} of ${progress.length} saved everything`)),
+        h('p', { class: 'muted' }, 'A photo a guest skipped counts as done.'),
+        h('div', { class: 'album-who-list' }, ordered.map((p) => h('div', { class: 'album-who-row' }, h('span', {}, names.get(p.guestId)), h('span', { class: p.complete ? 'muted' : 'album-who-left' }, p.complete ? 'Saved everything' : `${p.done} of ${p.total}, ${p.missing} to go`))))),
         missing.length ? h('button', { class: 'btn', type: 'button', onclick: async () => {
           try {
             const r = await ctx.notifyGuestList(trip.id, missing.map((m) => m.guestId), 'Our Album: photos waiting for you', `New photos are waiting. Open Our Album and tap "Download new"${settings.downloadUntil ? ` before ${niceDate(settings.downloadUntil)}` : ''}.`);
@@ -155,7 +163,7 @@ export function albumSettingsPage(ctx, trip) {
         } }, `Remind the ${missing.length} who have not saved everything`) : null,
         h('p', { class: 'muted' }, 'Guests also get automatic reminders: one week before the album closes, the day after, and two weeks before the photos are erased (only guests who turned notifications on).'));
     }
-    content.replaceChildren(...blocks);
+    show(...blocks);
   }
 
   draw();
