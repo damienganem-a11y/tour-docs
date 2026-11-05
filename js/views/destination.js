@@ -113,7 +113,13 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
     }),
     h('div', { class: 'card-grid' }, cards, leisureCard),
-    attention.length > 0 ? attentionCard(ctx, trip, slot, attention, names) : null
+    attention.length > 0 ? attentionCard(ctx, trip, slot, attention, names) : null,
+    // The guests' map of this stop, one tap from Tours (owner's report, 5 Nov 2026: it could not be found).
+    ctx.roleFor(trip.id) === 'viewer' ? null : h('a', { class: 'map-link', href: `#/trip/${trip.id}/settings/explore/${destination.id}` },
+      h('span', { 'aria-hidden': 'true' }, '🗺'),
+      h('span', {}, h('b', {}, `Guests' map of ${destination.name}`),
+        h('small', {}, destination.explore?.dock || destination.explore?.places?.length ? `${destination.explore.places?.length ?? 0} place${destination.explore.places?.length === 1 ? '' : 's'}${destination.explore.streets ? ' · works offline' : ' · offline map not prepared'}` : 'Not set up yet: guests see no map')),
+      h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'))
   );
 }
 

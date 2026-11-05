@@ -1482,3 +1482,7 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .scan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .scan-btn { border: 0; border-radius: 99px; background: #fff; color: #000; font: inherit; font-weight: 800; padding: 9px 16px; cursor: pointer; }
 .scan-btn--plain { background: rgba(255,255,255,.18); color: #fff; }
+/* v0.146.1: the guests' map of a stop, linked from Tours */
+.map-link { display: flex; align-items: center; gap: 12px; margin: 14px 0 4px; padding: 12px 14px; border-radius: 16px; border: 1px dashed rgba(128,128,128,.45); color: inherit; text-decoration: none; }
+.map-link > span:nth-child(2) { flex: 1; display: flex; flex-direction: column; }
+.map-link small { opacity: .7; }
