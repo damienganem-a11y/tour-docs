@@ -56,6 +56,7 @@ import { clockOf, dayLabel, listTime, groupByDay, initialsOf, inboxList, attenti
 import { openChat } from './chatUi.js';
 import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
+import { staleWarning, redoGroupsChange } from './views/staleColours.js';
 import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
 import { guestConversations, unreadAnswers, guestMessageAnswerText, staffDisplayName, messageRecord, messageRecordCsv } from './guestMessages.js';
 import { buildTranscriptPdf } from './pdf.js';
@@ -3863,15 +3864,21 @@ function readZip(bytes) {
       const gp = groupsSettingsPage(pageCtx, cx.state, split.id);
       const tp = togetherSettingsPage(pageCtx, cx.state);
       check('The colour groups page shows the tour, each colour with its square, the Easy Walker group, and who changed tour; Travelling together lists its groups',
-        gp.textContent.includes('Colour groups') && gp.querySelectorAll('.swatch').length >= 4 && gp.textContent.includes('Easy Walkers') && gp.textContent.includes('No longer on this tour') && tp.textContent.includes('Kids friends'));
+        gp.textContent.includes('Colour groups') && gp.querySelectorAll('.swatch').length >= 4 && gp.textContent.includes('Easy Walkers') && /no longer on this tour/.test(gp.textContent) && tp.textContent.includes('Kids friends'));
       check('A guest who changes tour loses that tour\'s colour on their ticket and is listed to take out of the group', ticketFor(cx.state, ewMate, tour.id) === null && st.stale.some((g) => g.id === ewMate.id));
       // v0.141.0 (owner's report): "No longer on this tour" comes before the colours, with a way to re-split; the reception list is one tap away at the top
       const cards = [...gp.querySelectorAll('.card')];
-      const staleAt = cards.findIndex((c) => c.textContent.includes('No longer on this tour'));
+      const staleAt = cards.findIndex((c) => /no longer on this tour/.test(c.textContent));
       const firstColour = cards.findIndex((c) => c.textContent.includes('+ Add people'));
       const topButtons = [...gp.querySelectorAll('button')].map((b) => b.textContent);
-      check('"No longer on this tour" is above the colour groups and offers to take them out and to re-split; the reception list is at the top',
-        staleAt >= 0 && staleAt < firstColour && topButtons.includes('Just take them out') && topButtons.includes('Re-split the groups...') && topButtons.indexOf('Reception list (PDF)') >= 0 && topButtons.indexOf('Reception list (PDF)') < topButtons.findIndex((t) => t.includes('Add people')));
+      check('"No longer on this tour" is above the colour groups with just two choices, Remove them and Redo the groups; the reception list is at the top',
+        staleAt >= 0 && staleAt < firstColour && topButtons.includes('Remove them') && topButtons.includes('Redo the groups') && !topButtons.includes('Re-split the groups...') && topButtons.indexOf('Reception list (PDF)') >= 0 && topButtons.indexOf('Reception list (PDF)') < topButtons.findIndex((t) => t.includes('Add people')));
+      const redo = redoGroupsChange(cx.state, cx.state.splits.find((x) => x.id === split.id));
+      const redoIds = new Map(redo.change.assignments.map((a) => [a.guestId, a.groupId]));
+      check('Redo the groups starts from scratch: everybody booked now gets a colour (or none if there is no room), and whoever left the tour loses theirs',
+        st.booked.every((g) => redoIds.has(g.id)) && st.stale.every((g) => redoIds.get(g.id) === null) && redoIds.size === st.booked.length + st.stale.length);
+      const warn = staleWarning(pageCtx, cx.state, cx.state.splits.find((x) => x.id === split.id));
+      check('Opening the tour in Tours shows the same warning first (with the names)', warn && warn.textContent.includes('no longer on this tour') && st.stale.every((g) => warn.textContent.includes(g.first)));
       const before = Object.keys(cx.state.splits.find((x) => x.id === split.id).assignments).length;
       const out = await applyChange(cx, cx.state.id, { type: 'assign-guests', splitId: split.id, assignments: st.stale.map((g) => ({ guestId: g.id, groupId: null })) });
       check('Taking them out frees their places', out.ok && Object.keys(cx.state.splits.find((x) => x.id === split.id).assignments).length === before - st.stale.length && tourSplitState(cx.state, cx.state.splits.find((x) => x.id === split.id)).stale.length === 0);

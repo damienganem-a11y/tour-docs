@@ -14,6 +14,7 @@ import { choiceRow, notice } from './move.js';
 import { pickGuests } from './guestPicker.js';
 import { GROUPS_UNDO_SCOPE } from '../journal.js';
 import { openColourChange } from './colourQuick.js';
+import { staleWarning } from './staleColours.js';
 import { exportGroupsPdf, exportGroupsOverviewPdf, exportGroupsXlsx, exportGroupCards } from '../export.js';
 
 // A labelled field for the sheets: the label above (always readable), the input, then a hint below that wraps (a placeholder
@@ -216,7 +217,7 @@ function splitPage(ctx, trip, split) {
         }, names.get(g.id)))));
   // Guests who are in a colour but changed tour since: their ticket no longer shows this tour. Shown at the TOP of the page (owner's report of
   // 5 Nov 2026), with a way to free their places and re-split at once.
-  const staleCard = state && state.stale.length > 0 ? staleCardFor(ctx, trip, split, state, names, locked) : null;
+  const staleCard = state ? staleWarning(ctx, trip, split) : null;
 
   return h('div', {},
     pageHead({
@@ -275,28 +276,6 @@ function exportButton(ctx, trip, split, label, run, primary = false) {
   return h('button', { class: `btn${primary ? '' : ' btn--plain'}`, type: 'button', onclick: () => runExport(() => run(ctx, trip, split)) }, label);
 }
 
-// "No longer on this tour": guests still in a colour who changed tour. Three ways out: just free their places; free them AND place the guests
-// who have no colour yet (the usual case: they swapped tours, so the newcomers take their places); or re-split everybody.
-function staleCardFor(ctx, trip, split, state, names, locked) {
-  const out = state.stale.map((g) => ({ guestId: g.id, groupId: null }));
-  const takeOut = () => save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: out }, 'Taken out of the colours');
-  const takeOutAndPlace = () => {
-    const staleIds = new Set(state.stale.map((g) => g.id));
-    const without = { ...split, assignments: Object.fromEntries(Object.entries(split.assignments).filter(([id]) => !staleIds.has(id))) };
-    const { plan, warnings } = tourSplitPlan(trip, without, state.unplaced.map((g) => g.id));
-    return save(ctx, trip, { type: 'assign-guests', splitId: split.id, assignments: [...out, ...plan] }, warnings[0] ?? `Taken out, and ${plural(plan.length, 'guest')} placed`);
-  };
-  return h('div', { class: 'card card--warn' },
-    h('div', { class: 'card-row' }, h('div', { class: 'act-name' }, 'No longer on this tour'), h('div', { class: 'count count--bad' }, String(state.stale.length))),
-    h('div', { class: 'muted' }, 'They changed tour after the colours were given. Their phone no longer shows this colour.'),
-    h('div', { class: 'chips' }, [...state.stale].sort(alphabetical(names)).map((g) => h('span', { class: 'chip' }, names.get(g.id)))),
-    h('div', { class: 'card-actions' },
-      state.unplaced.length > 0
-        ? h('button', { class: 'btn btn--small', type: 'button', disabled: locked, onclick: takeOutAndPlace }, `Take them out and place the ${plural(state.unplaced.length, 'new guest')}`)
-        : null,
-      h('button', { class: `btn btn--small${state.unplaced.length > 0 ? ' btn--plain' : ''}`, type: 'button', disabled: locked, onclick: takeOut }, 'Just take them out'),
-      h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => autoSplitSheet(ctx, trip, split) }, 'Re-split the groups...')));
-}
 
 // Tap a guest: move them to another group, or take them out of the split. Their travel party comes along (owner's request,
 // 1 Oct 2026), unless the owner unticks the box for this one move.
