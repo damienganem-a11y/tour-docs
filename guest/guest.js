@@ -20,7 +20,7 @@ import { greetingFor } from './greetings.js';
 import { openChat } from '../js/chatUi.js';
 import { SLIM_SHEET_VERSION, hydrateSheet } from '../js/sheetSlim.js';
 import { installPlatform, shouldOffer, readOffer, openInstallSheet } from './install.js';
-import { initExplore, exploreView, exploreTodayCard, keepUpcomingStreets } from './explore.js';
+import { initExplore, exploreView, exploreTodayCard, keepUpcomingStreets, exploreMapsBlock } from './explore.js';
 import { initAlbum, albumView, albumAvailable, albumNewCount, loadAlbum, sendQueue } from './album.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
@@ -432,7 +432,7 @@ function todayView(sheet, offline) {
 // The Trip tab: the whole programme, folded by destination.
 function tripView(sheet, offline) {
   return [h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Trip'), h('p', {}, `${sheet.days.length} days · ${sheet.trip}`)),
-    h('div', { class: 'atl-body' }, offline, staleNotice(sheet), ...programmeView(sheet), updatedRow(sheet), creditsLink(sheet))];
+    h('div', { class: 'atl-body' }, offline, staleNotice(sheet), exploreMapsBlock(sheet, go), ...programmeView(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // ---------- the daily program (owner's request, 17 Oct 2026): step after step, with the guest's own tours and dinner in it ----------

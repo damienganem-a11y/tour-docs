@@ -195,3 +195,17 @@ export function exploreTodayCard(sheet, go, now = new Date()) {
     h('small', {}, 'Explore'), h('b', {}, `Map of ${d.name}`),
     h('span', {}, `${n ? `${n} place${n === 1 ? '' : 's'} picked by the team. ` : ''}${d.map.backBy ? `Back on board by ${d.map.backBy}. ` : ''}Works without signal.`));
 }
+
+// On the Trip tab, at any time (owner's report, 5 Nov 2026: the map was hard to find): every stop that has a map, in trip order.
+export function exploreMapsBlock(sheet, go) {
+  const { h } = deps;
+  const stops = (sheet.destinations ?? []).map((d, index) => ({ d, index })).filter(({ d }) => d.map);
+  if (stops.length === 0) return null;
+  const when = (d) => { try { return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${d.firstDate}T12:00:00Z`)); } catch { return ''; } };
+  return h('div', { class: 'xm-maps' },
+    h('div', { class: 'block-title' }, 'Maps of the stops'),
+    stops.map(({ d, index }) => h('button', { class: 'xm-row', type: 'button', onclick: () => go({ map: index }) },
+      h('span', { class: 'xm-num xm-num--map', 'aria-hidden': 'true' }, '🗺'),
+      h('span', { class: 'xm-row-text' }, h('b', {}, `Map of ${d.name}`),
+        h('small', {}, [d.firstDate ? when(d) : null, d.map.places?.length ? `${d.map.places.length} place${d.map.places.length === 1 ? '' : 's'} picked by the team` : null, 'works offline'].filter(Boolean).join(' · '))))));
+}

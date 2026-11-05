@@ -1043,3 +1043,5 @@ input[type=checkbox] { accent-color: #000; }
 .xm-today small { display: block; color: var(--yellow, #ffd23f); font-weight: 800; text-transform: uppercase; letter-spacing: .05em; font-size: 12px; }
 .xm-today b { display: block; font-size: 19px; margin: 2px 0; }
 .xm-today span { font-size: 14px; opacity: .85; }
+.xm-maps { margin: 4px 0 18px; display: flex; flex-direction: column; gap: 8px; }
+.xm-num--map { background: #e8f0ec; font-size: 15px; }
