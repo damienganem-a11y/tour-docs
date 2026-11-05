@@ -1418,6 +1418,7 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .contact-who .swatch { margin-top: 3px; }
 .contact-ok { color: #2e7d32; font-size: .85rem; font-weight: 600; }
 .contact-asked { color: #b26a00; font-size: .85rem; font-weight: 600; } /* v0.141: the reconfirmation message was sent, no OK yet */
+.contact-no { color: #c62828; font-size: .85rem; font-weight: 700; } /* v0.143: they answered by link that they cannot make it */
 .btn--wa { background: #25d366; border-color: #25d366; color: #fff; }
 .contact-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .contact-btn { display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(128,128,128,.4); background: transparent; color: inherit; font: inherit; font-size: .88rem; font-weight: 600; text-decoration: none; cursor: pointer; }

@@ -2,12 +2,12 @@
 // colour group) each one works on. The team sees them on each tour with one tap to call, text or WhatsApp them, and the person in charge ticks
 // "reconfirmed". Never shown to guests (the guest's sheet does not carry them).
 //
-// trip.contacts = [{ id, name, job, phone, whatsapp, languages, company, notes, assignments: [{ activityId, groupId | null, confirmedAt?, confirmedBy?, askedAt?, askedBy? }] }]
+// trip.contacts = [{ id, name, job, phone, whatsapp, languages, company, notes, assignments: [{ activityId, groupId | null, confirmedAt?, confirmedBy?, askedAt?, askedBy?, answeredAt?, confirmedVia?, declinedAt?, declineNote?, answerNote? }] }]
 // The agency fills in an Excel file the app makes for them (xlsx.js buildContactsTemplateXlsx: one line per tour and colour group, the contact columns empty);
 // the app reads it back here. Pure: no screen, no network.
 
 import { colorOf, bookedOnActivity } from './rules.js';
-import { formatTime, formatWeekdayDate } from './time.js';
+import { formatTime, formatWeekdayDate, localToInstant, addDays } from './time.js';
 
 export const JOBS = ['Guide', 'Driver', 'Escort', 'Other'];
 export const CONTACT_COLUMNS = ['Date', 'Day', 'Tour', 'Colour group', 'Job', 'Name', 'Phone', 'WhatsApp', 'Languages', 'Company', 'Notes'];
@@ -127,31 +127,44 @@ export function contactsError(trip, list) {
   return null;
 }
 
-// The message that asks a guide or driver to reconfirm a tour (owner's report of 5 Nov 2026): everything in one text, ready for WhatsApp or a text
-// message, so one tap sends it. Example:
-//   "Hello Marco, this is Damien from Tour Docs. Just confirming your tour, please:
-//    Alfama walking tour · Tue 12 Jan · 15:00 · meeting point: Hotel lobby
-//    Your group: Red (12 guests). 48 guests on the whole tour.
-//    Could you reply OK to confirm? Thank you!"
-// sender: the staff member's first name (or null). company: the trip's company name (or null). Pure.
-export function reconfirmText(trip, { contact, assignment, group }, { sender = null, company = null } = {}) {
+// What a reconfirmation is about, worked out once for the message and for the guide's page (v0.143.0). Never a guest's name, never a phone number.
+// Returns null when the tour is not in the trip. expiresAt: the link stops working at the end of the day after the tour.
+export function confirmInfo(trip, { contact, assignment, group }, { sender = null, company = null } = {}) {
   const activity = trip.activities.find((a) => a.id === assignment.activityId);
   const slot = activity && trip.slots.find((x) => x.id === activity.slotId);
-  if (!activity || !slot) return '';
+  if (!activity || !slot) return null;
   const destination = trip.destinations.find((d) => d.id === slot.destinationId);
   const booked = bookedOnActivity(trip, activity.id);
   const split = (trip.splits ?? []).find((x) => x.activityId === activity.id);
-  const inGroup = group && split ? booked.filter((g) => split.assignments[g.id] === group.id).length : null;
+  const colour = colorOf(group?.color);
+  const time = activity.startsAt && destination?.timeZone ? formatTime(activity.startsAt, destination.timeZone) : null;
+  return {
+    name: clean(contact.name).split(/\s+/)[0] || '', job: contact.job, tour: activity.name,
+    when: [formatWeekdayDate(slot.date), time ?? slot.half].join(' · '), date: slot.date, time,
+    meeting: activity.meeting || null, place: destination?.name ?? null,
+    group: group ? (colour?.name && !group.name.includes(colour.name) ? `${colour.name} · ${group.name}` : group.name) : null, colour: colour?.hex ?? null,
+    groupGuests: group && split ? booked.filter((g) => split.assignments[g.id] === group.id).length : null, guests: booked.length,
+    sender, company, expiresAt: localToInstant(addDays(slot.date, 2), '00:00', destination?.timeZone ?? 'UTC'),
+  };
+}
+
+// The message that asks a guide or driver to reconfirm a tour (owner's report of 5 Nov 2026): everything in one text, ready for WhatsApp or a text
+// message, so one tap sends it. Example:
+//   "Hello Marco, this is Damien from Tour Docs. Just confirming your tour, please:
+//    Alfama walking tour · Tue 12 Jan · 15:00 · meeting point: Hotel lobby (Lisbon)
+//    Your group: Red (12 guests). 48 guests on the whole tour.
+//    Tap to confirm (or tell us you can't make it): https://.../confirm/#...
+// link: the guide's personal answer page (v0.143.0); without it the message asks them to reply OK. Pure.
+export function reconfirmText(trip, line, { sender = null, company = null, link = null } = {}) {
+  const info = confirmInfo(trip, line, { sender, company });
+  if (!info) return '';
   const guests = (n) => `${n} guest${n === 1 ? '' : 's'}`;
-  const first = clean(contact.name).split(/\s+/)[0] || '';
   const from = [sender, company].filter(Boolean);
-  const when = [formatWeekdayDate(slot.date), activity.startsAt && destination?.timeZone ? formatTime(activity.startsAt, destination.timeZone) : slot.half].filter(Boolean).join(' · ');
   const lines = [
-    `Hello${first ? ` ${first}` : ''}${from.length ? `, this is ${from.join(' from ')}` : ''}. Just confirming your tour, please:`,
-    `${activity.name} · ${when}${activity.meeting ? ` · meeting point: ${activity.meeting}` : ''}${destination ? ` (${destination.name})` : ''}`,
-    group ? `Your group: ${colorOf(group.color)?.name && !group.name.includes(colorOf(group.color).name) ? `${colorOf(group.color).name} · ${group.name}` : group.name} (${guests(inGroup)}). ${guests(booked.length)} on the whole tour.`
-      : `${guests(booked.length)} on the tour.`,
-    'Could you reply OK to confirm? Thank you!',
+    `Hello${info.name ? ` ${info.name}` : ''}${from.length ? `, this is ${from.join(' from ')}` : ''}. Just confirming your tour, please:`,
+    `${info.tour} · ${info.when}${info.meeting ? ` · meeting point: ${info.meeting}` : ''}${info.place ? ` (${info.place})` : ''}`,
+    info.group ? `Your group: ${info.group} (${guests(info.groupGuests)}). ${guests(info.guests)} on the whole tour.` : `${guests(info.guests)} on the tour.`,
+    link ? `Tap to confirm (or tell us you can't make it): ${link}` : 'Could you reply OK to confirm? Thank you!',
   ];
   return lines.join('\n');
 }

@@ -58,7 +58,8 @@ export function jobTodo(trip, jobs, { today, guestMessages = [], threads = [], n
     for (const { a, slot } of tours) {
       const waiting = (trip.contacts ?? []).filter((c) => c.assignments.some((x) => x.activityId === a.id && !x.confirmedAt));
       const asked = waiting.filter((c) => c.assignments.some((x) => x.activityId === a.id && x.askedAt)).length;
-      if (waiting.length) push({ job: 'reconfirm', title: `${a.name}: ${waiting.length} to reconfirm`, detail: `${when(slot)}, ${slot.half.toLowerCase()} · ${waiting.map((c) => c.name).slice(0, 3).join(', ')}${waiting.length > 3 ? '…' : ''}${asked ? ` · ${asked} message${asked === 1 ? '' : 's'} sent` : ''}`, href: `${base}/settings/localteam`, dueAt: jobDueAt(trip, 'reconfirm', a, slot) }, slot);
+      const declined = waiting.filter((c) => c.assignments.some((x) => x.activityId === a.id && x.declinedAt));
+      if (waiting.length) push({ job: 'reconfirm', title: declined.length ? `${a.name}: ${declined.map((c) => c.name).join(', ')} can't make it` : `${a.name}: ${waiting.length} to reconfirm`, detail: `${when(slot)}, ${slot.half.toLowerCase()} · ${waiting.map((c) => c.name).slice(0, 3).join(', ')}${waiting.length > 3 ? '…' : ''}${asked ? ` · ${asked} message${asked === 1 ? '' : 's'} sent` : ''}`, href: `${base}/settings/localteam`, dueAt: jobDueAt(trip, 'reconfirm', a, slot) }, slot);
     }
   }
   if (jobs.includes('messages')) {

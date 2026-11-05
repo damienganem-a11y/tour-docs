@@ -226,6 +226,7 @@ export async function watchServerChanges(onChange, onStatus) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_messages' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_thread_state' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'team_messages' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_confirms' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
 }
 
@@ -688,4 +689,25 @@ export async function schedulerStatus() {
   const { data, error } = await supabase.rpc('scheduler_status');
   if (error) throw error;
   return data;
+}
+
+// Reconfirm by link (migration 0032). A link for one guide or driver on one tour: `info` is what their page shows (no guest names, no phones).
+export async function createConfirmLink({ token, tripId, activityId, contactId, expiresAt, info }) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('contact_confirms').insert({ token, trip_id: tripId, activity_id: activityId, contact_id: contactId, expires_at: expiresAt, info });
+  if (error) throw error;
+}
+// The answers given by link that are not yet recorded in their trip (the owner's phone records them).
+export async function pullContactAnswers() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('contact_confirms').select('token, trip_id, activity_id, contact_id, answer, note, answered_at')
+    .not('answered_at', 'is', null).is('applied_at', null).order('answered_at').limit(100);
+  if (error) throw error;
+  return data;
+}
+export async function markContactAnswerApplied(token, answeredAt) {
+  const supabase = await getClient();
+  // Only if the guide did not answer again meanwhile: a newer answer stays to be recorded.
+  const { error } = await supabase.from('contact_confirms').update({ applied_at: new Date().toISOString() }).eq('token', token).eq('answered_at', answeredAt);
+  if (error) throw error;
 }

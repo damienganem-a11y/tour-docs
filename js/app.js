@@ -27,6 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress, existingSe
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
+  createConfirmLink, pullContactAnswers, markContactAnswerApplied,
   pushGuestShared, pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, sendGuestMessages, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
@@ -347,6 +348,15 @@ const ctx = {
   guestRequestsFor: (tripId) => guestRequestRows.filter((r) => r.trip_id === tripId),
   // Our Album (staff side): everything goes to the server's album function; the settings of the album are a trip setting (journaled, in the one change function).
   album: { pull: pullAlbum, links: albumLinks, upload: albumUpload, act: albumAct },
+  // Reconfirm by link (v0.143.0): makes the guide's personal link on the server. Returns its address, or null when it could not be made (offline,
+  // not signed in, database not updated): the message then goes without a link, and "They confirmed" is ticked by hand as before.
+  async makeConfirmLink(tripId, { activityId, contactId, expiresAt, info }) {
+    if (!state.owner || hasSession === false || !navigator.onLine) return null;
+    const bytes = crypto.getRandomValues(new Uint8Array(18));
+    const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    try { await createConfirmLink({ token, tripId, activityId, contactId, expiresAt, info }); } catch { return null; }
+    return new URL(`confirm/#${token}`, new URL('./', location.href)).href;
+  },
   guestMessagesFor: (tripId) => guestMessageRows.filter((r) => r.trip_id === tripId),
   // A staff member (owner or colleague) writes to a guest, as an answer or as the first word: saved on the server with their name and the exact time; the server
   // tells the guest by notification (if they turned those on). The message can never be edited or deleted afterwards.
@@ -1179,6 +1189,34 @@ async function decideForcedRequest(id, how, note = null) {
 }
 
 let processing = false;
+// Answers given by link by guides and drivers (migration 0032): the owner's phone records each one in its trip through the one change function
+// (journaled, Undo), then marks it recorded on the server. Only the owner's phone does it, so an answer is never recorded twice.
+let answering = false;
+async function processContactAnswers() {
+  if (answering || !state.owner || hasSession === false || !navigator.onLine) return;
+  answering = true;
+  try {
+    const rows = await pullContactAnswers();
+    for (const row of rows) {
+      const trip = state.trips.get(row.trip_id);
+      if (!trip || ctx.roleFor(trip.id) !== 'owner' || trip.archivedAt) continue;
+      const contact = (trip.contacts ?? []).find((c) => c.id === row.contact_id);
+      const assignment = contact?.assignments.find((a) => a.activityId === row.activity_id);
+      if (assignment) {
+        const already = row.answer === 'yes' ? assignment.confirmedAt && assignment.confirmedVia === 'link' && assignment.answeredAt === row.answered_at
+          : assignment.declinedAt && assignment.answeredAt === row.answered_at;
+        if (!already) {
+          const result = await applyChange(ctx, trip.id, { type: 'confirm-contact', contactId: contact.id, activityId: row.activity_id, answer: row.answer, note: row.note ?? '', answeredAt: row.answered_at });
+          if (!result.ok) continue; // tried again next round
+        }
+      }
+      await markContactAnswerApplied(row.token, row.answered_at).catch(() => {});
+    }
+    if (rows.length) renderQuiet();
+  } catch { /* the database update is not there yet, or no connection: the next round tries again */ }
+  answering = false;
+}
+
 async function processRequests() {
   if (processing || !state.owner || hasSession === false || !navigator.onLine) return;
   processing = true;
@@ -1434,7 +1472,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) { await syncAlbumSettings(id); await syncMessageSettings(id); } for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await processContactAnswers(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) { await syncAlbumSettings(id); await syncMessageSettings(id); } for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }

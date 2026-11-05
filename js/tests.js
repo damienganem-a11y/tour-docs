@@ -44,7 +44,7 @@ import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuC
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
 import { pushGuestSheets, sheetGroups } from './sync.js';
-import { phoneLinks, contactsFromRows, mergeContacts, contactsForTour, reconfirmText, messageLinks } from './contacts.js';
+import { phoneLinks, contactsFromRows, mergeContacts, contactsForTour, reconfirmText, messageLinks, confirmInfo } from './contacts.js';
 import { jobsOf, jobTodo, jobDotCount } from './teamJobs.js';
 import { buildContactsTemplateXlsx } from './xlsx.js';
 import { contactsSettingsPage } from './views/settingsContacts.js';
@@ -3841,9 +3841,26 @@ function readZip(bytes) {
         && (!tour.meeting || msg.includes(`meeting point: ${tour.meeting}`)) && /Your group: .*Blue.* \(\d+ guests?\)\. \d+ guests? on the whole tour\./.test(msg) && msg.endsWith('Could you reply OK to confirm? Thank you!'));
       const ml = messageLinks('+33 6 12 34 56 78', 'Hello & bye');
       check('The message opens ready to send in WhatsApp or the Messages app', ml.whatsapp === 'https://wa.me/33612345678?text=Hello%20%26%20bye' && /^sms:\+33612345678[?&]body=Hello%20%26%20bye$/.test(ml.sms) && messageLinks('', 'x') === null);
+      // v0.143.0: the message carries their personal link; what their page shows never names a guest
+      const withLink = reconfirmText(cx.state, paul, { sender: 'Damien', link: 'https://example.org/confirm/#abc' });
+      const shown = confirmInfo(cx.state, paul, { sender: 'Damien' });
+      const guestNames = cx.state.guests.flatMap((g) => [`${g.first} ${g.last}`]);
+      check('Reconfirm by link: the message ends with their link instead of "reply OK", and their page shows the tour, never a guest\'s name',
+        withLink.endsWith('Tap to confirm (or tell us you can\'t make it): https://example.org/confirm/#abc') && !withLink.includes('reply OK')
+        && shown.tour === tour.name && shown.guests > 0 && guestNames.every((n) => !JSON.stringify(shown).includes(n)) && Date.parse(shown.expiresAt) > Date.parse(`${sl.date}T00:00:00Z`));
       const asked = await applyChange(cx, cx.state.id, { type: 'confirm-contact', contactId: paul.contact.id, activityId: tour.id, asked: true });
       const paulNow = contactsForTour(cx.state, tour.id).find((x) => x.contact.name === 'Paul Bus');
       check('Sending the message is noted on the tour (when, journaled), and he is still waiting to be reconfirmed', asked.ok && Boolean(paulNow.assignment.askedAt) && !paulNow.assignment.confirmedAt && /Reconfirmation message sent to Paul Bus/.test(summarize(groupBatches(cx.entries).at(-1))));
+      const no = await applyChange(cx, cx.state.id, { type: 'confirm-contact', contactId: paul.contact.id, activityId: tour.id, answer: 'no', note: 'My bus broke down', answeredAt: '2027-01-01T10:00:00.000Z' });
+      const afterNo = contactsForTour(cx.state, tour.id).find((x) => x.contact.name === 'Paul Bus').assignment;
+      const noTodo = jobTodo(cx.state, ['reconfirm'], { today: sl.date });
+      check('"I can\'t make it" by link: recorded with their note (journaled), and Your jobs says who cannot make it',
+        no.ok && afterNo.declinedAt === '2027-01-01T10:00:00.000Z' && afterNo.declineNote === 'My bus broke down' && !afterNo.confirmedAt && /cannot make .* \(answered by link\)/.test(summarize(groupBatches(cx.entries).at(-1)))
+        && noTodo.some((t) => /Paul Bus can't make it/.test(t.title)));
+      const yes = await applyChange(cx, cx.state.id, { type: 'confirm-contact', contactId: paul.contact.id, activityId: tour.id, answer: 'yes', note: '', answeredAt: '2027-01-01T11:00:00.000Z' });
+      const afterYes = contactsForTour(cx.state, tour.id).find((x) => x.contact.name === 'Paul Bus').assignment;
+      check('Changing their mind to "I confirm": confirmed by link, the refusal is gone, and the tour leaves Your jobs', yes.ok && afterYes.confirmedVia === 'link' && !afterYes.declinedAt && !jobTodo(cx.state, ['reconfirm'], { today: sl.date }).some((t) => t.title.includes(tour.name) && /Paul/.test(t.detail + t.title)));
+      await applyChange(cx, cx.state.id, { type: 'confirm-contact', contactId: paul.contact.id, activityId: tour.id, confirmed: false });
       const early = new Date(Date.parse(localToInstant(sl.date, '00:00', cx.state.destinations.find((d) => d.id === sl.destinationId).timeZone)) - 2 * 86400000);
       const timeline = jobTodo(cx.state, ['groups', 'reconfirm'], { today: sl.date, now: early });
       const lateLine = jobTodo(cx.state, ['reconfirm'], { today: sl.date, now: new Date(Date.parse(localToInstant(sl.date, '12:00', 'UTC'))) });

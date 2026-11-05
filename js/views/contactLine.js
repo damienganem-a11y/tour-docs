@@ -9,7 +9,7 @@ import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { showToast, openSheet, closeSheet } from '../ui.js';
 import { colorOf } from '../rules.js';
-import { phoneLinks, reconfirmText, messageLinks } from '../contacts.js';
+import { phoneLinks, reconfirmText, messageLinks, confirmInfo } from '../contacts.js';
 
 const shortWhen = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
 
@@ -19,8 +19,10 @@ export function contactLine(ctx, trip, line, { canConfirm = true } = {}) {
   const colour = colorOf(group?.color);
   const confirmed = Boolean(assignment.confirmedAt);
   const status = confirmed
-    ? h('div', { class: 'contact-ok' }, `✓ Reconfirmed${assignment.confirmedBy ? ` by ${assignment.confirmedBy}` : ''}, ${shortWhen(assignment.confirmedAt)}`)
-    : assignment.askedAt ? h('div', { class: 'contact-asked' }, `Message sent ${shortWhen(assignment.askedAt)}${assignment.askedBy ? ` by ${assignment.askedBy}` : ''} · waiting for their OK`) : null;
+    ? h('div', { class: 'contact-ok' }, assignment.confirmedVia === 'link' ? `✓ ${contact.name} confirmed by link, ${shortWhen(assignment.confirmedAt)}` : `✓ Reconfirmed${assignment.confirmedBy ? ` by ${assignment.confirmedBy}` : ''}, ${shortWhen(assignment.confirmedAt)}`,
+        assignment.answerNote ? h('div', { class: 'muted' }, `"${assignment.answerNote}"`) : null)
+    : assignment.declinedAt ? h('div', { class: 'contact-no' }, `✗ Can't make it (answered ${shortWhen(assignment.declinedAt)})${assignment.declineNote ? `: "${assignment.declineNote}"` : ''}`)
+    : assignment.askedAt ? h('div', { class: 'contact-asked' }, `Message sent ${shortWhen(assignment.askedAt)}${assignment.askedBy ? ` by ${assignment.askedBy}` : ''} · waiting for their answer`) : null;
   return h('div', { class: 'contact-line' },
     h('div', { class: 'contact-who' },
       colour ? h('span', { class: 'swatch', style: `background:${colour.hex}`, role: 'img', 'aria-label': colour.name }) : null,
@@ -48,8 +50,24 @@ async function setConfirmed(ctx, trip, { contact, assignment }, on) {
 function reconfirmSheet(ctx, trip, line) {
   const { contact, assignment } = line;
   const sender = String(ctx.owner?.name ?? '').trim().split(/\s+/)[0] || null;
-  const text = h('textarea', { class: 'text-input', rows: '7', 'aria-label': 'Message' });
-  text.value = reconfirmText(trip, line, { sender, company: trip.branding?.companyName || null });
+  const company = trip.branding?.companyName || null;
+  const text = h('textarea', { class: 'text-input', rows: '8', 'aria-label': 'Message' });
+  text.value = reconfirmText(trip, line, { sender, company });
+  // Their personal link (v0.143.0): they tap it to confirm or say they can't make it, and the app updates by itself. Made on the server as the sheet
+  // opens; offline (or before the database update), the message goes without it and asks them to reply OK.
+  const linkState = h('div', { class: 'muted', role: 'status' }, ctx.makeConfirmLink ? 'Adding their personal link…' : '');
+  let typed = false;
+  text.addEventListener('input', () => { typed = true; });
+  const info = confirmInfo(trip, line, { sender, company });
+  if (ctx.makeConfirmLink && info) {
+    const { expiresAt, ...shown } = info;
+    ctx.makeConfirmLink(trip.id, { activityId: assignment.activityId, contactId: contact.id, expiresAt, info: shown }).then((link) => {
+      if (!link) { linkState.textContent = 'No link this time (offline?): they can reply OK, and you tick "They confirmed".'; return; }
+      if (!typed) text.value = reconfirmText(trip, line, { sender, company, link });
+      else text.value += `\nTap to confirm (or tell us you can't make it): ${link}`;
+      linkState.textContent = '✓ Their personal link is in the message: when they tap "I confirm", the app updates by itself.';
+    });
+  }
   const noteSent = () => applyChange(ctx, trip.id, { type: 'confirm-contact', contactId: contact.id, activityId: assignment.activityId, asked: true }).then((r) => { if (r.ok) ctx.refresh(); }).catch(() => {});
   const open = (kind) => {
     const links = messageLinks(contact.phone, text.value);
@@ -62,6 +80,7 @@ function reconfirmSheet(ctx, trip, line) {
     eyebrow: 'Reconfirm', title: contact.name, subtitle: 'Everything is in the message. Change it if you like, then send it.',
     body: [
       text,
+      linkState,
       links?.whatsapp && contact.whatsapp !== false ? h('button', { class: 'btn btn--wa', type: 'button', onclick: () => open('whatsapp') }, 'Send by WhatsApp') : null,
       links ? h('button', { class: `btn${links.whatsapp && contact.whatsapp !== false ? ' btn--plain' : ''}`, type: 'button', onclick: () => open('sms') }, 'Send by text message') : null,
       h('button', { class: 'btn btn--plain', type: 'button', onclick: async () => {
