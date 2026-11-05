@@ -12,6 +12,7 @@ import { addDays, formatTime, localToInstant, offsetMinutes } from './time.js';
 import { findRollCall } from './rollcall.js';
 import { albumReminders } from './album.js';
 import { ticketFor } from './rules.js';
+import { jobReminders } from './teamJobs.js';
 
 export const MESSAGE_TEMPLATES = [
   { key: 'clocks', label: 'Clocks change tonight', title: 'Clocks change tonight', body: 'Tonight, remember to change your clock or watch before you go to bed.' },
@@ -29,6 +30,7 @@ export const AUTO_KINDS = [
   { key: 'ticketBefore', label: 'Guests: 30 minutes before a tour with colour groups, their colour and tickets (lock screen)', audience: 'guests' },
   { key: 'dinnerAlert', label: 'You: at 15:00, guests with no dinner booked tonight', audience: 'owner' },
   { key: 'rollCallAlert', label: 'You: a roll call still open 15 minutes after a tour left', audience: 'owner' },
+  { key: 'jobAlerts', label: 'Team jobs: the person in charge, for colours to validate (3 h before) and guides to reconfirm (17:00 the day before)', audience: 'owner' },
 ];
 export function autoNotifySettings(trip) {
   const saved = trip.autoNotify ?? {};
@@ -146,6 +148,8 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
         title: clip(`Dinner tonight: ${without} ${without === 1 ? 'guest has' : 'guests have'} no table`, 80), body: clip(`In ${destination.name}, ${without} ${without === 1 ? 'guest has' : 'guests have'} no dinner booked yet.`, 200) });
     }
   }
+  // Team jobs (v0.141.0): the person in charge of the colours or of the local team is reminded on their own phone (Settings > Team > Jobs).
+  if (settings.jobAlerts) for (const row of jobReminders(trip)) add(row);
   // Our Album: one week before it closes, when it closes, two weeks before the photos are erased. Sent to every guest. These are planned further ahead
   // than the 10 days of the others (the server keeps them until their time), in the time zone of the trip's last destination.
   const lastSlot = [...trip.slots].sort((a, b) => a.date.localeCompare(b.date)).at(-1);

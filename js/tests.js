@@ -44,8 +44,8 @@ import { parseMenuText, menuToText, menuCardError, guestMenuCard } from './menuC
 import { SAMPLE_CARDS } from './sampleMenus.js';
 import { openAlbumViewer } from './albumViewer.js';
 import { pushGuestSheets, sheetGroups } from './sync.js';
-import { phoneLinks, contactsFromRows, mergeContacts, contactsForTour } from './contacts.js';
-import { jobsOf, jobTodo } from './teamJobs.js';
+import { phoneLinks, contactsFromRows, mergeContacts, contactsForTour, reconfirmText, messageLinks } from './contacts.js';
+import { jobsOf, jobTodo, jobDotCount } from './teamJobs.js';
 import { buildContactsTemplateXlsx } from './xlsx.js';
 import { contactsSettingsPage } from './views/settingsContacts.js';
 import { linkCheck, slimSheet, hydrateSheet, contentKey, SLIM_SHEET_VERSION } from './guestSheet.js';
@@ -3085,12 +3085,13 @@ function readZip(bytes) {
     const chatEl = document.querySelector('.chat');
     const bubbles = chatEl.querySelectorAll('.chat-bubble');
     const ticks = chatEl.querySelector('.chat-bubble.is-mine .chat-ticks');
+    const readLine = chatEl.querySelector('.chat-read')?.textContent ?? '';
     chatEl.querySelector('.chat-input').value = 'On my way';
     chatEl.querySelector('.chat-send').click(); await new Promise((r) => setTimeout(r, 30));
     const after = document.querySelectorAll('.chat .chat-bubble').length;
-    win.close();
+    win.close(); await new Promise((r) => setTimeout(r, 60)); // closing steps back in the history (the back swipe), which answers a moment later
     check('The chat window shows bubbles of both sides, the name above an answer, two ticks once read, and sending adds a bubble',
-      bubbles.length === 2 && bubbles[0].classList.contains('is-theirs') && bubbles[1].classList.contains('is-mine') && bubbles[1].textContent.includes('Marie') && ticks?.textContent === '✓✓' && sent.join() === 'On my way' && after === 3 && !document.querySelector('.chat'));
+      bubbles.length === 2 && bubbles[0].classList.contains('is-theirs') && bubbles[1].classList.contains('is-mine') && bubbles[1].textContent.includes('Marie') && ticks?.textContent === '✓✓' && /^Read .*\d/.test(readLine) && sent.join() === 'On my way' && after === 3 && !document.querySelector('.chat'));
   }
   // Guest sheets go in small groups, and "Check the links" says which links are not ready
   const bigRows = Array.from({ length: 10 }, (_, i) => ({ token: `t${i}`, guestId: `g${i}`, active: true, sheet: { v: 1, days: [], filler: 'x'.repeat(100 * 1024) } }));
@@ -3820,6 +3821,28 @@ function readZip(bytes) {
         setJobs.ok && !badJobs.ok && jobsOf(cx.state, 'ANNA@example.com').join() === 'groups,reconfirm' && todo.some((t) => t.job === 'reconfirm' && t.title.includes('1 to reconfirm')) && jobTodo(cx.state, [], { today: sl.date }).length === 0
         && /jobs of anna@example.com/.test(summarize(groupBatches(cx.entries).at(-1))));
       check('Guests never get the local team in their programme', !JSON.stringify(buildGuestSheet(cx.state, ewMate, 'x')).includes('Marie Durand'));
+      // v0.141.0 (owner's report of 5 Nov 2026): the reconfirmation message, "message sent", the jobs' timeline and reminders
+      const paul = contactsForTour(cx.state, tour.id).find((x) => x.contact.name === 'Paul Bus');
+      const msg = reconfirmText(cx.state, paul, { sender: 'Damien', company: 'Fictional Tours' });
+      check('Reconfirm: one message holds everything (who writes, the tour, the date, the time, the meeting point, their colour group and the numbers)',
+        msg.startsWith('Hello Paul, this is Damien from Fictional Tours.') && msg.includes(tour.name) && (!tour.startsAt || msg.includes(formatTime(tour.startsAt, cx.state.destinations.find((d) => d.id === sl.destinationId).timeZone)))
+        && (!tour.meeting || msg.includes(`meeting point: ${tour.meeting}`)) && /Your group: .*Blue.* \(\d+ guests?\)\. \d+ guests? on the whole tour\./.test(msg) && msg.endsWith('Could you reply OK to confirm? Thank you!'));
+      const ml = messageLinks('+33 6 12 34 56 78', 'Hello & bye');
+      check('The message opens ready to send in WhatsApp or the Messages app', ml.whatsapp === 'https://wa.me/33612345678?text=Hello%20%26%20bye' && /^sms:\+33612345678[?&]body=Hello%20%26%20bye$/.test(ml.sms) && messageLinks('', 'x') === null);
+      const asked = await applyChange(cx, cx.state.id, { type: 'confirm-contact', contactId: paul.contact.id, activityId: tour.id, asked: true });
+      const paulNow = contactsForTour(cx.state, tour.id).find((x) => x.contact.name === 'Paul Bus');
+      check('Sending the message is noted on the tour (when, journaled), and he is still waiting to be reconfirmed', asked.ok && Boolean(paulNow.assignment.askedAt) && !paulNow.assignment.confirmedAt && /Reconfirmation message sent to Paul Bus/.test(summarize(groupBatches(cx.entries).at(-1))));
+      const early = new Date(Date.parse(localToInstant(sl.date, '00:00', cx.state.destinations.find((d) => d.id === sl.destinationId).timeZone)) - 2 * 86400000);
+      const timeline = jobTodo(cx.state, ['groups', 'reconfirm'], { today: sl.date, now: early });
+      const lateLine = jobTodo(cx.state, ['reconfirm'], { today: sl.date, now: new Date(Date.parse(localToInstant(sl.date, '12:00', 'UTC'))) });
+      check('Your jobs: a timeline, soonest due first, each with the time it is due by; once the time has passed it is marked late',
+        timeline.length > 0 && timeline.every((t, i) => i === 0 || timeline[i - 1].dueAt <= t.dueAt) && timeline.every((t) => /Due by \d\d:\d\d/.test(t.detail) && !t.late)
+        && timeline.some((t) => t.job === 'reconfirm' && /1 message sent/.test(t.detail) && /the evening before/.test(t.detail)) && lateLine.every((t) => t.late && /Late: was due/.test(t.detail)) && jobDotCount(timeline) === timeline.length);
+      const reminders = plannedAutoMessages(cx.state, early).filter((r) => r.audience === 'staff');
+      check('Reminders reach the person in charge on their own phone: guides to reconfirm at 17:00 the day before, colours to validate 3 hours before (only the people with that job)',
+        reminders.some((r) => r.auto_key === `job|reconfirm|${tour.id}` && r.staff_emails.join() === 'anna@example.com' && /Reconfirm the local team/.test(r.title))
+        && reminders.every((r) => r.title.length <= 80 && r.body.length <= 200 && Array.isArray(r.staff_emails))
+        && plannedAutoMessages(cx.state, early, { ...autoNotifySettings(cx.state), jobAlerts: false }).every((r) => r.audience !== 'staff'));
     }
     check('The test tour has another tour in the same half-day', Boolean(other));
     {
@@ -3831,6 +3854,16 @@ function readZip(bytes) {
       check('The colour groups page shows the tour, each colour with its square, the Easy Walker group, and who changed tour; Travelling together lists its groups',
         gp.textContent.includes('Colour groups') && gp.querySelectorAll('.swatch').length >= 4 && gp.textContent.includes('Easy Walkers') && gp.textContent.includes('No longer on this tour') && tp.textContent.includes('Kids friends'));
       check('A guest who changes tour loses that tour\'s colour on their ticket and is listed to take out of the group', ticketFor(cx.state, ewMate, tour.id) === null && st.stale.some((g) => g.id === ewMate.id));
+      // v0.141.0 (owner's report): "No longer on this tour" comes before the colours, with a way to re-split; the reception list is one tap away at the top
+      const cards = [...gp.querySelectorAll('.card')];
+      const staleAt = cards.findIndex((c) => c.textContent.includes('No longer on this tour'));
+      const firstColour = cards.findIndex((c) => c.textContent.includes('+ Add people'));
+      const topButtons = [...gp.querySelectorAll('button')].map((b) => b.textContent);
+      check('"No longer on this tour" is above the colour groups and offers to take them out and to re-split; the reception list is at the top',
+        staleAt >= 0 && staleAt < firstColour && topButtons.includes('Just take them out') && topButtons.includes('Re-split the groups...') && topButtons.indexOf('Reception list (PDF)') >= 0 && topButtons.indexOf('Reception list (PDF)') < topButtons.findIndex((t) => t.includes('Add people')));
+      const before = Object.keys(cx.state.splits.find((x) => x.id === split.id).assignments).length;
+      const out = await applyChange(cx, cx.state.id, { type: 'assign-guests', splitId: split.id, assignments: st.stale.map((g) => ({ guestId: g.id, groupId: null })) });
+      check('Taking them out frees their places', out.ok && Object.keys(cx.state.splits.find((x) => x.id === split.id).assignments).length === before - st.stale.length && tourSplitState(cx.state, cx.state.splits.find((x) => x.id === split.id)).stale.length === 0);
     }
   }
 }

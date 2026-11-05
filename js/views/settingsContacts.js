@@ -8,7 +8,7 @@
 import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast, shareOrDownloadFile } from '../ui.js';
-import { plural, slotLabel, colorOf } from '../rules.js';
+import { plural, slotLabel, colorOf, joinNames } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { undoButton } from './undo.js';
@@ -37,20 +37,43 @@ export function contactsSettingsPage(ctx, trip) {
   }
 
   // 1. The file for the agency: every tour (one line per colour group when it has them), with what is already known.
-  function agencyFile() {
-    const tours = toursInOrder(trip).flatMap(({ a, slot }) => {
+  //    By destination (owner's report of 5 Nov 2026): some agencies do several destinations, others just one, so the owner ticks which ones go in
+  //    the file (all ticked to start with). A trip with one destination makes the file at once.
+  function agencyFile(destinationIds) {
+    const wanted = new Set(destinationIds);
+    const list = toursInOrder(trip).filter(({ slot }) => wanted.has(slot.destinationId));
+    const tours = list.flatMap(({ a, slot }) => {
       const split = (trip.splits ?? []).find((x) => x.activityId === a.id);
       const base = { date: slot.date, day: slot.day, tour: a.name };
       return split ? split.groups.map((g) => ({ ...base, group: colorOf(g.color)?.name ?? g.name })) : [base];
     });
     const existing = contacts.flatMap((c) => c.assignments.map((as) => {
-      const t = toursInOrder(trip).find((x) => x.a.id === as.activityId);
+      const t = list.find((x) => x.a.id === as.activityId);
       const split = (trip.splits ?? []).find((x) => x.activityId === as.activityId);
       const g = split?.groups.find((x) => x.id === as.groupId);
       return t ? { date: t.slot.date, day: t.slot.day, tour: t.a.name, group: g ? (colorOf(g.color)?.name ?? g.name) : '', job: c.job, name: c.name, phone: c.phone, whatsapp: c.whatsapp, languages: c.languages, company: c.company, notes: c.notes } : null;
     })).filter(Boolean);
-    const slug = trip.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'trip';
-    shareOrDownloadFile(buildContactsTemplateXlsx(trip.name, tours, existing), `${slug}-local-team.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const places = trip.destinations.filter((d) => wanted.has(d.id)).map((d) => d.name);
+    const all = places.length === trip.destinations.length;
+    const slugOf = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const slug = [slugOf(trip.name) || 'trip', ...(all ? [] : places.map(slugOf))].filter(Boolean).join('-');
+    shareOrDownloadFile(buildContactsTemplateXlsx(all ? trip.name : `${trip.name}, ${joinNames(places)}`, tours, existing), `${slug}-local-team.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+  function agencyFileSheet() {
+    const places = trip.destinations.filter((d) => toursInOrder(trip).some(({ slot }) => slot.destinationId === d.id));
+    if (places.length <= 1) { agencyFile(places.map((d) => d.id)); return; }
+    const boxes = places.map((d) => {
+      const box = h('input', { type: 'checkbox', checked: true, value: d.id });
+      const count = toursInOrder(trip).filter(({ slot }) => slot.destinationId === d.id).length;
+      return { box, row: h('label', { class: 'check-row' }, box, h('span', {}, d.name), h('span', { class: 'muted' }, ` · ${plural(count, 'tour')}`)) };
+    });
+    const make = h('button', { class: 'btn', type: 'button', onclick: () => {
+      const ids = boxes.filter((b) => b.box.checked).map((b) => b.box.value);
+      if (ids.length === 0) { showToast('Tick at least one destination.', true); return; }
+      closeSheet(); agencyFile(ids);
+    } }, 'Make the file');
+    openSheet({ eyebrow: 'Local team', title: 'File for the agency', subtitle: 'Which destinations does this agency look after? Only their tours go in the file.',
+      body: boxes.map((b) => b.row), footer: [make], cancelLabel: 'Cancel' });
   }
 
   // 2. Reading the agency's file back.
@@ -72,7 +95,8 @@ export function contactsSettingsPage(ctx, trip) {
       ].filter(Boolean),
       footer: found.contacts.length ? [
         h('button', { class: 'btn', type: 'button', onclick: () => save(mergeContacts(contacts, found.contacts, 'merge'), `Imported the agency's file (${peopleWord(found.contacts.length)})`) }, contacts.length ? 'Add to the local team' : 'Import'),
-        contacts.length ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => save(found.contacts, `Replaced the local team with the agency's file (${peopleWord(found.contacts.length)})`) }, 'Replace the whole list') : null,
+        // Replacing touches only the tours in this file: an agency that does one destination never wipes the team of another destination.
+        contacts.length ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => save([...contacts.filter((c) => c.assignments.length > 0 && c.assignments.every((a) => !tours.has(a.activityId))), ...found.contacts], `Replaced the local team of these tours with the agency's file (${peopleWord(found.contacts.length)})`) }, 'Replace the people on these tours') : null,
       ].filter(Boolean) : null,
       cancelLabel: 'Cancel' });
   });
@@ -118,7 +142,7 @@ export function contactsSettingsPage(ctx, trip) {
   return h('div', {}, head,
     notice('Only the team sees these numbers, never the guests. Tap Call, Text or WhatsApp on a person; tick Reconfirm once you have spoken to them.'),
     h('div', { class: 'card-actions' },
-      h('button', { class: 'btn btn--small', type: 'button', disabled: locked, onclick: agencyFile }, 'File for the agency (Excel)'),
+      h('button', { class: 'btn btn--small', type: 'button', disabled: locked, onclick: agencyFileSheet }, 'File for the agency (Excel)'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => picker.click() }, 'Import the agency\'s file'),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked, onclick: () => editSheet(null) }, '+ Add a person'), picker),
     contacts.length === 0

@@ -43,9 +43,13 @@ export function todayPage(ctx, trip) {
   if (todo.length > 4) attention.push(row(`${base}/settings/requests`, 'And more waiting', `${todo.length - 4} more`));
 
   // 1b. This person's jobs (Settings > Team): what they ask of them for today's and tomorrow's tours.
+  //     A timeline: soonest due first, with the time it is due by; a late one is in red (owner's report of 5 Nov 2026).
   const jobs = jobsOf(trip, ctx.myEmail);
-  const today = localDateNow(trip.destinations.find((d) => trip.slots.some((x) => x.destinationId === d.id))?.timeZone ?? 'UTC');
-  const jobRows = jobs.length ? jobTodo(trip, jobs, { today, guestMessages: ctx.guestMessagesFor?.(trip.id) ?? [], threads: ctx.guestThreadsFor?.(trip.id) ?? [] }).map((t) => row(t.href, t.title, t.detail)) : [];
+  const jobRows = myJobItems(ctx, trip).map((t) => {
+    const r = row(t.href, t.title, t.detail, t.late ? '!' : null);
+    if (t.late) r.classList.add('menu-row--late');
+    return r;
+  });
   const jobsBlock = jobs.length ? [
     h('h3', { class: 'section-title' }, `Your jobs: ${jobs.map((k) => TEAM_JOBS.find((j) => j.key === k)?.label).filter(Boolean).join(', ')}`),
     jobRows.length ? h('div', { class: 'menu' }, jobRows) : h('p', { class: 'muted' }, 'All done for today and tomorrow.'),
@@ -82,4 +86,12 @@ export function todayPage(ctx, trip) {
       row(`${base}/settings/messages`, 'Messages', 'The team, the guests, reminders'),
       row(`${base}/use/guest`, 'Find a guest', 'Where is everybody, one guest at a time'),
       role === 'viewer' ? null : row(`${base}/settings/exports`, 'Documents', 'Lists, cards and sheets')));
+}
+
+// This person's job items for a trip (Today's "Your jobs", the red dot on the Today tab, the number on the app icon).
+export function myJobItems(ctx, trip) {
+  const jobs = jobsOf(trip, ctx.myEmail);
+  if (!jobs.length || trip.archivedAt) return [];
+  const today = localDateNow(trip.destinations.find((d) => trip.slots.some((x) => x.destinationId === d.id))?.timeZone ?? 'UTC');
+  return jobTodo(trip, jobs, { today, guestMessages: ctx.guestMessagesFor?.(trip.id) ?? [], threads: ctx.guestThreadsFor?.(trip.id) ?? [] });
 }

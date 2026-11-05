@@ -1417,9 +1417,24 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .contact-who { display: flex; gap: 10px; align-items: flex-start; }
 .contact-who .swatch { margin-top: 3px; }
 .contact-ok { color: #2e7d32; font-size: .85rem; font-weight: 600; }
+.contact-asked { color: #b26a00; font-size: .85rem; font-weight: 600; } /* v0.141: the reconfirmation message was sent, no OK yet */
+.btn--wa { background: #25d366; border-color: #25d366; color: #fff; }
 .contact-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .contact-btn { display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(128,128,128,.4); background: transparent; color: inherit; font: inherit; font-size: .88rem; font-weight: 600; text-decoration: none; cursor: pointer; }
 .contact-btn--wa { border-color: #25d366; color: #128c4a; }
 .contact-btn--on { background: #e5f2e6; border-color: #2e7d32; color: #2e7d32; }
 .team-tour { margin-top: 14px; }
 .team-tour h3 { margin: 0 0 2px; font-size: 1rem; }
+
+.chat-read { text-align: right; font-size: .64rem; color: var(--chat-tick); margin-top: -1px; }
+/* Album grid like the iPhone's Photos (owner, 5 Nov 2026) */
+.album-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin: 8px 0 16px; }
+.album-tile { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 0; overflow: hidden; background: rgba(128,128,128,.15); cursor: pointer; }
+.album-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album-pin { position: absolute; left: 4px; top: 2px; color: #f2b705; font-style: normal; text-shadow: 0 0 3px rgba(0,0,0,.6); }
+@media (min-width: 700px) { .album-grid { grid-template-columns: repeat(6, 1fr); } }
+
+/* v0.141: team jobs. A red dot on the Today tab while job items wait; a late item in red on Today. */
+.bottom-tab { position: relative; }
+.tab-dot { position: absolute; top: 8px; right: calc(50% - 30px); width: 9px; height: 9px; border-radius: 50%; background: #e53935; box-shadow: 0 0 0 2px var(--bg, #fff); }
+.menu-row--late .menu-hint { color: #c62828; font-weight: 600; }

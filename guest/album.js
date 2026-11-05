@@ -206,6 +206,8 @@ function warmBlob(photo, url) {
     if (blobs.size > 8) blobs.delete(blobs.keys().next().value);
   }).catch(() => blobs.delete(photo.id));
 }
+// The name under a photo. A staff name never filled in was stored as the words "null null": it reads "the staff".
+const authorOf = (p) => { const n = String(p.author ?? '').trim(); return !n || /\b(null|undefined)\b/i.test(n) ? (p.staff ? 'the staff' : 'a guest') : n; };
 const whenText = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const MARK_WORD = { downloaded: 'saved on your phone', skipped: 'not for you', kept: 'kept' };
 
@@ -214,7 +216,7 @@ function openViewer(list, index) {
     photos: list, index,
     fullUrl: async (p) => { await fetchLinks([p.id], 'full'); const url = urls.full.get(p.id) ?? null; warmBlob(p, url); return url; },
     thumbUrl: (p) => urls.thumb.get(p.id) ?? null,
-    title: (p) => `Posted by ${p.author || (p.staff ? 'the staff' : 'a guest')}${p.mine ? ' (you)' : ''}${p.pinned ? '  ★' : ''}`,
+    title: (p) => `Posted by ${authorOf(p)}${p.mine ? ' (you)' : ''}${p.pinned ? '  ★' : ''}`,
     subtitle: (p) => [whenText(p.at), MARK_WORD[markOf(p.id)]].filter(Boolean).join(' · '),
     onClose: () => d.repaint(),
     actions: (p) => {
@@ -248,7 +250,7 @@ function openViewer(list, index) {
 function tile(photo, list, index) {
   const mark = markOf(photo.id);
   const url = urls.thumb.get(photo.id);
-  return d.h('button', { class: `album-tile${mark === 'downloaded' ? ' is-saved' : ''}${mark === 'skipped' ? ' is-skipped' : ''}${mark === 'kept' ? ' is-kept' : ''}`, type: 'button', 'aria-label': `Photo by ${photo.author || 'a guest'}`, onclick: () => openViewer(list, index) },
+  return d.h('button', { class: `album-tile${mark === 'downloaded' ? ' is-saved' : ''}${mark === 'skipped' ? ' is-skipped' : ''}${mark === 'kept' ? ' is-kept' : ''}`, type: 'button', 'aria-label': `Photo by ${authorOf(photo)}`, onclick: () => openViewer(list, index) },
     url ? d.h('img', { src: url, alt: '', loading: 'lazy' }) : d.h('span', { class: 'album-wait' }),
     photo.pinned ? d.h('i', { class: 'album-pin', 'aria-hidden': 'true' }, '★') : null);
 }

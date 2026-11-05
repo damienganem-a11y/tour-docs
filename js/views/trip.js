@@ -16,7 +16,8 @@ import { pageHead, syncDot } from './chrome.js';
 import { destinationPage } from './destination.js';
 import { diningPage } from './dining.js';
 import { guestPage } from './guest.js';
-import { todayPage } from './today.js';
+import { todayPage, myJobItems } from './today.js';
+import { jobDotCount } from '../teamJobs.js';
 import { programSettingsPage } from './settingsProgram.js';
 import { notificationsPage, appearancePage } from './settingsPhone.js';
 import { avatarButton } from './accountSheet.js';
@@ -105,7 +106,9 @@ const USE_TABS = [
 function tabsNav(ctx, trip, activeTab) {
   return h('nav', { class: 'bottom-tabs', 'aria-label': 'Main menu' },
     USE_TABS.filter((t) => !(t.notViewer && ctx.roleFor(trip.id) === 'viewer')).map((t) =>
-      h('a', { class: `bottom-tab${t.tab === activeTab ? ' is-active' : ''}`, href: t.href(trip.id) }, t.label)));
+      h('a', { class: `bottom-tab${t.tab === activeTab ? ' is-active' : ''}`, href: t.href(trip.id) }, t.label,
+        // The red dot on Today: job items waiting for this person (owner's report of 5 Nov 2026).
+        t.tab === 'today' && jobDotCount(myJobItems(ctx, trip)) > 0 ? h('span', { class: 'tab-dot', 'aria-label': `${jobDotCount(myJobItems(ctx, trip))} job items waiting` }) : null)));
 }
 
 export function tripView(ctx, tripId, mode, page, first, second, third, fourth) {

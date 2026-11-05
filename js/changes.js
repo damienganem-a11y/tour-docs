@@ -84,6 +84,7 @@
 //       a guest is in one such group at most (adding them elsewhere takes them out of the other). { type: 'delete-together', togetherId }
 //   { type: 'set-contacts', contacts, what }   the local team (guides, drivers...: contacts.js), the whole list after an import or an edit; `what` says it in words
 //   { type: 'confirm-contact', contactId, activityId, confirmed }   a guide or driver reconfirmed (or not) for one tour, with who and when
+//   { type: 'confirm-contact', contactId, activityId, asked: true }  the reconfirmation message was sent to them (WhatsApp or text), with who and when
 //   { type: 'guest-left', guestId }                          "Guest left the trip": removed from every day-to-day
 //       list and count from now on, without touching a single booking. Reversible (guest-return, or Undo).
 //   { type: 'guest-return', guestId }                        brings a guest back who had left
@@ -250,6 +251,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
     const c = changes[0];
     const contact = (trip.contacts ?? []).find((x) => x.id === c.contactId);
     if (!contact || !contact.assignments.some((a) => a.activityId === c.activityId)) return fail('That person is not on this tour.');
+    if (c.asked === true) return { ok: true };
     return typeof c.confirmed === 'boolean' ? { ok: true } : fail('Reconfirmed or not: yes or no.');
   }
   if (ROLLCALL_TYPES.has(changes[0].type)) {
@@ -1529,9 +1531,14 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     } else {
       const contact = next.contacts.find((x) => x.id === c.contactId);
       const assignment = contact.assignments.find((a) => a.activityId === c.activityId);
-      if (c.confirmed) { assignment.confirmedAt = at; assignment.confirmedBy = ctx.owner?.name ?? null; } else { delete assignment.confirmedAt; delete assignment.confirmedBy; }
       const tour = next.activities.find((a) => a.id === c.activityId);
-      what = c.confirmed ? `${contact.name} reconfirmed for ${tour?.name ?? 'a tour'}` : `${contact.name} no longer marked reconfirmed for ${tour?.name ?? 'a tour'}`;
+      if (c.asked === true) {
+        assignment.askedAt = at; assignment.askedBy = ctx.owner?.name ?? null;
+        what = `Reconfirmation message sent to ${contact.name} for ${tour?.name ?? 'a tour'}`;
+      } else {
+        if (c.confirmed) { assignment.confirmedAt = at; assignment.confirmedBy = ctx.owner?.name ?? null; } else { delete assignment.confirmedAt; delete assignment.confirmedBy; }
+        what = c.confirmed ? `${contact.name} reconfirmed for ${tour?.name ?? 'a tour'}` : `${contact.name} no longer marked reconfirmed for ${tour?.name ?? 'a tour'}`;
+      }
     }
     entries.push({ ...base(), type: c.type, ...guestWhere, what, from: before, to: structuredClone(next.contacts) });
     return save(ctx, next, entries, {});

@@ -25,6 +25,12 @@ export function avatar(name, size = 40) {
   return el('span', { class: 'chat-avatar', style: `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px;background:hsl(${hueOf(name)} 45% 40%)`, 'aria-hidden': 'true' }, initialsOf(name));
 }
 
+// "14:32", or "Mon 14:32" when it was read on another day than it was sent.
+function readWhen(m) {
+  const sent = new Date(m.created_at); const read = new Date(m.read_at);
+  return sent.toDateString() === read.toDateString() ? clockOf(m.read_at) : `${read.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}, ${clockOf(m.read_at)}`;
+}
+
 export function openChat(options) {
   document.querySelector('.chat')?.remove();
   const scroll = el('div', { class: 'chat-scroll' });
@@ -32,7 +38,7 @@ export function openChat(options) {
   const send = el('button', { class: 'chat-send', type: 'button', 'aria-label': 'Send' }, '➤');
   const error = el('div', { class: 'chat-error', role: 'alert', hidden: '' });
   const menuBox = el('div', { class: 'chat-menu', hidden: '' });
-  const back = el('button', { class: 'chat-back', type: 'button', 'aria-label': 'Back', onclick: () => close() }, '‹');
+  const back = el('button', { class: 'chat-back', type: 'button', 'aria-label': 'Back', onclick: () => leave() }, '‹');
   const header = el('div', { class: 'chat-head' }, back, avatar(options.name ?? options.title, 38),
     el('div', { class: 'chat-who' }, el('b', {}, options.title), options.subtitle ? el('small', {}, options.subtitle) : null),
     options.menu?.length ? el('button', { class: 'chat-more', type: 'button', 'aria-label': 'More', onclick: () => { menuBox.hidden = !menuBox.hidden; } }, '⋯') : null);
@@ -71,7 +77,9 @@ export function openChat(options) {
         nodes.push(el('div', { class: `chat-bubble ${mine ? 'is-mine' : 'is-theirs'}` },
           label ? el('div', { class: 'chat-label' }, label) : null,
           el('div', { class: 'chat-text' }, m.body),
-          el('div', { class: 'chat-time' }, clockOf(m.created_at), mine ? el('span', { class: `chat-ticks${m.read_at ? ' is-read' : ''}`, 'aria-label': m.read_at ? 'Read' : 'Sent' }, m.read_at ? '✓✓' : '✓') : null)));
+          el('div', { class: 'chat-time' }, clockOf(m.created_at), mine ? el('span', { class: `chat-ticks${m.read_at ? ' is-read' : ''}`, 'aria-label': m.read_at ? 'Read' : 'Sent' }, m.read_at ? '✓✓' : '✓') : null),
+          // When the other side read it (owner, 5 Nov 2026): the time, and the day when it was another day.
+          mine && m.read_at ? el('div', { class: 'chat-read' }, `Read ${readWhen(m)}`) : null));
       }
     }
     scroll.replaceChildren(...nodes);
@@ -97,10 +105,19 @@ export function openChat(options) {
 
   let timer = null;
   if (options.refresh) timer = setInterval(async () => { try { await options.refresh(); redraw(); } catch { /* offline: the next round tries again */ } }, options.refreshEvery ?? 5000);
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e) => { if (e.key === 'Escape') leave(); };
   document.addEventListener('keydown', onKey);
+  // The phone's back gesture (swipe from the left edge) and the Back button both just close the chat, back on the list (owner's report, 5 Nov 2026):
+  // the chat puts one step in the history, and going back takes only that step.
+  let stepped = false;
+  try { history.pushState({ ...(history.state ?? {}), chat: true }, ''); stepped = true; } catch { /* no history: Back still works */ }
+  const onPop = () => { stepped = false; close(); };
+  window.addEventListener('popstate', onPop);
+  function leave() { if (stepped) history.back(); else close(); }
 
   function close() {
+    window.removeEventListener('popstate', onPop);
+    if (!root.isConnected) return;
     clearInterval(timer);
     document.removeEventListener('keydown', onKey);
     window.visualViewport?.removeEventListener('resize', fit); window.visualViewport?.removeEventListener('scroll', fit);
@@ -109,5 +126,5 @@ export function openChat(options) {
     options.onClose?.();
   }
   redraw({ force: true });
-  return { redraw, close };
+  return { redraw, close: leave };
 }

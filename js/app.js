@@ -36,6 +36,8 @@ import { APP_VERSION } from './version.js';
 import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './guestRequests.js';
 import { staffDisplayName } from './guestMessages.js';
 import { inboxList, attentionCount, REMIND_DEFAULT } from './chat.js';
+import { jobDotCount } from './teamJobs.js';
+import { myJobItems } from './views/today.js';
 import { albumSettings } from './album.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
 import { plannedAutoMessages } from './scheduledMessages.js';
@@ -509,6 +511,13 @@ const ctx = {
       const detail = `${{ owner: 'Owner', team: teamLabel(trip), advance: 'Advance', viewer: 'Expert' }[role] ?? role}${place}${tripApprovals.get(trip.id) === 'review' ? ' · you ask before applying' : ''}. ${trip.changeCount ?? 0} changes. ${conflictTrips.has(trip.id) ? 'TWO VERSIONS: open the inbox.' : behind ? 'Changes not sent yet.' : 'In step with the server.'}`;
       add(`Trip ${trip.ref || trip.name}`, conflictTrips.has(trip.id) ? 'bad' : behind ? 'warn' : 'ok', detail);
       if (role !== 'viewer') add(`  Live editing on ${trip.ref || trip.name}`, ctx.liveFor(trip.id) ? 'ok' : 'warn', ctx.liveFor(trip.id) ? 'Your changes are applied at once.' : 'Not now (offline, not in step, or you ask before applying): your changes will go as requests or be sent later.');
+      // What this phone received of the guests' messages for this trip (owner's report of 5 Nov 2026: no red number on one trip).
+      if (role !== 'viewer') {
+        const rows = guestMessageRows.filter((m) => m.trip_id === trip.id);
+        const waiting = attentionCount(inboxList(rows, guestThreadRows.filter((r) => r.trip_id === trip.id), new Map()));
+        const fromGuests = rows.filter((m) => m.direction === 'guest').length;
+        add(`  Guest messages on ${trip.ref || trip.name}`, 'ok', rows.length === 0 ? 'None received by this phone.' : `${fromGuests} from guests, ${rows.length - fromGuests} from the staff. ${waiting} conversation${waiting === 1 ? '' : 's'} waiting (the red number).`);
+      }
     }
     return rows;
   },
@@ -768,6 +777,7 @@ function render({ keepScroll = false } = {}) {
   const app = document.getElementById('app');
   renderWaiting = false;
   closeSheet({ keepFullScreen: true }); // a pick-list left open would be pointing at an old screen (a full-screen preview or question stays)
+  updateAppBadge(); // the number on the app icon follows every change (a job done, a message answered)
 
   // Locked: nothing else is shown until the access code is entered.
   if (state.locked) {
@@ -1035,6 +1045,7 @@ function updateAppBadge() {
     for (const trip of state.trips.values()) {
       if (ctx.roleFor(trip.id) === 'viewer') continue;
       total += attentionCount(inboxList(guestMessageRows.filter((m) => m.trip_id === trip.id), guestThreadRows.filter((r) => r.trip_id === trip.id), new Map()));
+      total += jobDotCount(myJobItems(ctx, trip)); // this person's team job items (colours to validate, guides to reconfirm)
     }
     if (total > 0) navigator.setAppBadge(total).catch(() => {}); else navigator.clearAppBadge?.().catch(() => {});
   } catch { /* no badge on this phone */ }

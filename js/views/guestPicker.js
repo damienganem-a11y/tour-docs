@@ -1,5 +1,5 @@
-// A sheet to tick several guests at once, with a live count top-right, a name search, and a "Keep travel parties
-// together" switch (on by default: ticking one guest ticks their whole travel party, unticking unticks it; owner, 1 Oct 2026).
+// A sheet to tick several guests at once, with a live count top-right and a name search. Ticking a guest whose travel party is not ticked asks
+// "Add X too?" full screen (owner, 5 Nov 2026; it used to tick the party silently).
 // Shared by Settings > Groups. (Dining has its own older copy,
 // tied to dinner tables: see dining.js's guestPicker.)
 //   candidates   the guests that can be ticked
@@ -8,7 +8,7 @@
 //   overText     what to say when ticking goes over the ceiling (over is flagged, never refused)
 
 import { h } from '../dom.js';
-import { openSheet } from '../ui.js';
+import { openSheet, openFullScreen, closeFullScreen } from '../ui.js';
 import { displayNames, alphabetical, plain, joinNames, capacityInfo } from '../rules.js';
 import { notice } from './move.js';
 
@@ -22,7 +22,6 @@ export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, 
   const checked = new Set();
   const status = h('div', { class: 'notice', hidden: true });
   const titleBadge = h('div', { class: 'count' }, ceiling === null ? String(baseUsed) : capacityInfo(baseUsed, ceiling).text);
-  const partyPrompt = h('div', {});
   const confirmBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => onConfirm([...checked]) }, confirmLabel);
   const list = h('div', {});
 
@@ -42,14 +41,22 @@ export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, 
     else if (ceiling !== null && total > ceiling) status.textContent = overText;
   };
 
-  // Ticking (or unticking) a guest does the same for their travel party, unless the owner switched that off.
-  const together = h('input', { type: 'checkbox', checked: true, 'aria-label': 'Keep travel parties together' });
-  together.addEventListener('change', () => partyPrompt.replaceChildren());
+  // Ticking a guest whose travel party is not ticked asks, full screen, whether to add them too (the same question as everywhere else in the app,
+  // owner's report of 5 Nov 2026). Unticking takes off only that guest.
   const setTicked = (guest, on) => {
-    const party = together.checked ? [guest, ...mates(guest)] : [guest];
-    for (const member of party) { if (on) checked.add(member.id); else checked.delete(member.id); }
-    fill();
-    say();
+    if (on) checked.add(guest.id); else checked.delete(guest.id);
+    fill(); say();
+    if (!on) return;
+    const others = mates(guest).filter((m) => !checked.has(m.id));
+    if (others.length === 0) return;
+    const who = joinNames([...others].sort(alphabetical(names)).map((m) => names.get(m.id)));
+    openFullScreen({
+      keepSheet: true, eyebrow: 'Travel party', title: `${names.get(guest.id)} travels with ${who}`,
+      body: [
+        h('button', { class: 'btn', type: 'button', onclick: () => { for (const m of others) checked.add(m.id); closeFullScreen(); fill(); say(); } }, `Add ${who} too`),
+        h('button', { class: 'btn btn--plain', type: 'button', onclick: () => closeFullScreen() }, 'No, just them'),
+      ],
+    });
   };
 
   // The search matches by name only. Ticks are kept across searches.
@@ -72,6 +79,5 @@ export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, 
 
   say();
   fill();
-  const togetherRow = h('label', { class: 'tick-row' }, together, h('span', {}, 'Keep travel parties together'));
-  openSheet({ eyebrow, title, subtitle, titleBadge, body: [togetherRow, partyPrompt, search, list], cancelLabel: 'Cancel', footer: [status, confirmBtn] });
+  openSheet({ eyebrow, title, subtitle, titleBadge, body: [search, list], cancelLabel: 'Cancel', footer: [status, confirmBtn] });
 }

@@ -18,6 +18,7 @@ import { findRollCall } from '../rollcall.js';
 import { showToast, openSheet, closeSheet } from '../ui.js';
 import { reopenRollCall } from './rollcall.js';
 import { openColourChange } from './colourQuick.js';
+import { exportGroupsOverviewPdf } from '../export.js';
 import { contactLine } from './contactLine.js';
 import { contactsForTour } from '../contacts.js';
 
@@ -73,6 +74,8 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
             const split = (trip.splits ?? []).find((x) => x.activityId === activity.id);
             return [
               ...(split ? [{ label: 'Change a colour', primary: false, run: () => { closeSheet(); openColourChange(ctx, trip, split); } }] : []),
+              // The reception list straight from the tour's card (owner's report of 5 Nov 2026: it was hard to find).
+              ...(split ? [{ label: 'Reception list (PDF)', primary: false, run: () => { closeSheet(); exportGroupsOverviewPdf(ctx, trip, split); } }] : []),
               { label: split ? 'Colour groups' : '+ Colour groups', run: () => { closeSheet(); ctx.go(`#/trip/${trip.id}/settings/groups/for-${activity.id}`); } },
             ];
           })()),

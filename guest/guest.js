@@ -1374,6 +1374,7 @@ function render(sheet, { offline = false } = {}) {
   openAskedBoarding(sheet);
   if (sheet.first) store.set('tourdocs.guest.fullname', `${sheet.first} ${sheet.last ?? ''}`.trim());
   paint();
+  showNet();
   // Keep the pictures for offline use: asking for them once lets the service worker keep them. The tours the guest is booked on get all their
   // photos, their other options only the first one.
   const wanted = new Set();
@@ -1480,6 +1481,17 @@ async function refresh() {
   return status;
 }
 
+// Offline, always visible (owner's report of 5 Nov 2026: "nothing shows I'm offline"): a small pill stays at the top of the screen while the phone
+// has no internet, on every page, and appears the moment the connection drops (not only at the next refresh). Everything keeps working from memory.
+const netPill = h('div', { class: 'net-pill', role: 'status', hidden: true }, 'Offline · showing what is saved on this phone');
+document.body.append(netPill);
+function showNet() { netPill.hidden = navigator.onLine && !currentOffline; }
+window.addEventListener('offline', () => {
+  if (currentSheet && !currentSheet.ended && !currentOffline) { currentOffline = true; paint(); }
+  showNet();
+});
+window.addEventListener('online', () => { showNet(); refresh().then(showNet); });
+
 refresh();
 setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, REFRESH_EVERY);
 // The boarding card appears 2 hours before a tour and goes 1 hour after: Today is redrawn when that changes (checked every minute).
@@ -1490,7 +1502,7 @@ setInterval(() => {
   if (key !== ticketKey) { ticketKey = key; if ((view.tab ?? 'today') === 'today' && view.tour === undefined && !view.inbox) paint(); }
 }, 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
-window.addEventListener('online', refresh);
+
 window.addEventListener('hashchange', () => { scrolledToToday = false; refresh(); });
 
 // Offline: the service worker keeps the app's own files on the phone.

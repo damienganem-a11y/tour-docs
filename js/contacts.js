@@ -2,11 +2,12 @@
 // colour group) each one works on. The team sees them on each tour with one tap to call, text or WhatsApp them, and the person in charge ticks
 // "reconfirmed". Never shown to guests (the guest's sheet does not carry them).
 //
-// trip.contacts = [{ id, name, job, phone, whatsapp, languages, company, notes, assignments: [{ activityId, groupId | null, confirmedAt?, confirmedBy? }] }]
+// trip.contacts = [{ id, name, job, phone, whatsapp, languages, company, notes, assignments: [{ activityId, groupId | null, confirmedAt?, confirmedBy?, askedAt?, askedBy? }] }]
 // The agency fills in an Excel file the app makes for them (xlsx.js buildContactsTemplateXlsx: one line per tour and colour group, the contact columns empty);
 // the app reads it back here. Pure: no screen, no network.
 
-import { colorOf } from './rules.js';
+import { colorOf, bookedOnActivity } from './rules.js';
+import { formatTime, formatWeekdayDate } from './time.js';
 
 export const JOBS = ['Guide', 'Driver', 'Escort', 'Other'];
 export const CONTACT_COLUMNS = ['Date', 'Day', 'Tour', 'Colour group', 'Job', 'Name', 'Phone', 'WhatsApp', 'Languages', 'Company', 'Notes'];
@@ -124,4 +125,41 @@ export function contactsError(trip, list) {
     if (!Array.isArray(c.assignments) || c.assignments.some((a) => !trip.activities.some((x) => x.id === a.activityId))) return `A tour of ${c.name} is not in this trip.`;
   }
   return null;
+}
+
+// The message that asks a guide or driver to reconfirm a tour (owner's report of 5 Nov 2026): everything in one text, ready for WhatsApp or a text
+// message, so one tap sends it. Example:
+//   "Hello Marco, this is Damien from Tour Docs. Just confirming your tour, please:
+//    Alfama walking tour · Tue 12 Jan · 15:00 · meeting point: Hotel lobby
+//    Your group: Red (12 guests). 48 guests on the whole tour.
+//    Could you reply OK to confirm? Thank you!"
+// sender: the staff member's first name (or null). company: the trip's company name (or null). Pure.
+export function reconfirmText(trip, { contact, assignment, group }, { sender = null, company = null } = {}) {
+  const activity = trip.activities.find((a) => a.id === assignment.activityId);
+  const slot = activity && trip.slots.find((x) => x.id === activity.slotId);
+  if (!activity || !slot) return '';
+  const destination = trip.destinations.find((d) => d.id === slot.destinationId);
+  const booked = bookedOnActivity(trip, activity.id);
+  const split = (trip.splits ?? []).find((x) => x.activityId === activity.id);
+  const inGroup = group && split ? booked.filter((g) => split.assignments[g.id] === group.id).length : null;
+  const guests = (n) => `${n} guest${n === 1 ? '' : 's'}`;
+  const first = clean(contact.name).split(/\s+/)[0] || '';
+  const from = [sender, company].filter(Boolean);
+  const when = [formatWeekdayDate(slot.date), activity.startsAt && destination?.timeZone ? formatTime(activity.startsAt, destination.timeZone) : slot.half].filter(Boolean).join(' · ');
+  const lines = [
+    `Hello${first ? ` ${first}` : ''}${from.length ? `, this is ${from.join(' from ')}` : ''}. Just confirming your tour, please:`,
+    `${activity.name} · ${when}${activity.meeting ? ` · meeting point: ${activity.meeting}` : ''}${destination ? ` (${destination.name})` : ''}`,
+    group ? `Your group: ${colorOf(group.color)?.name && !group.name.includes(colorOf(group.color).name) ? `${colorOf(group.color).name} · ${group.name}` : group.name} (${guests(inGroup)}). ${guests(booked.length)} on the whole tour.`
+      : `${guests(booked.length)} on the tour.`,
+    'Could you reply OK to confirm? Thank you!',
+  ];
+  return lines.join('\n');
+}
+
+// The links that open a message already written: WhatsApp (wa.me with the text) and a text message (sms: with the body). Null without a phone number.
+export function messageLinks(phone, text) {
+  const links = phoneLinks(phone);
+  if (!links) return null;
+  const body = encodeURIComponent(text);
+  return { sms: `${links.sms}${/iPhone|iPad|Mac/.test(globalThis.navigator?.userAgent ?? '') ? '&' : '?'}body=${body}`, whatsapp: links.whatsapp ? `${links.whatsapp}?text=${body}` : null };
 }
