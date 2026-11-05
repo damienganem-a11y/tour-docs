@@ -56,6 +56,8 @@ import { clockOf, dayLabel, listTime, groupByDay, initialsOf, inboxList, attenti
 import { openChat } from './chatUi.js';
 import { installPlatform, shouldOffer, INSTALL_STEPS } from '../guest/install.js';
 import { albumSettingsPage } from './views/settingsAlbum.js';
+import { displaySheet, sheetKey, daysToShow } from './display.js';
+import { displaysSettingsPage } from './views/settingsDisplays.js';
 import { staleWarning, redoGroupsChange } from './views/staleColours.js';
 import { albumSettings, albumPhase, albumSettingsError, downloadProgress, albumReminders } from './album.js';
 import { guestConversations, unreadAnswers, guestMessageAnswerText, staffDisplayName, messageRecord, messageRecordCsv } from './guestMessages.js';
@@ -3786,6 +3788,26 @@ function readZip(bytes) {
     const ticket = ticketFor(cx.state, ewMate, tour.id);
     const family = booked.filter((o) => o.partyId === ewMate.partyId && groupOf.get(o.id) === groupOf.get(ewMate.id));
     check('The guest\'s ticket: their colour, and the tickets their family takes in that group, with the first names', ticket && ticket.colorName && ticket.count === family.length && ticket.names.length === family.length && ticketFor(cx.state, ew, tour.id).easy === true);
+    // Reception and lounge screens (v0.144.0): what the links show
+    {
+      const withDiet = structuredClone(cx.state);
+      withDiet.guests[0].dietary = 'Peanut allergy (test)'; withDiet.guests[0].phone = '+33 6 99 99 99 99';
+      const rec = displaySheet(withDiet, { showNames: true });
+      const scr = displaySheet(withDiet, { showNames: false });
+      const recTour = rec.days.flatMap((d) => d.tours).find((t) => t.name === tour.name && t.final);
+      const allNames = JSON.stringify(scr);
+      check('Reception sheet: every day of the trip, the validated tour with each colour, its count and its guests\' names; never allergies or phone numbers',
+        rec.days.length > 0 && recTour && recTour.colours.length > 0 && recTour.colours.every((c) => c.hex && c.count > 0 && c.guests.length === c.count)
+        && recTour.colours.reduce((n, c) => n + c.count, 0) + recTour.others.count === recTour.booked && !JSON.stringify(rec).includes('Peanut') && !JSON.stringify(rec).includes('99 99'));
+      check('Lounge screen with names off: the same tours and counts, no guest name at all', withDiet.guests.every((g) => !allNames.includes(`${g.first} ${g.last}`)) && scr.days.flatMap((d) => d.tours).find((t) => t.name === tour.name).colours.length === recTour.colours.length);
+      const dp = displaysSettingsPage({ roleFor: () => 'owner', displays: { list: async () => [{ token: 'tok123456789012345678901', kind: 'screen', label: 'Main lounge', destination_id: null, show_names: false, active: true, changed_at: '2027-01-12T09:30:00Z' }], address: (t, k) => `https://example.org/display/${k === 'screen' ? '?screen' : ''}#${t}`, update: async () => {}, create: async () => 't' } }, withDiet);
+      await new Promise((r) => setTimeout(r, 30));
+      check('Settings > Reception & screens lists the lounge screen with its link, QR code, TV set-up help, and offers a reception link', dp.textContent.includes('Main lounge') && dp.textContent.includes('?screen#tok123') && dp.textContent.includes('How to set up the TV') && dp.textContent.includes('+ Reception link') && dp.textContent.includes('Show names') && !/null/.test(dp.textContent));
+      check('The fingerprint changes only when the content changes', sheetKey(rec) === sheetKey(displaySheet(withDiet, { showNames: true })) && sheetKey(rec) !== sheetKey(scr));
+      const first = rec.days[0];
+      const shownNow = daysToShow(rec, new Date(Date.parse(`${first.date}T12:00:00Z`)));
+      check('The page shows today and tomorrow (from the sheet, in the place\'s own time)', shownNow[0].day.date === first.date && shownNow[0].which === 'Today' && (rec.days.length < 2 || shownNow[1].which === 'Tomorrow') && daysToShow(rec, new Date('2099-01-01T00:00:00Z')).length === 0);
+    }
     // Step 2: the boarding card in the guest's sheet, and the notification 30 minutes before
     const sheetT = buildGuestSheet(cx.state, ewMate, '2027-01-01T00:00:00Z');
     const partT = sheetT.days.flatMap((d) => d.parts).find((p) => p.kind === 'activity' && p.name === tour.name);

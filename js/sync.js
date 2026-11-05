@@ -227,6 +227,7 @@ export async function watchServerChanges(onChange, onStatus) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_thread_state' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'team_messages' }, () => onChange())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_confirms' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'display_links' }, () => onChange())
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
 }
 
@@ -709,5 +710,24 @@ export async function markContactAnswerApplied(token, answeredAt) {
   const supabase = await getClient();
   // Only if the guide did not answer again meanwhile: a newer answer stays to be recorded.
   const { error } = await supabase.from('contact_confirms').update({ applied_at: new Date().toISOString() }).eq('token', token).eq('answered_at', answeredAt);
+  if (error) throw error;
+}
+
+// Reception links and lounge screens (migration 0033).
+export async function listDisplayLinks(tripId) {
+  const supabase = await getClient();
+  const { data, error } = await supabase.from('display_links').select('token, trip_id, kind, label, destination_id, show_names, active, created_at, content_key, changed_at, changed_by, notified_at')
+    .eq('trip_id', tripId).order('created_at');
+  if (error) throw error;
+  return data;
+}
+export async function createDisplayLink(row) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('display_links').insert(row);
+  if (error) throw error;
+}
+export async function updateDisplayLink(token, fields) {
+  const supabase = await getClient();
+  const { error } = await supabase.from('display_links').update(fields).eq('token', token);
   if (error) throw error;
 }

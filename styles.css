@@ -1450,3 +1450,9 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .album-who-list { padding-bottom: 12px; }
 .album-who-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(128,128,128,.15); }
 .album-who-left { color: #b26a00; font-weight: 600; white-space: nowrap; }
+
+/* v0.144: Reception & screens */
+.display-url { display: block; font-size: .8rem; word-break: break-all; margin: 6px 0; color: var(--accent, inherit); }
+.steps { padding-left: 20px; line-height: 1.5; }
+.steps li { margin: 6px 0; }
+.steps-url { list-style: none; margin-left: -20px; font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; background: rgba(128,128,128,.12); padding: 8px 10px; border-radius: 10px; }

@@ -1,0 +1,75 @@
+/* Reception list and lounge screen (v0.144.0). Two looks for one page: body.is-reception (light, printable) and body.is-screen (dark, big, for a TV). */
+:root { --accent: #1d5c57; --bg: #f6f3ec; --card: #ffffff; --ink: #1d1d1b; --soft: #6b675f; --line: rgba(0,0,0,.12); --warn: #c62828; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.pad { padding: 24px 16px; }
+.muted { color: var(--soft); }
+button { font: inherit; cursor: pointer; }
+.stamp { display: none; }
+
+/* ---------- Reception ---------- */
+.is-reception main { max-width: 1100px; margin: 0 auto; padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px 60px; }
+.r-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+.r-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--soft); }
+.r-title { font-size: 28px; font-weight: 800; margin: 2px 0 4px; }
+.r-version { font-size: 14px; color: var(--soft); }
+.r-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.r-btn { border: 0; border-radius: 999px; padding: 11px 20px; font-weight: 700; background: var(--accent); color: #fff; min-height: 44px; }
+.r-btn--plain { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.r-banner { background: var(--warn); color: #fff; border-radius: 14px; padding: 14px 16px; font-weight: 700; margin: 0 0 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.r-banner button { background: #fff; color: var(--warn); border: 0; border-radius: 999px; padding: 9px 16px; font-weight: 800; }
+.r-note { font-size: 14px; color: var(--soft); margin: -6px 0 14px; }
+.r-day { margin: 22px 0 8px; font-size: 20px; font-weight: 800; border-bottom: 2px solid var(--ink); padding-bottom: 4px; }
+.r-tour { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 10px 0; break-inside: avoid; }
+.r-tour-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.r-tour-name { font-size: 18px; font-weight: 800; }
+.r-tour-meta { color: var(--soft); font-size: 14px; }
+.r-cancelled { color: var(--warn); font-weight: 800; }
+.r-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }
+.r-col { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; break-inside: avoid; }
+.r-col-head { padding: 7px 10px; font-weight: 800; display: flex; justify-content: space-between; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.r-col ol { margin: 0; padding: 6px 10px 8px 30px; font-size: 14px; }
+.r-col ol li { padding: 1px 0; }
+.r-col .r-count-only { padding: 8px 10px; font-size: 14px; color: var(--soft); }
+.r-empty { color: var(--soft); padding: 8px 0; }
+
+@media print {
+  @page { margin: 12mm 10mm 16mm; }
+  body { background: #fff; font-size: 11pt; }
+  .r-actions, .r-banner, .r-note { display: none !important; }
+  .r-tour { border-color: #999; }
+  .stamp { display: block; position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8.5pt; color: #333; border-top: 1px solid #999; padding-top: 3px; background: #fff; }
+  /* The stamp is also written across each page, lightly, so a photocopy still says which version it is. */
+  .is-reception main::before { content: attr(data-mark); position: fixed; top: 45%; left: 0; right: 0; text-align: center; font-size: 24pt; font-weight: 800; color: rgba(0,0,0,.07); transform: rotate(-24deg); white-space: nowrap; pointer-events: none; }
+}
+
+/* ---------- Lounge screen ---------- */
+.is-screen { --bg: #0f1412; --card: #19201d; --ink: #f4f1ea; --soft: #a9b2ad; --line: rgba(255,255,255,.12); background: var(--bg); overflow: hidden; cursor: none; }
+.is-screen main { height: 100vh; overflow: hidden; padding: 3vh 3vw; display: flex; flex-direction: column; }
+.s-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2vh; }
+.s-trip { font-size: 2.2vw; font-weight: 800; }
+.s-sub { font-size: 1.3vw; color: var(--soft); }
+.s-clock { font-size: 4vw; font-weight: 800; font-variant-numeric: tabular-nums; }
+.s-scroll { flex: 1; overflow: hidden; position: relative; }
+.s-inner { will-change: transform; }
+.s-day { font-size: 1.6vw; font-weight: 800; color: var(--soft); text-transform: uppercase; letter-spacing: .06em; margin: 1.4vh 0 1vh; }
+.s-tour { display: grid; grid-template-columns: 9vw 1fr; gap: 1.6vw; background: var(--card); border-radius: 1.2vw; padding: 1.6vh 1.6vw; margin-bottom: 1.4vh; border-left: .6vw solid var(--accent); }
+.s-tour.is-past { opacity: .4; }
+.s-tour.is-next { box-shadow: 0 0 0 .25vw var(--accent); }
+.s-time { font-size: 3.4vw; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.s-half { font-size: 1.1vw; color: var(--soft); margin-top: .6vh; }
+.s-name { font-size: 2.3vw; font-weight: 800; line-height: 1.15; }
+.s-meta { font-size: 1.4vw; color: var(--soft); margin-top: .4vh; }
+.s-chips { display: flex; flex-wrap: wrap; gap: .8vw; margin-top: 1.2vh; }
+.s-chip { border-radius: 999px; padding: .5vh 1.2vw; font-size: 1.35vw; font-weight: 800; -webkit-print-color-adjust: exact; }
+.s-names { font-size: 1.05vw; color: var(--soft); margin-top: .5vh; }
+.s-col { display: inline-block; vertical-align: top; margin-right: 1.4vw; max-width: 20vw; }
+.s-badge { display: inline-block; margin-left: 1vw; font-size: 1.2vw; padding: .3vh .9vw; border-radius: 999px; background: var(--accent); color: #fff; vertical-align: middle; }
+.s-cancelled { color: #ef6a6a; }
+.s-empty { font-size: 2vw; color: var(--soft); margin-top: 20vh; text-align: center; }
+.s-foot { font-size: 1vw; color: var(--soft); text-align: right; margin-top: 1vh; }
+@media (max-aspect-ratio: 1/1) { /* a screen standing up, or a phone used to test */
+  .s-trip { font-size: 5vw; } .s-sub, .s-meta { font-size: 3.4vw; } .s-clock { font-size: 8vw; } .s-day { font-size: 4vw; }
+  .s-tour { grid-template-columns: 18vw 1fr; } .s-time { font-size: 7vw; } .s-half { font-size: 2.8vw; } .s-name { font-size: 5vw; } .s-chip { font-size: 3.4vw; } .s-names { font-size: 2.8vw; } .s-col { max-width: 40vw; } .s-badge { font-size: 3vw; } .s-foot { font-size: 2.6vw; }
+}

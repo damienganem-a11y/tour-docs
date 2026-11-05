@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress, existingSe
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  createConfirmLink, pullContactAnswers, markContactAnswerApplied,
+  createConfirmLink, pullContactAnswers, markContactAnswerApplied, listDisplayLinks, createDisplayLink, updateDisplayLink,
   pushGuestShared, pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, sendGuestMessages, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
@@ -38,6 +38,7 @@ import { resolveGuestRequest, guestRequestChange, guestAnswerText } from './gues
 import { staffDisplayName } from './guestMessages.js';
 import { inboxList, attentionCount, REMIND_DEFAULT } from './chat.js';
 import { jobDotCount } from './teamJobs.js';
+import { displaySheet, sheetKey } from './display.js';
 import { myJobItems } from './views/today.js';
 import { albumSettings } from './album.js';
 import { notificationsFor, notifySettings } from './notifyRules.js';
@@ -348,6 +349,21 @@ const ctx = {
   guestRequestsFor: (tripId) => guestRequestRows.filter((r) => r.trip_id === tripId),
   // Our Album (staff side): everything goes to the server's album function; the settings of the album are a trip setting (journaled, in the one change function).
   album: { pull: pullAlbum, links: albumLinks, upload: albumUpload, act: albumAct },
+  // Reception links and lounge screens (v0.144.0): listed, made and changed on the server; what they show is kept up to date by syncDisplays.
+  displays: {
+    list: (tripId) => listDisplayLinks(tripId),
+    async create(tripId, { kind, label, destinationId = null, showNames }) {
+      const bytes = crypto.getRandomValues(new Uint8Array(18));
+      const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const trip = state.trips.get(tripId);
+      const sheet = displaySheet(trip, { destinationId, showNames });
+      await createDisplayLink({ token, trip_id: tripId, kind, label: String(label ?? '').slice(0, 60), destination_id: destinationId, show_names: showNames, sheet, content_key: sheetKey(sheet), changed_by: state.owner?.name ?? null });
+      displayChecked.delete(tripId);
+      return token;
+    },
+    async update(tripId, token, fields) { await updateDisplayLink(token, fields); displayChecked.delete(tripId); syncDisplays(tripId); },
+    address: (token, kind) => new URL(`display/${kind === 'screen' ? '?screen' : ''}#${token}`, new URL('./', location.href)).href,
+  },
   // Reconfirm by link (v0.143.0): makes the guide's personal link on the server. Returns its address, or null when it could not be made (offline,
   // not signed in, database not updated): the message then goes without a link, and "They confirmed" is ticked by hand as before.
   async makeConfirmLink(tripId, { activityId, contactId, expiresAt, info }) {
@@ -1121,7 +1137,7 @@ async function syncAutoMessages(tripId) {
 }
 function syncAutoMessagesSoon(tripId) {
   clearTimeout(autoTimers.get(tripId));
-  autoTimers.set(tripId, setTimeout(() => syncAutoMessages(tripId), 4000));
+  autoTimers.set(tripId, setTimeout(() => { syncAutoMessages(tripId); syncDisplays(tripId); }, 4000));
 }
 
 // What the owner decided for one colleague (Settings > Team): the destination they work in, and how much control the owner keeps ('direct': requests are
@@ -1189,6 +1205,25 @@ async function decideForcedRequest(id, how, note = null) {
 }
 
 let processing = false;
+// Reception links and lounge screens: the owner's phone writes what each one shows whenever the trip changes (and checks every 10 minutes). The
+// server notes "changed at" only when the content really changed; the reception is then told after 10 quiet minutes (send-push).
+const displayChecked = new Map(); // tripId -> 'changeCount|ten-minute block' last checked
+async function syncDisplays(tripId) {
+  const trip = state.trips.get(tripId);
+  if (!trip || !state.owner || hasSession === false || !navigator.onLine || ctx.roleFor(tripId) !== 'owner' || trip.archivedAt) return;
+  const stamp = `${trip.changeCount ?? 0}|${Math.floor(Date.now() / 600000)}`;
+  if (displayChecked.get(tripId) === stamp) return;
+  displayChecked.set(tripId, stamp);
+  try {
+    const links = (await listDisplayLinks(tripId)).filter((d) => d.active);
+    for (const link of links) {
+      const sheet = displaySheet(trip, { destinationId: link.destination_id, showNames: link.show_names });
+      const key = sheetKey(sheet);
+      if (key !== link.content_key) await updateDisplayLink(link.token, { sheet, content_key: key, changed_by: state.owner?.name ?? null });
+    }
+  } catch { displayChecked.delete(tripId); /* not updated yet, or offline: the next round tries again */ }
+}
+
 // Answers given by link by guides and drivers (migration 0032): the owner's phone records each one in its trip through the one change function
 // (journaled, Undo), then marks it recorded on the server. Only the owner's phone does it, so an answer is never recorded twice.
 let answering = false;
@@ -1472,7 +1507,7 @@ async function refreshFromServer({ force = false } = {}) {
   if (!force && liveUp && Date.now() - lastRefreshAt < SAFETY_REFRESH_MS) return; // the live connection is doing the work
   refreshing = true;
   lastRefreshAt = Date.now();
-  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await processContactAnswers(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) { await syncAlbumSettings(id); await syncMessageSettings(id); } for (const id of [...state.trips.keys()]) await syncAutoMessages(id); } catch { /* the next refresh tries again */ }
+  try { await backfillPush(); await pullSync(); await flushOutbox(); await processRequests(); await processContactAnswers(); await loadGuestRequests(); await loadGuestMessages(); await loadAllTeamMessages(); for (const id of [...state.trips.keys()]) { await syncAlbumSettings(id); await syncMessageSettings(id); } for (const id of [...state.trips.keys()]) await syncAutoMessages(id); for (const id of [...state.trips.keys()]) await syncDisplays(id); } catch { /* the next refresh tries again */ }
   refreshing = false;
   startLive(); // (re)connects the live signal if it is not up yet; does nothing when it already is
 }
