@@ -59,6 +59,8 @@ import { albumSettingsPage } from './views/settingsAlbum.js';
 import { displaySheet, sheetKey, daysToShow } from './display.js';
 import { EXPLORE_UNDO_SCOPE } from './journal.js';
 import { exploreListPage, exploreDestinationPage } from './views/settingsExplore.js';
+import { exampleMapFor } from './exploreExamples.js';
+import { exploreError } from './explore.js';
 import { parseLocation, distanceMeters, walkMinutes, distanceText, bearing, directionsUrl, compactStreets, overpassQuery } from './explore.js';
 import { displaysSettingsPage } from './views/settingsDisplays.js';
 import { staleWarning, redoGroupsChange } from './views/staleColours.js';
@@ -3834,6 +3836,9 @@ function readZip(bytes) {
       const el2 = exploreListPage({ roleFor: () => 'owner' }, cx.state);
       check('Settings > Explore maps lists each stop with its state; a stop\'s page shows the ship, the places with their walking distance, and "Prepare the offline map"',
         el2.textContent.includes(dest.name) && el2.textContent.includes('1 place') && ep.textContent.includes('The ship') && ep.textContent.includes('1. 🏛 The Roman arena') && ep.textContent.includes('min walk') && ep.textContent.includes('Prepare the offline map') && !/null/.test(ep.textContent));
+      const lyonExample = exampleMapFor({ name: 'Lyon' });
+      check('The made-up example map of Lyon (ship at Saint-Luc) passes the same checks as a real one, and is offered only on an empty Lyon stop',
+        lyonExample && exploreError({ ...lyonExample, streets: null }) === null && lyonExample.places.length >= 5 && lyonExample.places.every((p) => p.name.includes('(example)')) && exampleMapFor({ name: 'Arles' }) === null);
       const undone = await applyChange(cx, cx.state.id, { type: 'undo', scope: EXPLORE_UNDO_SCOPE });
       check('Undo takes the map back', undone.ok && !cx.state.destinations[0].explore);
       const overpass = { elements: [
