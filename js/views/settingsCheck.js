@@ -5,6 +5,7 @@
 import { h } from '../dom.js';
 import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
+import { openRfidTest } from './rfidTest.js';
 
 const MARK = { ok: '✓', warn: '!', bad: '✗' };
 
@@ -29,5 +30,8 @@ export function checkSettingsPage(ctx, trip) {
     list,
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn--small', type: 'button', onclick: run }, 'Check again'),
-      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: copy }, 'Copy the report')));
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: copy }, 'Copy the report')),
+    // Before luggage tracking (owner, 9 Nov 2026): try a USB RFID reader in keyboard mode. Nothing is saved.
+    h('h2', { class: 'section-title' }, 'Test equipment'),
+    h('button', { class: 'btn btn--plain', type: 'button', onclick: () => openRfidTest() }, 'Test an RFID reader'));
 }

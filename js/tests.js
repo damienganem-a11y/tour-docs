@@ -60,6 +60,7 @@ import { displaySheet, sheetKey, daysToShow } from './display.js';
 import { EXPLORE_UNDO_SCOPE } from './journal.js';
 import { exploreListPage, exploreDestinationPage } from './views/settingsExplore.js';
 import { exampleMapFor } from './exploreExamples.js';
+import { openRfidTest, cleanCode, tallyReads } from './views/rfidTest.js';
 import { passCode, passFamily } from './boardingPass.js';
 import { scanPlan } from './views/scanRollCall.js';
 import { findRollCall as findRollCallT } from './rollcall.js';
@@ -3155,6 +3156,19 @@ function readZip(bytes) {
       !/null/.test(page.textContent) && who && !who.open && /0 of \d+ saved everything/.test(who.querySelector('summary').textContent) && who.querySelectorAll('.album-who-row').length === tt.guests.filter((g) => !g.leftAt).length);
     page.remove();
   }
+}
+
+// --- Test an RFID reader (v0.147.0): a reader in keyboard mode types each tag's code, then Enter ---
+{
+  check('A typed tag code is cleaned (capitals, no spaces); anything too short is not a tag', cleanCode(' e280 1160 6000 0207 ') === 'E2801160600002 07'.replace(/ /g, '') && cleanCode('12') === null);
+  const tally = tallyReads([{ code: 'A1B2C3D4E5', at: 1 }, { code: 'A1B2C3D4E5', at: 2 }, { code: 'FFEE0011AA', at: 3 }], 5000);
+  check('The test counts different tags, reads and repeats', tally.unique === 2 && tally.total === 3 && tally.repeats === 1 && tally.lastTen === 3);
+  const t = openRfidTest();
+  const box = document.querySelector('.rfid-input');
+  for (const code of ['E28011606000020712345678', 'E28011606000020712345679', 'E28011606000020712345678']) { box.value = code; box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); }
+  const shown = document.querySelector('.rfid-stats').textContent;
+  check('The test screen catches what the reader types: 2 different tags, 3 reads, 1 repeat, and says when a tag comes again', /2different tags/.test(shown) && /3reads/.test(shown) && /1repeats/.test(shown) && document.querySelector('.rfid-last').textContent.startsWith('Again'));
+  t.close();
 }
 
 // --- Destination fun facts (editor in Settings > Touring) ---

@@ -1486,3 +1486,16 @@ body.sheet-open .bottom-tabs, body.sheet-open::after { display: none; }
 .map-link { display: flex; align-items: center; gap: 12px; margin: 14px 0 4px; padding: 12px 14px; border-radius: 16px; border: 1px dashed rgba(128,128,128,.45); color: inherit; text-decoration: none; }
 .map-link > span:nth-child(2) { flex: 1; display: flex; flex-direction: column; }
 .map-link small { opacity: .7; }
+
+/* v0.147: Test an RFID reader */
+.rfid { position: fixed; inset: 0; z-index: 3000; background: var(--bg, #fff); overflow-y: auto; padding: calc(env(safe-area-inset-top, 0px) + 14px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 24px) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 12px; }
+.rfid-top { display: flex; justify-content: space-between; align-items: center; font-size: 1.15rem; }
+.rfid-input { font: 600 1rem ui-monospace, monospace; padding: 14px; border-radius: 14px; border: 2px dashed rgba(128,128,128,.5); background: transparent; color: inherit; }
+.rfid-input:focus { outline: none; border-color: #2e7d32; border-style: solid; }
+.rfid-last { font: 800 1.35rem ui-monospace, monospace; padding: 16px; border-radius: 16px; background: rgba(128,128,128,.12); text-align: center; }
+.rfid-last.is-new { background: #2e7d32; color: #fff; } .rfid-last.is-again { background: #b26a00; color: #fff; }
+.rfid-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rfid-stats div { display: flex; flex-direction: column; align-items: center; padding: 8px 4px; border-radius: 12px; background: rgba(128,128,128,.08); }
+.rfid-stats b { font-size: 1.5rem; font-variant-numeric: tabular-nums; } .rfid-stats span { font-size: .75rem; opacity: .75; text-align: center; }
+.rfid-list { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+.rfid-list li { display: flex; justify-content: space-between; gap: 10px; } .rfid-list li.is-new { font-weight: 700; }
