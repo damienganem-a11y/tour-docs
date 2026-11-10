@@ -741,3 +741,10 @@ export async function uploadStreets(tripId, destinationId, streets) {
   if (error) throw error;
   return path;
 }
+
+// Is the server's own robot alive (migration 0036)? { last_run, problems } or null when it cannot be asked (database not updated yet).
+export async function workerStatus() {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc('worker_status');
+  return error ? null : data;
+}

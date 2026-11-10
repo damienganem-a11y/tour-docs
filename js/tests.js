@@ -61,6 +61,7 @@ import { EXPLORE_UNDO_SCOPE } from './journal.js';
 import { exploreListPage, exploreDestinationPage } from './views/settingsExplore.js';
 import { exampleMapFor } from './exploreExamples.js';
 import { putIn } from './put.js';
+import { tripsDue, guestSheetJob, displayJob, autoJob } from './serverJobs.js';
 import { openRfidTest, cleanCode, tallyReads } from './views/rfidTest.js';
 import { passCode, passFamily } from './boardingPass.js';
 import { scanPlan } from './views/scanRollCall.js';
@@ -3874,6 +3875,32 @@ function readZip(bytes) {
       check('A pass for another tour of the same half-day is flagged (booked elsewhere), never checked in by itself', plan4 && plan4.ok && plan4.checkIn.length === 0 && plan4.elsewhere.length > 0);
       check('Anything else is refused in words: not a boarding pass, or a pass of another trip', scanPlan(cx.state, tour.id, v1, 'https://example.org').why === 'not-a-pass' && scanPlan(cx.state, tour.id, v1, code.replace(/^TD1\.[0-9a-f]{8}/, 'TD1.ffffffff')).why === 'other-trip');
       await applyChange(cx, cx.state.id, plan1.checkIn.map((g) => ({ type: 'checkout', activityId: tour.id, guestId: g.id })));
+    }
+    // The server's own robot (v0.148.0): the same code as the phone, deciding what to write
+    {
+      const T = structuredClone(cx.state);
+      T.guestLinks = Object.fromEntries(T.guests.slice(0, 5).map((g, i) => [g.id, { token: `robot-token-${i}`.padEnd(22, 'x'), active: i !== 4 }]));
+      const now = new Date('2027-01-05T10:00:00Z');
+      const first = guestSheetJob(T, [], null, now);
+      const stored = first.upserts.map((u) => ({ token: u.token, active: u.active, data: u.data }));
+      check('Robot, guests\' programmes: nothing stored yet, so every link is written (slim, with the shared part once); a switched-off link is written empty',
+        first.upserts.length === 5 && first.shared && first.upserts.filter((u) => u.active).every((u) => u.data.v === 2 && u.data.shared === first.shared.version && u.data.updatedAt === now.toISOString())
+        && first.upserts.some((u) => !u.active && JSON.stringify(u.data) === '{}'));
+      const again = guestSheetJob(T, stored, first.shared.version, new Date(now.getTime() + 60000));
+      check('Robot: a minute later nothing changed, so nothing is written', again.upserts.length === 0 && again.shared === null);
+      const later = guestSheetJob(T, stored, first.shared.version, new Date(now.getTime() + 7 * 3600000));
+      check('Robot: after 6 hours every live programme is refreshed ("last updated" moves on), the switched-off one is left alone', later.upserts.length === 4 && later.upserts.every((u) => u.active));
+      const T2 = structuredClone(T); T2.guests[0].first = 'Renamed';
+      const changed = guestSheetJob(T2, stored, first.shared.version, new Date(now.getTime() + 60000));
+      check('Robot: when one guest changes, only the programmes that show it are written again', changed.upserts.length >= 1 && changed.upserts.length < 5);
+      const links = [{ token: 'd1', destination_id: null, show_names: true, content_key: 'old' }, { token: 'd2', destination_id: null, show_names: false, content_key: sheetKey(displaySheet(T, { showNames: false })) }];
+      const dj = displayJob(T, links);
+      check('Robot, reception and lounge: only the link whose content differs is written; an archived trip writes nothing', dj.length === 1 && dj[0].token === 'd1' && dj[0].content_key === sheetKey(displaySheet(T, { showNames: true })) && displayJob({ ...T, archivedAt: 'x' }, links).length === 0);
+      check('Robot, reminders: the same list as the phone', JSON.stringify(autoJob(T, now)) === JSON.stringify(plannedAutoMessages(T, now)));
+      const due = tripsDue([{ id: 'a', change_count: 5 }, { id: 'b', change_count: 2 }, { id: 'c', change_count: 9 }, { id: 'd', change_count: 1 }],
+        [{ trip_id: 'a', change_count: 5, checked_at: '2027-01-05T09:58:00Z' }, { trip_id: 'b', change_count: 1, checked_at: '2027-01-05T09:59:00Z' }, { trip_id: 'c', change_count: 9, checked_at: '2027-01-05T09:40:00Z' }], now.getTime(), 3);
+      check('Robot: works on a trip that changed (or is new) at once, on a quiet one every 10 minutes, and leaves a fresh one alone',
+        due.length === 3 && due.filter((d) => d.why === 'changed').map((d) => d.id).sort().join() === 'b,d' && due.some((d) => d.id === 'c' && d.why === 'time') && !due.some((d) => d.id === 'a'));
     }
     // Explore maps (v0.145.0)
     {

@@ -27,7 +27,7 @@ import { signOut as authSignOut, hasLiveSession, teamLinkFromAddress, existingSe
 import {
   pushTrip, applyTripUpdate, pushJournalEntries, pushGuestSheets, pullTripList, pullTrip, pullJournalEntries, deleteTripRemote, decideSync,
   syncProbe, diagnoseSync, plainSyncError, watchServerChanges,
-  createConfirmLink, pullContactAnswers, markContactAnswerApplied, listDisplayLinks, createDisplayLink, updateDisplayLink, uploadStreets,
+  createConfirmLink, pullContactAnswers, markContactAnswerApplied, listDisplayLinks, createDisplayLink, updateDisplayLink, uploadStreets, workerStatus,
   pushGuestShared, pullGuestRequests, answerGuestRequest, guestLinkStatus, pullGuestMessages, answerGuestMessage, sendGuestMessages, markGuestMessagesRead, pullGuestThreads, setGuestThreadFlag, saveMessageSettings, pullAlbum, saveAlbumSettings, albumLinks, albumUpload, albumAct, getPushPublicKey, saveOwnerPush, removeOwnerPush, notifyGuests, notifyMe, guestPushOverview, makeGuestCode, listScheduled, scheduleMessage, cancelScheduled, replaceAutoMessages, schedulerStatus,
   pullMyAccess, listMembers, teamSignInToken, roleOf, sendRequestRemote, pullRequests, claimRequest, finishRequest, reopenRequest, cancelRequestRemote, probeServerFeatures, listTeamMessages, sendTeamMessage, pullDocumentList, pullDocumentFile, pushDocument, deleteDocumentRemote, decideDocument, documentMeta, base64ToBlob,
 } from './sync.js';
@@ -528,6 +528,14 @@ const ctx = {
         add('Server: control levels and roles', f.controlLevels && f.requesterColumns ? 'ok' : 'bad', f.controlLevels && f.requesterColumns ? 'Ready.' : 'Missing: the database updates 0014 to 0018 are not all applied.');
         add('Server: simple and full versions', f.simpleFull ? 'ok' : 'warn', f.simpleFull ? 'Ready.' : 'Missing: the database update 0022 is not applied yet (everybody stays on the full version until then).');
         add('Server: team messages', f.teamMessages ? 'ok' : 'bad', f.teamMessages ? 'Ready.' : 'Missing: the database update 0017 is not applied.');
+        // The server's own robot (v0.148.0): keeps programmes, reception pages, lounge screens and reminders fresh even when no phone is open.
+        const robot = await workerStatus().catch(() => null);
+        const ago = robot?.last_run ? Math.round((Date.now() - Date.parse(robot.last_run)) / 60000) : null;
+        add('Server: keeps things fresh by itself', robot === null ? 'warn' : ago !== null && ago <= 15 ? (robot.problems ? 'warn' : 'ok') : 'bad',
+          robot === null ? 'Could not be asked: the database update 0036 is not applied yet. Until then, this needs the owner\'s phone to be open.'
+            : ago === null ? 'Installed, but it has not run yet. Check again in a few minutes.'
+            : ago <= 15 ? `Yes: last ran ${ago <= 1 ? 'a minute ago' : `${ago} minutes ago`}.${robot.problems ? ` ${robot.problems} trip${robot.problems === 1 ? '' : 's'} could not be refreshed last time.` : ''}`
+            : `Not running: last ran ${ago} minutes ago. Until it is back, programmes and screens only refresh while the owner's phone is open.`);
       } catch (error) { add('Server', 'bad', `Could not be asked (${error?.message ?? 'no answer'}).`); }
     }
     try { const { state: push } = await ctx.pushState(); add('Notifications on this phone', push === 'on' ? 'ok' : 'warn', { on: 'On.', off: 'Off: turn them on in More > This phone > Notifications.', denied: 'Blocked in the phone\'s settings.', install: 'Add the app to the Home Screen first.', unsupported: 'Not supported by this browser.' }[push] ?? push); } catch { /* not asked */ }
