@@ -6,6 +6,7 @@ import { h } from '../dom.js';
 import { applyChange } from '../changes.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { displayNames, alphabetical, colorOf, tourSplitState, joinNames, plural } from '../rules.js';
+import { putIn } from '../put.js';
 
 const square = (group, size = 16) => { const c = colorOf(group?.color); return c ? h('span', { class: 'swatch', style: `width:${size}px;height:${size}px;background:${c.hex}`, role: 'img', 'aria-label': c.name }) : null; };
 
@@ -18,7 +19,7 @@ export function openColourChange(ctx, trip, split) {
   const draw = () => {
     const q = search.value.trim().toLowerCase();
     const shown = [...booked].sort(alphabetical(names)).filter((g) => !q || names.get(g.id).toLowerCase().includes(q) || `${g.first} ${g.last}`.toLowerCase().includes(q));
-    list.replaceChildren(...(shown.length ? shown.map((g) => h('button', { class: 'colour-row', type: 'button', onclick: () => chooseColour(g) },
+    putIn(list, ...(shown.length ? shown.map((g) => h('button', { class: 'colour-row', type: 'button', onclick: () => chooseColour(g) },
       square(groupOf(g)), h('span', {}, names.get(g.id)), h('span', { class: 'muted' }, groupOf(g)?.name ?? 'No colour yet'))) : [h('p', { class: 'empty' }, 'Nobody matches.')]));
   };
   search.addEventListener('input', draw);

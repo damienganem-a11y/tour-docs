@@ -6,6 +6,7 @@ import { h } from '../dom.js';
 import { showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { openRfidTest } from './rfidTest.js';
+import { putIn } from '../put.js';
 
 const MARK = { ok: '✓', warn: '!', bad: '✗' };
 
@@ -13,12 +14,12 @@ export function checkSettingsPage(ctx, trip) {
   const list = h('div', {}, h('p', { class: 'muted' }, 'Checking…'));
   let report = [];
   const run = () => {
-    list.replaceChildren(h('p', { class: 'muted' }, 'Checking…'));
+    putIn(list, h('p', { class: 'muted' }, 'Checking…'));
     ctx.checkPhone().then((rows) => {
       report = rows;
-      list.replaceChildren(...rows.map((r) => h('div', { class: `check-line check-line--${r.status}` },
+      putIn(list, ...rows.map((r) => h('div', { class: `check-line check-line--${r.status}` },
         h('span', { class: 'check-mark', 'aria-hidden': 'true' }, MARK[r.status]), h('div', {}, h('b', {}, r.label), h('div', { class: 'muted' }, r.detail)))));
-    }).catch(() => list.replaceChildren(h('p', { class: 'muted' }, 'The check could not run.')));
+    }).catch(() => putIn(list, h('p', { class: 'muted' }, 'The check could not run.')));
   };
   run();
   const copy = async () => {

@@ -14,6 +14,7 @@ import { startMove } from './move.js';
 import { undoButton } from './undo.js';
 import { USE_UNDO_SCOPE } from '../journal.js';
 import { partiesOf } from './party.js';
+import { putIn } from '../put.js';
 
 export function guestPage(ctx, trip, guestId) {
   const guest = trip.guests.find((g) => g.id === guestId);
@@ -67,7 +68,7 @@ function guestList(ctx, trip) {
   function fillParties(words) {
     const shown = partiesOf(trip).filter((party) => words.every((w) => party.members.some((g) => plain(`${g.first} ${g.last}`).includes(w))));
     count.textContent = `${shown.length} travel parties`;
-    list.replaceChildren(...(shown.length === 0 ? [h('li', { class: 'empty' }, 'No party matches that search.')]
+    putIn(list, ...(shown.length === 0 ? [h('li', { class: 'empty' }, 'No party matches that search.')]
       : shown.map((party) => h('li', {}, h('a', { class: 'row', href: `#/trip/${trip.id}/use/party/${party.members[0].id}` },
           h('div', { class: 'row-main' }, h('div', { class: 'row-title' }, party.members.map((g) => names.get(g.id)).join(', ')), h('div', { class: 'row-sub' }, party.members.length === 1 ? 'Travelling solo' : `${party.members.length} people`)),
           h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'))))));
@@ -83,7 +84,7 @@ function guestList(ctx, trip) {
     });
 
     count.textContent = shown.length === guests.length ? `${guests.length} guests` : `${shown.length} of ${guests.length} guests`;
-    list.replaceChildren(
+    putIn(list, 
       ...(shown.length === 0
         ? [h('li', { class: 'empty' }, 'No guest matches that search.')]
         : shown.map((g) => (destination

@@ -13,6 +13,7 @@ import { plain } from '../rules.js';
 import { rollCallState } from '../rollcall.js';
 import { groupBatches, journalItems, summarize, guestNamesOf, wasForced } from '../journal.js';
 import { pageHead } from './chrome.js';
+import { putIn } from '../put.js';
 
 const PAGE = 50; // cards shown at once; "Show more" adds the next 50
 
@@ -46,7 +47,7 @@ export function journalPage(ctx, trip) {
     const noun = (n) => `${n} action${n === 1 ? '' : 's'}`;
     count.textContent = matching.length === items.length ? noun(items.length) : `${matching.length} of ${noun(items.length)}`;
 
-    list.replaceChildren(
+    putIn(list, 
       ...(matching.length === 0
         ? [h('p', { class: 'empty' }, items.length === 0
             ? 'Nothing yet. Every change you make will be listed here.'

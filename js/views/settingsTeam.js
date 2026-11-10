@@ -15,6 +15,7 @@ import { qrSvg } from '../qr.js';
 import { applyChange } from '../changes.js';
 import { jobsOf, TEAM_JOBS } from '../teamJobs.js';
 import { listMembers, inviteMember, removeMember, cleanInviteEmail, MEMBER_ROLES } from '../sync.js';
+import { putIn } from '../put.js';
 
 // What each role is called and what it does (the names inside the database are team, advance and viewer).
 // The label of the 'team' role is the trip's own word for its team (rules.js teamLabel): Jet Staff, Adventure Guides...
@@ -57,7 +58,7 @@ async function accessSheet(ctx, trip, member) {
     subtitle: 'Scan it with the other device\'s camera: it signs them in at once. It works once, for about an hour. Keep the screen to yourself until they have scanned it.',
     body: [picture, note],
   });
-  const draw = (address) => { picture.replaceChildren(); picture.innerHTML = qrSvg(address, { pixels: 260 }); }; // drawn by qr.js from the address
+  const draw = (address) => { putIn(picture); picture.innerHTML = qrSvg(address, { pixels: 260 }); }; // drawn by qr.js from the address
   try {
     const { token_hash: token, type } = await ctx.teamSignInToken(trip.id, member.email);
     const url = new URL('./', window.location.href);
@@ -147,14 +148,14 @@ export function teamSettingsPage(ctx, trip) {
   const list = h('div', {}, h('p', { class: 'muted count-line' }, 'Loading…'));
   // The owner's own line, with its own QR code, to sign in on a second phone or tablet of the same account (like every colleague's line).
   const mine = h('div', {});
-  existingSession().then((me) => { if (me?.email) mine.replaceChildren(memberCard({ email: me.email, role: 'owner' }, { access: () => accessSheet(ctx, trip, { email: me.email, role: 'owner' }), jobs: jobsOf(trip, me.email), editJobs: () => jobsSheet(ctx, trip, me.email) })); }).catch(() => {});
+  existingSession().then((me) => { if (me?.email) putIn(mine, memberCard({ email: me.email, role: 'owner' }, { access: () => accessSheet(ctx, trip, { email: me.email, role: 'owner' }), jobs: jobsOf(trip, me.email), editJobs: () => jobsSheet(ctx, trip, me.email) })); }).catch(() => {});
   const message = h('div', { class: 'message', role: 'alert', hidden: true });
   const say = (text) => { message.textContent = text; message.hidden = !text; };
 
   async function load() {
     try {
       const members = await listMembers(trip.id);
-      list.replaceChildren(...(members.length === 0
+      putIn(list, ...(members.length === 0
         ? [h('p', { class: 'empty' }, 'Nobody else yet. Invite a colleague below.')]
         : members.map((m) => memberCard(m, {
             scopeName: m.destination_id ? (trip.destinations.find((d) => d.id === m.destination_id)?.name ?? 'one destination') : null,
@@ -165,7 +166,7 @@ export function teamSettingsPage(ctx, trip) {
             remove: async () => { try { await removeMember(trip.id, m.email); showToast(`${m.email} removed`); load(); } catch { showToast('Could not remove them. Are you online?', true); } },
           }))));
     } catch {
-      list.replaceChildren(h('p', { class: 'empty' }, 'The team cannot be shown: sign in online first (the sync light at the top), and the trip must have reached the server.'));
+      putIn(list, h('p', { class: 'empty' }, 'The team cannot be shown: sign in online first (the sync light at the top), and the trip must have reached the server.'));
     }
   }
 

@@ -10,6 +10,7 @@ import { displayNames, countIn } from '../rules.js';
 import { openSheet, closeSheet, showToast } from '../ui.js';
 import { resolveGuestRequest, describeGuestRequest } from '../guestRequests.js';
 import { describeRequest } from '../sync.js';
+import { putIn } from '../put.js';
 
 const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -60,7 +61,7 @@ export function notificationsCard(ctx) {
   const button = (label, onclick, plain = true) => h('button', { class: `btn btn--small${plain ? ' btn--plain' : ''}`, type: 'button', onclick }, label);
   async function show() {
     const { state } = await ctx.pushState();
-    actions.replaceChildren();
+    putIn(actions);
     if (state === 'unsupported') line.textContent = 'This browser cannot show notifications.';
     else if (state === 'install') line.textContent = 'On an iPhone, first add Tour Docs to the Home Screen (Share button, then Add to Home Screen), and open it from there.';
     else if (state === 'denied') line.textContent = 'Notifications are blocked for this app. Allow them in the phone\'s Settings, then come back.';

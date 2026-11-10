@@ -6,6 +6,8 @@
 //   - "Continue in the browser" always works; the offer comes back after 3 days, at most 3 times; a small row on Today lets a guest reopen it any time.
 // Nothing here changes the guest's data: it only shows a sheet. The decisions (which phone is this, when to offer) are pure functions, checked by the leader's tests.
 
+import { putIn } from '../js/put.js';
+
 const KEY = 'tourdocs.guest.install';        // { dismissedAt, times }
 const AGAIN_AFTER_MS = 3 * 86400000;
 const MAX_OFFERS = 3;
@@ -63,7 +65,7 @@ export function openInstallSheet({ store, tripName, platform, prompt, manual = f
   const showSteps = () => {
     const steps = INSTALL_STEPS[platform] ?? INSTALL_STEPS.android;
     const copied = el('p', { class: 'install-note', role: 'status' });
-    card.replaceChildren(...[
+    putIn(card, ...[
       el('h2', {}, 'Add it to your Home Screen'),
       el('ol', { class: 'install-steps' }, steps.map(([title, detail, share]) => el('li', {}, el('b', {}, title, share ? el('span', { class: 'install-share', 'aria-hidden': 'true' }) : null), detail ? el('span', {}, detail) : null))),
       platform === 'ios-safari' ? el('p', { class: 'install-note' }, 'Do it now, while your programme is open: the app then opens straight on it.') : null,

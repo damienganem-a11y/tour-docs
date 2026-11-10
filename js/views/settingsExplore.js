@@ -176,7 +176,7 @@ export function exploreDestinationPage(ctx, trip, destinationId) {
         h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: locked || i === ex.places.length - 1, 'aria-label': 'Move down', onclick: () => move(i, 1) }, '↓')))),
     h('button', { class: 'btn', type: 'button', disabled: locked || ex.places.length >= 40, onclick: () => placeSheet(null) }, '+ Add a place'),
     // An empty stop that has a made-up example (exploreExamples.js): one tap fills it, to try the guests' map. Undo takes it back.
-    exampleMapFor(destination) && ex.places.length === 0 ? h('button', { class: 'btn btn--plain', type: 'button', disabled: locked,
+    /fictional/i.test(trip.name) && exampleMapFor(destination) && ex.places.length === 0 ? h('button', { class: 'btn btn--plain', type: 'button', disabled: locked,
       onclick: () => { const sample = structuredClone(exampleMapFor(destination)); save({ ...sample, dock: ex.dock ?? sample.dock, backBy: ex.backBy ?? sample.backBy, streets: ex.dock ? ex.streets : null }, `Example map of ${destination.name} (made-up places)`); } },
       'Fill with an example (made-up places, to try it)') : null,
     h('p', { class: 'muted' }, 'Guests get the map with their next programme update (Settings > Guest links > Send programmes now).'));

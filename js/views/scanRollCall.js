@@ -12,6 +12,7 @@ import { showToast } from '../ui.js';
 import { displayNames, joinNames } from '../rules.js';
 import { findRollCall, vehicleLabel, rollCallState } from '../rollcall.js';
 import { readPass } from '../boardingPass.js';
+import { putIn } from '../put.js';
 
 let jsqrLoading = null;
 function loadReader() {
@@ -78,7 +79,7 @@ export function openScanner(ctx, tripId, activity, { vehicleId, onVehicle }) {
     if (!rc.vehicles.some((v) => v.id === chosen)) chosen = rc.vehicles[0].id;
     const state = rollCallState(trip, rc);
     counter.textContent = `${state.checkedIn.length} of ${state.booked.length} on board`;
-    vehicles.replaceChildren(
+    putIn(vehicles, 
       ...rc.vehicles.map((v) => h('button', { class: `scan-vehicle${v.id === chosen ? ' is-on' : ''}`, type: 'button', 'aria-pressed': String(v.id === chosen),
         onclick: () => { chosen = v.id; onVehicle?.(v.id); drawTop(); say('info', `Next scans go into ${label(v)}`); } },
         h('b', {}, label(v)), h('span', {}, String((state.perVehicle.get(v.id) ?? []).length)))),
@@ -91,7 +92,7 @@ export function openScanner(ctx, tripId, activity, { vehicleId, onVehicle }) {
   function say(tone, text, ...actions) {
     result.className = `scan-result scan-result--${tone}`;
     const shown = actions.filter(Boolean);
-    result.replaceChildren(...[h('div', { class: 'scan-msg' }, text), shown.length ? h('div', { class: 'scan-actions' }, shown) : null].filter(Boolean)); // never a "null" on screen
+    putIn(result, ...[h('div', { class: 'scan-msg' }, text), shown.length ? h('div', { class: 'scan-actions' }, shown) : null].filter(Boolean)); // never a "null" on screen
   }
   const buzz = (ms) => { try { navigator.vibrate?.(ms); } catch { /* no vibration on this phone */ } };
 

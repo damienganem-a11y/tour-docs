@@ -11,6 +11,7 @@ import { h } from '../dom.js';
 import { openSheet, openFullScreen, closeFullScreen } from '../ui.js';
 import { displayNames, alphabetical, plain, joinNames, capacityInfo } from '../rules.js';
 import { notice } from './move.js';
+import { putIn } from '../put.js';
 
 export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, ceiling = null, baseUsed = 0, overText = '', confirmLabel = 'Confirm', emptyText, onConfirm }) {
   const names = displayNames(trip.guests);
@@ -63,7 +64,7 @@ export function pickGuests(trip, { candidates, mates, eyebrow, title, subtitle, 
   const fill = () => {
     const words = plain(search.value).split(/\s+/).filter(Boolean);
     const shown = candidates.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w))).sort(alphabetical(names));
-    list.replaceChildren(...(shown.length === 0
+    putIn(list, ...(shown.length === 0
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
       : shown.map((guest) => {
           const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });

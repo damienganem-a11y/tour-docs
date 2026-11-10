@@ -4,6 +4,7 @@
 // The page shows only what the staff app wrote for this link: the tour, day, time, meeting point, place, their colour group and the number of guests.
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
+import { putIn } from '../js/put.js';
 
 const app = document.getElementById('app');
 const token = location.hash.replace(/^#/, '').trim();
@@ -32,7 +33,7 @@ async function rpc(name, args) {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-const clock = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const clock = (iso) => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 function details(info) {
   const rows = [
@@ -54,7 +55,7 @@ function show(state) {
   const { info } = state;
   if (state.answer && !state.changing) {
     const yes = state.answer === 'yes';
-    app.replaceChildren(...header(info).slice(0, 1), details(info),
+    putIn(app, ...header(info).slice(0, 1), details(info),
       el('div', { class: `card done ${yes ? 'is-yes' : 'is-no'}` },
         el('div', { class: 'big' }, yes ? '✓' : '✗'),
         el('h1', {}, yes ? 'Thank you, you are confirmed' : 'Thank you for telling us'),
@@ -82,17 +83,17 @@ function show(state) {
   };
   const yes = el('button', { class: 'yes', type: 'button', onclick: () => send('yes', yes) }, '✓ I confirm');
   const no = el('button', { class: 'no', type: 'button', onclick: () => send('no', no) }, "✗ I can't make it");
-  app.replaceChildren(...header(info), details(info), el('label', { for: 'note' }, 'A note for the tour leader (optional)'), note, yes, no, problem);
+  putIn(app, ...header(info), details(info), el('label', { for: 'note' }, 'A note for the tour leader (optional)'), note, yes, no, problem);
 }
 
 async function start() {
-  if (!token) { app.replaceChildren(el('h1', {}, 'This link is not complete'), el('p', { class: 'muted' }, 'Open it again from the message you received.')); return; }
+  if (!token) { putIn(app, el('h1', {}, 'This link is not complete'), el('p', { class: 'muted' }, 'Open it again from the message you received.')); return; }
   try {
     const state = await rpc('contact_confirm_view', { p_token: token });
-    if (!state.ok) { app.replaceChildren(el('h1', {}, 'This link no longer works'), el('p', { class: 'muted' }, 'The tour is over, or the link was replaced. If in doubt, please contact the tour leader.')); return; }
+    if (!state.ok) { putIn(app, el('h1', {}, 'This link no longer works'), el('p', { class: 'muted' }, 'The tour is over, or the link was replaced. If in doubt, please contact the tour leader.')); return; }
     show(state);
   } catch {
-    app.replaceChildren(el('h1', {}, 'No connection'), el('p', { class: 'muted' }, 'This page needs the internet. Please try again in a moment.'), el('button', { class: 'yes', type: 'button', onclick: start }, 'Try again'));
+    putIn(app, el('h1', {}, 'No connection'), el('p', { class: 'muted' }, 'This page needs the internet. Please try again in a moment.'), el('button', { class: 'yes', type: 'button', onclick: start }, 'Try again'));
   }
 }
 start();

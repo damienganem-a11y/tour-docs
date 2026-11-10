@@ -1,6 +1,7 @@
 // Example maps (v0.145.2, owner's request, 5 Nov 2026: "just make it up, for me to have a look"). One tap fills an empty stop with a made-up example, to
 // try the guests' map or to show it to someone. The places are INVENTED (names, hours, prices, tips): never send them to real guests as they are.
 // The start point is an estimate (the river bank in front of the Saint-Joseph Saint-Luc hospital, quai Claude Bernard, Lyon 7e): move it with "Change".
+// Offered ONLY on a demo trip (a trip whose name says "fictional", v0.147.1): a real trip to Lyon is never offered made-up restaurants.
 // Keyed by the destination's name in lower case.
 
 export const EXAMPLE_MAPS = {

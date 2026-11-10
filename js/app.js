@@ -57,6 +57,7 @@ import { welcomeView } from './views/welcome.js';
 import { tripsView } from './views/trips.js';
 import { tripView } from './views/trip.js';
 import { rollCallView } from './views/rollcall.js';
+import { putIn } from './put.js';
 
 // What the app knows right now: who the owner is, every trip on this phone (by id), and the
 // journal entries and saved export versions of each trip (by trip id; also stored on the phone,
@@ -809,13 +810,13 @@ function render({ keepScroll = false } = {}) {
 
   // Locked: nothing else is shown until the access code is entered.
   if (state.locked) {
-    app.replaceChildren(passcodeView(ctx).node);
+    putIn(app, passcodeView(ctx).node);
     return;
   }
 
   // First launch: ask for the owner's name before anything else.
   if (!state.owner) {
-    app.replaceChildren(welcomeView(ctx).node);
+    putIn(app, welcomeView(ctx).node);
     return;
   }
 
@@ -830,7 +831,7 @@ function render({ keepScroll = false } = {}) {
 
   const scrollY = window.scrollY; // remembered so refresh() can put the page back where it was
   const params = (location.hash.match(route.pattern) || []).slice(1).map((p) => p && decodeURIComponent(p));
-  app.replaceChildren(...[previewBar(ctx), route.view(ctx, ...params).node].filter(Boolean));
+  putIn(app, ...[previewBar(ctx), route.view(ctx, ...params).node].filter(Boolean));
   window.scrollTo(0, keepScroll ? scrollY : 0);
 }
 
@@ -908,7 +909,7 @@ async function start() {
   } catch (error) {
     // replaceChildren, not append: the boot splash above is full-height, so simply adding this
     // underneath it left the error invisible without scrolling — looking exactly like a hang.
-    document.getElementById('app').replaceChildren(
+    putIn(document.getElementById('app'), 
       h('div', { class: 'screen' }, h('div', { class: 'message' }, `This browser cannot save data on the device (${error.message}).`))
     );
     return;

@@ -37,6 +37,7 @@ import { pageHead, accentTitle, destinationMenu, destinationSub } from './chrome
 import { notice, choiceRow, startMove } from './move.js';
 import { undoButton } from './undo.js';
 import { DINING_USE_UNDO_SCOPE } from '../journal.js';
+import { putIn } from '../put.js';
 
 // destinationId and slotId come from the address; if missing or wrong we start at the first ones —
 // same pattern as destinationPage. restaurantId (and seating) select the "By table" view instead of
@@ -460,7 +461,7 @@ function guestPicker(trip, slot, { eyebrow, title, subtitle, ceiling, baseUsed, 
   const fill = () => {
     const words = plain(search.value).split(/\s+/).filter(Boolean);
     const shown = guests.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w))).sort(alphabetical(names));
-    list.replaceChildren(...(shown.length === 0
+    putIn(list, ...(shown.length === 0
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
       : shown.map((guest) => {
           const box = h('input', { type: 'checkbox', checked: checked.has(guest.id), 'aria-label': names.get(guest.id) });

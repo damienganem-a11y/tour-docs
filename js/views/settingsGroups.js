@@ -16,6 +16,7 @@ import { GROUPS_UNDO_SCOPE } from '../journal.js';
 import { openColourChange } from './colourQuick.js';
 import { staleWarning } from './staleColours.js';
 import { exportGroupsPdf, exportGroupsOverviewPdf, exportGroupsXlsx, exportGroupCards } from '../export.js';
+import { putIn } from '../put.js';
 
 // A labelled field for the sheets: the label above (always readable), the input, then a hint below that wraps (a placeholder
 // gets cut off on a phone, so nothing important is written as a placeholder).
@@ -86,7 +87,7 @@ function newTourSplitSheet(ctx, trip, activityId = null) {
     const booked = bookedOnActivity(trip, tourSelect.value).length;
     const n = Number(countSelect.value);
     if (!sizeInput.value && n > 1) sizeInput.placeholder = `For example ${Math.ceil(booked / n)}`;
-    previewBox.replaceChildren(...groupsWanted().map((g) => h('span', { class: 'swatch-label' }, swatch(g), g.name)), h('span', { class: 'muted' }, ` · ${plural(booked, 'guest')} booked`));
+    putIn(previewBox, ...groupsWanted().map((g) => h('span', { class: 'swatch-label' }, swatch(g), g.name)), h('span', { class: 'muted' }, ` · ${plural(booked, 'guest')} booked`));
   }
   for (const el of [tourSelect, countSelect, sizeInput]) el.addEventListener('input', preview);
   preview();
@@ -316,7 +317,7 @@ function editSplitSheet(ctx, trip, split) {
   const keptPicker = (row, i) => h('select', { class: 'text-input', 'aria-label': `Group ${i + 1}: who goes in it`, onchange: (e) => { row.reserved = e.target.value || null; } },
     h('option', { value: '' }, 'Everyone'), Object.entries(RESERVED_KINDS).map(([k, label]) => h('option', { value: k, selected: k === row.reserved ? '' : null }, label)));
   const draw = () => {
-    list.replaceChildren(...rows.map((row, i) => h('div', { class: 'group-edit-block' }, h('div', { class: 'group-edit-row' },
+    putIn(list, ...rows.map((row, i) => h('div', { class: 'group-edit-block' }, h('div', { class: 'group-edit-row' },
       h('input', { class: 'text-input', type: 'text', maxlength: '40', value: row.name, placeholder: 'Name', 'aria-label': `Group ${i + 1} name`, oninput: (e) => { row.name = e.target.value; } }),
       h('input', { class: 'text-input group-size-input', type: 'number', min: '1', max: '500', inputmode: 'numeric', value: row.capacity ?? '', placeholder: 'Size', 'aria-label': `Group ${i + 1} size`, oninput: (e) => { row.capacity = e.target.value === '' ? null : Number(e.target.value); } }),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', disabled: rows.length === 1, 'aria-label': `Remove group ${i + 1}`, onclick: () => { rows.splice(i, 1); draw(); } }, '×')),

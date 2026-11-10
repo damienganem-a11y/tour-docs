@@ -5,6 +5,7 @@
 
 import { h } from '../dom.js';
 import { showToast } from '../ui.js';
+import { putIn } from '../put.js';
 
 // A typed code, cleaned: letters and digits only, in capitals (readers type the EPC or TID in hexadecimal). Too short = not a tag.
 export const cleanCode = (text) => { const c = String(text ?? '').replace(/[^0-9a-z]/gi, '').toUpperCase(); return c.length >= 8 ? c : null; };
@@ -26,12 +27,12 @@ export function openRfidTest() {
 
   function draw() {
     const t = tallyReads(reads);
-    stats.replaceChildren(
+    putIn(stats, 
       h('div', {}, h('b', {}, String(t.unique)), h('span', {}, 'different tags')),
       h('div', {}, h('b', {}, String(t.total)), h('span', {}, 'reads')),
       h('div', {}, h('b', {}, String(t.repeats)), h('span', {}, 'repeats')),
       h('div', {}, h('b', {}, String(t.lastTen)), h('span', {}, 'in the last 10 s')));
-    list.replaceChildren(...[...t.perTag.entries()].reverse().slice(0, 80).map(([code, n], i) => h('li', { class: i === 0 ? 'is-new' : '' },
+    putIn(list, ...[...t.perTag.entries()].reverse().slice(0, 80).map(([code, n], i) => h('li', { class: i === 0 ? 'is-new' : '' },
       h('code', {}, code.length > 16 ? `…${code.slice(-16)}` : code), h('span', {}, n > 1 ? `read ${n} times` : 'read once'))));
   }
   function take(text) {

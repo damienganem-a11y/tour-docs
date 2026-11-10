@@ -14,6 +14,7 @@ import { pageHead , guestsSwitch } from './chrome.js';
 import { undoButton } from './undo.js';
 import { choiceRow, notice } from './move.js';
 import { GUEST_UNDO_SCOPE } from '../journal.js';
+import { putIn } from '../put.js';
 
 let saving = false;
 async function save(ctx, tripId, change, done) {
@@ -83,7 +84,7 @@ function guestPicker(ctx, trip, { eyebrow, title, subtitle, exclude, onPick }) {
   function fill() {
     const words = plain(search.value).split(/\s+/).filter(Boolean);
     const shown = options.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
-    list.replaceChildren(...(shown.length === 0
+    putIn(list, ...(shown.length === 0
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
       : shown.map((g) => choiceRow({ title: names.get(g.id), onclick: () => onPick(g) }))));
   }
@@ -125,7 +126,7 @@ function createParty(ctx, trip) {
   function fill() {
     const words = plain(search.value).split(/\s+/).filter(Boolean);
     const shown = options.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
-    list.replaceChildren(...(shown.length === 0
+    putIn(list, ...(shown.length === 0
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
       : shown.map((g) => choiceRow({
           title: names.get(g.id), current: picked.has(g.id),

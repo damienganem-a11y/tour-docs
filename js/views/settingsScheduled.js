@@ -12,6 +12,7 @@ import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { addDays, formatFullMoment, formatTime, localDateNow, localToInstant } from '../time.js';
 import { AUTO_KINDS, MESSAGE_TEMPLATES, audienceGuestIds, autoNotifySettings, clockProposals, draftError, draftRow } from '../scheduledMessages.js';
+import { putIn } from '../put.js';
 
 const field = (label, input, hint) => h('div', { class: 'form-field' }, h('label', { class: 'form-label' }, label, input), hint ? h('div', { class: 'form-hint' }, hint) : null);
 const phoneZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -35,9 +36,9 @@ export function scheduledSettingsPage(ctx, trip, { embedded = false } = {}) {
   const waiting = h('div', {}, h('p', { class: 'muted' }, 'Loading…'));
   async function loadWaiting() {
     let rows = [];
-    try { rows = await ctx.listScheduled(trip.id); } catch { waiting.replaceChildren(h('p', { class: 'muted' }, 'The list could not be loaded. Sign in and go online.')); return; }
-    if (rows.length === 0) { waiting.replaceChildren(h('p', { class: 'muted' }, 'Nothing is waiting to be sent.')); return; }
-    waiting.replaceChildren(...rows.map((m) => {
+    try { rows = await ctx.listScheduled(trip.id); } catch { putIn(waiting, h('p', { class: 'muted' }, 'The list could not be loaded. Sign in and go online.')); return; }
+    if (rows.length === 0) { putIn(waiting, h('p', { class: 'muted' }, 'Nothing is waiting to be sent.')); return; }
+    putIn(waiting, ...rows.map((m) => {
       const kind = m.source === 'manual' ? 'Yours' : m.audience === 'owner' ? 'Alert for you' : 'Reminder';
       const who = m.audience === 'owner' ? 'you' : Array.isArray(m.guest_ids) ? plural(m.guest_ids.length, 'guest') : 'every guest';
       return h('div', { class: 'card team-member' },

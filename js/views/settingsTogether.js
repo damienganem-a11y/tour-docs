@@ -12,6 +12,7 @@ import { undoButton } from './undo.js';
 import { notice } from './move.js';
 import { pickGuests } from './guestPicker.js';
 import { GUEST_UNDO_SCOPE } from '../journal.js';
+import { putIn } from '../put.js';
 
 let saving = false;
 async function save(ctx, trip, change, done) {
@@ -35,7 +36,7 @@ export function togetherSettingsPage(ctx, trip) {
     const nameInput = h('input', { class: 'text-input', type: 'text', maxlength: '60', value: group?.name ?? '', placeholder: 'For example: Martin and Dupont families', 'aria-label': 'Name of the group' });
     const chosen = new Set(group?.guestIds ?? []);
     const people = h('div', { class: 'chips' });
-    const drawPeople = () => people.replaceChildren(...[...chosen].map((id) => active.find((g) => g.id === id)).filter(Boolean).sort(alphabetical(names)).map((g) => h('span', { class: 'chip' }, names.get(g.id))));
+    const drawPeople = () => putIn(people, ...[...chosen].map((id) => active.find((g) => g.id === id)).filter(Boolean).sort(alphabetical(names)).map((g) => h('span', { class: 'chip' }, names.get(g.id))));
     drawPeople();
     const pick = () => pickGuests(trip, {
       candidates: active.filter((g) => !chosen.has(g.id)), mates: (guest) => active.filter((c) => c.partyId === guest.partyId && c.id !== guest.id && !chosen.has(c.id)),

@@ -7,6 +7,7 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../js/supabase-config.js';
 import { urlBase64ToUint8Array, subscriptionFields } from '../js/pushUtil.js';
 import { daysToShow } from './days.js';
+import { putIn } from '../js/put.js';
 
 const app = document.getElementById('app');
 const stampBox = document.getElementById('stamp');
@@ -44,9 +45,9 @@ async function rpc(name, args) {
 }
 
 // Puts nodes on the page: lists inside lists are opened, empty spots (null) left out (replaceChildren would write "null").
-const put = (box, ...nodes) => box.replaceChildren(...nodes.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false));
+const put = (box, ...nodes) => putIn(box, ...nodes.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false));
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-const moment = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const moment = (iso) => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const isScreen = () => state?.kind === 'screen';
 
 // ---------- Reception ----------
@@ -162,7 +163,7 @@ function drawScreen() {
   startScroll(inner);
 }
 
-const clockText = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const clockText = () => new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 // When the tours do not fit, the list moves up slowly, waits at the end, and starts again from the top.
 let scrollTimer = null;

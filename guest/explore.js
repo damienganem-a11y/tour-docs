@@ -7,6 +7,7 @@
 // Leaflet (the map library, BSD licence) is part of the app (../vendor/leaflet), so the map itself opens offline too.
 
 import { distanceMeters, distanceText, bearing, directionsUrl, kindOf } from '../js/explore.js';
+import { putIn } from '../js/put.js';
 
 const STREETS_CACHE = 'tourdocs-maps-v1';
 let deps = null; // { h, plainHead }
@@ -82,7 +83,7 @@ export function exploreView(sheet, index, offlineBanner) {
     const p = selected;
     const dist = from() ? distanceMeters(from(), p) : null;
     card.hidden = false;
-    card.replaceChildren(...[
+    putIn(card, ...[
       h('button', { class: 'xm-close', type: 'button', 'aria-label': 'Close', onclick: () => { selected = null; drawCard(); } }, '✕'),
       h('small', {}, p.dock ? 'Back to' : `${places.indexOf(p) + 1} · ${kindOf(p.kind).emoji} ${kindOf(p.kind).label}`),
       h('b', { class: 'xm-name' }, p.name),
@@ -94,7 +95,7 @@ export function exploreView(sheet, index, offlineBanner) {
   }
 
   function drawList() {
-    list.replaceChildren(...places.map((p, i) => h('button', { class: `xm-row${selected === p ? ' is-on' : ''}`, type: 'button', onclick: () => select(p) },
+    putIn(list, ...places.map((p, i) => h('button', { class: `xm-row${selected === p ? ' is-on' : ''}`, type: 'button', onclick: () => select(p) },
       h('span', { class: 'xm-num' }, String(i + 1)),
       h('span', { class: 'xm-row-text' }, h('b', {}, p.name), h('small', {}, [`${kindOf(p.kind).emoji} ${kindOf(p.kind).label}`, p.hours, from() ? distanceText(distanceMeters(from(), p)) : null].filter(Boolean).join(' · '))))));
   }
@@ -131,7 +132,7 @@ export function exploreView(sheet, index, offlineBanner) {
   }
 
   async function mount() {
-    try { L = await loadLeaflet(); } catch { mapBox.replaceChildren(h('p', { class: 'xm-nomap' }, 'The map could not open. The list of places below still works.')); return; }
+    try { L = await loadLeaflet(); } catch { putIn(mapBox, h('p', { class: 'xm-nomap' }, 'The map could not open. The list of places below still works.')); return; }
     const center = map.dock ?? places[0];
     leafletMap = L.map(mapBox, { preferCanvas: true, zoomControl: false, attributionControl: true }).setView([center.lat, center.lng], 15);
     L.control.zoom({ position: 'topright' }).addTo(leafletMap);

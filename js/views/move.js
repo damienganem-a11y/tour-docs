@@ -12,6 +12,7 @@ import { openSheet, closeSheet, showToast, openFullScreen } from '../ui.js';
 import { applyChange, outsideScope } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
 import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, eligibilityProblems, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
+import { putIn } from '../put.js';
 
 const placeText = (place) =>
   place.kind === 'activity' ? place.activity.name :
@@ -133,7 +134,7 @@ export function startAddGuest(ctx, trip, slot, activity) {
   function fill() {
     const words = plain(search.value).split(/\s+/).filter(Boolean);
     const shown = guests.filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
-    list.replaceChildren(...(shown.length === 0
+    putIn(list, ...(shown.length === 0
       ? [h('p', { class: 'empty' }, 'No guest matches that search.')]
       : shown.map((guest) => {
           const here = guestPlace(trip, guest, slot);

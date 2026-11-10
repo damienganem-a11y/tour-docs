@@ -25,6 +25,7 @@ import { forcedPlacements } from '../journal.js';
 import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { startMove, startAddGuest, choiceRow, notice } from './move.js';
+import { putIn } from '../put.js';
 
 // What is remembered while the app is open, for each roll call and state: which vehicle the taps go into, and the search words.
 const chosenVehicle = new Map();
@@ -196,7 +197,7 @@ export function rollCallView(ctx, tripId, activityId) {
     const words = plain(searchWords.get(key) ?? '').split(/\s+/).filter(Boolean);
     const shown = [...pending].sort(inOrder).filter((g) => words.every((w) => plain(`${g.first} ${g.last}`).includes(w)));
 
-    list.replaceChildren(...(shown.length === 0
+    putIn(list, ...(shown.length === 0
       ? [h('p', { class: 'empty' }, pending.length === 0 ? 'Everybody is checked in.' : 'No guest matches that search.')]
       : shown.map((guest, index) => {
           if (readOnly) return h('div', { class: 'rc-guest' }, h('span', {}, names.get(guest.id)));

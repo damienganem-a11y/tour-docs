@@ -18,6 +18,7 @@ import { staffDisplayName } from '../guestMessages.js';
 import { inboxList, attentionCount, REMIND_CHOICES, REMIND_DEFAULT, quickRepliesOf } from '../chat.js';
 import { openChat, avatar } from '../chatUi.js';
 import { exportMessageRecord } from '../export.js';
+import { putIn } from '../put.js';
 
 const HOLD_MS = 550;
 
@@ -107,7 +108,7 @@ export function guestMessagesSettingsPage(ctx, trip) {
   function quickRepliesSheet() {
     const rows = [...quickRepliesOf(trip)];
     const list = h('div', {});
-    const draw = () => list.replaceChildren(...rows.map((r, i) => h('div', { class: 'group-edit-row' },
+    const draw = () => putIn(list, ...rows.map((r, i) => h('div', { class: 'group-edit-row' },
       h('textarea', { class: 'text-input', rows: '2', maxlength: '300', 'aria-label': `Quick reply ${i + 1}`, oninput: (e) => { rows[i] = e.target.value; } }, r),
       h('button', { class: 'btn btn--small btn--plain', type: 'button', 'aria-label': `Remove quick reply ${i + 1}`, onclick: () => { rows.splice(i, 1); draw(); } }, '×'))));
     draw();
@@ -151,7 +152,7 @@ export function guestMessagesSettingsPage(ctx, trip) {
   const drawList = () => {
     const q = searchText.trim().toLowerCase();
     const shown = list.filter((c) => !q || c.name.toLowerCase().includes(q) || c.preview.toLowerCase().includes(q));
-    listBox.replaceChildren(...(shown.length ? shown.map(row) : [h('p', { class: 'empty' }, list.length ? 'No conversation matches.' : 'No message yet. Guests write from "Message the staff" in their app, and you can write first with "New message".')]));
+    putIn(listBox, ...(shown.length ? shown.map(row) : [h('p', { class: 'empty' }, list.length ? 'No conversation matches.' : 'No message yet. Guests write from "Message the staff" in their app, and you can write first with "New message".')]));
   };
   const search = h('input', { class: 'text-input', type: 'search', placeholder: 'Search a guest or a word', 'aria-label': 'Search', value: searchText });
   search.addEventListener('input', () => { searchText = search.value; drawList(); });

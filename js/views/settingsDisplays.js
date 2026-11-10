@@ -11,6 +11,7 @@ import { openSheet, closeSheet, showToast } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { qrSvg } from '../qr.js';
+import { putIn } from '../put.js';
 
 const KINDS = {
   reception: { title: 'Reception link', what: 'For the reception desk: today\'s and tomorrow\'s tours with every colour and its guests. They print it from there; a stamp on each page says which version it is. Their screen is told when the list changes.' },
@@ -96,9 +97,9 @@ export function displaysSettingsPage(ctx, trip) {
 
   function draw() {
     const owner = ctx.roleFor(trip.id) === 'owner';
-    if (!owner) { content.replaceChildren(h('p', { class: 'muted' }, 'Only the owner of the trip makes these links.')); return; }
+    if (!owner) { putIn(content, h('p', { class: 'muted' }, 'Only the owner of the trip makes these links.')); return; }
     if (links === null) {
-      content.replaceChildren(notice('The links could not be loaded. You may be offline, or the database is not updated yet (Settings > Check this phone).'), h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: load }, 'Try again'));
+      putIn(content, notice('The links could not be loaded. You may be offline, or the database is not updated yet (Settings > Check this phone).'), h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: load }, 'Try again'));
       return;
     }
     const section = (kind) => {
@@ -110,7 +111,7 @@ export function displaysSettingsPage(ctx, trip) {
         h('button', { class: `btn${mine.length ? ' btn--plain' : ''}`, type: 'button', disabled: Boolean(trip.archivedAt), onclick: () => newSheet(kind) }, kind === 'reception' ? '+ Reception link' : '+ Lounge screen'),
       ];
     };
-    content.replaceChildren(
+    putIn(content, 
       notice('These pages show tours, times, meeting points and colours (and names when switched on). Never phone numbers, allergies or anything else about a guest.'),
       ...section('reception'), ...section('screen'));
   }

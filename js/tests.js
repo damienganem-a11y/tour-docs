@@ -60,6 +60,7 @@ import { displaySheet, sheetKey, daysToShow } from './display.js';
 import { EXPLORE_UNDO_SCOPE } from './journal.js';
 import { exploreListPage, exploreDestinationPage } from './views/settingsExplore.js';
 import { exampleMapFor } from './exploreExamples.js';
+import { putIn } from './put.js';
 import { openRfidTest, cleanCode, tallyReads } from './views/rfidTest.js';
 import { passCode, passFamily } from './boardingPass.js';
 import { scanPlan } from './views/scanRollCall.js';
@@ -1770,6 +1771,21 @@ for (const file of needed) {
   for (const [, specifier] of code.matchAll(/from '(\.[^']+)'/g)) {
     needed.add(new URL(specifier, `http://x/${file}`).pathname.slice(1));
   }
+}
+// v0.147.1: every screen puts its content through putIn (js/put.js), which leaves empty spots out. Calling replaceChildren directly is how the word
+// "null" got on four screens: no file of the staff app, the guest app, the reception page or the guide's page may do it.
+{
+  const others = ['guest/guest.js', 'guest/album.js', 'guest/explore.js', 'guest/install.js', 'display/display.js', 'confirm/confirm.js'];
+  const direct = [];
+  for (const file of [...needed, ...others]) {
+    if (file === 'js/put.js' || file === 'js/tests.js') continue;
+    const code = (await (await fetch(file, { cache: 'no-cache' })).text()).split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+    if (/\.replaceChildren\(/.test(code)) direct.push(file);
+  }
+  check('No screen calls replaceChildren directly (it writes "null" for an empty spot): all go through putIn', direct.length === 0, direct.join(', '));
+  const box = document.createElement('div');
+  putIn(box, null, [document.createElement('b'), [false, 'text', undefined]], null);
+  check('putIn opens lists inside lists and leaves empty spots out', box.childNodes.length === 2 && box.textContent === 'text');
 }
 const notListed = [...needed].filter((f) => !listed.includes(f));
 // Scripts loaded only when needed (not by an import): the QR code reader of the roll call scanner (v0.146.0). They must be listed and must exist.

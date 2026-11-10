@@ -4,6 +4,7 @@
 
 import { h } from '../dom.js';
 import { showToast } from '../ui.js';
+import { putIn } from '../put.js';
 
 // A picture from the phone -> a small JPEG (at most 320 wide) as a data URL, kept inside the trip. A
 // transparent PNG is flattened onto white: the cards are white, and a PDF logo is a plain JPEG.
@@ -47,7 +48,7 @@ export function brandForm({ initial, withNote = false }) {
 
   const preview = h('div', { class: 'logo-preview' });
   const drawPreview = () => {
-    preview.replaceChildren(logo
+    putIn(preview, logo
       ? h('img', { src: logo.data, alt: 'Logo', class: 'logo-preview-img' })
       : h('p', { class: 'muted' }, 'No logo yet: the company name is printed instead.'));
   };

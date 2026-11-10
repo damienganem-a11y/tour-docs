@@ -16,6 +16,7 @@ import { pageHead } from './chrome.js';
 import { notice } from './move.js';
 import { qrSvg } from '../qr.js';
 import { linkCheck } from '../guestSheet.js';
+import { putIn } from '../put.js';
 
 // Where the guest app lives: the "guest" folder next to this app. The secret goes after the "#", which a browser never sends to
 // the web server, so it does not appear in any server log.
@@ -117,15 +118,15 @@ export function guestLinksSettingsPage(ctx, trip) {
   const checkBox = h('div', {});
   const checkButton = Object.keys(links).length > 0
     ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: async (e) => {
-      e.target.disabled = true; checkBox.replaceChildren(h('p', { class: 'muted' }, 'Asking the server…'));
+      e.target.disabled = true; putIn(checkBox, h('p', { class: 'muted' }, 'Asking the server…'));
       try {
         const result = linkCheck(trip, await ctx.checkGuestLinks(trip.id));
         const names = displayNames(trip.guests);
-        checkBox.replaceChildren(
+        putIn(checkBox, 
           h('p', { class: result.problems.length ? 'form-error' : 'muted' }, result.problems.length === 0 ? `All ${result.total} links are ready on the server.` : `${result.ready} of ${result.total} links are ready on the server.`),
           ...result.problems.map((p) => h('div', { class: 'muted' }, `${names.get(p.guestId) ?? 'A guest'}: ${p.reason}`)),
           result.problems.length ? h('p', { class: 'muted' }, 'Tap "Send programmes now" with a good connection, then check again.') : null);
-      } catch { checkBox.replaceChildren(h('p', { class: 'form-error' }, 'The server could not be asked (offline, or the database is not updated yet).')); }
+      } catch { putIn(checkBox, h('p', { class: 'form-error' }, 'The server could not be asked (offline, or the database is not updated yet).')); }
       e.target.disabled = false;
     } }, 'Check the links')
     : null;

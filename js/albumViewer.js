@@ -9,6 +9,8 @@
 // openAlbumViewer({ photos, index, fullUrl(photo) -> Promise<url|null>, thumbUrl(photo) -> url|null, title(photo), subtitle(photo), actions(photo) -> [{ label, icon, onClick(photo, api), active?, disabled? }], onClose })
 // Returns { close, redraw }.
 
+import { putIn } from './put.js';
+
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -80,7 +82,7 @@ export function openAlbumViewer(options) {
 
   function drawBar() {
     const photo = photos[index];
-    bar.replaceChildren(...options.actions(photo).map((a) => el('button', {
+    putIn(bar, ...options.actions(photo).map((a) => el('button', {
       class: `albv-action${a.active ? ' is-on' : ''}${a.danger ? ' is-danger' : ''}`, type: 'button', disabled: a.disabled ? '' : null, 'aria-pressed': a.active ? 'true' : null,
       onclick: async () => {
         const result = await a.onClick(photo, api);

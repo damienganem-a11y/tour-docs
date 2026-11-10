@@ -24,6 +24,7 @@ import { SLIM_SHEET_VERSION, hydrateSheet } from '../js/sheetSlim.js';
 import { installPlatform, shouldOffer, readOffer, openInstallSheet } from './install.js';
 import { initExplore, exploreView, exploreTodayCard, keepUpcomingStreets, exploreMapsBlock } from './explore.js';
 import { initAlbum, albumView, albumAvailable, albumNewCount, loadAlbum, sendQueue } from './album.js';
+import { putIn } from '../js/put.js';
 
 const TOKEN_KEY = 'tourdocs.guest.token';
 const SHEET_KEY = 'tourdocs.guest.sheet';
@@ -32,7 +33,7 @@ const REFRESH_EVERY = 60000;    // while the app is open and visible, look for n
 
 const app = document.getElementById('app');
 // Puts a page on the screen. An empty spot (null) is left out: replaceChildren would write it as the word "null" on the page.
-function put(nodes) { app.replaceChildren(...[nodes].flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false)); }
+function put(nodes) { putIn(app, ...[nodes].flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false)); }
 
 // ---------- small helpers ----------
 // A picture that can fail to load (an old sheet pointing at a picture that has since moved, no connection and never cached): instead of the
@@ -738,7 +739,7 @@ function gamePage(sheet, index, stepIndex) {
     gameRun.running = false;
     const nextIsGame = stepIndex === 0 && other && hasGame(other.engine, other.skin);
     overlay.hidden = false;
-    overlay.replaceChildren(sheetBox(
+    putIn(overlay, sheetBox(
       h('h3', {}, result.title), h('p', {}, result.text),
       h('p', { class: 'ex-star-line' }, result.star ? '\u2605 Star earned for this step' : 'No star this time. Play again any time to earn it.'),
       h('p', { class: 'ex-fact' }, step.fact),
@@ -1141,8 +1142,8 @@ function creditsView(sheet, offline) {
   fetch('photos/credits.json').then((r) => r.json()).then((all) => {
     const used = new Set([...(sheet.destinations ?? []).map((d) => d.photo), ...(sheet.tours ?? []).flatMap((t) => (t.info?.photos ?? []).map((p) => p.url)), ...(sheet.restaurants ?? []).flatMap((r) => (r.card.photos ?? []).map((p) => p.url))]);
     const rows = Object.entries(all).filter(([key]) => used.has(`photos/${key}.jpg`)).map(([key, c]) => h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, key.replace(/^tours\//, '').replace(/-/g, ' ')), h('div', { class: 'block-text' }, `${c.author}, ${c.license}`, h('br'), h('a', { href: c.source, target: '_blank', rel: 'noopener' }, 'Wikimedia Commons'))));
-    list.replaceChildren(offline ?? '', ...rows);
-  }).catch(() => { list.replaceChildren(h('p', { class: 'foot' }, 'The credits could not be loaded right now.')); });
+    putIn(list, offline ?? '', ...rows);
+  }).catch(() => { putIn(list, h('p', { class: 'foot' }, 'The credits could not be loaded right now.')); });
   return [plainHead(sheet.trip, 'Photo credits'), list];
 }
 
@@ -1436,7 +1437,7 @@ function render(sheet, { offline = false } = {}) {
 
 function showProblem(title, text) {
   currentSheet = null;
-  app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, title), h('p', { class: 'muted' }, text),
+  putIn(app, h('div', { class: 'problem' }, h('h1', {}, title), h('p', { class: 'muted' }, text),
     h('button', { class: 'btn-link', type: 'button', onclick: () => { refresh(); } }, 'Try again')));
 }
 
@@ -1459,7 +1460,7 @@ function showNoLink() {
     } catch { message.textContent = 'Could not check the code. Are you online? If it keeps failing, wait a few minutes.'; }
   };
   field.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(); });
-  app.replaceChildren(h('div', { class: 'problem' }, h('h1', {}, 'Your code'),
+  putIn(app, h('div', { class: 'problem' }, h('h1', {}, 'Your code'),
     h('p', { class: 'muted' }, 'Type the 4-digit code your tour leader gives you. You only do this once: after that, this app opens straight on your programme.'),
     field, h('button', { class: 'btn-link paste-go', type: 'button', onclick: go }, 'Open my programme'), message));
 }

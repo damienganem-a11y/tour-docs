@@ -11,6 +11,7 @@ import { notice } from './move.js';
 import { farewellOf, GUEST_LINK_GRACE_DAYS, guestLinkExpiry } from '../guestSheet.js';
 import { NOTIFY_KINDS, notifySettings } from '../notifyRules.js';
 import { explorerProblems } from '../explorer.js';
+import { putIn } from '../put.js';
 
 // A short message to every guest who turned notifications on in their app (needs the one-time setup of supabase/PUSH_SETUP.md). Shown in Messages.
 export function announceCard(ctx, trip) {
@@ -110,7 +111,7 @@ export function guestAppSettingsPage(ctx, trip) {
   const reach = h('div', { class: 'card team-member' }, h('div', { class: 'act-name' }, 'Notifications sent'), h('div', { class: 'muted' }, 'Checking…'));
   ctx.guestPushOverview?.(trip.id).then((overview) => {
     if (!overview) { reach.lastChild.textContent = 'Not available (sign in online).'; return; }
-    reach.replaceChildren(h('div', { class: 'act-name' }, 'Notifications sent'),
+    putIn(reach, h('div', { class: 'act-name' }, 'Notifications sent'),
       h('div', { class: 'muted' }, `${overview.guests_on} of ${guests.length} guests have notifications on. The others must be told another way.`),
       ...(overview.recent.length === 0 ? [h('div', { class: 'muted' }, 'Nothing sent yet.')] : overview.recent.map((m) => h('div', { class: 'seat-line-row' },
         h('div', {}, h('b', {}, m.title), ` ${m.priority === 'important' ? '(important) ' : ''}· ${m.sent} of ${m.audience} phones`), h('div', { class: 'muted' }, `${m.body} · ${new Date(m.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`)))));

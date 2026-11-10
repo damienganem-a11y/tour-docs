@@ -3,6 +3,7 @@
 import { h } from '../dom.js';
 import { openSheet, closeSheet } from '../ui.js';
 import { openOnlineSignIn } from './onlineSignIn.js';
+import { putIn } from '../put.js';
 
 // The top of a screen: an optional "‹ back" link, a small label, the big title, a line of detail.
 // action: an optional button shown on the right of the title, taking all the room that is left
@@ -98,7 +99,7 @@ function syncDetailsSheet(ctx) {
   const box = h('div', { class: 'sync-details' }, h('p', { class: 'muted' }, 'Checking...'));
   openSheet({ eyebrow: 'Sync', title: 'Sync details', body: box, cancelLabel: 'Close' });
   ctx.syncDetails().then((result) => {
-    box.replaceChildren(
+    putIn(box, 
       h('p', { class: `sync-details-headline${result.ok ? '' : ' is-problem'}` }, result.ok ? 'Online, and syncing' : result.headline),
       ...(result.ok ? [h('p', { class: 'muted' }, result.headline)] : []),
       ...result.lines.map((line) => h('p', { class: 'muted' }, line)),

@@ -9,6 +9,7 @@
 // Returns { redraw, close }.
 
 import { groupByDay, clockOf, initialsOf, hueOf } from './chat.js';
+import { putIn } from './put.js';
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -82,7 +83,7 @@ export function openChat(options) {
           mine && m.read_at ? el('div', { class: 'chat-read' }, `Read ${readWhen(m)}`) : null));
       }
     }
-    scroll.replaceChildren(...nodes);
+    putIn(scroll, ...nodes);
     if (nearBottom || force) scroll.scrollTop = scroll.scrollHeight;
   }
 

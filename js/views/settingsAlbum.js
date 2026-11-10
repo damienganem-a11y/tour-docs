@@ -13,6 +13,7 @@ import { notice } from './move.js';
 import { albumSettings, albumPhase, downloadProgress } from '../album.js';
 import { preparePhoto } from '../albumImage.js';
 import { openAlbumViewer } from '../albumViewer.js';
+import { putIn } from '../put.js';
 
 const niceDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'not set');
 const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
@@ -106,7 +107,7 @@ export function albumSettingsPage(ctx, trip) {
 
   // Puts the blocks on the page. An empty spot (null) is left out: replaceChildren would write it as the word "null" (the "nullnull" the owner saw
   // above the photos, 5 Nov 2026).
-  const show = (...items) => content.replaceChildren(...items.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false));
+  const show = (...items) => putIn(content, ...items.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false));
 
   function draw() {
     const phase = albumPhase(settings, todayIso());
