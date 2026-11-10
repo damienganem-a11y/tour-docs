@@ -26,6 +26,8 @@ import { pageHead } from './chrome.js';
 import { undoButton } from './undo.js';
 import { startMove, startAddGuest, choiceRow, notice } from './move.js';
 import { putIn } from '../put.js';
+import { icon } from './icons.js';
+import { helpButton } from './help.js';
 
 // What is remembered while the app is open, for each roll call and state: which vehicle the taps go into, and the search words.
 const chosenVehicle = new Map();
@@ -58,6 +60,8 @@ export function rollCallView(ctx, tripId, activityId) {
   const inOrder = alphabetical(names);
   const state = rollCallState(trip, rollCall);
   const label = (vehicle) => vehicleLabel(trip, vehicle);
+  // In full words where there is room ("Vehicle 1" rather than "V1"), unless the trip has its own word for its vehicles ("Bus ", "Zodiac ").
+  const fullLabel = (vehicle) => ((trip.vehicleLabel ?? 'V') === 'V' ? `Vehicle ${vehicle.number}` : label(vehicle));
   const selected = rollCall.vehicles.find((v) => v.id === chosenVehicle.get(key)) ?? rollCall.vehicles[0];
   chosenVehicle.set(key, selected.id);
 
@@ -153,7 +157,7 @@ export function rollCallView(ctx, tripId, activityId) {
       'aria-label': `${label(vehicle)}, ${countText(vehicle)}.`,
     },
       h('span', { class: 'vehicle-label' }, label(vehicle)),
-      h('span', { class: 'vehicle-count' }, countText(vehicle)));
+      h('span', { class: 'vehicle-count' }, `${countText(vehicle)} on board`));
     pressable(button, {
       tap: () => (mode === 'ended' || vehicle.id === selected.id ? showInside(vehicle) : chooseVehicle(vehicle)),
       long: () => { if (mode === 'departure' && !readOnly) renumber(vehicle); }, // only while the roll call is open
@@ -199,16 +203,18 @@ export function rollCallView(ctx, tripId, activityId) {
 
     putIn(list, ...(shown.length === 0
       ? [h('p', { class: 'empty' }, pending.length === 0 ? 'Everybody is checked in.' : 'No guest matches that search.')]
-      : shown.map((guest, index) => {
+      : shown.map((guest) => {
           if (readOnly) return h('div', { class: 'rc-guest' }, h('span', {}, names.get(guest.id)));
+          // One line = two buttons (v0.151.0): the name (a tap checks the guest in: it turns green, the phone buzzes), and three dots for
+          // "not coming / another tour" (what only a long press did before; the long press still works).
           const row = h('button', { class: `rc-guest${isForced(guest) ? ' rc-guest--forced' : ''}`, type: 'button' },
-            h('span', {}, names.get(guest.id)),
-            index === 0 ? h('span', { class: 'rc-tap' }, `tap = ${label(selected)}`) : null);
+            h('span', {}, names.get(guest.id)), h('span', { class: 'rc-tick' }, icon('check')));
           pressable(row, {
-            tap: () => tapGuest(guest),
+            tap: () => { row.classList.add('is-done'); try { navigator.vibrate?.(25); } catch { /* no buzz on this phone */ } tapGuest(guest); },
             long: () => startMove(ctx, trip, guest, slot, { askParty: false }), // At leisure, or another tour: asks to confirm
           });
-          return row;
+          const other = h('button', { class: 'rc-more', type: 'button', 'aria-label': `${names.get(guest.id)}: not coming, or another tour`, onclick: () => startMove(ctx, trip, guest, slot, { askParty: false }) }, icon('more'));
+          return h('div', { class: 'rc-line' }, row, other);
         })));
   }
 
@@ -283,24 +289,31 @@ export function rollCallView(ctx, tripId, activityId) {
     };
   }
 
+  const total = state.checkedIn.length + state.expected.length;
   return {
-    node: h('div', { class: 'screen' },
+    node: h('div', { class: 'screen screen--rollcall' },
+      h('div', { class: 'top-bar' }, h('a', { class: 'back-link', href: backTo.href }, '‹ Back to the tours'), h('span', { class: 'top-side' }, helpButton('rollcall'))),
       pageHead({
-        back: backTo,
         eyebrow: `Roll call · started by ${rollCall.startedBy.name}`,
         title: activity.name,
-        subtitle: [...where, `${state.expected.length} still expected`].filter(Boolean).join(' · '),
+        subtitle: where.filter(Boolean).join(' · '),
       }),
+      // The one number that matters, large: how many are on board, out of how many.
+      h('div', { class: 'rc-count', role: 'status' },
+        h('span', { class: 'rc-count-big' }, String(state.checkedIn.length)), h('span', { class: 'rc-count-of' }, `of ${total} on board`),
+        h('span', { class: 'rc-count-left' }, state.expected.length === 0 ? 'Everybody is here' : `${state.expected.length} still to come`)),
       runnerNotice,
-      search,
       h('div', { class: 'vehicles' }, vehicleButtons, addVehicle),
       // Scan the guests' boarding passes (v0.146.0): the camera opens, each scan checks a whole family into the chosen vehicle.
-      readOnly ? null : h('button', { class: 'btn rc-scan', type: 'button', onclick: () => openScanner(ctx, trip.id, activity, { vehicleId: selected.id, onVehicle: (id) => chosenVehicle.set(key, id) }) }, '📷 Scan boarding passes'),
-      readOnly ? null : undoButton(ctx, trip, { wide: true, scope: { rollCallId: rollCall.id } }),
+      readOnly ? null : h('button', { class: 'btn btn--plain rc-scan', type: 'button', onclick: () => openScanner(ctx, trip.id, activity, { vehicleId: selected.id, onVehicle: (id) => chosenVehicle.set(key, id) }) }, icon('camera'), 'Scan boarding passes'),
+      pending.length > 8 ? search : null,
+      readOnly || pending.length === 0 ? null : h('p', { class: 'rc-hint' }, `Tap a name when the guest boards: they go into ${fullLabel(selected)}.`),
       list,
-      readOnly ? null : h('p', { class: 'rc-hint' }, 'Long-press a name: At leisure or another tour'),
-      readOnly ? null : h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startAddGuest(ctx, trip, slot, activity) }, '+ Add guest'),
-      readOnly ? null : h('button', { class: 'btn', type: 'button', onclick: endRollCall }, 'End roll call')),
+      readOnly ? null : h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startAddGuest(ctx, trip, slot, activity) }, '+ Add a guest to this tour'),
+      // Always in reach, at the bottom: take back the last tap, or finish.
+      readOnly ? null : h('div', { class: 'rc-bar' },
+        undoButton(ctx, trip, { scope: { rollCallId: rollCall.id } }),
+        h('button', { class: 'btn', type: 'button', onclick: endRollCall }, 'End roll call'))),
   };
 }
 

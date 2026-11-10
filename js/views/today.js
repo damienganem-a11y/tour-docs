@@ -7,6 +7,8 @@ import { programOf } from '../program.js';
 import { tripWarnings, countIn } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { jobsOf, jobTodo, TEAM_JOBS } from '../teamJobs.js';
+import { rollCallActions } from './destination.js';
+import { sendSheet } from './sendSheet.js';
 
 // The next tour that has not started yet (not cancelled, with a start time), across the whole trip. Null when there is none.
 export function nextTour(trip, now = new Date()) {
@@ -55,15 +57,23 @@ export function todayPage(ctx, trip) {
     jobRows.length ? h('div', { class: 'menu' }, jobRows) : h('p', { class: 'muted' }, 'All done for today and tomorrow.'),
   ] : [];
 
-  // 2. Next up.
+  // 2. Next up: the one big thing on this page (v0.151.0). The tour, when and where, how many guests, and ONE main button:
+  //    the roll call when the tour leaves within the next 12 hours (or has one running), otherwise "Open this tour".
   const tour = nextTour(trip);
   let next = h('p', { class: 'muted' }, 'No tour with a start time is coming up.');
   if (tour) {
     const slot = trip.slots.find((s) => s.id === tour.slotId);
     const destination = trip.destinations.find((d) => d.id === slot.destinationId);
     const count = countIn(trip, tour);
-    next = h('div', { class: 'menu' }, row(`${base}/use/destination/${destination.id}/${slot.id}`, tour.name,
-      `${formatWeekdayDate(slot.date)} · ${formatTime(tour.startsAt, destination.timeZone)} · ${destination.name}${tour.meeting ? ` · ${tour.meeting}` : ''} · ${count}${tour.capacity ? ` / ${tour.capacity}` : ''} booked`));
+    const href = `${base}/use/destination/${destination.id}/${slot.id}`;
+    const soon = Date.parse(tour.startsAt) - Date.now() < 12 * 3600000;
+    const rollCall = soon && role !== 'viewer' ? rollCallActions(ctx, trip, tour).find((a) => a.primary) : null;
+    next = h('div', { class: 'next-card' },
+      h('div', { class: 'next-when' }, h('span', { class: 'next-time' }, formatTime(tour.startsAt, destination.timeZone)), h('span', { class: 'next-day' }, whenWord(slot.date, destination.timeZone))),
+      h('div', { class: 'next-name' }, tour.name),
+      h('div', { class: 'next-detail' }, [destination.name, tour.meeting, `${count}${tour.capacity ? ` of ${tour.capacity}` : ''} guest${count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')),
+      rollCall ? h('button', { class: 'btn', type: 'button', onclick: rollCall.run }, rollCall.label) : null,
+      h('a', { class: `btn${rollCall ? ' btn--plain' : ''}`, href }, rollCall ? 'See who is on this tour' : 'Open this tour'));
   }
 
   // 3. Today's daily program (what the guests are given), when there is one.
@@ -72,20 +82,37 @@ export function todayPage(ctx, trip) {
     ...day.items.map((i) => h('div', { class: 'menu-row' }, h('span', { class: 'menu-text' },
       h('span', { class: 'menu-label' }, `${i.startsAt ? `${formatTime(i.startsAt, destination.timeZone)} · ` : ''}${i.title}`), i.place ? h('span', { class: 'menu-hint' }, i.place) : null)))));
 
+  const first = (ctx.owner?.name ?? '').trim().split(/\s+/)[0];
   return h('div', {},
-    pageHead({ eyebrow: 'Today', title: trip.name, subtitle: `${tripDates(trip.start, trip.days)} · ${trip.guests.length} guests` }),
-    ...jobsBlock,
-    h('h3', { class: 'section-title' }, 'Needs attention'),
-    attention.length > 0 ? h('div', { class: 'menu' }, attention) : h('p', { class: 'muted' }, 'Nothing needs your attention.'),
-    h('h3', { class: 'section-title' }, 'Next up'),
+    pageHead({ eyebrow: trip.name, title: `${greeting()}${first ? `, ${first}` : ''}` }),
+    h('h3', { class: 'section-title' }, 'Next tour'),
     next,
+    ...jobsBlock,
+    // "Needs attention" only when something does: a calm page says so in one line.
+    attention.length > 0 ? h('h3', { class: 'section-title section-title--alert' }, `Needs attention (${attention.length})`) : null,
+    attention.length > 0 ? h('div', { class: 'menu' }, attention) : h('p', { class: 'all-clear' }, 'Nothing else needs your attention.'),
     program.length > 0 ? h('h3', { class: 'section-title' }, 'Program of the day') : null,
     ...program,
-    h('h3', { class: 'section-title' }, 'Quick links'),
-    h('div', { class: 'menu' },
-      row(`${base}/settings/messages`, 'Messages', 'The team, the guests, reminders'),
-      row(`${base}/use/guest`, 'Find a guest', 'Where is everybody, one guest at a time'),
-      role === 'viewer' ? null : row(`${base}/settings/exports`, 'Documents', 'Lists, cards and sheets')));
+    role === 'viewer' ? null : h('h3', { class: 'section-title' }, 'Often used'),
+    role === 'viewer' ? null : h('div', { class: 'menu' },
+      h('button', { class: 'menu-row', type: 'button', onclick: () => sendSheet(ctx, trip) },
+        h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, 'Send a list or a sheet'), h('span', { class: 'menu-hint' }, 'Guest lists, reservation sheets')),
+        h('span', { class: 'menu-side' }, h('span', { class: 'row-chev' }, '›'))),
+      row(`${base}/settings/exports`, 'Documents', 'Everything already made: lists, cards and sheets')),
+    h('p', { class: 'muted footer-note' }, `${tripDates(trip.start, trip.days)} · ${trip.guests.length} guests`));
+}
+
+// "Good morning" by the phone's own clock.
+function greeting(now = new Date()) {
+  const hour = now.getHours();
+  return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+// "Today", "Tomorrow", or the weekday and date, judged in the destination's own time zone.
+function whenWord(date, timeZone) {
+  const today = localDateNow(timeZone);
+  const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  return date === today ? 'Today' : date === tomorrow ? 'Tomorrow' : formatWeekdayDate(date);
 }
 
 // This person's job items for a trip (Today's "Your jobs", the red dot on the Today tab, the number on the app icon).

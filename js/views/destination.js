@@ -8,7 +8,7 @@
 
 import { h } from '../dom.js';
 import { formatTime, formatWeekdayDate } from '../time.js';
-import { alphabetical, displayNames, whoIsWhere, capacityInfo, countIn, slotLabel, colorOf, tourSplitState } from '../rules.js';
+import { alphabetical, displayNames, whoIsWhere, capacityInfo, capacityWords, countIn, slotLabel, colorOf, tourSplitState } from '../rules.js';
 import { pageHead, accentTitle, destinationMenu, destinationSub } from './chrome.js';
 import { startMove, startAddGuest, startCancelTour, showForcedInfo, proposePromotion } from './move.js';
 import { undoButton } from './undo.js';
@@ -21,6 +21,7 @@ import { openColourChange } from './colourQuick.js';
 import { exportGroupsOverviewPdf } from '../export.js';
 import { staleWarning, staleNote } from './staleColours.js';
 import { contactLine } from './contactLine.js';
+import { icon } from './icons.js';
 import { contactsForTour } from '../contacts.js';
 
 
@@ -28,9 +29,11 @@ import { contactsForTour } from '../contacts.js';
 
 // destinationId and slotId come from the address; if they are missing or wrong we start at the first ones.
 export function destinationPage(ctx, trip, destinationId, slotId) {
-  const destination = trip.destinations.find((d) => d.id === destinationId) ?? trip.destinations[0];
+  // With no place in the address, the page opens where the trip IS: the half-day of today, or the next one to come (v0.151.0), not always on day 1.
+  const now = currentSlot(trip);
+  const destination = trip.destinations.find((d) => d.id === destinationId) ?? trip.destinations.find((d) => d.id === now?.destinationId) ?? trip.destinations[0];
   const slots = trip.slots.filter((s) => s.destinationId === destination.id);
-  const slot = slots.find((s) => s.id === slotId) ?? slots[0];
+  const slot = slots.find((s) => s.id === slotId) ?? slots.find((s) => s.id === now?.id) ?? slots[0];
   const base = `#/trip/${trip.id}/use/destination`;
 
   // Strip 1: destinations. Strip 2: the half-days of the chosen destination.
@@ -65,7 +68,8 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
       key: `${slot.id}|${activity.id}`, title: activity.name, detail, guests, names,
       // A guest put here by force (a move into a full tour) is shown in orange; tapping shows who approved it.
       forcedOf: (g) => { const entry = forced.get(`${g.id}|${slot.id}`); return entry?.to.activityId === activity.id ? entry : undefined; },
-      countText: activity.cancelled ? 'Cancelled' : count.text, bad: activity.cancelled || count.tone === 'bad',
+      // A tour with no limit says "36 guests" (not "36 / ∞"); a tour with a limit keeps "36 / 40", "Full" and "Over by".
+      countText: activity.cancelled ? 'Cancelled' : capacityWords(guests.length, activity.capacity).text, bad: activity.cancelled || count.tone === 'bad',
       cancelled: activity.cancelled,
       actions: activity.cancelled ? [] : [
         ...rollCallActions(ctx, trip, activity),
@@ -101,22 +105,13 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
   return h('div', {},
     destinationStrip,
     slotStrip,
-    pageHead({
-      eyebrow: 'Touring',
-      title: accentTitle(destination.name),
-      // The destination is the title right above and the day/half is already highlighted in the
-      // strip above that, so the only thing worth repeating here is the calendar date — small, and
-      // tucked under the title (tightSubtitle) rather than spanning full width below the row, so it
-      // never sits lower than the compact Undo button beside it.
-      subtitle: h('span', { class: 'subtitle-note' }, formatWeekdayDate(slot.date)),
-      tightSubtitle: true,
-      action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
-    }),
+    // The place is named in the chooser above and the half-day is highlighted in the strip, so only the date is said here, with Undo beside it.
+    pageHead({ eyebrow: formatWeekdayDate(slot.date), action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }) }),
     h('div', { class: 'card-grid' }, cards, leisureCard),
     attention.length > 0 ? attentionCard(ctx, trip, slot, attention, names) : null,
     // The guests' map of this stop, one tap from Tours (owner's report, 5 Nov 2026: it could not be found).
     ctx.roleFor(trip.id) === 'viewer' ? null : h('a', { class: 'map-link', href: `#/trip/${trip.id}/settings/explore/${destination.id}` },
-      h('span', { 'aria-hidden': 'true' }, '🗺'),
+      h('span', { class: 'map-link-icon' }, icon('map')),
       h('span', {}, h('b', {}, `Guests' map of ${destination.name}`),
         h('small', {}, destination.explore?.dock || destination.explore?.places?.length ? `${destination.explore.places?.length ?? 0} place${destination.explore.places?.length === 1 ? '' : 's'}${destination.explore.streets ? ' · works offline' : ' · offline map not prepared'}` : 'Not set up yet: guests see no map')),
       h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'))
@@ -127,7 +122,7 @@ export function destinationPage(ctx, trip, destinationId, slotId) {
 // look at it, or re-open it (the guests End roll call moved to At leisure come back on the tour).
 // An archived trip has no roll call: a roll call already started can only be looked at (read-only), and
 // there is no way to start, continue or re-open one.
-function rollCallActions(ctx, trip, activity) {
+export function rollCallActions(ctx, trip, activity) {
   const open = () => ctx.go(`#/trip/${trip.id}/rollcall/${activity.id}`);
   const rollCall = findRollCall(trip, activity.id);
   if (trip.archivedAt) return rollCall ? [{ label: 'View roll call', run: open }] : [];
@@ -172,6 +167,9 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
 
   // What opens when the card is tapped (owner's request, 3 Oct 2026: the card itself only says name, time, place and how full it is):
   // everybody on the tour, the waiting list, and the actions (add a guest, roll call, cancel).
+  const main = actions.filter((a) => a.primary);
+  const risky = actions.filter((a) => a.label === 'Cancel tour');
+  const others = actions.filter((a) => !a.primary && a.label !== 'Cancel tour');
   const openDetails = () => {
     const count = h('div', { class: `count${bad ? ' count--bad' : ''}` }, countText);
     openSheet({
@@ -179,9 +177,13 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
       body: [
         // Guests who changed tour but still have a colour here: first thing seen when the tour is opened (owner's report of 5 Nov 2026).
         split && !cancelled ? staleWarning(ctx, trip, split) : null,
+        // The main action first, full width (v0.151.0): the roll call is what a tour is opened for on the day.
+        ...main.map((a) => h('button', { class: 'btn', type: 'button', onclick: a.run }, a.label)),
         sorted.length === 0
           ? (cancelled ? null : h('p', { class: 'muted nobody' }, 'Nobody'))
-          : h('div', { class: 'chips' }, sorted.map((g) => {
+          : h('div', {},
+              trip.archivedAt ? null : h('p', { class: 'sheet-hint' }, 'Tap a name to move that guest.'),
+              h('div', { class: 'chips chips--list' }, sorted.map((g) => {
               const entry = forcedOf?.(g);
               return h('button', {
                 class: `chip${entry ? ' chip--forced' : ''}`, type: 'button',
@@ -189,12 +191,16 @@ function guestCard(ctx, trip, slot, { key, title, detail, countText, bad = false
                 'aria-label': entry ? `${names.get(g.id)}, forced into this tour. Tap to see who approved it.` : null,
                 onclick: () => (entry ? showForcedInfo(ctx, trip, g, slot, entry) : startMove(ctx, trip, g, slot)),
               }, colourOfGuest?.(g) ? h('span', { class: 'swatch', style: `background:${colourOfGuest(g).hex};margin-right:6px`, role: 'img', 'aria-label': colourOfGuest(g).name }) : null, names.get(g.id));
-            })),
+            }))),
         waitlist && waitlist.waiting.length > 0 ? waitlistSection(ctx, trip, slot, waitlist, names) : null,
         // The local team of this tour (guides, drivers): call, text, WhatsApp, reconfirm (Settings > Local team).
         team?.length ? h('div', { class: 'team-tour' }, h('div', { class: 'waitlist-heading' }, `Local team (${team.length})`), ...team.map((item) => contactLine(ctx, trip, item, { canConfirm: ctx.roleFor(trip.id) !== 'viewer' }))) : null,
-        actions.length > 0
-          ? h('div', { class: 'card-actions' }, actions.map((a) => h('button', { class: `btn btn--small${a.primary ? '' : ' btn--plain'}`, type: 'button', onclick: a.run }, a.label)))
+        others.length > 0
+          ? h('div', { class: 'card-actions' }, others.map((a) => h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: a.run }, a.label)))
+          : null,
+        // What cannot be taken lightly sits apart, folded, never next to "Close".
+        risky.length > 0
+          ? h('details', { class: 'fold' }, h('summary', {}, 'More actions'), risky.map((a) => h('button', { class: 'btn btn--small btn--danger', type: 'button', onclick: a.run }, a.label)))
           : null,
       ],
     });
@@ -273,4 +279,23 @@ function attentionCard(ctx, trip, slot, attention, names) {
         class: 'line line--button', type: 'button', disabled: Boolean(trip.archivedAt),
         onclick: () => startMove(ctx, trip, guest, slot),
       }, h('span', {}, names.get(guest.id)), h('span', {}, reason))));
+}
+
+// The half-day the trip is in right now: today's (each place judged in its own time zone), or else the next one to come. Null before day 1 is
+// never returned: a trip not started yet gives its first half-day, a finished one its last.
+export function currentSlot(trip, now = new Date()) {
+  const dateIn = (slot) => {
+    const zone = trip.destinations.find((d) => d.id === slot.destinationId)?.timeZone ?? 'UTC';
+    return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  };
+  const dated = trip.slots.filter((slot) => slot.date);
+  // In the afternoon, the afternoon half-day of today rather than the morning one.
+  const today = dated.filter((slot) => slot.date === dateIn(slot));
+  if (today.length > 0) {
+    const zone = trip.destinations.find((d) => d.id === today[0].destinationId)?.timeZone ?? 'UTC';
+    const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', hour12: false }).format(now));
+    const later = today.filter((slot) => !/morning/i.test(slot.half ?? ''));
+    return hour >= 13 && later.length > 0 ? later[0] : today[0];
+  }
+  return dated.find((slot) => slot.date > dateIn(slot)) ?? dated[dated.length - 1] ?? trip.slots[0] ?? null;
 }

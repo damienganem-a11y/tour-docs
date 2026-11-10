@@ -4,6 +4,7 @@ import { h } from '../dom.js';
 import { openSheet, closeSheet } from '../ui.js';
 import { openOnlineSignIn } from './onlineSignIn.js';
 import { putIn } from '../put.js';
+import { icon } from './icons.js';
 
 // The top of a screen: an optional "‹ back" link, a small label, the big title, a line of detail.
 // action: an optional button shown on the right of the title, taking all the room that is left
@@ -29,7 +30,7 @@ export function destinationMenu(items, { eyebrow = 'Destination', title = 'Where
         h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, i.label), i.sub ? h('span', { class: 'menu-hint' }, i.sub) : null),
         h('span', { class: 'menu-side' }, i.active ? h('span', { class: 'here-tick' }, '✓') : null)))),
     }),
-  }, h('span', { class: 'dest-menu-pin' }, '⌖'), h('span', { class: 'dest-menu-text' }, h('span', { class: 'dest-menu-name' }, here?.label ?? ''), here?.sub ? h('span', { class: 'dest-menu-sub' }, here.sub) : null), h('span', { class: 'dest-menu-chev' }, '⌄'));
+  }, h('span', { class: 'dest-menu-pin' }, icon('pin')), h('span', { class: 'dest-menu-text' }, h('span', { class: 'dest-menu-name' }, here?.label ?? ''), here?.sub ? h('span', { class: 'dest-menu-sub' }, here.sub) : null), h('span', { class: 'dest-menu-chev' }, icon('down')));
 }
 
 // "Day 3–4 · Peru": what a destination line in the chooser says under its name.
@@ -75,22 +76,23 @@ export function pageHead({ back, eyebrow, title, subtitle, action, tightSubtitle
 // has the back link, the Use/Settings switch and the trip code fighting for room on one line, and
 // which light is lit is already unambiguous on its own there.
 const SYNC_STATES = [
-  { key: 'synced', label: 'Online' },
-  { key: 'pending', label: 'Loading' },
-  { key: 'offline', label: 'Offline' },
+  { key: 'synced', label: 'Online', word: 'Saved' },
+  { key: 'pending', label: 'Loading', word: 'Saving…' },
+  { key: 'offline', label: 'Offline', word: 'Offline' },
 ];
-// Online but with no live online login: nothing is syncing, so it must not look like "Online". It lights
+// Online but with no live online login: nothing is syncing, so it must not look like "Online". It shows
 // the red dot, with its own word (see app.js's syncStatus).
-const NO_LOGIN = { key: 'nologin', label: 'Not signed in' };
-export function syncDot(ctx, { compact = false } = {}) {
+const NO_LOGIN = { key: 'nologin', label: 'Not signed in', word: 'Not signed in' };
+// v0.151.0: ONE dot and ONE word ("Saved", "Saving…", "Offline") instead of three lights nobody could read (owner's request of 10 Nov 2026).
+// `compact` is kept for the callers but no longer hides the word: the word is the point.
+export function syncDot(ctx, { compact = false } = {}) { // eslint-disable-line no-unused-vars
   const status = ctx.syncStatus;
-  const label = [...SYNC_STATES, NO_LOGIN].find((s) => s.key === status).label;
+  const state = [...SYNC_STATES, NO_LOGIN].find((s) => s.key === status);
   const lit = status === 'nologin' ? 'offline' : status;
-  // A button: tapping the light opens "Sync details" (what is really going on, in plain words).
-  return h('button', { class: 'sync-lights', type: 'button', 'aria-label': `${label}. Tap for sync details`, title: label, onclick: () => syncDetailsSheet(ctx) },
-    h('span', { class: 'sync-lights-dots' },
-      SYNC_STATES.map((s) => h('span', { class: `sync-light sync-light--${s.key}${s.key === lit ? ' is-on' : ''}` }))),
-    compact ? null : h('span', { class: `sync-lights-label sync-lights-label--${status}` }, label));
+  // A button: tapping it opens "Sync details" (what is really going on, in plain words).
+  return h('button', { class: `sync-lights sync-pill sync-pill--${lit}`, type: 'button', 'aria-label': `${state.label}. Tap for sync details`, title: state.label, onclick: () => syncDetailsSheet(ctx) },
+    h('span', { class: `sync-light sync-light--${lit} is-on` }),
+    h('span', { class: `sync-lights-label sync-lights-label--${status}` }, state.word));
 }
 
 // Sync only works with a live online login in THIS browser (see sync.js's diagnoseSync), and when it

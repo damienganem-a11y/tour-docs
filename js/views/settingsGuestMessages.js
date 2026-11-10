@@ -24,12 +24,13 @@ const HOLD_MS = 550;
 
 let searchText = ''; // kept while the list is redrawn
 
-export function guestMessagesSettingsPage(ctx, trip) {
+// options.embedded: inside the Messages tab (views/messages.js), which has its own title, so this page shows none.
+export function guestMessagesSettingsPage(ctx, trip, { embedded = false } = {}) {
   const label = teamLabel(trip);
   const names = displayNames(trip.guests);
   const fullName = (guestId) => { const g = trip.guests.find((x) => x.id === guestId); return g ? `${g.first} ${g.last ?? ''}`.trim() : (names.get(guestId) ?? 'A guest'); };
   const nameMap = new Map(trip.guests.map((g) => [g.id, `${g.first} ${g.last ?? ''}`.trim()]));
-  const head = pageHead({ back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Messages', title: 'Messages', subtitle: `Every conversation between guests and the ${label}.` });
+  const head = embedded ? null : pageHead({ back: { href: `#/trip/${trip.id}/settings`, label: 'Settings' }, eyebrow: 'Messages', title: 'Messages', subtitle: `Every conversation between guests and the ${label}.` });
   if (ctx.roleFor(trip.id) === 'viewer') return h('div', {}, head, notice('The Expert role does not see the guests\' messages.'));
 
   const rows = ctx.guestMessagesFor(trip.id);
@@ -176,11 +177,13 @@ export function guestMessagesSettingsPage(ctx, trip) {
     needing ? h('p', { class: 'muted' }, `${plural(needing, 'conversation')} to look at.`) : null,
     list.length > 5 ? search : null,
     listBox,
-    remindCard,
-    ctx.roleFor(trip.id) === 'owner' ? h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: quickRepliesSheet }, `Quick replies (${quickRepliesOf(trip).length})`) : null,
     list.length ? h('div', {}, h('h2', { class: 'section-title' }, 'The record'),
       h('p', { class: 'muted' }, 'Every message is kept exactly as it was sent, with its time, who wrote it and when it was read. Nothing can be edited or deleted. Make a copy to keep on file:'),
       h('div', { class: 'card-actions' },
         h('button', { class: 'btn btn--small', type: 'button', onclick: record('pdf') }, 'Record as PDF'),
-        h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: record('csv') }, 'Record as spreadsheet'))) : null);
+        h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: record('csv') }, 'Record as spreadsheet'))) : null,
+    // The owner's settings for messages, at the very bottom and folded: they are set once, not used every day (v0.151.0).
+    ctx.roleFor(trip.id) === 'owner' ? h('details', { class: 'fold' }, h('summary', {}, 'Message settings'),
+      remindCard,
+      h('button', { class: 'btn btn--small btn--plain', type: 'button', onclick: quickRepliesSheet }, `Quick replies (${quickRepliesOf(trip).length})`)) : null);
 }

@@ -304,6 +304,12 @@ export function capacityInfo(count, capacity) {
   return { text: `${count} / ${capacity}`, tone: null };
 }
 
+// The same, for the screens (v0.151.0): a tour with no limit says "36 guests" instead of "36 / ∞", which nobody should have to decode.
+// (capacityInfo keeps its exact wording: the exports and the journal rely on it.)
+export function capacityWords(count, capacity) {
+  return capacity === null ? { text: `${count} guest${count === 1 ? '' : 's'}`, tone: null } : capacityInfo(count, capacity);
+}
+
 // ---------- Dining (Phase 3 step 2a/2b) ----------
 
 // How many guests are currently on a dinner table, right now — derived the same way countIn works

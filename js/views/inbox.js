@@ -24,10 +24,15 @@ export function messagesButton(ctx, trip) {
     icon('envelope'), waiting > 0 ? h('span', { class: 'bell-badge' }, String(waiting > 9 ? '9+' : waiting)) : null);
 }
 
+// One row per thing waiting (used by the bell's sheet and by the Messages tab).
+export function inboxRows(ctx, trip, items = ctx.inboxFor(trip.id)) {
+  return items.map((item) => h('a', { class: `inbox-row${item.unread ? ' is-unread' : ''}`, href: item.href, onclick: (event) => { ctx.markInboxSeen(trip.id, [item.id]); closeSheet(); if (item.kind === 'conflict') { event.preventDefault(); conflictSheet(ctx, trip); } } },
+    h('div', { class: 'inbox-title' }, item.title), h('div', { class: 'inbox-detail' }, item.detail), item.at ? h('div', { class: 'muted' }, when(item.at)) : null));
+}
+
 function inboxSheet(ctx, trip) {
   const items = ctx.inboxFor(trip.id);
-  const rows = items.map((item) => h('a', { class: `inbox-row${item.unread ? ' is-unread' : ''}`, href: item.href, onclick: (event) => { ctx.markInboxSeen(trip.id, [item.id]); closeSheet(); if (item.kind === 'conflict') { event.preventDefault(); conflictSheet(ctx, trip); } } },
-    h('div', { class: 'inbox-title' }, item.title), h('div', { class: 'inbox-detail' }, item.detail), item.at ? h('div', { class: 'muted' }, when(item.at)) : null));
+  const rows = inboxRows(ctx, trip, items);
   openSheet({
     eyebrow: 'Inbox', title: items.length === 0 ? 'Nothing waiting' : `${inboxCount(items)} waiting`,
     body: [

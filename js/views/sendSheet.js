@@ -13,7 +13,7 @@ export function sendButton(ctx, trip) {
   return h('button', { class: 'send-btn', type: 'button', 'aria-label': 'Send a list or sheet', title: 'Send', onclick: () => sendSheet(ctx, trip) }, icon('share'));
 }
 
-function sendSheet(ctx, trip) {
+export function sendSheet(ctx, trip) {
   const hasRestaurants = trip.restaurants.length > 0;
   openSheet({
     eyebrow: 'Send', title: 'What do you want to send?',

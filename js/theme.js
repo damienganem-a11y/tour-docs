@@ -17,6 +17,7 @@ export function applyTheme() {
   root.style.background = dark ? '#0d1110' : '#f7f8f6'; // index.html paints the page before the stylesheet arrives: keep it in step
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0d1110' : '#f7f8f6');
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme === 'auto' ? 'light dark' : theme);
+  applyTextSize(); // the size of the text is put on the page at the same moments as the look
 }
 
 export function setTheme(theme) {
@@ -24,3 +25,22 @@ export function setTheme(theme) {
   applyTheme();
 }
 
+
+// ---------- Size of the text (v0.151.0, owner's request of 10 Nov 2026: colleagues who read better with larger letters) ----------
+// A choice of this phone only. The whole app is enlarged together (letters, buttons, spacing), so nothing overlaps: see "data-text" in staff-galerie.css.
+const TEXT_KEY = 'td-text';
+export const TEXT_SIZES = [['normal', 'Normal'], ['large', 'Large'], ['xlarge', 'Very large']];
+
+export function getTextSize() {
+  try { const t = localStorage.getItem(TEXT_KEY); return t === 'large' || t === 'xlarge' ? t : 'normal'; } catch { return 'normal'; }
+}
+
+export function applyTextSize() {
+  const size = getTextSize();
+  if (size === 'normal') document.documentElement.removeAttribute('data-text'); else document.documentElement.setAttribute('data-text', size);
+}
+
+export function setTextSize(size) {
+  try { if (size === 'normal') localStorage.removeItem(TEXT_KEY); else localStorage.setItem(TEXT_KEY, size); } catch { /* the choice just is not kept */ }
+  applyTextSize();
+}

@@ -3,7 +3,7 @@
 import { h } from '../dom.js';
 import { pageHead } from './chrome.js';
 import { notificationsCard } from './settingsRequests.js';
-import { THEMES, getTheme, setTheme } from '../theme.js';
+import { THEMES, getTheme, setTheme, TEXT_SIZES, getTextSize, setTextSize } from '../theme.js';
 import { putIn } from '../put.js';
 
 const back = (trip) => ({ href: `#/trip/${trip.id}/settings/section/phone`, label: 'This phone' });
@@ -21,7 +21,19 @@ export function appearancePage(ctx, trip) {
     onclick: () => { setTheme(id); draw(); },
   }, label)));
   draw();
+  // The size of the text: the sample line below changes at once, so the choice is made by eye.
+  const sizes = h('div', { class: 'switch', role: 'group', 'aria-label': 'Size of the text' });
+  const drawSizes = () => putIn(sizes, ...TEXT_SIZES.map(([id, label]) => h('button', {
+    class: `switch-item${getTextSize() === id ? ' is-active' : ''}`, type: 'button', 'aria-pressed': String(getTextSize() === id),
+    onclick: () => { setTextSize(id); drawSizes(); },
+  }, label)));
+  drawSizes();
   return h('div', {},
-    pageHead({ back: back(trip), eyebrow: 'This phone', title: 'Appearance', subtitle: 'Light, dark, or follow the phone. Only this phone changes.' }),
-    looks);
+    pageHead({ back: back(trip), eyebrow: 'This phone', title: 'Appearance', subtitle: 'Only this phone changes.' }),
+    h('h3', { class: 'section-title' }, 'Size of the text'),
+    sizes,
+    h('p', { class: 'muted' }, 'Everything grows together: the words, the buttons and the lists.'),
+    h('h3', { class: 'section-title' }, 'Light or dark'),
+    looks,
+    h('p', { class: 'muted' }, 'Automatic follows the phone.'));
 }

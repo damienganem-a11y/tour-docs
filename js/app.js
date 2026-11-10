@@ -840,8 +840,12 @@ function render({ keepScroll = false } = {}) {
   const scrollY = window.scrollY; // remembered so refresh() can put the page back where it was
   const params = (location.hash.match(route.pattern) || []).slice(1).map((p) => p && decodeURIComponent(p));
   putIn(app, ...[previewBar(ctx), route.view(ctx, ...params).node].filter(Boolean));
+  // A page that was just opened arrives with a short fade (v0.151.0); a page that is only redrawn after a change does not move at all.
+  if (location.hash !== lastShownAddress) app.querySelector('.screen')?.classList.add('screen--arrive');
+  lastShownAddress = location.hash;
   window.scrollTo(0, keepScroll ? scrollY : 0);
 }
+let lastShownAddress = null;
 
 // The colour of the company, used where the neutral look uses yellow (buttons, the active tab, tags). The text on top of it is black or white,
 // whichever reads better, so any company colour stays readable. A trip with no company name wears Tour Docs orange.

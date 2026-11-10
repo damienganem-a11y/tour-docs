@@ -135,3 +135,176 @@ input[type=checkbox] { accent-color: var(--g-ink); }
 /* ---------- The boot splash ---------- */
 .boot-name { font: 300 34px var(--g-title); color: var(--g-ink); letter-spacing: .02em; }
 .boot-bar-fill { background: var(--g-brass); }
+
+
+/* =====================================================================================================================================
+   v0.151.0: simpler for colleagues who are not at ease with phones (owner's request of 10 Nov 2026, after a page-by-page review).
+   Larger letters and darker greys, words next to every picture, nothing to guess. Still the Galerie look.
+   ===================================================================================================================================== */
+
+/* ---------- 1. Reading: nothing small, nothing pale ---------- */
+:root:not([data-theme="light"]), :root[data-theme="light"] { --g-muted: #47514d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --g-muted: #aab4af; } }
+:root[data-theme="dark"] { --g-muted: #aab4af; }
+body { font-size: 17px; line-height: 1.4; }
+.muted, .subtitle, .menu-hint, .tile-blurb, .dest-menu-sub, .inbox-detail { font-size: 15px; line-height: 1.35; color: var(--g-muted); }
+.eyebrow { font-size: 12.5px; letter-spacing: .12em; }
+.section-title { font-size: 13px; letter-spacing: .1em; margin: 26px 0 10px; }
+.section-title--alert { color: var(--sand-alert); }
+.back-link { font-size: 15px; letter-spacing: 0; text-transform: none; font-weight: 600; min-height: 48px; }
+.menu-label { font-size: 18px; }
+.menu-row { min-height: 60px; }
+.title, h1.title { font-size: 31px; }
+.footer-note { font-size: 14px; }
+.count { font-size: 14.5px; padding: 6px 12px; white-space: nowrap; }
+.icon svg { stroke-width: 1.7; }
+
+/* The size of the text, chosen in Menu > Settings > This phone > Text size and look: everything grows together. */
+:root[data-text="large"] { --tz: 1.12; }
+:root[data-text="xlarge"] { --tz: 1.25; }
+/* What grows is the CONTENT of each page, sheet and bar, never the bars themselves: a bar pinned to the screen's edge keeps the screen's width. */
+:root[data-text] :is(.screen > :not(.bottom-tabs):not(.rc-bar), .sheet > *, .fullscreen-inner, .bottom-tab > *, .rc-bar > *) { zoom: var(--tz); }
+:root[data-text] .toast { font-size: 19px; }
+
+/* ---------- 2. The top bar: the trip, then words ---------- */
+.top-bar { gap: 8px; margin-bottom: 14px; min-height: 48px; }
+.top-bar .top-trip { padding-left: 0; font: 600 13px Inter, sans-serif; letter-spacing: .12em; color: var(--g-muted); }
+.top-side { gap: 6px; }
+.top-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--g-line); border-radius: 12px; background: var(--g-surface); color: var(--g-ink); font: 600 15px Inter, sans-serif; cursor: pointer; }
+.top-btn .icon svg { width: 20px; height: 20px; display: block; }
+.top-btn:active { background: var(--g-mist); }
+.sync-pill { gap: 7px; min-height: 44px; padding: 0 6px; }
+.sync-pill .sync-light { width: 9px; height: 9px; }
+.sync-pill .sync-lights-label { font: 600 14px Inter, sans-serif; text-transform: none; letter-spacing: 0; color: var(--g-muted); }
+.sync-pill--offline .sync-lights-label { color: var(--sand-alert); }
+.sync-light--offline { background: var(--sand-alert); }
+@media (max-width: 370px) { .top-btn span:not(.icon) { display: none; } } /* a very narrow phone keeps the pictures only */
+
+/* ---------- 3. The bottom tabs: a picture and a word, the current one unmistakable ---------- */
+.bottom-tabs { padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); }
+.bottom-tab { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 58px; border-radius: 14px; color: var(--g-muted); }
+.bottom-tab-icon { position: relative; display: inline-flex; }
+.bottom-tab-icon .icon svg { width: 25px; height: 25px; display: block; }
+.bottom-tab-label { font: 600 13px Inter, sans-serif; letter-spacing: .01em; }
+.bottom-tab.is-active { background: var(--g-ink); color: var(--g-on-ink); }
+.bottom-tab.is-active::after { display: none; }
+.bottom-tabs .tab-dot { position: absolute; top: -2px; right: -5px; box-shadow: 0 0 0 2px var(--g-paper); }
+.tab-count { position: absolute; top: -6px; right: -12px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--sand-alert); color: #fff; font: 700 12px/20px Inter, sans-serif; text-align: center; box-shadow: 0 0 0 2px var(--g-paper); }
+.screen { padding-bottom: calc(env(safe-area-inset-bottom) + 110px); }
+
+/* ---------- 4. Today: the next tour, large ---------- */
+.next-card { display: flex; flex-direction: column; gap: 6px; padding: 20px 18px 18px; border: 1px solid var(--g-line); border-radius: var(--g-radius); background: var(--g-surface); }
+.next-when { display: flex; align-items: baseline; gap: 12px; }
+.next-time { font: 300 46px/1 var(--g-title); letter-spacing: .01em; }
+.next-day { font: 600 13px Inter, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--g-brass); }
+.next-name { font: 500 22px/1.2 var(--g-title); margin-top: 4px; }
+.next-detail { font-size: 16px; color: var(--g-muted); margin-bottom: 10px; }
+.next-card .btn { margin-top: 4px; }
+.all-clear { margin: 22px 0 0; font-size: 16px; color: var(--g-muted); }
+.menu-row--late .menu-label { color: var(--sand-alert); }
+
+/* ---------- 5. Tours: nothing cut off, the names as a list ---------- */
+.strip { flex-wrap: wrap; overflow: visible; margin: 0 0 12px; padding: 0; gap: 8px; }
+.strip-item, .strip--small .strip-item, .strip--small button.strip-item { min-height: 48px; padding: 0 16px; font-size: 16px; }
+.dest-menu { min-height: 64px; margin-bottom: 12px; }
+.dest-menu-name { font-size: 20px; }
+.dest-menu-pin .icon svg, .dest-menu-chev .icon svg { width: 22px; height: 22px; display: block; }
+.dest-menu-pin { border-radius: 12px; }
+.dest-menu-chev { display: inline-flex; color: var(--g-ink); }
+.act-name, .card-title { font-size: 20px; }
+.card .muted { font-size: 16px; }
+.page-head-eyebrow-only { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.page-head-eyebrow-only > .eyebrow { margin: 0; color: var(--g-muted); font-size: 13px; }
+.map-link { border: 1px dashed var(--g-line); min-height: 60px; }
+.map-link-icon { display: inline-flex; color: var(--g-muted); }
+.map-link small { font-size: 14.5px; opacity: 1; color: var(--g-muted); }
+.sheet-hint { margin: 14px 0 0; font-size: 15px; color: var(--g-muted); }
+.chips--list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.chips--list .chip { display: flex; align-items: center; min-height: 52px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--g-line); background: var(--g-surface); font-size: 17px; font-weight: 500; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips--list .chip:active { background: var(--g-mist); }
+.chips--list .chip.chip--forced { background: var(--sand-warn); border-color: var(--sand-warn); color: var(--sand-warn-ink); }
+.chip { min-height: 44px; font-size: 16px; }
+.sheet-body > .btn { margin-top: 12px; }
+details.fold { margin-top: 18px; border-top: 1px solid var(--g-line); }
+details.fold > summary { display: flex; align-items: center; justify-content: space-between; min-height: 52px; font: 600 15px Inter, sans-serif; color: var(--g-muted); cursor: pointer; list-style: none; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after { content: "+"; font-size: 22px; font-weight: 400; }
+details.fold[open] > summary::after { content: "–"; }
+details.fold > :not(summary) { margin-bottom: 10px; }
+
+/* ---------- 6. Undo: quiet next to the title; for 20 seconds after a change, a bar at the bottom ---------- */
+.undo-btn { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 8px; min-height: 44px; min-width: 0; max-width: none; margin: 0; padding: 0 14px; }
+.undo-label { display: inline-flex; align-items: center; gap: 6px; font: 600 15px Inter, sans-serif; }
+.undo-label .icon svg { width: 18px; height: 18px; display: block; }
+.undo-btn .undo-what, .undo-btn .undo-when { display: none; }
+.undo-btn:disabled { display: none; } /* nothing to take back: nothing to show */
+.undo-btn--fresh { position: fixed; z-index: 65; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 84px); max-width: 696px; margin: 0 auto; min-height: 56px; padding: 8px 16px; border: 0; border-radius: 14px; background: var(--g-ink); color: var(--g-on-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .22); flex-direction: row-reverse; justify-content: space-between; animation: undo-in .22s ease-out; }
+.undo-btn--fresh:not(:disabled) { color: var(--g-on-ink); border: 0; }
+.undo-btn--fresh .undo-what { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: 1; font: 400 14.5px/1.3 Inter, sans-serif; text-align: left; opacity: .92; }
+.undo-btn--fresh .undo-label { flex: none; padding: 8px 12px; border-radius: 10px; background: var(--g-brass); color: #fff; }
+@keyframes undo-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+body:has(.undo-btn--fresh) .toast { bottom: calc(150px + env(safe-area-inset-bottom)); }
+body:has(.bottom-tabs) .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+
+/* ---------- 7. The roll call ---------- */
+.screen--rollcall { padding-bottom: calc(env(safe-area-inset-bottom) + 120px); }
+.rc-count { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0 6px; }
+.rc-count-big { font: 300 64px/1 var(--g-title); }
+.rc-count-of { font: 400 19px Inter, sans-serif; color: var(--g-muted); }
+.rc-count-left { margin-left: auto; padding: 6px 12px; border-radius: 10px; background: var(--g-mist); font: 600 15px Inter, sans-serif; }
+.vehicles { margin: 12px 0 12px; padding: 2px 0; flex-wrap: wrap; overflow: visible; }
+.vehicle { min-width: 96px; min-height: 76px; border: 1px solid var(--g-line); border-radius: 14px; background: var(--g-surface); }
+.vehicle-label { font: 500 24px/1.1 var(--g-title); }
+.vehicle-count { font: 500 13.5px Inter, sans-serif; color: var(--g-muted); }
+.vehicle.is-selected { background: var(--g-ink); border-color: var(--g-ink); color: var(--g-on-ink); }
+.vehicle.is-selected .vehicle-count { color: var(--g-on-ink); opacity: .85; }
+.vehicle--add { min-width: 64px; color: var(--g-ink); font-weight: 300; }
+.rc-scan { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 0 14px; }
+.rc-scan .icon svg { width: 22px; height: 22px; display: block; }
+.rc-hint { margin: 0 0 10px; font-size: 15.5px; text-align: left; color: var(--g-muted); }
+.rc-line { display: flex; align-items: stretch; gap: 8px; margin-bottom: 8px; }
+.rc-guest { flex: 1; min-width: 0; min-height: 64px; margin: 0; border: 1px solid var(--g-line); border-radius: 14px; background: var(--g-surface); font: 500 20px Inter, sans-serif; }
+.rc-guest:active { background: var(--g-mist); }
+.rc-guest--forced { background: var(--sand-warn); border-color: var(--sand-warn); color: var(--sand-warn-ink); }
+.rc-guest--forced:active { background: var(--sand-warn); }
+.rc-tick { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; border-radius: 50%; border: 1.5px solid var(--g-line); color: transparent; }
+.rc-tick .icon svg { width: 18px; height: 18px; display: block; }
+.rc-guest.is-done { background: var(--sand-ok); border-color: var(--sand-ok); color: #fff; }
+.rc-guest.is-done .rc-tick { border-color: #fff; color: #fff; }
+.rc-more { flex: none; width: 56px; border: 1px solid var(--g-line); border-radius: 14px; background: var(--g-surface); color: var(--g-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.rc-more:active { background: var(--g-mist); }
+.rc-bar { position: fixed; z-index: 60; left: 0; right: 0; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--g-line); background: color-mix(in srgb, var(--g-paper) 94%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.rc-bar .btn { flex: 1; margin: 0; }
+.rc-bar .undo-btn, .rc-bar .undo-btn--fresh { position: static; flex: 0 0 auto; min-height: 52px; max-width: none; margin: 0; padding: 0 16px; border: 1px solid var(--g-ink); border-radius: 14px; background: transparent; color: var(--g-ink); box-shadow: none; animation: none; }
+.rc-bar .undo-btn .undo-what { display: none; }
+.rc-bar .undo-btn--fresh .undo-label { padding: 0; background: none; color: inherit; }
+.tick-row { min-height: 60px; font-size: 19px; font-weight: 500; }
+.tick-row input { accent-color: var(--g-ink); }
+
+/* ---------- 8. Messages and help ---------- */
+.switch-item { min-height: 48px; font-size: 16px; gap: 6px; border: 0; cursor: pointer; background: none; }
+.switch-badge { display: inline-block; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--sand-alert); color: #fff; font: 700 12px/20px Inter, sans-serif; }
+.menu--inbox .inbox-row { display: block; padding: 12px 14px; border-bottom: 1px solid var(--g-line); }
+.menu--inbox .inbox-row:last-child { border-bottom: 0; }
+.help-steps { margin: 10px 0 6px; padding-left: 0; list-style: none; counter-reset: step; }
+.help-steps li { position: relative; padding: 12px 0 12px 46px; border-bottom: 1px solid var(--g-line); font-size: 17.5px; line-height: 1.4; counter-increment: step; }
+.help-steps li:last-child { border-bottom: 0; }
+.help-steps li::before { content: counter(step); position: absolute; left: 0; top: 12px; width: 30px; height: 30px; border-radius: 50%; background: var(--g-mist); font: 600 15px/30px Inter, sans-serif; text-align: center; }
+
+/* ---------- 9. Settings as a list, back links you can read, a page that arrives ---------- */
+.page-head .back-link { display: inline-flex; font-size: 15px; margin-bottom: 2px; }
+.menu--sections .menu-row { gap: 14px; min-height: 76px; }
+.menu--sections .tile-icon { flex: none; width: 46px; height: 46px; margin: 0; }
+.menu--sections .tile-icon .icon svg { width: 24px; height: 24px; display: block; }
+.screen--arrive > :not(.bottom-tabs):not(.rc-bar) { animation: page-in .2s ease-out; }
+@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
+.sheet { animation: slide-up .22s cubic-bezier(.2, .8, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .screen--arrive > *, .sheet, .undo-btn--fresh { animation: none !important; } }
+.empty { font-size: 16px; line-height: 1.45; color: var(--g-muted); padding: 22px 8px; }
+.menu--sections .menu-text { flex: 1 1 auto; min-width: 0; text-align: left; align-items: flex-start; }
+
+/* With larger text, the fresh Undo stays next to the title (highlighted) instead of floating: a floating bar inside an enlarged page would not sit right. */
+:root[data-text] .page-head .undo-btn--fresh { position: static; max-width: none; margin: 0; box-shadow: none; animation: none; }
+:root[data-text] .page-head .undo-btn--fresh .undo-what { display: none; }
+:root[data-text="xlarge"] .top-bar:has(.top-btn) .top-trip { display: none; } /* no room left for the trip's code: the words win */
+:root[data-text="xlarge"] .top-bar:has(.top-btn) { justify-content: flex-end; }

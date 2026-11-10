@@ -24,6 +24,9 @@ import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryErasureDue } from './rules.js';
 import { nextTour, programToday } from './views/today.js';
+import { currentSlot } from './views/destination.js';
+import { HELP } from './views/help.js';
+import { setTextSize, getTextSize } from './theme.js';
 import { programError, programOf, programForEditing } from './program.js';
 import { partyGroups, partiesOf, partyMembers } from './views/party.js';
 import { roleOf, cleanInviteEmail, describeRequest } from './sync.js';
@@ -33,7 +36,7 @@ import { decideDocument, documentMeta, blobToBase64, base64ToBlob } from './sync
 import { APP_VERSION } from './version.js';
 import { tourShort, PART_CODE } from './rules.js';
 import { passportState, dayIn, stampSvg, wallToInstant } from '../guest/passport.js';
-import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds, eligibilityProblems } from './rules.js';
+import { plain, displayNames, alphabetical, bySeat, splitPastSlots, joinNames, partyLabel, whoIsWhere, guestPlace, capacityInfo, capacityWords, countIn, partyMovers, partyPlan, slotLabel, plural, bySlotOrder, tripWarnings, autoSplitPlan, dinnerFit, dinnerAddFit, dinnerCountIn, dinnerTableGrid, dinnerPartyCandidates, dinnerUsedTableIds, eligibilityProblems } from './rules.js';
 import { inboxItems, inboxCount } from './inbox.js';
 import { buildListsPdf, buildFinalTripPdf, buildCardsPdf, buildGroupsPdf, buildGroupsOverviewPdf, buildEveningPdf } from './pdf.js';
 import { buildListsXlsx, buildFinalTripXlsx, buildGroupsXlsx, buildEveningXlsx, buildTemplateXlsx } from './xlsx.js';
@@ -1715,6 +1718,21 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
 
   // --- No-limit activities read "x / ∞" ---
   check('capacityInfo with no capacity limit reads "x / ∞"', capacityInfo(0, null).text === '0 / ∞' && capacityInfo(40, null).text === '40 / ∞');
+  // v0.151.0: on the screens, a tour with no limit says "40 guests"; one with a limit keeps the exact wording.
+  check('On the screens a tour with no limit reads "40 guests" (and "1 guest"), a limited one keeps "8 / 8 · Full"',
+    capacityWords(40, null).text === '40 guests' && capacityWords(1, null).text === '1 guest' && capacityWords(8, 8).text === '8 / 8 · Full' && capacityWords(8, 8).tone === 'bad');
+  {
+    // The Tours tab opens on the half-day the trip is in: today's (the afternoon one after 13:00), else the next to come, else the last.
+    const t = { destinations: [{ id: 'd1', timeZone: 'UTC' }], slots: [
+      { id: 'a', destinationId: 'd1', date: '2027-03-01', half: 'Morning' }, { id: 'b', destinationId: 'd1', date: '2027-03-01', half: 'Afternoon' },
+      { id: 'c', destinationId: 'd1', date: '2027-03-03', half: 'Morning' }] };
+    check('Tours opens on today\'s half-day: the morning before 13:00, the afternoon after', currentSlot(t, new Date('2027-03-01T09:00:00Z')).id === 'a' && currentSlot(t, new Date('2027-03-01T15:00:00Z')).id === 'b');
+    check('On a day with no half-day, Tours opens on the next one; before the trip on the first; after it on the last',
+      currentSlot(t, new Date('2027-03-02T09:00:00Z')).id === 'c' && currentSlot(t, new Date('2027-01-01T09:00:00Z')).id === 'a' && currentSlot(t, new Date('2027-06-01T09:00:00Z')).id === 'c');
+    check('Every main page has its three lines of help', ['today', 'tours', 'dining', 'guests', 'messages', 'rollcall'].every((k) => HELP[k]?.title && HELP[k].lines.length === 3));
+    setTextSize('large'); const large = document.documentElement.getAttribute('data-text') === 'large' && getTextSize() === 'large';
+    setTextSize('normal'); check('The size of the text is a choice of this phone: Large marks the page, Normal removes the mark', large && !document.documentElement.hasAttribute('data-text') && getTextSize() === 'normal');
+  }
 
   // --- Undo is scoped: each screen only ever offers to undo its own kind of action ---
   const ctx9 = makeCtx();

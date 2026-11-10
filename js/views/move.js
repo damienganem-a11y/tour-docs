@@ -11,7 +11,7 @@ import { h } from '../dom.js';
 import { openSheet, closeSheet, showToast, openFullScreen } from '../ui.js';
 import { applyChange, outsideScope } from '../changes.js';
 import { formatTime, formatMoment } from '../time.js';
-import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, eligibilityProblems, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
+import { alphabetical, plain, displayNames, guestPlace, countIn, capacityInfo, capacityWords, eligibilityProblems, partyMovers, partyPlan, slotLabel, plural, joinNames } from '../rules.js';
 import { putIn } from '../put.js';
 
 const placeText = (place) =>
@@ -69,7 +69,7 @@ export function startMove(ctx, trip, guest, slot, options = {}) {
   });
 
   const activityRows = trip.activities.filter((a) => a.slotId === slot.id).map((activity) => {
-    const count = capacityInfo(countIn(trip, activity), activity.capacity);
+    const count = capacityWords(countIn(trip, activity), activity.capacity);
     const isCurrent = here.kind === 'activity' && here.activity.id === activity.id;
     const full = activity.capacity !== null && countIn(trip, activity) >= activity.capacity;
     // A full activity can still be chosen: the dispatcher may FORCE it (the confirmation warns first).
@@ -112,7 +112,7 @@ export function showForcedInfo(ctx, trip, guest, slot, entry) {
         // Shown in the local time of the place, with the place named.
         fact('When', `${formatMoment(entry.at, entry.place.timeZone)} ${entry.place.name} time`),
         fact('Moved from', entry.from.kind === 'blank' ? 'Nothing chosen yet' : entry.from.label),
-        activity ? fact('The tour now', capacityInfo(countIn(trip, activity), activity.capacity).text) : null),
+        activity ? fact('The tour now', capacityWords(countIn(trip, activity), activity.capacity).text) : null),
       h('button', { class: 'btn btn--plain', type: 'button', onclick: () => startMove(ctx, trip, guest, slot) }, 'Move this guest'),
     ],
     cancelLabel: 'Close',
@@ -156,7 +156,7 @@ export function startAddGuest(ctx, trip, slot, activity) {
   openSheet({
     eyebrow: 'Add guest',
     title: activity.name,
-    subtitle: `${slotLabel(trip, slot)} · ${capacityInfo(now, activity.capacity).text}`,
+    subtitle: `${slotLabel(trip, slot)} · ${capacityWords(now, activity.capacity).text}`,
     body: [full ? notice(`This tour is full (${now} / ${activity.capacity}). Adding a guest needs FORCE: you will be asked to confirm.`) : null, search, list],
   });
 }

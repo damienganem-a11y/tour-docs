@@ -20,9 +20,9 @@ import { todayPage, myJobItems } from './today.js';
 import { jobDotCount } from '../teamJobs.js';
 import { programSettingsPage } from './settingsProgram.js';
 import { notificationsPage, appearancePage } from './settingsPhone.js';
-import { avatarButton } from './accountSheet.js';
+import { avatarButton, openAccountSheet } from './accountSheet.js';
 import { partyPage } from './party.js';
-import { openFullScreen, closeSheet } from '../ui.js';
+import { openFullScreen, openSheet, closeSheet } from '../ui.js';
 import { teamLabel } from '../rules.js';
 import { journalPage } from './journal.js';
 import { touringSettingsPage } from './settingsTouring.js';
@@ -31,9 +31,10 @@ import { partiesSettingsPage } from './settingsParties.js';
 import { guestsSettingsPage } from './settingsGuests.js';
 import { exportsSettingsPage } from './settingsExports.js';
 import { warningsSettingsPage } from './settingsWarnings.js';
-import { sendButton } from './sendSheet.js';
-import { inboxButton, messagesButton } from './inbox.js';
-import { messagesSettingsPage } from './messages.js';
+import { sendSheet } from './sendSheet.js';
+import { messagesPage } from './messages.js';
+import { helpButton } from './help.js';
+import { inboxCount } from '../inbox.js';
 import { checkSettingsPage } from './settingsCheck.js';
 import { backupSettingsPage } from './settingsBackup.js';
 import { brandSettingsPage } from './settingsBrand.js';
@@ -68,7 +69,6 @@ const SETTINGS_SECTIONS = [
     { label: 'Guest links', page: 'guestlinks', ownerOnly: true, hint: 'A personal link and QR code for each guest' },
     { label: 'Reception & screens', page: 'displays', ownerOnly: true, hint: 'Live tour lists for the reception desk and the lounge TV' },
     { label: 'Local team', page: 'localteam', hint: 'Guides and drivers of the local agency, tour by tour: call, WhatsApp, reconfirm' },
-    { label: 'Messages', page: 'guestmessages', hint: 'Conversations with guests, like WhatsApp, kept as a record' },
     { label: 'Our Album', page: 'album', hint: 'Guests\' photo circle: add photos, favourites, who has downloaded' },
     { label: 'Guest app', page: 'guestapp', ownerOnly: true, hint: 'Notifications, messages to guests, other options, message after the trip' },
   ] },
@@ -80,7 +80,7 @@ const SETTINGS_SECTIONS = [
   { key: 'phone', icon: 'cog', title: 'This phone', blurb: 'Check, notifications and look', items: [
     { label: 'Check this phone', page: 'check', hint: 'What works on this device and what does not' },
     { label: 'Notifications', page: 'notifications', hint: 'Turn them on, send a test' },
-    { label: 'Appearance', page: 'appearance', hint: 'Light, dark, or follow the phone' },
+    { label: 'Text size and look', page: 'appearance', hint: 'Larger letters, light or dark' },
   ] },
   // Not a tile of its own: reached from "Advanced".
   { key: 'advanced', icon: 'control', title: 'Advanced', blurb: 'Warnings, journal and backup', hidden: true, items: [
@@ -91,13 +91,19 @@ const SETTINGS_SECTIONS = [
   ] },
 ];
 
-// Four tabs (owner's plan, 17 Oct 2026): Today, Tours (Touring and Dining, with a switch at the top), Guests, and More (the Settings menu; not for an Expert).
+// Four tabs: Today, Tours (Touring and Dining, with a switch at the top), Guests, Messages. Each has a picture AND a word (v0.151.0, owner's
+// decision of 10 Nov 2026: Messages is a tab for everyone; what used to be the "More" tab is behind "Menu" at the top right).
 const USE_TABS = [
-  { tab: 'today', pages: ['today'], label: 'Today', href: (id) => `#/trip/${id}/use/today` },
-  { tab: 'tours', pages: ['destination', 'dining'], label: 'Tours', href: (id) => `#/trip/${id}/use/destination` },
-  { tab: 'guest', pages: ['guest', 'party'], label: 'Guests', href: (id) => `#/trip/${id}/use/guest` },
-  { tab: 'more', pages: [], label: 'More', href: (id) => `#/trip/${id}/settings`, notViewer: true },
+  { tab: 'today', pages: ['today'], label: 'Today', icon: 'today', href: (id) => `#/trip/${id}/use/today` },
+  { tab: 'tours', pages: ['destination', 'dining'], label: 'Tours', icon: 'tours', href: (id) => `#/trip/${id}/use/destination` },
+  { tab: 'guest', pages: ['guest', 'party'], label: 'Guests', icon: 'guests', href: (id) => `#/trip/${id}/use/guest` },
+  { tab: 'messages', pages: ['messages'], label: 'Messages', icon: 'messages', href: (id) => `#/trip/${id}/use/messages` },
 ];
+
+// How many things wait for this person in Messages: guests' conversations to answer, and everything the inbox counts (requests, a free seat, team messages not read).
+function messagesWaiting(ctx, trip) {
+  return inboxCount(ctx.inboxFor(trip.id));
+}
 
 // Routes:  #/trip/<id>/use/destination/<destinationId>/<slotId>
 //          #/trip/<id>/use/dining/<destinationId>/<slotId>/<restaurantId>/<seating>   By table (step 2b)
@@ -106,19 +112,41 @@ const USE_TABS = [
 //          #/trip/<id>/settings/journal
 // `first` and `second` are the parts after the page name (they may be missing); Dining alone also
 // takes `third`/`fourth` (a restaurant and seating, for its "By table" grid).
-// The bottom tabs, on the use screens AND on the settings screens (where More is the active one): the same four choices everywhere.
+// The bottom tabs, on the use screens AND on the settings screens (where none is active): the same four choices everywhere.
 function tabsNav(ctx, trip, activeTab) {
+  const waiting = messagesWaiting(ctx, trip);
   return h('nav', { class: 'bottom-tabs', 'aria-label': 'Main menu' },
-    USE_TABS.filter((t) => !(t.notViewer && ctx.roleFor(trip.id) === 'viewer')).map((t) =>
-      h('a', { class: `bottom-tab${t.tab === activeTab ? ' is-active' : ''}`, href: t.href(trip.id) }, t.label,
-        // The red dot on Today: job items waiting for this person (owner's report of 5 Nov 2026).
-        t.tab === 'today' && jobDotCount(myJobItems(ctx, trip)) > 0 ? h('span', { class: 'tab-dot', 'aria-label': `${jobDotCount(myJobItems(ctx, trip))} job items waiting` }) : null)));
+    USE_TABS.map((t) =>
+      h('a', { class: `bottom-tab${t.tab === activeTab ? ' is-active' : ''}`, href: t.href(trip.id), 'aria-current': t.tab === activeTab ? 'page' : null },
+        h('span', { class: 'bottom-tab-icon' }, icon(t.icon),
+          // The red dot on Today: job items waiting for this person (owner's report of 5 Nov 2026). The red number on Messages: what waits for an answer.
+          t.tab === 'today' && jobDotCount(myJobItems(ctx, trip)) > 0 ? h('span', { class: 'tab-dot', 'aria-label': `${jobDotCount(myJobItems(ctx, trip))} job items waiting` }) : null,
+          t.tab === 'messages' && waiting > 0 ? h('span', { class: 'tab-count', 'aria-label': `${waiting} waiting` }, String(waiting > 9 ? '9+' : waiting)) : null),
+        h('span', { class: 'bottom-tab-label' }, t.label))));
+}
+
+// "Menu" at the top right: everything that is not daily work. Words, not pictures (v0.151.0).
+function openTripMenu(ctx, trip) {
+  const role = ctx.roleFor(trip.id);
+  const row = (title, hint, run) => h('button', { class: 'menu-row', type: 'button', onclick: () => { closeSheet(); run(); } },
+    h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, title), hint ? h('span', { class: 'menu-hint' }, hint) : null),
+    h('span', { class: 'menu-side' }, h('span', { class: 'row-chev' }, '›')));
+  openSheet({
+    eyebrow: trip.ref || 'Trip', title: 'Menu', cancelLabel: 'Close',
+    body: h('div', { class: 'menu' },
+      role === 'viewer' ? null : row('Send a list or a sheet', 'Guest lists, reservation sheets, as PDF or Excel', () => sendSheet(ctx, trip)),
+      role === 'viewer' ? null : row('Settings', ctx.simpleFor(trip.id) ? 'Documents, requests, this phone' : 'Set-up, team, documents, this phone', () => ctx.go(`#/trip/${trip.id}/settings`)),
+      row('Change trip', 'Back to the list of your trips', () => ctx.go('#/')),
+      row('This phone and my account', 'Notifications, Face ID, sign out', () => openAccountSheet(ctx))),
+  });
 }
 
 export function tripView(ctx, tripId, mode, page, first, second, third, fourth) {
+  // The two older addresses of the messages (links in notifications still use them) open the Messages tab.
+  if (mode === 'settings' && (page === 'messages' || page === 'guestmessages')) { first = page === 'messages' ? 'team' : 'guests'; mode = 'use'; page = 'messages'; }
   const result = tripViewInner(ctx, tripId, mode, page, first, second, third, fourth);
   const trip = ctx.trip(tripId);
-  if (mode === 'settings' && trip && ctx.roleFor(trip.id) !== 'viewer' && result.node) result.node.append(tabsNav(ctx, trip, 'more'));
+  if (mode === 'settings' && trip && ctx.roleFor(trip.id) !== 'viewer' && result.node) result.node.append(tabsNav(ctx, trip, null));
   return result;
 }
 
@@ -197,14 +225,8 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   if (mode === 'settings' && page === 'check') {
     return { node: h('div', { class: 'screen' }, checkSettingsPage(ctx, trip)) };
   }
-  if (mode === 'settings' && page === 'messages') {
-    return { node: h('div', { class: 'screen' }, messagesSettingsPage(ctx, trip)) };
-  }
   if (mode === 'settings' && page === 'scheduled') {
     return { node: h('div', { class: 'screen' }, scheduledSettingsPage(ctx, trip)) };
-  }
-  if (mode === 'settings' && page === 'guestmessages') {
-    return { node: h('div', { class: 'screen' }, guestMessagesSettingsPage(ctx, trip)) };
   }
   if (mode === 'settings' && page === 'album') {
     return { node: h('div', { class: 'screen' }, albumSettingsPage(ctx, trip)) };
@@ -219,18 +241,19 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
     return { node: h('div', { class: 'screen' }, backupSettingsPage(ctx, trip)) };
   }
 
-  // One slim row, for both modes. Use: the trip's name (so you know where you are) and, on the left a cog that opens Settings (easier with one thumb, owner's request 4 Oct 2026), on the right the sync light.
-  // Settings: a way back to the trip. Changing trip lives in Settings (owner's request, 3 Oct 2026): once in a trip, you stay in it.
+  // One slim row, for both modes (v0.151.0: words, no row of small pictures). Use: the trip's name, then "Saved" (the sync light, one word), "Help" and "Menu".
+  // Settings: a way back to the trip. Changing trip lives in Menu (owner's request, 3 Oct 2026): once in a trip, you stay in it.
+  const usePage = page === 'guest' || page === 'party' ? 'guests' : page === 'dining' ? 'dining' : page === 'destination' ? 'tours' : page === 'messages' ? 'messages' : 'today';
   const topBar = mode === 'settings'
     ? h('div', { class: 'top-bar' },
         h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup')),
         h('span', { class: 'top-trip' }, 'Settings'),
-        h('span', { class: 'top-side' }, messagesButton(ctx, trip), syncDot(ctx, { compact: true }), avatarButton(ctx, [{ title: 'Change trip', hint: 'Back to the list of your trips', run: () => ctx.go('#/') }])))
+        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true }), avatarButton(ctx, [{ title: 'Change trip', hint: 'Back to the list of your trips', run: () => ctx.go('#/') }])))
     : h('div', { class: 'top-bar' },
-        ctx.roleFor(trip.id) === 'viewer' ? h('span', { class: 'cog cog--none' }) : h('a', { class: 'cog', href: `#/trip/${trip.id}/settings`, 'aria-label': 'Settings' }, icon('cog')),
         // The company's logo (Settings > Company look) next to the trip's code, when there is one.
         h('span', { class: 'top-trip' }, trip.branding?.logo ? h('img', { class: 'top-logo', src: trip.branding.logo.data, alt: '' }) : null, trip.ref || trip.name),
-        h('span', { class: 'top-side' }, messagesButton(ctx, trip), inboxButton(ctx, trip), ctx.roleFor(trip.id) === 'viewer' ? null : sendButton(ctx, trip), syncDot(ctx, { compact: true })));
+        h('span', { class: 'top-side' }, syncDot(ctx, { compact: true }), helpButton(usePage),
+          h('button', { class: 'top-btn', type: 'button', 'aria-haspopup': 'dialog', onclick: () => openTripMenu(ctx, trip) }, icon('menu'), h('span', {}, 'Menu'))));
 
   // An archived trip stays fully viewable (views, journal, exports) but is read-only: no booking changes,
   // no roll call. The single change function already refuses those; this is just so it is seen at a glance.
@@ -248,11 +271,12 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   }
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
-  const activePage = page === 'guest' ? 'guest' : page === 'party' ? 'party' : page === 'dining' ? 'dining' : page === 'destination' ? 'destination' : 'today';
+  const activePage = page === 'guest' ? 'guest' : page === 'party' ? 'party' : page === 'dining' ? 'dining' : page === 'destination' ? 'destination' : page === 'messages' ? 'messages' : 'today';
   const content = activePage === 'guest' ? guestPage(ctx, trip, first)
     : activePage === 'party' ? partyPage(ctx, trip, first)
     : activePage === 'dining' ? diningPage(ctx, trip, first, second, third, fourth)
     : activePage === 'destination' ? destinationPage(ctx, trip, first, second)
+    : activePage === 'messages' ? messagesPage(ctx, trip, first)
     : todayPage(ctx, trip);
   // Touring and Dining share the Tours tab: a small switch at the top moves between them.
   const toursSwitch = activePage === 'destination' || activePage === 'dining'
@@ -275,21 +299,21 @@ function visibleItems(ctx, trip, section) {
   return section.items.filter((item) => visible(item) && !simpleHides(item));
 }
 
-// The Settings home: four big tiles (a picture and a word each); a tap opens that group's list.
+// The Settings home: one line per group (a picture, a name, what is inside); a tap opens that group's list. (Big tiles until v0.150: a list reads
+// faster and looks calmer.)
 function settingsMenu(ctx, trip) {
   const role = ctx.roleFor(trip.id);
-  return h('div', {},
-    h('div', { class: 'tiles' }, SETTINGS_SECTIONS.filter((section) => !section.hidden).map((section) => {
-      const items = visibleItems(ctx, trip, section);
-      if (items.length === 0) return null;
-      const waitingGuests = section.key === 'access' && role === 'owner' ? ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length : 0;
-      return h('a', { class: `tile tile--${section.key}`, href: `#/trip/${trip.id}/settings/section/${section.key}` },
-        waitingGuests > 0 ? h('span', { class: 'tile-badge', 'aria-label': `${waitingGuests} guest requests waiting` }, String(waitingGuests)) : null,
-        h('span', { class: 'tile-icon' }, icon(section.icon)),
-        h('span', { class: 'tile-title' }, section.title),
-        h('span', { class: 'tile-blurb' }, section.blurb));
-    })),
-    null);
+  return h('div', { class: 'menu menu--sections' }, SETTINGS_SECTIONS.filter((section) => !section.hidden).map((section) => {
+    const items = visibleItems(ctx, trip, section);
+    if (items.length === 0) return null;
+    const waitingGuests = section.key === 'access' && role === 'owner' ? ctx.guestRequestsFor(trip.id).filter((r) => r.status === 'pending').length : 0;
+    return h('a', { class: `menu-row tile--${section.key}`, href: `#/trip/${trip.id}/settings/section/${section.key}` },
+      h('span', { class: 'tile-icon' }, icon(section.icon)),
+      h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, section.title), h('span', { class: 'menu-hint' }, section.blurb)),
+      h('span', { class: 'menu-side' },
+        waitingGuests > 0 ? h('span', { class: 'tile-badge tile-badge--row', 'aria-label': `${waitingGuests} guest requests waiting` }, String(waitingGuests)) : null,
+        h('span', { class: 'row-chev' }, '›')));
+  }));
 }
 
 // One group of Settings: its entries as a list, with a way back to the four tiles.
@@ -322,7 +346,16 @@ function scheduleRoleNotice(ctx, trip) {
     if (document.querySelector('.fullscreen') || ctx.roleNoticeSeen(trip.id) === role) return;
     openFullScreen({
       eyebrow: trip.name, title: role === 'viewer' ? 'Welcome, Expert' : role === 'advance' ? 'Welcome, Advance' : `Welcome, ${team}`,
-      body: [h('p', {}, text), h('button', { class: 'btn', type: 'button', onclick: async () => { await ctx.markRoleNoticeSeen(trip.id, role); closeSheet(); } }, 'I have read this')],
+      body: [
+        // The app in three steps (v0.151.0), then what this role can do. The same three lines are behind "Help" on every page.
+        h('ol', { class: 'help-steps' },
+          h('li', {}, h('b', {}, 'Today'), ' shows the next tour and what is waiting for you.'),
+          h('li', {}, h('b', {}, 'Tours'), role === 'viewer' ? ' shows who is on each tour, day by day.' : ' shows who is on each tour. Open a tour to start its roll call.'),
+          h('li', {}, h('b', {}, 'Messages'), role === 'viewer' ? ' is the chat with your colleagues.' : ' holds the conversations with guests and with your colleagues.')),
+        h('p', {}, text),
+        h('p', { class: 'muted' }, 'Lost? Tap "Help" at the top of any page. A mistake? Tap "Undo" right after.'),
+        h('button', { class: 'btn', type: 'button', onclick: async () => { await ctx.markRoleNoticeSeen(trip.id, role); closeSheet(); } }, 'Start'),
+      ],
     });
   }, 300);
 }
