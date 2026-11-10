@@ -232,7 +232,46 @@ html, body, main { background: var(--g-paper); color: var(--g-ink); }
 .atl-msg { padding: 14px 0; border-bottom: 1px solid var(--g-line); }
 .atl-msg b { font: 500 15px Inter, sans-serif; } .atl-msg small { color: var(--g-muted); }
 .option-card.atl-option { border: 0; border-bottom: 1px solid var(--g-line); }
-.xm-map { background: #ecebe6; }
+.xm-map.leaflet-container, .xm-map { background: #ecebe6; }
 .xm-noplan { position: absolute; z-index: 500; left: 12px; right: 12px; top: 12px; padding: 10px 14px; border-radius: 12px; background: rgba(255, 255, 255, .94); color: var(--g-ink); font: 500 13px/1.4 Inter, sans-serif; box-shadow: 0 2px 10px rgba(0, 0, 0, .08); }
 .xm-noplan { right: 56px; }
 .modal .btn-link, .btn-link { border-radius: 12px; background: var(--g-ink); color: var(--g-paper); font: 600 14.5px Inter, sans-serif; letter-spacing: 0; text-transform: none; }
+
+/* ======================================================================================================================================
+   Step 3 (v0.149.2): the dark look ("Nuit"), automatic when the guest's phone is set to dark. Only the tokens change, plus the few places the
+   older styles wrote a colour by hand.
+   ====================================================================================================================================== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --g-paper: #0d1110; --g-surface: #161c1a; --g-ink: #eef1ef; --g-muted: #8e9994; --g-line: #232b29; --g-brass: #c9a85a;
+    --atl-mist: #1a201e; --bg: #0d1110; --ink: #eef1ef; --muted: #8e9994; --line: #232b29; --card: #161c1a;
+    color-scheme: dark;
+  }
+  .atl-hero::after { background: linear-gradient(180deg, rgba(0, 0, 0, .35) 0%, rgba(0, 0, 0, 0) 24%, rgba(0, 0, 0, .15) 42%, rgba(0, 0, 0, .82) 88%); }
+  .atl-bell, .atl-dot { background: rgba(22, 28, 26, .86); color: var(--g-ink); }
+  .atl-tourtop .atl-back { background: rgba(22, 28, 26, .86); color: var(--g-ink); }
+  .atl-tourtop::after { background: linear-gradient(180deg, rgba(13, 17, 16, 0), var(--g-paper)); }
+  .atl-shot img, .atl-shot .picture-missing { background: #1a201e; }
+  .atl-title h1, .atl-head h1, .atl-tourhead h1, .atl-day .part .what, .atl-option .what, .stamp-name { color: var(--g-ink); }
+  .atl-day .part .line, .atl-tourhead p, .atl-option .line { color: var(--g-muted); }
+  .atl-text, .atl-section p { color: var(--g-ink); }
+  .modal-box { background: var(--g-surface); color: var(--g-ink); }
+  .xm-card, .xm-close, .xm-locate, .xm-me, .xm-noplan { background: var(--g-surface); color: var(--g-ink); border-color: var(--g-line); }
+  .xm-map { background: #161b19; }
+  .xm-tip, .xm-facts { color: var(--g-muted); }
+  .xm-back { background: var(--g-surface); }
+  .xm-go, .atl-pill-btn, .pass-btn, .btn-link, .modal .btn-link { background: var(--g-ink); color: var(--g-paper); }
+  .atl-pill-btn--plain { background: var(--g-surface); color: var(--g-ink); }
+  .album-tile { background: #1a201e; }
+  .stamp-cell:not(.stamp-cell--ex) .stamp-tile:not(.is-locked), .stamp-tile:has(svg) { background: #ebe7dc; border-radius: 14px; padding: 6px; box-sizing: border-box; } /* a stamp stays ink on paper */
+  .xm-pin span, .xm-num { color: var(--g-paper); border-color: var(--g-paper); }
+  .xm-pin.is-on span, .xm-row.is-on .xm-num { color: #0d1110; }
+  .xm-map.leaflet-container, .xm-map.has-plan { background: #161b19; }
+  .leaflet-control-zoom a, .leaflet-control-attribution { background: var(--g-surface) !important; color: var(--g-ink) !important; }
+  .banner { background: var(--g-surface); color: var(--g-ink); }
+  .net-pill { background: var(--g-ink); color: var(--g-paper); }
+  input, textarea, select { background: var(--g-surface); color: var(--g-ink); border-color: var(--g-line); }
+  .preview-strip { background: #000; color: #fff; }
+}
+/* The press of a new stamp: a little softer than before */
+@media (prefers-reduced-motion: reduce) { .stamp-tile.is-new svg, .ex-stamp.is-new svg { animation: none; } }

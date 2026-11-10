@@ -390,7 +390,7 @@ function openBoarding(part) {
   const tick = () => { const n = new Date(); clock.textContent = n.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
   tick();
   const timer = setInterval(tick, 1000);
-  const close = () => { clearInterval(timer); overlay.remove(); };
+  const close = () => { clearInterval(timer); leave(overlay); };
   const overlay = h('div', { class: 'board', style: `background:${t.color};color:${t.ink}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': `${t.colorName} group` },
     h('button', { class: 'board-close', type: 'button', 'aria-label': 'Close', style: `color:${t.ink}`, onclick: close }, '✕'),
     h('small', { class: 'board-tour' }, part.name),
@@ -403,6 +403,7 @@ function openBoarding(part) {
     part.pass ? passQr(part.pass) : null,
     h('div', { class: 'board-foot' }, h('span', {}, new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })), clock));
   document.body.append(overlay);
+  rise(overlay);
 }
 
 // The boarding pass QR code (v0.146.0): the staff's roll call scans it and the whole family is checked in. Drawn on the phone (works offline).
@@ -416,7 +417,7 @@ function openPass(part, sheet) {
   if (part.ticket) { openBoarding(part); return; }
   document.querySelector('.board')?.remove();
   const count = part.pass.split('.').pop().split(',').length;
-  const close = () => overlay.remove();
+  const close = () => leave(overlay);
   const overlay = h('div', { class: 'board board--plain', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Boarding pass' },
     h('button', { class: 'board-close', type: 'button', 'aria-label': 'Close', onclick: close }, '✕'),
     h('small', { class: 'board-tour' }, 'Boarding pass'),
@@ -426,6 +427,7 @@ function openPass(part, sheet) {
     passQr(part.pass),
     h('span', { class: 'board-note' }, count > 1 ? 'One scan checks in the whole family.' : 'Show it to the staff when you board.'));
   document.body.append(overlay);
+  rise(overlay);
 }
 
 function todayView(sheet, offline) {
@@ -898,6 +900,7 @@ function modal(title, lines, buttons) {
   const overlay = h('div', { class: 'modal' }, h('div', { class: 'modal-box' }, h('h3', {}, title), ...lines, h('div', { class: 'modal-actions' }, ...buttons)));
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   document.body.append(overlay);
+  arrive(overlay.firstChild, 'translateY(24px)', 260);
   return overlay;
 }
 function askSwitch(sheet, mineIndex, toIndex) {
@@ -1243,11 +1246,23 @@ let view = { tab: 'today' }; // a tab (today, trip, passport), or { tour: index 
 let currentSheet = null;
 let currentOffline = false;
 
-function go(next) { history.pushState({ view: next }, ''); view = next; paint(); window.scrollTo(0, 0); }
+// Movement (v0.149.2, the Galerie look): three moves, no more, and none when the guest's phone is set to reduce motion.
+//   1. a page arrives with a short fade and a small rise;  2. the boarding pass slides up from the bottom (and back down);  3. a new stamp is pressed (CSS).
+const calm = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return true; } };
+function arrive(node, from = 'translateY(10px)', ms = 240) {
+  if (calm() || !node?.animate) return;
+  try { node.animate([{ opacity: 0, transform: from }, { opacity: 1, transform: 'none' }], { duration: ms, easing: 'cubic-bezier(.2, .8, .2, 1)' }); } catch { /* an old phone: no movement */ }
+}
+function rise(node) { arrive(node, 'translateY(100%)', 320); }
+function leave(node) {
+  if (calm() || !node.animate) { node.remove(); return; }
+  try { const a = node.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], { duration: 240, easing: 'cubic-bezier(.4, 0, .8, .4)' }); a.onfinish = () => node.remove(); } catch { node.remove(); }
+}
+function go(next) { history.pushState({ view: next }, ''); view = next; paint(); window.scrollTo(0, 0); arrive(app); }
 function openTour(index) { go({ tour: index }); }
 function openOptions(index) { go({ options: index }); }
 function openRestaurant(index) { if (index >= 0) go({ rest: index }); }
-window.addEventListener('popstate', (event) => { view = event.state?.view ?? { tab: 'today' }; if (currentSheet) paint(); });
+window.addEventListener('popstate', (event) => { view = event.state?.view ?? { tab: 'today' }; if (currentSheet) { paint(); arrive(app, 'translateY(-6px)', 200); } });
 
 // The company colour is kept for small touches only (a stripe at the top): the rest of the look is fixed, so a light or unusual company colour
 // can never make the app hard to read. Falls back to a calm green when the colour is missing or odd.
