@@ -1,0 +1,137 @@
+/* "Galerie" for the staff app (v0.150.0, owner's "Go staff" of 10 Nov 2026, after the guest app got the same look in v0.149).
+   The same family as the guest app: a clear page, fine titles in Jost, hairlines instead of heavy frames, one matte brass accent.
+   But this is a TOOL used on a bus, a boat or in bright sun, so three things differ from the guest app on purpose:
+     - what is selected (a tab, a switch, a day) is solid ink with light words: the strongest contrast there is, readable at a glance;
+     - tap targets stay big (at least 48 px), text stays at 15 px and more for anything you read while moving;
+     - orange and red are kept for what needs attention (full tours, forced moves, waiting requests, problems), so they still jump out.
+   This file comes AFTER styles.css and only overrides it: removing the one <link> line in index.html brings back the previous look ("Sand").
+   Every colour is a token in the two blocks below (light, then dark "Nuit"), so changing the look later means changing those lines only.
+
+   THE TITLE FONT is one line: to use another one (for example a licensed brand font), put its file in app/fonts and change the src below. */
+@font-face { font-family: Title; src: url(fonts/jost-latin-wght-normal.woff2) format('woff2'); font-weight: 100 900; font-display: swap; }
+/* The older layers name "Outfit" in many places: it now points to the same file, so the whole app speaks one title font. */
+@font-face { font-family: Outfit; src: url(fonts/jost-latin-wght-normal.woff2) format('woff2'); font-weight: 100 900; font-display: swap; }
+
+:root {
+  --g-paper: #f7f8f6;   --g-surface: #ffffff;  --g-mist: #eef0ed;
+  --g-ink: #101614;     --g-muted: #5c6661;    --g-line: #dfe3df;
+  --g-brass: #8f7437;   --g-on-ink: #f7f8f6;
+  --g-title: Title, Jost, "Helvetica Neue", system-ui, sans-serif;
+  --g-radius: 16px;
+}
+/* The older layers' tokens, pointed at the Galerie ones (so every screen follows without touching it). The selector is written twice so it is at
+   least as strong as the older dark look's own (":root:not([data-theme=light])"), which would otherwise win in dark mode. */
+:root:not([data-theme="light"]), :root[data-theme="light"] {
+  --bg: var(--g-paper); --card: var(--g-surface); --soft: var(--g-mist); --track: #e5e8e4; --line: var(--g-line);
+  --ink: var(--g-ink); --muted: var(--g-muted); --serif: var(--g-title);
+  --atl-shadow: none; --shadow: none;
+  --sand-tint: var(--g-mist); --sand-ink: var(--g-ink); --sand-sel: var(--g-ink); --sand-sel-ink: var(--g-on-ink); --sand-btn: var(--g-ink);
+  --sand-ok: #2f7d5b;
+  color-scheme: light;
+}
+:root:not([data-theme="light"]), :root[data-theme="light"] {
+  /* attention keeps its warm colours, a little quieter */
+  --sand-warn: #f6dfcb; --sand-warn-ink: #6e3215; --sand-alert: #c4562a;
+  --warn-bg: #fbefe2; --warn-line: #d98a4a; --warn-ink: #6e3215;
+}
+/* Nuit: the dark look, the same tokens with dark values (Automatic follows the phone; Check this phone > Appearance can force one) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --g-paper: #0d1110; --g-surface: #151b19; --g-mist: #1c2421; --g-ink: #eef1ee; --g-muted: #9aa5a0; --g-line: #26302d;
+    --g-brass: #c9a85a; --g-on-ink: #0d1110; --track: #222b28;
+    --sand-ok: #5cc08f; --sand-warn: #43301f; --sand-warn-ink: #ffcfa6; --sand-alert: #ff8a55;
+    --warn-bg: #33261a; --warn-line: #c9783a; --warn-ink: #ffcfa6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --g-paper: #0d1110; --g-surface: #151b19; --g-mist: #1c2421; --g-ink: #eef1ee; --g-muted: #9aa5a0; --g-line: #26302d;
+  --g-brass: #c9a85a; --g-on-ink: #0d1110; --track: #222b28;
+  --sand-ok: #5cc08f; --sand-warn: #43301f; --sand-warn-ink: #ffcfa6; --sand-alert: #ff8a55;
+  --warn-bg: #33261a; --warn-line: #c9783a; --warn-ink: #ffcfa6;
+  color-scheme: dark;
+}
+
+html, body { background: var(--g-paper); color: var(--g-ink); }
+body { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+/* ---------- Titles: fine, never heavy ---------- */
+.title, h1.title { font: 400 30px/1.08 var(--g-title); letter-spacing: 0; color: var(--g-ink); }
+.title em { font: inherit; color: inherit; }
+.sheet-head h2 { font-family: var(--g-title); font-weight: 450; letter-spacing: 0; }
+.eyebrow { font: 600 11px Inter, sans-serif; letter-spacing: .16em; color: var(--g-brass); }
+.eyebrow::before { display: none; }
+.eyebrow--grey { color: var(--g-muted); }
+.section-title { font: 600 11px Inter, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--g-muted); margin: 22px 0 8px; }
+.back-link { font: 600 12px Inter, sans-serif; letter-spacing: .12em; color: var(--g-ink); }
+.act-name, .card-title { font: 500 19px/1.22 var(--g-title); letter-spacing: 0; }
+.tile-title { font: 500 17px/1.2 var(--g-title); letter-spacing: 0; text-transform: none; }
+.dest-menu-name, .seat-title { font-family: var(--g-title); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.menu-label { font-weight: 500; font-size: 17px; }
+
+/* ---------- Surfaces: hairlines, no shadows ---------- */
+.card, .tile, .seat-card, .entry, .screen .menu, .choice, .dest-menu { background: var(--g-surface); border: 1px solid var(--g-line); border-radius: var(--g-radius); box-shadow: none; }
+.card--soft { background: transparent; border: 1px dashed var(--g-line); }
+.card--cancelled { background: transparent; border: 1px dashed var(--g-line); opacity: .8; }
+.card--warn { border: 1.5px solid var(--sand-alert); }
+.entry--muted { background: transparent; border-style: dashed; }
+.menu-row { border-bottom-color: var(--g-line); }
+.menu-row:active, button.menu-row:active, .choice:active, .dest-menu:active, .tile:active { background: var(--g-mist); }
+
+/* small round things that held a tinted icon: quiet now, the icon in ink */
+.tile-icon, .tile--access .tile-icon, .tile--documents .tile-icon, .tile--control .tile-icon, .dest-menu-pin, .avatar, .fold-count { background: var(--g-mist); color: var(--g-ink); border: 0; }
+.tile-icon { border-radius: 14px; }
+.cog { background: var(--g-mist); box-shadow: none; border: 0; }
+:root:not([data-theme="light"]) .cog.cog--home, :root[data-theme="light"] .cog.cog--home { background: var(--g-ink); color: var(--g-on-ink); } /* as strong as the dark look's ".cog" colour */
+.cog--home .icon svg circle[fill='#fff'] { fill: var(--g-ink); }
+
+/* counts: neutral; a full tour or a problem keeps the warm colour */
+.count { background: var(--g-mist); color: var(--g-ink); font: 600 13px Inter, sans-serif; letter-spacing: .02em; border: 0; }
+.count--bad { background: var(--sand-warn); color: var(--sand-warn-ink); }
+.card--soft .count { background: transparent; color: var(--g-muted); border: 1px solid var(--g-line); }
+.chip { background: var(--g-mist); color: var(--g-ink); border: 0; }
+
+/* ---------- One button shape ---------- */
+.btn { min-height: 52px; border-radius: 14px; border: 0; background: var(--g-ink); color: var(--g-on-ink); font: 600 16px Inter, sans-serif; letter-spacing: .01em; text-transform: none; }
+.card .btn--small:not(.btn--plain) { background: var(--g-ink); color: var(--g-on-ink); }
+.btn--plain, .screen .btn--small.btn--plain, .card .btn--small.btn--plain { background: var(--g-mist); color: var(--g-ink); border: 0; }
+.btn--small { border-radius: 12px; }
+.btn--danger, .card .btn.btn--danger, .btn.btn--danger.btn--small { background: #a8402f; color: #fff; }
+.undo-btn { background: transparent; border: 1px solid var(--g-line); color: var(--g-muted); border-radius: 12px; text-transform: none; letter-spacing: .01em; font-family: Inter, sans-serif; }
+.undo-btn:not(:disabled) { color: var(--g-ink); border-color: var(--g-ink); }
+.text-input { border-radius: 12px; border: 1px solid var(--g-line); background: var(--g-surface); color: var(--g-ink); }
+.text-input:focus { border-color: var(--g-ink); outline: 2px solid var(--g-mist); }
+input[type=checkbox] { accent-color: var(--g-ink); }
+
+/* ---------- What is selected: solid ink, light words ---------- */
+.switch { background: var(--g-mist); border-radius: 14px; padding: 4px; }
+.switch-item { border-radius: 11px; font: 500 15px Inter, sans-serif; letter-spacing: .01em; text-transform: none; color: var(--g-muted); }
+.switch-item.is-active { background: var(--g-ink); color: var(--g-on-ink); font-weight: 600; box-shadow: none; }
+.strip-item { border-radius: 12px; border: 1px solid var(--g-line); background: transparent; color: var(--g-ink); font: 500 15px Inter, sans-serif; letter-spacing: .01em; text-transform: none; }
+.strip-item.is-active, button.strip-item.is-active { background: var(--g-ink); border-color: var(--g-ink); color: var(--g-on-ink); font-weight: 600; }
+.menu-row.is-current { background: var(--g-mist); border-radius: 12px; }
+.here-tick { color: var(--g-brass); }
+
+/* ---------- The bottom bar: docked, full width, a hairline on top ---------- */
+.bottom-tabs { left: 0; right: 0; bottom: 0; transform: none; width: auto; max-width: none; margin: 0; padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); gap: 2px; border: 0; border-top: 1px solid var(--g-line); border-radius: 0; background: color-mix(in srgb, var(--g-paper) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: none; }
+.bottom-tab { position: relative; min-height: 52px; border-radius: 0; background: none; color: var(--g-muted); font: 500 14px Inter, sans-serif; letter-spacing: .02em; text-transform: none; }
+.bottom-tab.is-active { background: none; color: var(--g-ink); font-weight: 650; }
+.bottom-tab.is-active::after { content: ""; position: absolute; left: 50%; bottom: 6px; width: 18px; height: 2px; margin-left: -9px; border-radius: 1px; background: var(--g-brass); }
+:root[data-dark-company] .bottom-tab.is-active { outline: 0; }
+.bottom-tabs .tab-dot { background: var(--sand-alert); }
+
+/* ---------- Sheets, messages ---------- */
+.sheet { background: var(--g-paper); border-radius: 22px 22px 0 0; }
+.sheet::before { background: var(--g-line); }
+.toast { background: var(--g-ink); color: var(--g-on-ink); border-radius: 14px; border: 0; font-family: Inter, sans-serif; }
+.toast--error { background: #a8402f; color: #fff; }
+.pull-indicator { background: var(--g-surface); color: var(--g-ink); border: 1px solid var(--g-line); }
+.pull-indicator--ready { background: var(--g-ink); color: var(--g-on-ink); }
+.bubble--mine { background: var(--g-mist); color: var(--g-ink); }
+.quote { border-left-color: var(--g-brass); background: var(--g-mist); }
+.tile-badge { background: var(--sand-alert); color: #fff; }
+:focus-visible { outline: 3px solid var(--g-brass); outline-offset: 2px; }
+
+/* ---------- The boot splash ---------- */
+.boot-name { font: 300 34px var(--g-title); color: var(--g-ink); letter-spacing: .02em; }
+.boot-bar-fill { background: var(--g-brass); }

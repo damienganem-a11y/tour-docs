@@ -14,8 +14,8 @@ export function applyTheme() {
   const root = document.documentElement;
   if (theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme);
   const dark = theme === 'dark' || (theme === 'auto' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
-  root.style.background = dark ? '#14201f' : '#f9efdc'; // index.html paints the page before the stylesheet arrives: keep it in step
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#14201f' : '#f9efdc');
+  root.style.background = dark ? '#0d1110' : '#f7f8f6'; // index.html paints the page before the stylesheet arrives: keep it in step
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0d1110' : '#f7f8f6');
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme === 'auto' ? 'light dark' : theme);
 }
 
