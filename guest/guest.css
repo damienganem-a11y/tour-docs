@@ -1053,3 +1053,13 @@ input[type=checkbox] { accent-color: #000; }
 .board-pass-name { font-size: 26px; line-height: 1.15; text-align: center; padding: 0 20px; }
 .pass-btn { margin-top: 14px; border: 0; border-radius: 99px; padding: 12px 20px; background: #1d1d1b; color: #fff; font: 800 15px Inter, system-ui, sans-serif; cursor: pointer; }
 .board { overflow-y: auto; }
+/* v0.148.1: the date and clock of the boarding card sit UNDER the QR code, in the flow (they were pinned to the bottom and wrote over the code on a
+   normal phone). The card stays centred when it fits and scrolls from the top when it does not. */
+.board { justify-content: flex-start; }
+.board::before, .board::after { content: ''; flex: 1 0 0; }
+.board-foot { position: static; margin-top: 14px; }
+.board .pass-qr { width: min(50vw, 200px); flex: none; }
+.board-color { margin-top: 10px; }
+.board { padding-top: calc(env(safe-area-inset-top, 0px) + 52px); gap: 4px; }
+.board-color { font-size: clamp(2.8rem, 15vw, 5rem); }
+.board-count { font-size: clamp(1.7rem, 8.5vw, 2.8rem); }
