@@ -295,7 +295,11 @@ function inboxView(sheet, offline) {
   const list = inbox.length === 0
     ? h('p', { class: 'muted atl-empty' }, 'No updates yet. Changes to your programme will appear here.')
     : inbox.map((m) => h('div', { class: 'atl-msg' }, h('b', {}, m.title), h('p', {}, m.body), h('small', {}, messageTime(m.at))));
-  return [plainHead(sheet.trip, 'Messages'), h('div', { class: 'atl-body' }, offline, prompt, h('div', { class: 'block-title' }, `Your conversation with the ${staffWord()}`), conversationBlock(), h('button', { class: 'atl-pill-btn', type: 'button', onclick: openMessages }, `Message the ${staffWord()}`), h('div', { class: 'block-title' }, 'Updates'), h('div', { class: 'atl-cards' }, list))];
+  // v0.149.1: one warm empty state instead of two; "Updates" only when there are some.
+  return [plainHead('', 'Messages'), h('div', { class: 'atl-body' }, offline, prompt,
+    myMessages.length ? h('div', { class: 'block-title' }, `Your conversation with the ${staffWord()}`) : null, conversationBlock(),
+    h('button', { class: 'atl-pill-btn', type: 'button', onclick: openMessages }, `Message the ${staffWord()}`),
+    inbox.length ? h('div', { class: 'block-title gal-gap' }, 'Updates') : null, inbox.length ? h('div', { class: 'atl-cards' }, list) : null)];
 }
 
 // ---------- the guest's own panel (tap the initials): name, notifications, refresh ----------
@@ -463,7 +467,7 @@ function todayView(sheet, offline) {
 
 // The Trip tab: the whole programme, folded by destination.
 function tripView(sheet, offline) {
-  return [h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Trip'), h('p', {}, `${sheet.days.length} days · ${sheet.trip}`)),
+  return [h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Your journey'), h('p', {}, `${sheet.days.length} days · ${destinationGroups(sheet).length} stops`)),
     h('div', { class: 'atl-body' }, offline, staleNotice(sheet), exploreMapsBlock(sheet, go), ...programmeView(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
@@ -512,7 +516,7 @@ function programView(sheet, offline) {
     if (r.open) { node.setAttribute('role', 'button'); node.tabIndex = 0; node.addEventListener('click', r.open); }
     return node;
   };
-  return [h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Program'), h('p', {}, `${day.destination} · ${dayDate(day.date)}`)),
+  return [h('div', { class: 'atl-head' }, h('h1', {}, 'Program'), h('p', {}, `${day.destination} · ${dayDate(day.date)}`)),
     h('div', { class: 'atl-body' }, offline, staleNotice(sheet), pills,
       day.title ? h('h2', { class: 'prog-title' }, day.title) : null,
       h('div', { class: 'prog-list' }, rows.length ? rows.map(line) : h('p', { class: 'line' }, 'No program for this day yet.')),
@@ -550,10 +554,11 @@ function programmeView(sheet) {
   return groups.map((group) => {
     const open = openGroups.has(group.key);
     const photo = sheet.destinations?.find((d) => d.name === group.destination)?.photo;
-    const head = h('button', { class: 'dest-head', type: 'button', 'aria-expanded': String(open) },
+    const here = group.days.some((d) => d.date === localToday()); // v0.149.1: "here now" on the stop of the day
+    const head = h('button', { class: `dest-head${here ? ' is-here' : ''}`, type: 'button', 'aria-expanded': String(open) },
       photo ? picture(photo, 'dest-photo', '') : null,
       h('div', { class: 'dest-label' }, h('div', { class: 'dest-name' }, group.destination), h('div', { class: 'dest-sub' }, `${dayRange(group)} · ${dayDate(group.days[0].date)}${group.days.length > 1 ? ` – ${dayDate(group.days[group.days.length - 1].date)}` : ''}`)),
-      h('span', { class: 'dest-chev' }, open ? '–' : '+'));
+      h('span', { class: 'dest-chev', 'aria-hidden': 'true' }, '›'));
     head.addEventListener('click', () => { if (openGroups.has(group.key)) openGroups.delete(group.key); else openGroups.add(group.key); paint(); });
     const dining = (sheet.restaurants ?? []).filter((r) => r.destination === group.destination);
     const eat = open && dining.length ? h('button', { class: 'eat-row', type: 'button', onclick: () => go({ eat: group.destination }) }, h('span', {}, `Where to dine in ${group.destination}`), h('span', { class: 'eat-count' }, `${dining.length} restaurants ›`)) : null;
@@ -618,7 +623,7 @@ function passportView(sheet, offline) {
   });
   if (!simulatedDate) { const all = state.filter((d) => d.given).map(stampKey); store.set(STAMPS_SEEN_KEY, JSON.stringify([...new Set([...seen, ...all])])); }
   return [
-    h('div', { class: 'atl-head' }, h('small', {}, sheet.trip), h('h1', {}, 'Passport'), h('p', {}, counterText(sheet, state))),
+    h('div', { class: 'atl-head' }, h('h1', {}, 'Passport'), h('p', {}, counterText(sheet, state))),
     h('div', { class: 'atl-body' }, offline, h('div', { class: 'stamp-grid' }, tiles),
       h('p', { class: 'foot' }, state.some((d) => d.ex) ? 'In some places you earn the stamp by playing: tap a place to start. Elsewhere it arrives on the first day, at the local time there.' : 'A stamp arrives on the first day in each place, at the local time there.'), creditsLink(sheet)),
   ];
@@ -630,7 +635,7 @@ function counterText(sheet, state) {
   const withGames = sheet.destinations.filter((d) => d.ex);
   if (withGames.length === 0) return base;
   const { stars } = totals(readProgress(), withGames.map(destKey));
-  return `${base} · \u2605 ${stars} of ${withGames.length * 3}`;
+  return `${base} · \u2605 ${stars} of ${withGames.length * 3} stars from the games`;
 }
 
 // Three small dots: the two games and the quiz, filled when done (a stamp not earned yet).
@@ -961,7 +966,7 @@ function messageCard() {
 }
 // The conversation so far, newest at the bottom (shown in Messages, above the notifications).
 function conversationBlock() {
-  if (myMessages.length === 0) return h('p', { class: 'muted' }, `No conversation yet. Tap "Message the ${staffWord()}" to write to them.`);
+  if (myMessages.length === 0) return h('div', { class: 'gal-empty' }, h('b', {}, `Your ${staffWord()} is one message away`), h('span', {}, 'A question, a wish, a problem on the spot: write, and the answer comes here.'));
   return h('div', { class: 'msg-thread' }, myMessages.slice(-8).map((m) => h('div', { class: `msg msg--${m.direction}` },
     h('div', { class: 'msg-who' }, m.direction === 'staff' ? `${m.sender || staffWord()} (${staffWord()})` : 'You'), h('div', {}, m.body), h('div', { class: 'request-when' }, messageTimes(m.created_at)))));
 }
@@ -1056,7 +1061,7 @@ async function disablePush() {
 function plainHead(label, title) {
   return h('div', { class: 'atl-head atl-head--sub' },
     h('button', { class: 'atl-back atl-back--inline', type: 'button', 'aria-label': 'Back', onclick: () => history.back() }, '‹'),
-    h('small', {}, label), h('h1', {}, title));
+    label ? h('small', {}, label) : null, h('h1', {}, title));
 }
 
 function optionsView(sheet, tourIndex, offline) {
@@ -1149,7 +1154,7 @@ function creditsView(sheet, offline) {
     const rows = Object.entries(all).filter(([key]) => used.has(`photos/${key}.jpg`)).map(([key, c]) => h('div', { class: 'info-block' }, h('div', { class: 'block-title' }, key.replace(/^tours\//, '').replace(/-/g, ' ')), h('div', { class: 'block-text' }, `${c.author}, ${c.license}`, h('br'), h('a', { href: c.source, target: '_blank', rel: 'noopener' }, 'Wikimedia Commons'))));
     putIn(list, offline ?? '', ...rows);
   }).catch(() => { putIn(list, h('p', { class: 'foot' }, 'The credits could not be loaded right now.')); });
-  return [plainHead(sheet.trip, 'Photo credits'), list];
+  return [plainHead('', 'Photo credits'), list];
 }
 
 // The activity level, written out in the body of the tour page (owner's request): the level in words, what it means, then the leader's own details

@@ -303,7 +303,7 @@ export function albumView(sheet, offline, { backButton } = {}) {
   return [header(sheet, backButton), body];
 }
 function header(sheet, backButton) {
-  return backButton ? d.plainHead(sheet.trip, 'Our Album') : d.h('div', { class: 'atl-head' }, d.h('small', {}, sheet.trip), d.h('h1', {}, 'Our Album'));
+  return backButton ? d.plainHead('', 'Our Album') : d.h('div', { class: 'atl-head' }, d.h('h1', {}, 'Our Album'));
 }
 
 // A kept note for the Today page / the farewell: how many photos are new to this guest (null when nothing to say).

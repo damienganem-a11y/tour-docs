@@ -154,7 +154,10 @@ export function exploreView(sheet, index, offlineBanner) {
     // With signal, the detailed map pictures on top. If they fail (no signal), they are taken away and the plan shows.
     const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
     let failures = 0;
-    tiles.on('tileerror', () => { failures += 1; if (failures >= 3 && streets && leafletMap.hasLayer(tiles)) leafletMap.removeLayer(tiles); });
+    // v0.149.1: no signal AND no street plan kept: say so on the map, instead of a bare grey rectangle.
+    const noPlan = () => { if (!streets && !mapBox.querySelector('.xm-noplan')) mapBox.append(h('div', { class: 'xm-noplan' }, 'The streets need signal here. Your position, the places and the distances still work.')); };
+    if (!navigator.onLine) noPlan();
+    tiles.on('tileerror', () => { failures += 1; if (failures >= 3) { if (streets && leafletMap.hasLayer(tiles)) leafletMap.removeLayer(tiles); noPlan(); } });
     if (navigator.onLine) tiles.addTo(leafletMap);
     window.addEventListener('online', () => { failures = 0; if (leafletMap && !leafletMap.hasLayer(tiles)) tiles.addTo(leafletMap); });
     window.addEventListener('offline', () => { if (leafletMap && streets && leafletMap.hasLayer(tiles)) leafletMap.removeLayer(tiles); });
