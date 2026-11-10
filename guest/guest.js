@@ -453,7 +453,12 @@ function todayView(sheet, offline) {
   const facts = place?.facts ?? [];
   const fact = facts.length ? facts[Math.max(0, Math.round((Date.parse(`${day.date}T00:00:00Z`) - Date.parse(`${place.firstDate ?? day.date}T00:00:00Z`)) / 86400000)) % facts.length] : null;
   const factCard = fact ? h('div', { class: 'atl-funfact' }, h('small', {}, `Did you know? · ${day.destination}`), h('p', {}, fact)) : null;
-  return [hero, title, h('div', { class: 'atl-body' }, offline, ...boardingCards(sheet), nextBar(sheet), messageCard(), exploreTodayCard(sheet, go, simulatedDate ? new Date(`${simulatedDate}T12:00:00Z`) : new Date()), h('div', { class: 'atl-day' }, parts), explorerCard(sheet), factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+  // v0.149.0 (the "Galerie" look, owner's choice of 10 Nov 2026): the place name sits ON the photo; the page below is a sheet with rounded corners that
+  // rises over it. Order: what is next, the day, then the quiet rows (map, messages, games), the fact, and one small line at the bottom.
+  hero.append(title);
+  return [hero, h('div', { class: 'atl-body gal-sheet' }, offline, ...boardingCards(sheet), nextBar(sheet), h('div', { class: 'atl-day' }, parts),
+    h('div', { class: 'gal-rows' }, exploreTodayCard(sheet, go, simulatedDate ? new Date(`${simulatedDate}T12:00:00Z`) : new Date()), messageCard(), explorerCard(sheet)),
+    factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
 }
 
 // The Trip tab: the whole programme, folded by destination.
@@ -950,9 +955,9 @@ const staffWord = () => currentSheet?.staffLabel || 'the staff';
 // The card on the Today page, and its twin at the top of Messages: the way to write to the staff, with a count of answers not read yet.
 function messageCard() {
   const unread = unreadFromTeam();
-  return h('div', { class: 'atl-note msg-card' }, h('small', {}, unread ? `${unread} new answer${unread === 1 ? '' : 's'}` : 'Need something?'),
-    h('span', {}, `Write to the ${staffWord()} here: a question, or a problem on the spot. You will see the answer in Messages.`),
-    h('button', { class: 'atl-pill-btn', type: 'button', onclick: openMessages }, `Message the ${staffWord()}`));
+  return h('button', { class: 'gal-row', type: 'button', onclick: openMessages },
+    h('span', { class: 'gal-row-text' }, h('b', {}, `Message the ${staffWord()}`), h('small', { class: unread ? 'is-new' : '' }, unread ? `${unread} new answer${unread === 1 ? '' : 's'}` : 'A question, or a problem on the spot')),
+    h('span', { class: 'gal-chev', 'aria-hidden': 'true' }, '›'));
 }
 // The conversation so far, newest at the bottom (shown in Messages, above the notifications).
 function conversationBlock() {
@@ -1246,7 +1251,7 @@ function applyAccent(accent, theme) {
   document.documentElement.style.setProperty('--company', hex);
   // A trip with a company name wears the company colour where the neutral look uses yellow; the text on top is black or white, whichever reads better.
   const root = document.documentElement.style;
-  const wear = /^#[0-9a-f]{6}$/i.test(theme ?? '') ? theme : '#FF8200';
+  const wear = '#8f7437'; // brass, the same for every trip (owner's choice, 10 Nov 2026); `theme` (the company's colour) is no longer worn by the guest app
   {
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(wear.slice(i, i + 2), 16));
     root.setProperty('--yellow', wear);

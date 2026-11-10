@@ -1,0 +1,104 @@
+/* "Galerie": the guest app's look (v0.149.0, owner's choices of 10 Nov 2026 after the design review).
+   Ultra-simple and high-end: a clear page, fine light titles, ONE accent (a matte brass) used only for "now", lists instead of cards, and the page
+   as a sheet with rounded corners that rises over the photo. This file comes AFTER guest.css and replaces its look step by step:
+     step 1 (this version): the foundations (fonts, colours, tab bar, buttons) and the Today page;
+     step 2: tour, boarding pass, Trip, Messages, options, map;   step 3: movement, Passport, and the dark look ("Nuit").
+   Every colour here is a token, so the dark look will only redefine the tokens.
+
+   THE TITLE FONT is one line: to use another one (for example a licensed brand font), put its file in app/fonts and change the src below. */
+@font-face { font-family: Title; src: url(../fonts/jost-latin-wght-normal.woff2) format('woff2'); font-weight: 100 900; font-display: swap; }
+/* The older styles name "Outfit" in many places: it now points to the same file, so no old title font is left anywhere. */
+@font-face { font-family: Outfit; src: url(../fonts/jost-latin-wght-normal.woff2) format('woff2'); font-weight: 100 900; font-display: swap; }
+
+:root {
+  --g-paper: #f7f8f6;      /* the page */
+  --g-surface: #ffffff;    /* a raised thing (rare) */
+  --g-ink: #101614;        /* text */
+  --g-muted: #5c6661;      /* second-level text */
+  --g-line: #dfe3df;       /* hairlines */
+  --g-brass: #8f7437;      /* the one accent: "now" */
+  --g-title: Title, Jost, "Helvetica Neue", system-ui, sans-serif;
+  --atl-ink: var(--g-ink); --atl-mist: #eef0ed;
+}
+html, body, main { background: var(--g-paper); color: var(--g-ink); }
+
+/* ---------- Titles: light, never heavy ---------- */
+.atl-title h1, .atl-head h1 { font: 300 46px/1 var(--g-title); letter-spacing: .005em; color: var(--g-ink); }
+.atl-head small { font: 500 11px/1.3 Inter, sans-serif; letter-spacing: .14em; color: var(--g-muted); }
+.atl-head p, .atl-title p { color: var(--g-muted); }
+.block-title { font: 500 11px Inter, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--g-muted); }
+
+/* ---------- Today: the photo, the name on it, the sheet over it ---------- */
+.atl-hero { height: min(52vh, 440px); min-height: 330px; background: #26302e; }
+.atl-hero::after { background: linear-gradient(180deg, rgba(8, 14, 13, .28) 0%, rgba(8, 14, 13, 0) 24%, rgba(8, 14, 13, .12) 42%, rgba(8, 14, 13, .78) 88%); }
+.atl-hero--plain { height: 250px; min-height: 0; background: var(--g-ink); }
+.atl-hero .atl-title { position: absolute; z-index: 2; left: 0; right: 0; bottom: 44px; margin: 0; padding: 0 22px; color: #fff; }
+.atl-hero .atl-title h1 { color: #fff; font-size: 54px; margin-top: 2px; }
+.atl-hero .atl-title p { color: rgba(255, 255, 255, .88); font-size: 13px; margin-top: 6px; }
+.atl-hero .atl-pill { background: none; color: rgba(255, 255, 255, .9); padding: 0; font: 600 10.5px Inter, sans-serif; letter-spacing: .16em; }
+.atl-hero .atl-hello { color: #fff; font: 400 15px/1.3 Inter, sans-serif; margin-top: 8px; }
+.atl-hero .atl-hello small { color: rgba(255, 255, 255, .8); font-size: 12px; }
+.atl-bell, .atl-dot { width: 40px; height: 40px; background: rgba(255, 255, 255, .92); color: var(--g-ink); backdrop-filter: blur(6px); }
+.atl-dot { font: 500 13px Inter, sans-serif; letter-spacing: .02em; }
+.atl-badge { background: var(--g-brass); color: #fff; font: 600 11px/20px Inter, sans-serif; }
+
+.gal-sheet { position: relative; z-index: 3; margin-top: -26px; border-radius: 24px 24px 0 0; background: var(--g-paper); padding: 22px 22px calc(env(safe-area-inset-bottom) + 96px); }
+
+/* What is next: the time, fine and large; no black card */
+.atl-next { flex-direction: row-reverse; justify-content: flex-end; gap: 16px; background: none; color: var(--g-ink); border-radius: 0; padding: 0 0 16px; margin: 0; border-bottom: 1px solid var(--g-line); }
+.atl-next small { color: var(--g-brass); font: 600 10px Inter, sans-serif; letter-spacing: .14em; margin-bottom: 3px; }
+.atl-next b { font: 500 16px/1.25 Inter, sans-serif; }
+.atl-next-time { font: 300 40px/1 var(--g-title); color: var(--g-ink); }
+
+/* The day: a list, a hairline between the lines */
+.atl-day .part { background: none; box-shadow: none; border-radius: 0; padding: 16px 0; margin: 0; border-bottom: 1px solid var(--g-line); }
+.atl-day .part.leisure { background: none; }
+.atl-day .part--tap:active { background: none; opacity: .6; }
+.atl-day .part .half { font: 500 10px Inter, sans-serif; letter-spacing: .14em; color: var(--g-muted); }
+.atl-day .part .what { font: 400 21px/1.2 var(--g-title); color: var(--g-ink); margin: 3px 0 4px; }
+.atl-day .part.leisure .what { color: var(--g-muted); font-weight: 300; }
+.atl-day .part .line { color: var(--g-muted); font-size: 13.5px; }
+.atl-day .part .more, .atl-day .part .other-btn, .atl-body .other-btn { display: inline-block; border: 0; border-radius: 0; background: none; padding: 0; margin: 10px 18px 0 0; min-height: 0; font: 600 12.5px Inter, sans-serif; letter-spacing: .02em; text-transform: none; color: var(--g-ink); }
+.atl-day .part .other-btn, .atl-body .other-btn { color: var(--g-muted); cursor: pointer; }
+.other-btn:active { background: none; color: var(--g-ink); }
+
+/* The quiet rows: map, messages, games */
+.gal-rows { margin-top: 2px; }
+.gal-row, .gal-rows .xm-today, .gal-rows .ex-today { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--g-line); border-radius: 0; background: none; color: var(--g-ink); padding: 15px 0; margin: 0; font: inherit; cursor: pointer; }
+.gal-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gal-row b, .gal-rows .xm-today b, .gal-rows .ex-today b { font: 500 15.5px/1.25 Inter, sans-serif; display: block; }
+.gal-row small, .gal-rows .xm-today span, .gal-rows .ex-today span { font: 400 13px/1.35 Inter, sans-serif; color: var(--g-muted); opacity: 1; }
+.gal-row small.is-new { color: var(--g-brass); font-weight: 600; }
+.gal-chev { color: var(--g-muted); font-size: 20px; line-height: 1; }
+.gal-rows .xm-today, .gal-rows .ex-today { display: grid; grid-template-columns: 1fr; gap: 2px; position: relative; padding-right: 26px; }
+.gal-rows .xm-today small, .gal-rows .ex-today small { display: none; }
+.gal-rows .xm-today::after, .gal-rows .ex-today::after { content: "›"; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); color: var(--g-muted); font-size: 20px; }
+
+/* The fact of the day: words, not a coloured card */
+.atl-funfact { background: none; color: var(--g-ink); border-radius: 0; padding: 22px 0 6px; margin: 0; }
+.atl-funfact small { font: 600 10px Inter, sans-serif; letter-spacing: .14em; color: var(--g-brass); }
+.atl-funfact p { font: 300 20px/1.35 var(--g-title); }
+
+/* The bottom of the page: one quiet line */
+.updated-row { margin-top: 26px; font-size: 12.5px; color: var(--g-muted); }
+.updated-row .link-btn, .foot .link-btn { background: none; border: 0; padding: 4px 0; min-height: 32px; color: var(--g-muted); font: 500 12.5px Inter, sans-serif; letter-spacing: 0; text-transform: none; text-decoration: underline; text-underline-offset: 3px; }
+.foot { margin-top: 2px; text-align: left; }
+
+/* ---------- The tab bar: on the bottom edge, light, never over the content ---------- */
+.atl-tabs { left: 0; right: 0; bottom: 0; transform: none; justify-content: space-around; gap: 0; border-radius: 0; padding: 6px 8px calc(env(safe-area-inset-bottom) + 6px); background: color-mix(in srgb, var(--g-paper) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: none; border-top: 1px solid var(--g-line); }
+.atl-tab { color: var(--g-muted); font: 500 12.5px Inter, sans-serif; padding: 10px 12px 14px; }
+.atl-tab.on { background: none; color: var(--g-ink); font-weight: 600; }
+.atl-tab.on::after { content: ""; position: absolute; left: 50%; bottom: 5px; width: 4px; height: 4px; border-radius: 50%; background: var(--g-brass); transform: translateX(-50%); }
+.atl-new, .atl-tab.on .atl-new { top: 8px; right: 4px; width: 6px; height: 6px; background: var(--g-brass); box-shadow: none; }
+:root[data-dark-company] .atl-tab.on { outline: 0; }
+.atl-body { padding-bottom: calc(env(safe-area-inset-bottom) + 96px); }
+
+/* ---------- Buttons: one shape ---------- */
+.atl-pill-btn, .pass-btn, .xm-go { border-radius: 12px; background: var(--g-ink); color: var(--g-paper); font: 600 14.5px Inter, sans-serif; letter-spacing: 0; text-transform: none; }
+.atl-pill { font: 600 10.5px Inter, sans-serif; letter-spacing: .14em; }
+.ticket-card { border-radius: 14px; margin: 0 0 18px; }
+.banner { border-radius: 12px; }
+
+/* Until step 2 redraws them: the other big titles are already light, so no page still shouts. */
+.atl-tourhead h1 { font: 300 38px/1.05 var(--g-title); letter-spacing: .005em; }
+.atl-body .dest-head b, .atl-body .dest-head .dest-name { font-weight: 400; }
