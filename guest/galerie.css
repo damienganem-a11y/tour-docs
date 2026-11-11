@@ -275,3 +275,67 @@ html, body, main { background: var(--g-paper); color: var(--g-ink); }
 }
 /* The press of a new stamp: a little softer than before */
 @media (prefers-reduced-motion: reduce) { .stamp-tile.is-new svg, .ex-stamp.is-new svg { animation: none; } }
+
+
+/* =====================================================================================================================================
+   v0.153.0: the Passport game pages in the Galerie look (owner's go of 11 Nov 2026: "upgrade the look, but keep something unique for each
+   destination so they know where they are").
+   What stays THE PLACE'S OWN: the photo or drawn scene, the woven pattern band, the place's colours (--ex-page, --ex-accent), its title typeface,
+   and the numbers of the steps. What becomes the app's: the page (paper, light or Nuit), fine titles, hairline lists instead of bubbly cards,
+   one button shape, calm shadows.
+   ===================================================================================================================================== */
+.ex-page { background: var(--g-paper); color: var(--g-ink); }
+.ex-band { height: 22px; border-bottom: 0; box-shadow: inset 0 -2px 0 var(--ex-accent); }
+.ex-band--top { height: calc(env(safe-area-inset-top) + 58px); }
+.ex-art { height: 280px; }
+.ex-art + .ex-band + .ex-hero, .ex-hero { background: var(--g-paper); color: var(--g-ink); padding: 24px 22px 6px; }
+.ex-band--top + .ex-hero { padding-top: 22px; }
+.ex-hero small { font: 600 11px Inter, sans-serif; letter-spacing: .18em; color: var(--ex-accent); }
+.ex-hero h1 { font-family: var(--ex-title); font-weight: 500; font-size: 44px; line-height: 1.02; letter-spacing: .005em; color: var(--ex-page); margin: 6px 0 14px; }
+.ex-greet { color: var(--g-ink); font: 400 20px/1.3 var(--g-title); }
+.ex-greet b, .ex-greet strong { font-weight: 500; }
+.ex-meaning { color: var(--g-muted); opacity: 1; font-size: 15px; }
+.ex-facts { color: var(--g-muted); opacity: 1; font: 500 13px Inter, sans-serif; letter-spacing: .02em; }
+.ex-body { background: var(--g-paper); padding: 8px 22px 30px; gap: 0; }
+.ex-stamp-line { margin: 10px 0 6px; font: 400 17px/1.35 var(--g-title); color: var(--g-ink); }
+/* the three steps: a list with hairlines, the step number in the place's colour */
+.ex-step { background: none; border: 0; border-bottom: 1px solid var(--g-line); border-radius: 0; padding: 16px 0; grid-template-columns: 44px 1fr auto; }
+.ex-step-no { width: 40px; height: 40px; background: none; border: 1.5px solid var(--ex-page); color: var(--ex-page); font: 400 19px var(--ex-title); }
+.ex-step.is-done .ex-step-no, .ex-step-no.is-done { background: var(--ex-page); color: #fff; }
+.ex-step.is-locked { opacity: .5; }
+.ex-step-text small { font: 600 10.5px Inter, sans-serif; letter-spacing: .16em; color: var(--g-muted); opacity: 1; }
+.ex-step-text b, .ex-step-text strong { font: 500 18px/1.2 var(--g-title); }
+.ex-step-text span { color: var(--g-muted); opacity: 1; }
+.ex-step-state { font: 600 11px Inter, sans-serif; letter-spacing: .12em; color: var(--g-muted); opacity: 1; }
+/* one button shape, in the place's colour */
+.ex-btn { border-radius: 12px; padding: 11px 18px; font: 600 13px Inter, sans-serif; letter-spacing: .06em; }
+.ex-wide { border-radius: 14px; padding: 17px; font: 600 16px Inter, sans-serif; letter-spacing: .01em; }
+.ex-wide--plain { background: transparent; color: var(--g-ink); border: 1px solid var(--g-line); }
+/* the quiz and the result */
+.ex-quiz { background: var(--g-paper); }
+.ex-quiz .ex-q, .ex-quiz .ex-result { background: var(--g-surface); border: 1px solid var(--g-line); border-radius: 20px; box-shadow: none; }
+.ex-q small, .ex-result small { font: 600 11px Inter, sans-serif; letter-spacing: .16em; color: var(--ex-accent); opacity: 1; }
+.ex-q h2 { font: 500 22px/1.25 var(--ex-title); }
+.ex-option { border: 1px solid var(--g-line); border-radius: 14px; background: var(--g-paper); color: var(--g-ink); font: 500 16px/1.35 Inter, sans-serif; }
+.ex-option:not(:disabled):active { border-color: var(--ex-accent); }
+.ex-result h1 { font: 400 52px var(--ex-title); color: var(--ex-page); }
+/* a game */
+.ex-gamehead { margin: 16px 18px 12px; }
+.ex-gamehead small { font: 600 11px Inter, sans-serif; letter-spacing: .16em; }
+.ex-gamehead h1 { font: 500 30px/1.1 var(--ex-title); }
+.ex-hud .pill { background: var(--g-surface); border: 1px solid var(--g-line); color: var(--g-ink); font: 500 13.5px Inter, sans-serif; }
+.ex-hud .pill.gold { background: var(--ex-accent); border-color: var(--ex-accent); color: var(--ex-on); }
+.ex-hud .track { background: var(--g-line); height: 6px; }
+.ex-hud .muted { color: var(--g-muted); }
+.ex-stage { border: 1px solid color-mix(in srgb, var(--ex-page) 45%, transparent); border-radius: 20px; box-shadow: 0 12px 32px rgba(10, 16, 14, .10); }
+.ex-sheet { border-radius: 18px; background: var(--g-surface); color: var(--g-ink); box-shadow: 0 12px 36px rgba(10, 16, 14, .16); }
+.ex-sheet h3 { font: 500 24px/1.15 var(--ex-title); color: var(--g-ink); }
+.ex-sheet p { color: var(--g-muted); }
+.ex-star-line { color: var(--g-ink) !important; }
+.ex-fact { border-top-color: var(--g-line); }
+@media (prefers-color-scheme: dark) {
+  /* On the dark page, the place's own deep colour would disappear in titles: the titles take the place's accent instead. */
+  .ex-hero h1, .ex-gamehead h1, .ex-result h1 { color: color-mix(in srgb, var(--ex-accent) 85%, #fff); }
+  .ex-step-no { border-color: var(--ex-accent); color: var(--ex-accent); }
+  .ex-stage { box-shadow: 0 12px 32px rgba(0, 0, 0, .4); }
+}

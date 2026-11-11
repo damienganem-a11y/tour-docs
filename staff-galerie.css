@@ -332,3 +332,74 @@ body:has(.bottom-tabs) .toast { bottom: calc(84px + env(safe-area-inset-bottom))
 /* Something marked "hidden" IS hidden, whatever its own layout says. (The quick replies of a conversation were always open: their "display: flex"
    won over "hidden", so the lightning button did nothing.) */
 [hidden] { display: none !important; }
+
+
+/* =====================================================================================================================================
+   v0.153.0: guests' faces, the allergy page, search, "what changed".
+   ===================================================================================================================================== */
+.face { flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; background: var(--g-mist); color: var(--g-muted); font-family: Inter, sans-serif; font-weight: 600; letter-spacing: .02em; }
+.face--initials { border: 1px solid var(--g-line); }
+.row--face { display: flex; align-items: center; gap: 14px; }
+.row-flag { margin-top: 3px; font: 600 13px Inter, sans-serif; color: var(--sand-warn-ink); }
+.row-flag--severe { color: #b3261e; }
+.guest-doors { margin-bottom: 14px; }
+.guest-card { display: flex; align-items: center; gap: 16px; margin: 4px 0 14px; }
+.guest-card .title { margin: 0; }
+.guest-card-text { min-width: 0; }
+.face-block { flex: none; }
+.face-big { position: relative; display: block; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 50%; }
+.face-big:disabled { cursor: default; }
+.face-edit { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); padding: 3px 10px; border-radius: 10px; background: var(--g-ink); color: var(--g-on-ink); font: 600 12px Inter, sans-serif; white-space: nowrap; }
+.face-preview { display: block; width: 220px; height: 220px; margin: 8px auto 4px; border-radius: 50%; object-fit: cover; }
+.face-session { display: flex; justify-content: center; margin: 6px 0 4px; }
+.diet-card, .note-card { margin: 0 0 12px; padding: 14px 16px; border-radius: 14px; background: var(--sand-warn); color: var(--sand-warn-ink); font-size: 17px; line-height: 1.4; }
+.note-card { background: var(--g-mist); color: var(--g-ink); }
+.diet-card--severe { background: #b3261e; color: #fff; }
+.diet-card-head { font: 600 12px Inter, sans-serif; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 4px; opacity: .9; }
+.diet-list { display: grid; gap: 10px; }
+.diet-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--g-line); border-radius: var(--g-radius); background: var(--g-surface); color: var(--g-ink); }
+.diet-row--severe { border: 2px solid #b3261e; }
+.diet-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.diet-name { font: 500 19px/1.2 var(--g-title); }
+.diet-name small { font: 400 14px Inter, sans-serif; color: var(--g-muted); }
+.diet-text { font-size: 16.5px; line-height: 1.35; }
+.diet-party { font-size: 14px; color: var(--g-muted); }
+.diet-severe { align-self: flex-start; padding: 2px 8px; border-radius: 8px; background: #b3261e; color: #fff; font: 700 12px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) :is(.diet-row--severe) { border-color: #ff6b5e; } :root:not([data-theme="light"]) .row-flag--severe { color: #ff8a80; } }
+:root[data-theme="dark"] .diet-row--severe { border-color: #ff6b5e; }
+:root[data-theme="dark"] .row-flag--severe { color: #ff8a80; }
+.search-launch { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; margin: 4px 0 6px; padding: 0 16px; border: 1px solid var(--g-line); border-radius: 14px; background: var(--g-surface); color: var(--g-muted); font: 400 16.5px Inter, sans-serif; text-align: left; cursor: text; }
+.search-launch .icon svg { width: 22px; height: 22px; display: block; color: var(--g-ink); }
+.search-bar { display: flex; gap: 8px; align-items: center; position: sticky; top: 0; z-index: 2; padding: 4px 0 8px; background: var(--g-paper); }
+.search-input { flex: 1; min-height: 54px; margin: 0; font-size: 18px; }
+.search-close { flex: none; width: auto; margin: 0; padding: 0 16px; }
+.search-row { display: flex; align-items: center; gap: 12px; }
+.search-group .section-title { margin-top: 14px; }
+.since-card { margin: 10px 0 4px; padding: 16px; border-radius: var(--g-radius); border: 1.5px solid var(--g-brass); background: var(--g-surface); }
+.since-head { font: 600 13px Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--g-brass); margin-bottom: 8px; }
+.since-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.since-list li { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-bottom: 1px solid var(--g-line); font-size: 16.5px; line-height: 1.35; }
+.since-list li:last-child { border-bottom: 0; }
+.since-list small { font-size: 14px; color: var(--g-muted); }
+.rc-guest { justify-content: flex-start; gap: 14px; padding-left: 12px; }
+.rc-name { flex: 1; min-width: 0; text-align: left; }
+.tick-row .face { margin-right: 2px; }
+.timeline { display: grid; gap: 0; border: 1px solid var(--g-line); border-radius: var(--g-radius); background: var(--g-surface); overflow: hidden; }
+.tl-item { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 10px 14px; border-bottom: 1px solid var(--g-line); color: var(--g-ink); }
+.tl-item:last-child { border-bottom: 0; }
+.tl-item.is-past { opacity: .55; }
+.tl-time { flex: none; width: 58px; font: 400 22px/1 var(--g-title); }
+.tl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tl-title { font: 500 17px/1.25 Inter, sans-serif; }
+.tl-detail { font-size: 14.5px; color: var(--g-muted); }
+.tl-now { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 0; position: relative; }
+.tl-now::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--g-brass); }
+.tl-now span { position: relative; z-index: 1; margin-top: -1px; transform: translateY(-50%); padding: 1px 8px; border-radius: 8px; background: var(--g-brass); color: #fff; font: 700 11px Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+/* The company's colour instead of brass (This phone > Text size and look > Accent colour). --yellow is the trip's company colour (app.js applyLook);
+   it is darkened a little on light pages and lightened on dark ones, so a pale colour still reads as text. */
+html:root[data-accent="company"] { --g-brass: color-mix(in srgb, var(--yellow, #8f7437) 72%, #000); }
+@media (prefers-color-scheme: dark) { html:root[data-accent="company"]:not([data-theme="light"]) { --g-brass: color-mix(in srgb, var(--yellow, #c9a85a) 80%, #fff); } }
+html:root[data-accent="company"][data-theme="dark"] { --g-brass: color-mix(in srgb, var(--yellow, #c9a85a) 80%, #fff); }
+/* A sheet covers everything on the page, the roll call's bottom bar and the bottom tabs included (they were showing over a sheet's own buttons). */
+.backdrop { z-index: 70; }
+.toast { z-index: 90; }

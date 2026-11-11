@@ -618,7 +618,7 @@ export function tripWarnings(trip) {
 // They are deleted when the trip is archived (this replaces the earlier "after the last dinner" rule). True when this trip is
 // archived and some guest still has dietary text to erase.
 export function dietaryErasureDue(trip) {
-  return Boolean(trip.archivedAt) && trip.guests.some((g) => g.dietary);
+  return Boolean(trip.archivedAt) && trip.guests.some((g) => g.dietary || g.photo); // the faces go too (v0.153.0)
 }
 
 // What this trip calls its team of colleagues (owner's request, 21 Oct 2026): "Jet Staff" on a jet trip, "Adventure Guides" on a river cruise. A setting of the trip's

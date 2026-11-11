@@ -18,6 +18,7 @@ export function applyTheme() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0d1110' : '#f7f8f6');
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme === 'auto' ? 'light dark' : theme);
   applyTextSize(); // the size of the text is put on the page at the same moments as the look
+  applyAccent();
 }
 
 export function setTheme(theme) {
@@ -43,4 +44,17 @@ export function applyTextSize() {
 export function setTextSize(size) {
   try { if (size === 'normal') localStorage.removeItem(TEXT_KEY); else localStorage.setItem(TEXT_KEY, size); } catch { /* the choice just is not kept */ }
   applyTextSize();
+}
+
+// ---------- The accent colour (v0.153.0): the app's brass, or the colour of the trip's company (Settings > Company look) ----------
+// A choice of this phone. Inside a trip the company colour then marks the small titles, the "now" line and what is new; buttons stay dark.
+const ACCENT_KEY = 'td-accent';
+export const ACCENTS = [['brass', 'Brass'], ['company', 'Company colour']];
+export function getAccent() { try { return localStorage.getItem(ACCENT_KEY) === 'company' ? 'company' : 'brass'; } catch { return 'brass'; } }
+export function applyAccent() {
+  if (getAccent() === 'company') document.documentElement.setAttribute('data-accent', 'company'); else document.documentElement.removeAttribute('data-accent');
+}
+export function setAccent(accent) {
+  try { if (accent === 'company') localStorage.setItem(ACCENT_KEY, 'company'); else localStorage.removeItem(ACCENT_KEY); } catch { /* not kept */ }
+  applyAccent();
 }

@@ -8,6 +8,7 @@
 // starts); the real work here is laying the little tables out on the page, and writing that index
 // correctly.
 
+const BRASS = [0x8f / 255, 0x74 / 255, 0x37 / 255]; // the app's accent, as three 0-1 numbers
 const PAGE_WIDTH = 842;  // A4, in points (1/72 inch), landscape — wide enough for tables side by side
 const PAGE_HEIGHT = 595;
 const MARGIN = 22;
@@ -220,6 +221,8 @@ function layoutPages(doc, baseKind = ACTIVITY_TILE, scale = 1) {
     const titleLines = wrapText(doc.title, FONT_BOLD, 12, USABLE_WIDTH);
     for (const line of titleLines) { text(line, MARGIN, y, { font: FONT_BOLD, size: 12 }); y -= 14; }
     text(doc.updatedLine, MARGIN, y, { size: 7.5, gray: 0.4 });
+    // A short brass line under the heading (v0.153.0): the same signature as the app's look ("Galerie").
+    page.push({ type: 'rect', x: MARGIN, y: y + 4, w: 28, h: 1.2, rgb: BRASS });
     y -= 14;
   }
   writeDocHead();
@@ -789,7 +792,8 @@ function biggestScaleFor(card, brand, accent, logoImage, width, height) {
 }
 
 // The accent colour as three 0-1 numbers, and the logo (if any) ready to embed, from a trip's branding.
-const accentOf = (brand) => hexToRgb(/^#[0-9a-f]{6}$/i.test(brand.accent ?? '') ? brand.accent : '#1d5c57');
+// With no company colour: the matte brass of the app's look (v0.153.0), instead of the old teal.
+const accentOf = (brand) => hexToRgb(/^#[0-9a-f]{6}$/i.test(brand.accent ?? '') ? brand.accent : '#8f7437');
 function logoImageOf(brand) {
   if (!brand.logo) return null;
   const binary = atob(brand.logo.data.split(',')[1]);

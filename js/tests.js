@@ -26,6 +26,10 @@ import { dietaryErasureDue } from './rules.js';
 import { nextTour, programToday, toursOfToday, mainTour } from './views/today.js';
 import { currentSlot } from './views/destination.js';
 import { HELP } from './views/help.js';
+import { centreSquare } from './faces.js';
+import { searchTrip, matches } from './search.js';
+import { changesSince } from './sinceLast.js';
+import { dietTags, isSevere, dietaryList } from './dietary.js';
 import { practiceHint } from './views/practice.js';
 import { plainError } from './ui.js';
 import { setTextSize, getTextSize } from './theme.js';
@@ -2907,6 +2911,45 @@ function readZip(bytes) {
   const arcD = makeCtx();
   await applyChange(arcD, trip.id, { type: 'archive-trip' });
   check('An archived trip is erased too', (await applyChange(arcD, trip.id, { type: 'erase-dietary' })).ok && arcD.state.guests.every((g) => !g.dietary));
+}
+
+// --- Guests' faces and the allergy page (v0.153.0) ---
+{
+  const tiny = 'data:image/jpeg;base64,' + 'A'.repeat(200);
+  const ctxF = makeCtx();
+  const g0 = ctxF.state.guests[0];
+  const added = await applyChange(ctxF, trip.id, { type: 'set-photo', guestId: g0.id, photo: tiny });
+  check('A face is saved on the guest; the journal says only "Added a photo of", never the picture',
+    added.ok && ctxF.state.guests[0].photo === tiny && !JSON.stringify(ctxF.entries).includes('base64') && /^Added a photo of/.test(summarize(groupBatches(ctxF.entries).at(-1))));
+  check('Only a small JPEG made by the app is accepted as a face', !(await applyChange(ctxF, trip.id, { type: 'set-photo', guestId: g0.id, photo: 'data:image/png;base64,AAAA' })).ok
+    && !(await applyChange(ctxF, trip.id, { type: 'set-photo', guestId: g0.id, photo: 'data:image/jpeg;base64,' + 'A'.repeat(70000) })).ok);
+  check('A face is not undone by Undo (Undo takes back the last booking change only)', lastUndoable(ctxF.entries) === null || lastUndoable(ctxF.entries).kind !== 'set-photo');
+  check('With a face left, an archived trip still has something to erase', dietaryErasureDue({ ...ctxF.state, guests: ctxF.state.guests.map((g) => ({ ...g, dietary: '' })), archivedAt: '2026-11-11T10:00:00.000Z' }));
+  await applyChange(ctxF, trip.id, { type: 'erase-dietary' });
+  check('When the trip is archived, the faces are erased with the allergies', ctxF.state.guests.every((g) => !g.photo && !g.dietary) && ctxF.entries.at(-1).faces === 1);
+  const removed = await applyChange(makeCtx(), trip.id, { type: 'set-photo', guestId: g0.id, photo: null });
+  check('A face can be removed', removed.ok);
+  check('The middle square of a photo: a landscape is centred, a portrait keeps more of its top', JSON.stringify(centreSquare(400, 200)) === '{"x":100,"y":0,"side":200}' && JSON.stringify(centreSquare(200, 400)) === '{"x":0,"y":60,"side":200}');
+  check('A colleague (Team) may add a face', validateChanges(ctxF.state, { id: 'u2', role: 'team', name: 'Kim' }, [{ type: 'set-photo', guestId: g0.id, photo: tiny }]).ok);
+  check('The usual needs are read as tags; "shellfish" alone is not also "fish"',
+    dietTags('Severe peanut allergy, EpiPen').join() === 'Nuts' && dietTags('Shellfish allergy').join() === 'Shellfish' && dietTags('No fish, gluten free').join() === 'Fish,Gluten' && dietTags('Vegan').join() === 'Vegan' && dietTags('').length === 0);
+  check('A need written as dangerous is severe', isSevere('anaphylaxis to nuts') && isSevere('carries an EpiPen') && !isSevere('prefers vegetarian'));
+  const listed = dietaryList([{ id: 'a', first: 'Zoe', dietary: 'vegan' }, { id: 'b', first: 'Al', dietary: 'Severe nut allergy' }, { id: 'c', first: 'Bo', dietary: '' }, { id: 'd', first: 'Cy', dietary: 'likes tea', leftAt: 'x' }], (g) => g.first);
+  check('The allergy list: only guests with a need, the severe ones first, a count per tag', listed.rows.map((r) => r.guest.id).join() === 'b,a' && JSON.stringify(listed.counts) === '[["Nuts",1],["Vegan",1]]' && listed.other === 0);
+}
+
+// --- Search everything, and "since you last looked" (v0.153.0) ---
+{
+  const ctxS = makeCtx(); const t = ctxS.state;
+  const g = t.guests[0]; const a = t.activities[0]; const d = t.destinations[0];
+  const groups = searchTrip(t, g.first.slice(0, 3));
+  check('Search finds a guest by the first letters of the name, with a link to their page', groups[0]?.group === 'Guests' && groups[0].items.some((i) => i.id === g.id && i.href.endsWith(`/use/guest/${g.id}`)));
+  check('Search finds a tour by a word of its name, and a stop by its name', searchTrip(t, a.name.split(' ')[0]).some((x) => x.group === 'Tours' && x.items.some((i) => i.id === a.id)) && searchTrip(t, d.name).some((x) => x.group === 'Stops'));
+  check('Search finds a page of the app; nothing typed finds nothing', searchTrip(t, 'notif', { pages: [{ title: 'Notifications', detail: 'Turn them on', href: '#n' }] }).some((x) => x.group === 'In the app') && searchTrip(t, '  ').length === 0);
+  check('Two letters match the start of a word only; three match anywhere', matches('Anna Alder', 'al') && !matches('Anna Alder', 'ld') && matches('Anna Alder', 'lde'));
+  const e = (batchId, at, id, extra = {}) => ({ batchId, seq: 1, at, who: { id, name: id }, type: 'set-easy-walker', guestName: 'Ann', easyWalker: true, guestId: 'g', ...extra });
+  const entries = [e('1', '2027-01-01T10:00:00Z', 'kim'), e('2', '2027-01-01T12:00:00Z', 'me'), e('3', '2027-01-01T13:00:00Z', 'kim'), e('4', '2027-01-01T14:00:00Z', 'kim', { type: 'set-photo' })];
+  check('"Since you last looked" lists what others changed after the moment, newest first, not my own changes, not a photo', changesSince(entries, '2027-01-01T11:00:00Z', 'me').length === 1 && changesSince(entries, '2027-01-01T09:00:00Z', 'me').length === 2 && changesSince(entries, null, 'me').length === 0);
 }
 
 // --- Tour information for guests (activity.info) ---

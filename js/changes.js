@@ -112,7 +112,8 @@
 //   { type: 'assign-guests', splitId, assignments: [{ guestId, groupId | null }] }   puts guests in a group of a
 //       split, or (groupId null) takes them out of it — one action for one Undo
 //   { type: 'set-dietary', guestId, dietary }  one guest's allergy / dietary text (the journal says only that it was updated); never undoable
-//   { type: 'erase-dietary' }  erase all allergy/dietary text (automatic, when the trip is archived); never undoable
+//   { type: 'erase-dietary' }  erase all allergy/dietary text AND every guest's face (automatic, when the trip is archived); never undoable
+//   { type: 'set-photo', guestId, photo }  one guest's face (faces.js), or null to remove it; the journal says only that it changed; never undoable (v0.153.0)
 //   { type: 'set-branding', companyName, accent, cardNote, logo, teamLabel }  the look of the confirmation cards (Settings > Brand);
 //       logo is null or { data: 'data:image/jpeg;base64,...', width, height }
 //   { type: 'guest-links', action, guestIds: [id, ...] }      the personal links of the guest app (Settings > Guest links), owner only.
@@ -125,6 +126,7 @@
 // Undo never deletes anything from the journal: it writes new entries saying what was taken back.
 // Privacy: journal entries never contain dietary info.
 
+import { isFace } from './faces.js';
 import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { explorerProblems } from './explorer.js';
@@ -164,13 +166,13 @@ const TRIP_INFO_TYPES = new Set(['rename-trip']);
 const BRANDING_TYPES = new Set(['set-branding']);
 // What a Team colleague may ask for: moving guests, roll call, and dinner tables. Everything else (settings, guests, groups, branding, the trip
 // itself, undo) stays with the owner.
-const TEAM_TYPES = new Set(['move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+const TEAM_TYPES = new Set(['set-photo', 'move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // What an Advance (the local contact of ONE destination) may do inside their destination on top of that: the destination's own settings, its tours and
 // its restaurants. Everything trip-wide (guests, groups, branding, the trip itself) stays with the owner.
 const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity', 'edit-activity', 'cancel-tour', 'add-restaurant', 'edit-restaurant', 'restaurant-card', 'set-program']);
 // Erasing every guest's allergy and dietary information (automatic, when the trip is archived; see rules.js's dietaryErasureDue).
 // Allowed on an archived trip too, never undoable (what was erased must not come back), and the journal records only how many.
-const DIETARY_TYPES = new Set(['erase-dietary', 'set-dietary']);
+const DIETARY_TYPES = new Set(['erase-dietary', 'set-dietary', 'set-photo']);
 // The guest app's personal links (Settings > Guest links): owner only (not in TEAM_TYPES), on their own, never undoable.
 const GUEST_LINK_TYPES = new Set(['guest-links']);
 const SPLIT_TYPES = new Set(['add-split', 'edit-split', 'delete-split', 'assign-guests', 'set-split-state']);
@@ -244,6 +246,12 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
     const g = trip.guests.find((x) => x.id === changes[0].guestId);
     if (!g || g.leftAt) return fail('That guest is not on this trip.');
     if (String(changes[0].dietary ?? '').trim().length > 300) return fail('Allergies and dietary needs: 300 letters at most.');
+    return { ok: true };
+  }
+  if (changes[0].type === 'set-photo') {
+    const g = trip.guests.find((x) => x.id === changes[0].guestId);
+    if (!g) return fail('That guest is not on this trip.');
+    if (changes[0].photo !== null && !isFace(changes[0].photo)) return fail('That picture is not one the app can keep. Take it again.');
     return { ok: true };
   }
   if (DIETARY_TYPES.has(changes[0].type)) return { ok: true };
@@ -1659,10 +1667,19 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
     entries.push({ ...base(), type: 'set-dietary', guestId: guest.id, guestName: names.get(guest.id), hasNeed: guest.dietary !== '', ...guestWhere });
     return save(ctx, next, entries, {});
   }
+  if (changes[0].type === 'set-photo') {
+    const guest = next.guests.find((g) => g.id === changes[0].guestId);
+    if (changes[0].photo) guest.photo = changes[0].photo; else delete guest.photo;
+    entries.push({ ...base(), type: 'set-photo', guestId: guest.id, guestName: names.get(guest.id), hasPhoto: Boolean(changes[0].photo), ...guestWhere });
+    return save(ctx, next, entries, {});
+  }
   if (DIETARY_TYPES.has(changes[0].type)) {
     const affected = next.guests.filter((g) => g.dietary);
     for (const guest of affected) guest.dietary = '';
-    entries.push({ ...base(), type: 'erase-dietary', ...guestWhere, count: affected.length });
+    // The faces go at the same moment (v0.153.0): once the trip is over, nothing personal stays.
+    const faces = next.guests.filter((g) => g.photo);
+    for (const guest of faces) delete guest.photo;
+    entries.push({ ...base(), type: 'erase-dietary', ...guestWhere, count: affected.length, faces: faces.length });
     return save(ctx, next, entries, {});
   }
 

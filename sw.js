@@ -15,7 +15,7 @@
 // When you add a file to the app, add it to FILES below. The tests page checks that the list is
 // complete (a file missing from the list is the classic reason an app fails offline).
 
-const VERSION = '0.152.0'; // keep equal to js/version.js
+const VERSION = '0.153.0'; // keep equal to js/version.js
 const CACHE = `tour-docs-${VERSION}`;
 const SLOW = 3000;        // milliseconds to wait for the network before using the copy
 const PAUSE = 30000;      // after the network failed once, do not try it again for this long (milliseconds)
@@ -116,6 +116,13 @@ const FILES = [
   'js/views/icons.js',
   'js/views/help.js',
   'js/views/practice.js',
+  'js/views/faceUi.js',
+  'js/views/allergies.js',
+  'js/faces.js',
+  'js/dietary.js',
+  'js/search.js',
+  'js/sinceLast.js',
+  'js/views/searchUi.js',
   'js/views/guestPicker.js',
   'js/views/journal.js',
   'js/views/move.js',

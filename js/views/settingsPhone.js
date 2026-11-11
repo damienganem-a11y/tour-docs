@@ -3,7 +3,7 @@
 import { h } from '../dom.js';
 import { pageHead } from './chrome.js';
 import { notificationsCard } from './settingsRequests.js';
-import { THEMES, getTheme, setTheme, TEXT_SIZES, getTextSize, setTextSize } from '../theme.js';
+import { THEMES, getTheme, setTheme, TEXT_SIZES, getTextSize, setTextSize, ACCENTS, getAccent, setAccent } from '../theme.js';
 import { putIn } from '../put.js';
 
 const back = (trip) => ({ href: `#/trip/${trip.id}/settings/section/phone`, label: 'This phone' });
@@ -28,6 +28,12 @@ export function appearancePage(ctx, trip) {
     onclick: () => { setTextSize(id); drawSizes(); },
   }, label)));
   drawSizes();
+  const accents = h('div', { class: 'switch', role: 'group', 'aria-label': 'Accent colour' });
+  const drawAccents = () => putIn(accents, ...ACCENTS.map(([id, label]) => h('button', {
+    class: `switch-item${getAccent() === id ? ' is-active' : ''}`, type: 'button', 'aria-pressed': String(getAccent() === id),
+    onclick: () => { setAccent(id); drawAccents(); },
+  }, label)));
+  drawAccents();
   return h('div', {},
     pageHead({ back: back(trip), eyebrow: 'This phone', title: 'Appearance', subtitle: 'Only this phone changes.' }),
     h('h3', { class: 'section-title' }, 'Size of the text'),
@@ -35,5 +41,8 @@ export function appearancePage(ctx, trip) {
     h('p', { class: 'muted' }, 'Everything grows together: the words, the buttons and the lists.'),
     h('h3', { class: 'section-title' }, 'Light or dark'),
     looks,
-    h('p', { class: 'muted' }, 'Automatic follows the phone.'));
+    h('p', { class: 'muted' }, 'Automatic follows the phone.'),
+    h('h3', { class: 'section-title' }, 'Accent colour'),
+    accents,
+    h('p', { class: 'muted' }, trip.branding?.accent ? 'Company colour: the colour of this trip\'s company look, on the small titles and the "now" marks. Buttons stay dark.' : 'This trip has no company colour yet (Settings › Company look): Brass is used.'));
 }

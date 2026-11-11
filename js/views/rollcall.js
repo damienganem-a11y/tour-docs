@@ -28,6 +28,7 @@ import { startMove, startAddGuest, choiceRow, notice } from './move.js';
 import { putIn } from '../put.js';
 import { icon } from './icons.js';
 import { helpButton } from './help.js';
+import { face } from './faceUi.js';
 
 // What is remembered while the app is open, for each roll call and state: which vehicle the taps go into, and the search words.
 const chosenVehicle = new Map();
@@ -208,7 +209,7 @@ export function rollCallView(ctx, tripId, activityId) {
           // One line = two buttons (v0.151.0): the name (a tap checks the guest in: it turns green, the phone buzzes), and three dots for
           // "not coming / another tour" (what only a long press did before; the long press still works).
           const row = h('button', { class: `rc-guest${isForced(guest) ? ' rc-guest--forced' : ''}`, type: 'button' },
-            h('span', {}, names.get(guest.id)), h('span', { class: 'rc-tick' }, icon('check')));
+            face(guest, 40), h('span', { class: 'rc-name' }, names.get(guest.id)), h('span', { class: 'rc-tick' }, icon('check')));
           pressable(row, {
             tap: () => { row.classList.add('is-done'); try { navigator.vibrate?.(25); } catch { /* no buzz on this phone */ } tapGuest(guest); },
             long: () => startMove(ctx, trip, guest, slot, { askParty: false }), // At leisure, or another tour: asks to confirm
@@ -243,8 +244,11 @@ export function rollCallView(ctx, tripId, activityId) {
     const rows = absent.map((guest) => {
       const box = h('input', { type: 'checkbox', checked: true, 'aria-label': names.get(guest.id) });
       box.addEventListener('change', () => { if (box.checked) moving.add(guest.id); else moving.delete(guest.id); say(); });
-      return h('label', { class: 'tick-row' }, box, h('span', {}, names.get(guest.id)));
+      return h('label', { class: 'tick-row' }, box, face(guest, 40), h('span', {}, names.get(guest.id)));
     });
+    // Nobody is left behind without a word (v0.153.0): one message to every guest still missing, in their own guest app, before ending.
+    const messageMissing = absent.length === 0 ? null : h('button', { class: 'btn btn--plain', type: 'button', onclick: () => messageMissingSheet(absent) },
+      `Message the ${absent.length === 1 ? 'missing guest' : `${absent.length} missing guests`} first`);
 
     const confirm = h('button', {
       class: 'btn', type: 'button',
@@ -261,9 +265,23 @@ export function rollCallView(ctx, tripId, activityId) {
     openSheet({
       eyebrow: 'End roll call', title: `End the roll call for ${activity.name}?`,
       subtitle: `${state.checkedIn.length} checked in · ${absent.length === 0 ? 'nobody missing' : `${absent.length} did not show up`}. Untick anyone who joined on site.`,
-      body: [summary, rows],
+      body: [summary, messageMissing, rows],
       footer: confirm, cancelDanger: true,
     });
+  }
+
+  // A message to the guests still missing, in their guest app (and by notification if they turned those on). Ready-written, can be changed.
+  function messageMissingSheet(missing) {
+    const where = activity.meeting ? ` at ${activity.meeting}` : '';
+    const text = h('textarea', { class: 'text-input', rows: '4', maxlength: '1000', 'aria-label': 'Your message' },
+      `We are about to leave for ${activity.name}${where}. We are waiting for you: please come now, or answer this message so we know.`);
+    const send = h('button', { class: 'btn', type: 'button', onclick: async () => {
+      send.disabled = true;
+      const result = await ctx.messageGuests(trip.id, missing.map((g) => g.id), text.value);
+      send.disabled = false;
+      if (result.ok) { closeSheet(); showToast(`Sent to ${plural(result.count, 'guest')}. Their answers arrive in Messages.`); } else showToast(result.error, true);
+    } }, `Send to ${plural(missing.length, 'guest')}`);
+    openSheet({ eyebrow: 'Roll call', title: 'Message the missing guests', subtitle: joinNames(missing.map((g) => names.get(g.id))), body: [text], footer: send });
   }
 
   // ---------- The screen ----------
@@ -302,6 +320,9 @@ export function rollCallView(ctx, tripId, activityId) {
       h('div', { class: 'rc-count', role: 'status' },
         h('span', { class: 'rc-count-big' }, String(state.checkedIn.length)), h('span', { class: 'rc-count-of' }, `of ${total} on board`),
         h('span', { class: 'rc-count-left' }, state.expected.length === 0 ? 'Everybody is here' : `${state.expected.length} still to come`)),
+      // From five minutes before the departure, one tap writes to everyone still missing.
+      !readOnly && pending.length > 0 && activity.startsAt && Date.now() > Date.parse(activity.startsAt) - 5 * 60000
+        ? h('button', { class: 'btn btn--plain rc-late', type: 'button', onclick: () => messageMissingSheet([...pending].sort(inOrder)) }, `Message the ${pending.length === 1 ? 'missing guest' : `${pending.length} missing guests`}`) : null,
       runnerNotice,
       h('div', { class: 'vehicles' }, vehicleButtons, addVehicle),
       // Scan the guests' boarding passes (v0.146.0): the camera opens, each scan checks a whole family into the chosen vehicle.

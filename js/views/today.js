@@ -4,11 +4,13 @@
 import { h } from '../dom.js';
 import { tripDates, formatTime, formatWeekdayDate, localDateNow } from '../time.js';
 import { programOf } from '../program.js';
-import { tripWarnings, countIn } from '../rules.js';
+import { tripWarnings, countIn, dinnerCountIn } from '../rules.js';
 import { pageHead } from './chrome.js';
 import { jobsOf, jobTodo, TEAM_JOBS } from '../teamJobs.js';
 import { rollCallActions } from './destination.js';
 import { sendSheet } from './sendSheet.js';
+import { searchLauncher } from './searchUi.js';
+import { lastSeen, markSeen, changesSince } from '../sinceLast.js';
 
 // The next tour that has not started yet (not cancelled, with a start time), across the whole trip. Null when there is none.
 export function nextTour(trip, now = new Date()) {
@@ -44,7 +46,7 @@ export function programToday(trip, now = new Date()) {
   return found;
 }
 
-export function todayPage(ctx, trip) {
+export function todayPage(ctx, trip, sections = []) {
   const base = `#/trip/${trip.id}`;
   const role = ctx.roleFor(trip.id);
   const row = (href, label, hint, badge = null) => h('a', { class: 'menu-row', href },
@@ -94,8 +96,16 @@ export function todayPage(ctx, trip) {
       rollCall ? h('button', { class: 'btn', type: 'button', onclick: rollCall.run }, rollCall.label) : null,
       h('a', { class: `btn${rollCall ? ' btn--plain' : ''}`, href }, rollCall ? 'See who is on this tour' : 'Open this tour'));
   }
-  const otherRows = others.map((t) => { const { slot, destination } = zoneOf(t);
-    return row(`${base}/use/destination/${destination.id}/${slot.id}`, `${t.startsAt ? `${formatTime(t.startsAt, destination.timeZone)} · ` : ''}${t.name}`, [t.meeting, guestsWord(t)].filter(Boolean).join(' · ')); });
+  // The rest of today as a timeline (v0.153.0): the other tours and the dinners, by time, with a "Now" line where the day stands.
+  const timeline = dayTimeline(trip, others);
+  const nowAt = timeline.findIndex((item) => !item.past);
+  const otherRows = timeline.flatMap((item, i) => [
+    i === nowAt && i > 0 ? h('div', { class: 'tl-now', role: 'separator' }, h('span', {}, 'Now')) : null,
+    h('a', { class: `tl-item${item.past ? ' is-past' : ''}`, href: item.href },
+      h('span', { class: 'tl-time' }, item.time || '—'),
+      h('span', { class: 'tl-text' }, h('span', { class: 'tl-title' }, item.title), h('span', { class: 'tl-detail' }, item.detail)),
+      h('span', { class: 'row-chev' }, '›')),
+  ]).filter(Boolean);
 
   // 3. Today's daily program (what the guests are given), when there is one.
   const program = programToday(trip).map(({ destination, day }) => h('div', { class: 'menu' },
@@ -107,9 +117,12 @@ export function todayPage(ctx, trip) {
   const first = (ctx.owner?.name ?? '').trim().split(/\s+/)[0];
   return h('div', {},
     pageHead({ eyebrow: trip.name, title: `${greeting()}${first ? `, ${first}` : ''}` }),
+    searchLauncher(ctx, trip, sections),
+    sinceLastCard(ctx, trip),
     h('h3', { class: 'section-title' }, todays.length > 1 ? `Today's tours (${todays.length})` : todays.length === 1 ? 'Today\'s tour' : 'Next tour'),
     next,
-    otherRows.length > 0 ? h('div', { class: 'menu menu--after' }, otherRows) : null,
+    otherRows.length > 0 ? h('h3', { class: 'section-title' }, 'The rest of today') : null,
+    otherRows.length > 0 ? h('div', { class: 'timeline' }, otherRows) : null,
     ...jobsBlock,
     // "Needs attention" only when something does: a calm page says so in one line.
     attention.length > 0 ? h('h3', { class: 'section-title section-title--alert' }, `Needs attention (${attention.length})`) : null,
@@ -145,4 +158,49 @@ export function myJobItems(ctx, trip) {
   if (!jobs.length || trip.archivedAt) return [];
   const today = localDateNow(trip.destinations.find((d) => trip.slots.some((x) => x.destinationId === d.id))?.timeZone ?? 'UTC');
   return jobTodo(trip, jobs, { today, guestMessages: ctx.guestMessagesFor?.(trip.id) ?? [], threads: ctx.guestThreadsFor?.(trip.id) ?? [] });
+}
+
+// "Since you last looked": what colleagues changed since this person last tapped "Got it" (sinceLast.js). Up to five lines, the rest counted.
+// The first time a trip is opened on this phone, the moment is simply set: nothing was missed yet.
+function sinceLastCard(ctx, trip) {
+  const since = lastSeen(trip.id);
+  if (!since) { markSeen(trip.id); return null; }
+  const me = ctx.userFor?.(trip.id)?.id ?? ctx.owner?.id;
+  const list = changesSince(ctx.journal(trip.id), since, me);
+  if (list.length === 0) return null;
+  const when = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  return h('div', { class: 'since-card' },
+    h('div', { class: 'since-head' }, `Since you last looked · ${list.length} change${list.length === 1 ? '' : 's'}`),
+    h('ul', { class: 'since-list' }, list.slice(0, 5).map((c) => h('li', {}, h('span', {}, c.text), h('small', {}, `${c.who} · ${when(c.at)}`)))),
+    list.length > 5 ? h('p', { class: 'muted' }, `And ${list.length - 5} more${ctx.roleFor(trip.id) === 'owner' ? ', in Menu › Settings › Advanced › Journal' : ''}.`) : null,
+    h('button', { class: 'btn', type: 'button', onclick: () => { markSeen(trip.id); ctx.refresh(); } }, 'Got it'));
+}
+
+// Today's other tours and the dinners of today, as one list by time: [{ time 'HH:MM', title, detail, href, past }]. A dinner is one line per restaurant and
+// seating, with how many guests. `past`: the moment is over (a tour or dinner that began more than 30 minutes ago), judged in the place's own time.
+export function dayTimeline(trip, tours, now = new Date()) {
+  const base = `#/trip/${trip.id}`;
+  const clockIn = (zone) => new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(now.getTime() - 30 * 60000));
+  const items = [];
+  for (const t of tours) {
+    const slot = trip.slots.find((x) => x.id === t.slotId); const d = trip.destinations.find((x) => x.id === slot.destinationId);
+    const time = t.startsAt ? formatTime(t.startsAt, d.timeZone) : '';
+    const count = countIn(trip, t);
+    items.push({ time, title: t.name, detail: [t.meeting, `${count} guest${count === 1 ? '' : 's'}`].filter(Boolean).join(' · '), href: `${base}/use/destination/${d.id}/${slot.id}`, past: Boolean(time) && time < clockIn(d.timeZone) });
+  }
+  const todaySlots = new Set(trip.slots.filter((x) => { const d = trip.destinations.find((y) => y.id === x.destinationId); return x.date && x.date === localDateNow(d?.timeZone ?? 'UTC'); }).map((x) => x.id));
+  const dinners = new Map();
+  for (const b of trip.dinnerBookings ?? []) {
+    if (!todaySlots.has(b.slotId)) continue;
+    const r = trip.restaurants.find((x) => x.id === b.restaurantId); if (!r) continue;
+    const key = `${r.id}|${b.seating}`;
+    if (!dinners.has(key)) dinners.set(key, { r, slotId: b.slotId, seating: b.seating, count: 0 });
+    dinners.get(key).count += dinnerCountIn(trip, b);
+  }
+  for (const { r, slotId, seating, count } of dinners.values()) {
+    if (count === 0) continue;
+    const slot = trip.slots.find((x) => x.id === slotId); const d = trip.destinations.find((x) => x.id === slot.destinationId);
+    items.push({ time: seating ?? '', title: `Dinner at ${r.name}`, detail: `${count} guest${count === 1 ? '' : 's'}`, href: `${base}/use/dining/${d.id}/${slot.id}`, past: Boolean(seating) && seating < clockIn(d.timeZone) });
+  }
+  return items.sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
 }

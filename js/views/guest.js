@@ -15,6 +15,8 @@ import { undoButton } from './undo.js';
 import { USE_UNDO_SCOPE } from '../journal.js';
 import { partiesOf } from './party.js';
 import { putIn } from '../put.js';
+import { face, faceBlock, photoSession } from './faceUi.js';
+import { isSevere } from '../dietary.js';
 
 export function guestPage(ctx, trip, guestId) {
   const guest = trip.guests.find((g) => g.id === guestId);
@@ -92,10 +94,13 @@ function guestList(ctx, trip) {
                 h('a', { class: 'seat-head', href: `#/trip/${trip.id}/use/guest/${g.id}` }, h('span', { class: 'seat-title' }, rowTitle(g)), h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›')),
                 h('div', { class: 'seat-lines' }, linesOf(g)))
             : h('li', {},
-                h('a', { class: 'row', href: `#/trip/${trip.id}/use/guest/${g.id}` },
+                h('a', { class: 'row row--face', href: `#/trip/${trip.id}/use/guest/${g.id}` },
+                  face(g, 46),
                   h('div', { class: 'row-main' },
                     h('div', { class: 'row-title' }, rowTitle(g)),
-                    h('div', { class: 'row-sub' }, partyLabel(trip, g, names))),
+                    h('div', { class: 'row-sub' }, partyLabel(trip, g, names)),
+                    // A need is flagged on the list (the word only, so it can be read over a shoulder without detail): the page says the rest.
+                    g.dietary ? h('div', { class: `row-flag${isSevere(g.dietary) ? ' row-flag--severe' : ''}` }, isSevere(g.dietary) ? 'Severe allergy' : 'Dietary need') : null),
                   h('span', { class: 'row-chev', 'aria-hidden': 'true' }, '›'))))))
     );
   }
@@ -113,11 +118,25 @@ function guestList(ctx, trip) {
   });
   fill();
 
+  // Two doors above the list (v0.153.0): the allergies with faces, and the photos still to take.
+  const active = trip.guests.filter((g) => !g.leftAt);
+  const needs = active.filter((g) => String(g.dietary ?? '').trim()).length;
+  const withPhoto = active.filter((g) => g.photo).length;
+  const canPhoto = ctx.roleFor(trip.id) !== 'viewer' && !trip.archivedAt;
+  const doors = h('div', { class: 'menu guest-doors' },
+    h('a', { class: 'menu-row', href: `#/trip/${trip.id}/use/dietary` },
+      h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, 'Allergies & diets'), h('span', { class: 'menu-hint' }, needs ? `${needs} guest${needs === 1 ? '' : 's'}, with their photo` : 'Nobody has one written down')),
+      h('span', { class: 'menu-side' }, needs ? h('span', { class: 'count' }, String(needs)) : null, h('span', { class: 'row-chev' }, '›'))),
+    canPhoto && withPhoto < active.length ? h('button', { class: 'menu-row', type: 'button', onclick: () => photoSession(ctx, trip.id) },
+      h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, 'Take the missing photos'), h('span', { class: 'menu-hint' }, `${withPhoto} of ${active.length} guests have a photo. One after the other, with Skip.`)),
+      h('span', { class: 'menu-side' }, h('span', { class: 'row-chev' }, '›'))) : null);
+
   return h('div', {},
     pageHead({
       eyebrow: 'By guest',
       action: h('div', { class: 'head-actions' }, sortToggle(ctx), undoButton(ctx, trip, { scope: USE_UNDO_SCOPE })),
     }),
+    sortMode === 'alpha' ? doors : null,
     seatMode ? chooser : search, count, list);
 }
 
@@ -130,13 +149,15 @@ function guestDetail(ctx, trip, guest) {
   const { upcoming, earlier } = splitPastSlots(trip, localDateNow);
 
   return h('div', {},
-    pageHead({
-      back: { href: `#/trip/${trip.id}/use/guest`, label: 'Guests' },
-      eyebrow: 'By guest',
-      title: names.get(guest.id),
-      subtitle: [guest.seat ? `Seat ${guest.seat}` : null, partyLabel(trip, guest, names), guest.notes].filter(Boolean).join(' · '),
-      action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }),
-    }),
+    pageHead({ back: { href: `#/trip/${trip.id}/use/guest`, label: 'Guests' }, action: undoButton(ctx, trip, { scope: USE_UNDO_SCOPE }) }),
+    // The guest's card (v0.153.0): the face, the name, the seat and party, then what must not be missed (an allergy, a note).
+    h('div', { class: 'guest-card' },
+      faceBlock(ctx, trip, guest),
+      h('div', { class: 'guest-card-text' },
+        h('h1', { class: 'title' }, names.get(guest.id)),
+        h('div', { class: 'subtitle' }, [guest.seat ? `Seat ${guest.seat}` : null, partyLabel(trip, guest, names), guest.age ? `${guest.age} years` : null, guest.easyWalker ? 'Easy Walker' : null].filter(Boolean).join(' · ')))),
+    guest.dietary ? h('div', { class: `diet-card${isSevere(guest.dietary) ? ' diet-card--severe' : ''}` }, h('div', { class: 'diet-card-head' }, isSevere(guest.dietary) ? 'Severe allergy' : 'Allergies & diet'), h('div', {}, guest.dietary)) : null,
+    guest.notes ? h('div', { class: 'note-card' }, h('div', { class: 'diet-card-head' }, 'Note'), h('div', {}, guest.notes)) : null,
     // The whole travel party on one page (only when there is a party).
     partyPeople(trip, guest) > 1 ? h('a', { class: 'btn btn--plain btn--small', href: `#/trip/${trip.id}/use/party/${guest.id}` }, `See the whole party (${partyPeople(trip, guest)})`) : null,
     // Reached by an old link: this guest left the trip (Settings > Guests brings them back).
