@@ -339,3 +339,10 @@ html, body, main { background: var(--g-paper); color: var(--g-ink); }
   .ex-step-no { border-color: var(--ex-accent); color: var(--ex-accent); }
   .ex-stage { box-shadow: 0 12px 32px rgba(0, 0, 0, .4); }
 }
+
+/* v0.153.1: the tab bar's words and pictures clear the iPhone's rounded corners (owner's report of 11 Nov 2026). The bar stays docked to the edge;
+   installed on the Home Screen (where the app reaches the very bottom), its content is lifted above the curve and kept off the sides. */
+@media (display-mode: standalone) {
+  .atl-tabs { padding: 6px 22px calc(env(safe-area-inset-bottom) + 22px); }
+  .atl-body, .gal-sheet { padding-bottom: calc(env(safe-area-inset-bottom) + 116px); } /* the last line of a page stays above the taller bar */
+}
