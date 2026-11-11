@@ -23,9 +23,11 @@ import { passcodeView } from './views/passcode.js';
 import { enablePullToRefresh } from './pullRefresh.js';
 import { previewSavedExport, exportName } from './export.js';
 import { dietaryErasureDue } from './rules.js';
-import { nextTour, programToday } from './views/today.js';
+import { nextTour, programToday, toursOfToday, mainTour } from './views/today.js';
 import { currentSlot } from './views/destination.js';
 import { HELP } from './views/help.js';
+import { practiceHint } from './views/practice.js';
+import { plainError } from './ui.js';
 import { setTextSize, getTextSize } from './theme.js';
 import { programError, programOf, programForEditing } from './program.js';
 import { partyGroups, partiesOf, partyMembers } from './views/party.js';
@@ -1729,6 +1731,30 @@ const restoredExactly = (a, b) => JSON.stringify({ ...a, changeCount: 0 }) === J
     check('Tours opens on today\'s half-day: the morning before 13:00, the afternoon after', currentSlot(t, new Date('2027-03-01T09:00:00Z')).id === 'a' && currentSlot(t, new Date('2027-03-01T15:00:00Z')).id === 'b');
     check('On a day with no half-day, Tours opens on the next one; before the trip on the first; after it on the last',
       currentSlot(t, new Date('2027-03-02T09:00:00Z')).id === 'c' && currentSlot(t, new Date('2027-01-01T09:00:00Z')).id === 'a' && currentSlot(t, new Date('2027-06-01T09:00:00Z')).id === 'c');
+    // v0.152.0
+    check('A technical error is said in plain words; a sentence the app wrote itself is left alone',
+      plainError('TypeError: Failed to fetch').startsWith('No connection') && plainError('JWT expired').startsWith('You are signed out') && plainError('new row violates row-level security policy').startsWith('You do not have the right')
+      && plainError('This tour is full (8 / 8).') === 'This tour is full (8 / 8).' && plainError('Experts are not allowed to change a booking.') === 'Experts are not allowed to change a booking.');
+    {
+      const day = { destinations: [{ id: 'd1', timeZone: 'UTC' }], slots: [{ id: 'm', destinationId: 'd1', date: '2027-03-01' }, { id: 'x', destinationId: 'd1', date: '2027-03-02' }], activities: [
+        { id: 'late', slotId: 'm', name: 'Late', startsAt: '2027-03-01T15:00:00.000Z' }, { id: 'early', slotId: 'm', name: 'Early', startsAt: '2027-03-01T08:00:00.000Z' },
+        { id: 'off', slotId: 'm', name: 'Off', startsAt: '2027-03-01T09:00:00.000Z', cancelled: true }, { id: 'tomorrow', slotId: 'x', name: 'Tomorrow', startsAt: '2027-03-02T08:00:00.000Z' }] };
+      const at = (iso) => new Date(iso);
+      const list = toursOfToday(day, at('2027-03-01T07:00:00Z'));
+      check('Today lists every tour of the day in the order they leave, without the cancelled ones or tomorrow\'s', list.map((a) => a.id).join() === 'early,late');
+      check('The large tour on Today is the next to leave (one that left under 30 minutes ago still counts), the others are lines',
+        mainTour(list, null, at('2027-03-01T07:00:00Z')).main.id === 'early' && mainTour(list, null, at('2027-03-01T08:20:00Z')).main.id === 'early'
+        && mainTour(list, null, at('2027-03-01T09:00:00Z')).main.id === 'late' && mainTour(list, null, at('2027-03-01T09:00:00Z')).others[0].id === 'early' && mainTour(list, null, at('2027-03-01T20:00:00Z')).main.id === 'late');
+      check('On a day with no tour, Today shows the next tour of the trip alone', mainTour([], day.activities[3]).main.id === 'tomorrow' && mainTour([], day.activities[3]).others.length === 0 && mainTour([], null).main === null);
+    }
+    {
+      const s0 = { boarded: [], away: [], vehicle: 1, undone: false, ended: false };
+      const two = { ...s0, boarded: [{ name: 'A', vehicle: 1 }, { name: 'B', vehicle: 1 }] };
+      check('The practice roll call coaches step by step: tap a name, try Undo, use Vehicle 2, the three dots, then End',
+        /tap their name/.test(practiceHint(s0)) && /Undo/.test(practiceHint(two)) && /V2/.test(practiceHint({ ...two, undone: true }))
+        && /three dots/.test(practiceHint({ ...two, undone: true, boarded: [...two.boarded, { name: 'C', vehicle: 2 }] }))
+        && /End roll call/.test(practiceHint({ ...s0, boarded: [{ name: 'A', vehicle: 1 }], away: ['B'] }, 2)) && /Nothing was saved/.test(practiceHint({ ...s0, ended: true })));
+    }
     check('Every main page has its three lines of help', ['today', 'tours', 'dining', 'guests', 'messages', 'rollcall'].every((k) => HELP[k]?.title && HELP[k].lines.length === 3));
     setTextSize('large'); const large = document.documentElement.getAttribute('data-text') === 'large' && getTextSize() === 'large';
     setTextSize('normal'); check('The size of the text is a choice of this phone: Large marks the page, Normal removes the mark', large && !document.documentElement.hasAttribute('data-text') && getTextSize() === 'normal');

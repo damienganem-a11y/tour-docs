@@ -29,6 +29,7 @@
 //   nothing — the same as it already does whenever the phone is offline.
 
 import { h } from '../dom.js';
+import { plainError } from '../ui.js';
 import { pageHead } from './chrome.js';
 import { newId } from '../ids.js';
 import { looksLikeAuthCallback, teamLinkFromAddress, signInWithTeamLink, sendMagicLink, completeSignIn, saveNameToAccount, existingSession, verifyEmailCode, cleanEmailCode } from '../auth.js';
@@ -154,7 +155,7 @@ function sentScreen(ctx) {
         step = 'confirm-name';
         ctx.refresh();
       } catch (error) {
-        codeMessage.textContent = error.message;
+        codeMessage.textContent = plainError(error.message);
         codeMessage.hidden = false;
       }
     },

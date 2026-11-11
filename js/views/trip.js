@@ -34,6 +34,7 @@ import { warningsSettingsPage } from './settingsWarnings.js';
 import { sendSheet } from './sendSheet.js';
 import { messagesPage } from './messages.js';
 import { helpButton } from './help.js';
+import { openPractice } from './practice.js';
 import { inboxCount } from '../inbox.js';
 import { checkSettingsPage } from './settingsCheck.js';
 import { backupSettingsPage } from './settingsBackup.js';
@@ -355,6 +356,7 @@ function scheduleRoleNotice(ctx, trip) {
         h('p', {}, text),
         h('p', { class: 'muted' }, 'Lost? Tap "Help" at the top of any page. A mistake? Tap "Undo" right after.'),
         h('button', { class: 'btn', type: 'button', onclick: async () => { await ctx.markRoleNoticeSeen(trip.id, role); closeSheet(); } }, 'Start'),
+        role === 'viewer' ? null : h('button', { class: 'btn btn--plain', type: 'button', onclick: async () => { await ctx.markRoleNoticeSeen(trip.id, role); closeSheet(); openPractice(); } }, 'First, try a practice roll call'),
       ],
     });
   }, 300);

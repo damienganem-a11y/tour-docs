@@ -308,3 +308,27 @@ body:has(.bottom-tabs) .toast { bottom: calc(84px + env(safe-area-inset-bottom))
 :root[data-text] .page-head .undo-btn--fresh .undo-what { display: none; }
 :root[data-text="xlarge"] .top-bar:has(.top-btn) .top-trip { display: none; } /* no room left for the trip's code: the words win */
 :root[data-text="xlarge"] .top-bar:has(.top-btn) { justify-content: flex-end; }
+
+
+/* =====================================================================================================================================
+   v0.152.0: what v0.151 left out (owner's go of 11 Nov 2026): a practice roll call, every tour of today on Today, the company on the opening
+   screen, a conversation that grows with the text size.
+   ===================================================================================================================================== */
+.boot-logo-img { max-width: 150px; max-height: 84px; object-fit: contain; border-radius: 8px; animation: boot-name-in .25s ease-out both; }
+.menu--after { margin-top: 10px; }
+.practice { display: grid; gap: 12px; }
+.practice-coach { margin: 0; padding: 14px 16px; border-radius: 14px; border: 1.5px solid var(--g-brass); background: var(--g-surface); font: 500 18px/1.4 Inter, sans-serif; }
+.practice-coach--done { border-color: var(--sand-ok); }
+.practice .vehicles, .practice .rc-count { margin: 0; }
+.practice .rc-line:last-child { margin-bottom: 0; }
+.practice-bar { position: sticky; bottom: 0; display: flex; gap: 10px; padding: 10px 0; background: var(--g-paper); }
+.practice-bar .btn { margin: 0; }
+.practice-bar .btn--plain { flex: 0 0 auto; width: auto; padding: 0 22px; border: 1px solid var(--g-ink); background: transparent; }
+.practice-bar .btn:not(.btn--plain) { flex: 1; }
+.fullscreen { background: var(--g-paper); }
+.fullscreen h2 { font: 400 28px/1.12 var(--g-title); }
+/* A conversation (chatUi.js) grows with the text size too: its parts, never the window itself. */
+:root[data-text] .chat > * { zoom: var(--tz); }
+/* Something marked "hidden" IS hidden, whatever its own layout says. (The quick replies of a conversation were always open: their "display: flex"
+   won over "hidden", so the lightning button did nothing.) */
+[hidden] { display: none !important; }

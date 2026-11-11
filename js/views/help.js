@@ -4,6 +4,7 @@
 import { h } from '../dom.js';
 import { openSheet } from '../ui.js';
 import { icon } from './icons.js';
+import { openPractice } from './practice.js';
 
 // One entry per main screen: a title and three lines (what you see, what a tap does, how to take it back).
 export const HELP = {
@@ -43,7 +44,11 @@ export function openHelp(key) {
   const help = HELP[key] ?? HELP.today;
   openSheet({
     eyebrow: 'Help', title: help.title, cancelLabel: 'Got it',
-    body: h('ol', { class: 'help-steps' }, help.lines.map((line) => h('li', {}, line))),
+    body: [
+      h('ol', { class: 'help-steps' }, help.lines.map((line) => h('li', {}, line))),
+      // Where a roll call is near: try one for nothing first (views/practice.js). No trip is touched.
+      ['today', 'tours', 'rollcall'].includes(key) ? h('button', { class: 'btn btn--plain', type: 'button', onclick: () => openPractice() }, 'Try a practice roll call (nothing is saved)') : null,
+    ],
   });
 }
 

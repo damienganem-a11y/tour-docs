@@ -118,7 +118,23 @@ export function openSheet({ eyebrow, title, subtitle, titleBadge, body, footer, 
 let toast = null;
 let toastTimer = null;
 
+// A technical message (from the browser or the server) said in plain words, with what to do (v0.152.0). A message the app wrote itself is
+// already plain and comes back unchanged. One place, so every error on every screen goes through it.
+export function plainError(text) {
+  const t = String(text ?? '');
+  if (/failed to fetch|load failed|networkerror|network request failed|err_internet|fetch failed/i.test(t)) return 'No connection right now. Nothing is lost: try again when you have signal.';
+  if (/timed? ?out|timeout/i.test(t)) return 'This is taking too long. Check the signal, then try again.';
+  if (/jwt|token (has |is )?expired|invalid.*token|not authenticated|refresh token|auth session missing/i.test(t)) return 'You are signed out. Open Menu, then "This phone and my account", and sign in again.';
+  if (/row-level security|permission denied for|42501/i.test(t)) return 'You do not have the right to do this on this trip. Ask the owner of the trip.';
+  if (/quota|storage.*full|out of (disk )?space/i.test(t)) return 'This phone is out of space. Free some space (old photos, unused apps), then try again.';
+  if (/rate limit|too many requests/i.test(t)) return 'Too many tries in a short time. Wait a minute, then try again.';
+  if (/internal server error|bad gateway|service unavailable/i.test(t)) return 'The server is having trouble. Nothing is lost: try again in a few minutes.';
+  if (/^(typeerror|referenceerror|syntaxerror|error):|is undefined|null is not an object|is not a function|cannot read propert/i.test(t)) return 'Something went wrong on this page. Close the app, open it again, and try once more.';
+  return t;
+}
+
 export function showToast(text, isError = false) {
+  if (isError) text = plainError(text);
   toast?.remove();
   clearTimeout(toastTimer);
   toast = h('div', { class: `toast${isError ? ' toast--error' : ''}`, role: 'status' }, text);

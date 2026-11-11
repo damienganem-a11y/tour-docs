@@ -4,7 +4,7 @@
 // trips push to it on the next sync. See auth.js's verifyEmailCode for why a code and not a link.
 
 import { h } from '../dom.js';
-import { openSheet, closeSheet, showToast } from '../ui.js';
+import { openSheet, closeSheet, showToast, plainError } from '../ui.js';
 import { sendMagicLink, verifyEmailCode, cleanEmailCode, saveNameToAccount } from '../auth.js';
 
 export function openOnlineSignIn(ctx) {
@@ -29,7 +29,7 @@ function askEmail(ctx, email) {
         await sendMagicLink(address, ctx.owner.name);
         askCode(ctx, address);
       } catch (error) {
-        message.textContent = error.message;
+        message.textContent = plainError(error.message);
         message.hidden = false;
         sending = false;
       }
@@ -55,7 +55,7 @@ function askCode(ctx, email) {
         await ctx.linkOnlineAccount(id);
         showToast('Signed in online');
       } catch (error) {
-        message.textContent = error.message;
+        message.textContent = plainError(error.message);
         message.hidden = false;
       }
     },

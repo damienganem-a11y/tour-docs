@@ -17,6 +17,23 @@ export function nextTour(trip, now = new Date()) {
   return upcoming[0] ?? null;
 }
 
+// Every tour of today (not cancelled), each judged in its own destination's time zone, in the order they leave (a tour with no time last).
+export function toursOfToday(trip, now = new Date()) {
+  const todayIn = (zone) => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const slotIds = new Set(trip.slots.filter((s) => s.date && s.date === todayIn(trip.destinations.find((d) => d.id === s.destinationId)?.timeZone ?? 'UTC')).map((s) => s.id));
+  return trip.activities.filter((a) => !a.cancelled && slotIds.has(a.slotId))
+    .sort((a, b) => (a.startsAt ?? '9').localeCompare(b.startsAt ?? '9') || a.name.localeCompare(b.name));
+}
+
+// Which tour is shown large on Today, and which as lines under it. With tours today: the first one that has not left more than 30 minutes ago
+// (or the last of the day once all have left). With none today: the next tour of the trip, alone.
+export function mainTour(todays, upcoming, now = new Date()) {
+  if (todays.length === 0) return { main: upcoming ?? null, others: [] };
+  const limit = new Date(now.getTime() - 30 * 60000).toISOString();
+  const main = todays.find((t) => !t.startsAt || t.startsAt >= limit) ?? todays[todays.length - 1];
+  return { main, others: todays.filter((t) => t !== main) };
+}
+
 // The program days that are today, each judged in its own destination's time zone (a trip can cross zones). Usually one.
 export function programToday(trip, now = new Date()) {
   const found = [];
@@ -57,24 +74,28 @@ export function todayPage(ctx, trip) {
     jobRows.length ? h('div', { class: 'menu' }, jobRows) : h('p', { class: 'muted' }, 'All done for today and tomorrow.'),
   ] : [];
 
-  // 2. Next up: the one big thing on this page (v0.151.0). The tour, when and where, how many guests, and ONE main button:
-  //    the roll call when the tour leaves within the next 12 hours (or has one running), otherwise "Open this tour".
-  const tour = nextTour(trip);
+  // 2. The tours. On a day of the trip: EVERY tour of today (v0.152.0), the next one to leave large with its one main button, the others as lines.
+  //    On any other day: the next tour of the trip, large. The main button is the roll call when the tour leaves within the next 12 hours (or has
+  //    one running), otherwise "Open this tour".
+  const zoneOf = (tour) => { const slot = trip.slots.find((s) => s.id === tour.slotId); return { slot, destination: trip.destinations.find((d) => d.id === slot.destinationId) }; };
+  const guestsWord = (tour) => { const count = countIn(trip, tour); return `${count}${tour.capacity ? ` of ${tour.capacity}` : ''} guest${count === 1 ? '' : 's'}`; };
+  const todays = toursOfToday(trip);
+  const { main: tour, others } = mainTour(todays, nextTour(trip));
   let next = h('p', { class: 'muted' }, 'No tour with a start time is coming up.');
   if (tour) {
-    const slot = trip.slots.find((s) => s.id === tour.slotId);
-    const destination = trip.destinations.find((d) => d.id === slot.destinationId);
-    const count = countIn(trip, tour);
+    const { slot, destination } = zoneOf(tour);
     const href = `${base}/use/destination/${destination.id}/${slot.id}`;
-    const soon = Date.parse(tour.startsAt) - Date.now() < 12 * 3600000;
+    const soon = tour.startsAt ? Date.parse(tour.startsAt) - Date.now() < 12 * 3600000 : todays.includes(tour);
     const rollCall = soon && role !== 'viewer' ? rollCallActions(ctx, trip, tour).find((a) => a.primary) : null;
     next = h('div', { class: 'next-card' },
-      h('div', { class: 'next-when' }, h('span', { class: 'next-time' }, formatTime(tour.startsAt, destination.timeZone)), h('span', { class: 'next-day' }, whenWord(slot.date, destination.timeZone))),
+      h('div', { class: 'next-when' }, tour.startsAt ? h('span', { class: 'next-time' }, formatTime(tour.startsAt, destination.timeZone)) : null, h('span', { class: 'next-day' }, whenWord(slot.date, destination.timeZone))),
       h('div', { class: 'next-name' }, tour.name),
-      h('div', { class: 'next-detail' }, [destination.name, tour.meeting, `${count}${tour.capacity ? ` of ${tour.capacity}` : ''} guest${count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')),
+      h('div', { class: 'next-detail' }, [destination.name, tour.meeting, guestsWord(tour)].filter(Boolean).join(' · ')),
       rollCall ? h('button', { class: 'btn', type: 'button', onclick: rollCall.run }, rollCall.label) : null,
       h('a', { class: `btn${rollCall ? ' btn--plain' : ''}`, href }, rollCall ? 'See who is on this tour' : 'Open this tour'));
   }
+  const otherRows = others.map((t) => { const { slot, destination } = zoneOf(t);
+    return row(`${base}/use/destination/${destination.id}/${slot.id}`, `${t.startsAt ? `${formatTime(t.startsAt, destination.timeZone)} · ` : ''}${t.name}`, [t.meeting, guestsWord(t)].filter(Boolean).join(' · ')); });
 
   // 3. Today's daily program (what the guests are given), when there is one.
   const program = programToday(trip).map(({ destination, day }) => h('div', { class: 'menu' },
@@ -82,19 +103,22 @@ export function todayPage(ctx, trip) {
     ...day.items.map((i) => h('div', { class: 'menu-row' }, h('span', { class: 'menu-text' },
       h('span', { class: 'menu-label' }, `${i.startsAt ? `${formatTime(i.startsAt, destination.timeZone)} · ` : ''}${i.title}`), i.place ? h('span', { class: 'menu-hint' }, i.place) : null)))));
 
+  const simple = ctx.simpleFor?.(trip.id) ?? false;
   const first = (ctx.owner?.name ?? '').trim().split(/\s+/)[0];
   return h('div', {},
     pageHead({ eyebrow: trip.name, title: `${greeting()}${first ? `, ${first}` : ''}` }),
-    h('h3', { class: 'section-title' }, 'Next tour'),
+    h('h3', { class: 'section-title' }, todays.length > 1 ? `Today's tours (${todays.length})` : todays.length === 1 ? 'Today\'s tour' : 'Next tour'),
     next,
+    otherRows.length > 0 ? h('div', { class: 'menu menu--after' }, otherRows) : null,
     ...jobsBlock,
     // "Needs attention" only when something does: a calm page says so in one line.
     attention.length > 0 ? h('h3', { class: 'section-title section-title--alert' }, `Needs attention (${attention.length})`) : null,
     attention.length > 0 ? h('div', { class: 'menu' }, attention) : h('p', { class: 'all-clear' }, 'Nothing else needs your attention.'),
     program.length > 0 ? h('h3', { class: 'section-title' }, 'Program of the day') : null,
     ...program,
-    role === 'viewer' ? null : h('h3', { class: 'section-title' }, 'Often used'),
-    role === 'viewer' ? null : h('div', { class: 'menu' },
+    // The simple version of the app (a colleague the owner has not unlocked, Settings > Team) stops here: the day, the roll call, what waits. Nothing else.
+    role === 'viewer' || simple ? null : h('h3', { class: 'section-title' }, 'Often used'),
+    role === 'viewer' || simple ? null : h('div', { class: 'menu' },
       h('button', { class: 'menu-row', type: 'button', onclick: () => sendSheet(ctx, trip) },
         h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, 'Send a list or a sheet'), h('span', { class: 'menu-hint' }, 'Guest lists, reservation sheets')),
         h('span', { class: 'menu-side' }, h('span', { class: 'row-chev' }, '›'))),

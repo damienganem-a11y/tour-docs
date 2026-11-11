@@ -856,6 +856,7 @@ function applyLook(trip) {
   document.documentElement.removeAttribute('data-dark-company');
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
   root.setProperty('--yellow', accent);
+  rememberSplash(trip);
   const light = (r * 299 + g * 587 + b * 114) / 1000;
   root.setProperty('--on-yellow', light > 150 ? '#000' : '#fff');
   if (light < 70) document.documentElement.setAttribute('data-dark-company', ''); // a very dark colour needs an outline on the black menu
@@ -889,6 +890,29 @@ function migrateTrip(trip) {
 // index.html shows a boot splash (the app's name, with its own little animation) the instant the page
 // opens, before this script has even run, so the phone never shows a blank screen while it starts.
 // It is replaced by the real screen the moment start() below is ready — no artificial wait.
+
+// The opening screen wears the company of the trip opened last (v0.152.0): its logo and name are kept on this phone (not the trip itself), so
+// they can be shown before anything is loaded. A trip with no company look brings back the plain "Tour Docs".
+const SPLASH_KEY = 'td-splash';
+function rememberSplash(trip) {
+  if (!trip) return; // outside a trip: keep what the last trip left
+  try {
+    const logo = trip.branding?.logo?.data ?? null; const name = trip.branding?.companyName ?? null;
+    if (!logo && !name) { localStorage.removeItem(SPLASH_KEY); return; }
+    const value = JSON.stringify({ logo: logo && logo.length < 400000 ? logo : null, name });
+    if (localStorage.getItem(SPLASH_KEY) !== value) localStorage.setItem(SPLASH_KEY, value);
+  } catch { /* no room or no storage: the plain opening screen */ }
+}
+function dressSplash() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SPLASH_KEY) ?? 'null');
+    const nameBox = document.querySelector('.boot-splash .boot-name');
+    if (!saved || !nameBox) return;
+    if (saved.logo) { const img = document.createElement('img'); img.className = 'boot-logo-img'; img.alt = ''; img.src = saved.logo; nameBox.before(img); }
+    if (saved.name) nameBox.textContent = saved.name;
+  } catch { /* the plain opening screen */ }
+}
+dressSplash();
 
 async function start() {
   applyTheme(); // light / dark look of this phone
