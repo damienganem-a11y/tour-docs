@@ -11,6 +11,7 @@ import { rollCallActions } from './destination.js';
 import { sendSheet } from './sendSheet.js';
 import { searchLauncher } from './searchUi.js';
 import { lastSeen, markSeen, changesSince } from '../sinceLast.js';
+import { servicesToAnswer, serviceLine, kindLabel } from '../services.js';
 
 // The next tour that has not started yet (not cancelled, with a start time), across the whole trip. Null when there is none.
 export function nextTour(trip, now = new Date()) {
@@ -59,6 +60,8 @@ export function todayPage(ctx, trip, sections = []) {
   const warningCount = w.overbooked.length + w.blank.length + w.unknown.length + w.explorer.length + w.waitlistRoom.length;
   const attention = [
     ...todo.slice(0, 4).map((item) => row(item.kind === 'conflict' ? `${base}/settings/check` : item.href, item.title, item.detail)),
+    // Special requests waiting for this person (v0.155.0): a new one for the Advance of its stop (or the owner), another time proposed for whoever asked.
+    ...servicesToAnswer(trip, ctx.userFor?.(trip.id) ?? { role }).slice(0, 4).map((x) => row(`${base}/use/services/${x.id}`, `${x.status === 'proposed' ? 'Another time proposed' : 'New request'}: ${x.title || kindLabel(x.kind)} · ${x.guestIds.map((id) => trip.guests.find((g) => g.id === id)).filter(Boolean).map((g) => `${g.first} ${g.last.slice(0, 1)}.`).join(', ')}`, [serviceLine(x).split(' · ').slice(1).join(' · '), trip.destinations.find((d) => d.id === x.destinationId)?.name].filter(Boolean).join(' · '))),
     warningCount > 0 && role !== 'viewer' ? row(`${base}/settings/warnings`, 'Warnings', `${warningCount} thing${warningCount === 1 ? '' : 's'} to look at`, warningCount) : null,
   ].filter(Boolean);
   if (todo.length > 4) attention.push(row(`${base}/settings/requests`, 'And more waiting', `${todo.length - 4} more`));
@@ -201,6 +204,14 @@ export function dayTimeline(trip, tours, now = new Date()) {
     if (count === 0) continue;
     const slot = trip.slots.find((x) => x.id === slotId); const d = trip.destinations.find((x) => x.id === slot.destinationId);
     items.push({ time: seating ?? '', title: `Dinner at ${r.name}`, detail: `${count} guest${count === 1 ? '' : 's'}`, href: `${base}/use/dining/${d.id}/${slot.id}`, past: Boolean(seating) && seating < clockIn(d.timeZone) });
+  }
+  // Special requests confirmed for today (v0.155.0): "16:30 · Massage · Anna A.".
+  for (const x of trip.services ?? []) {
+    if (x.status !== 'confirmed' || !x.confirmed?.date) continue;
+    const d = trip.destinations.find((y) => y.id === x.destinationId);
+    if (!d || x.confirmed.date !== localDateNow(d.timeZone)) continue;
+    const who = x.guestIds.map((id) => trip.guests.find((g) => g.id === id)).filter(Boolean).map((g) => `${g.first} ${g.last.slice(0, 1)}.`).join(', ');
+    items.push({ time: x.confirmed.time ?? '', title: `${x.title || kindLabel(x.kind)} · ${who}`, detail: [x.confirmed.place, x.confirmed.provider].filter(Boolean).join(' · ') || d.name, href: `${base}/use/services/${x.id}`, past: Boolean(x.confirmed.time) && x.confirmed.time < clockIn(d.timeZone) });
   }
   return items.sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
 }

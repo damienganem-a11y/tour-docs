@@ -423,3 +423,53 @@ body:has(.undo-btn--fresh) .toast { bottom: calc(var(--dock-gap) + 150px + env(s
 .screen--rollcall { padding-bottom: calc(var(--dock-gap) + 120px + env(safe-area-inset-bottom)); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) :is(.bottom-tabs, .rc-bar) { box-shadow: 0 10px 30px rgba(0, 0, 0, .5); } }
 :root[data-theme="dark"] :is(.bottom-tabs, .rc-bar) { box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+
+
+/* =====================================================================================================================================
+   v0.154.0: the rooming list.
+   ===================================================================================================================================== */
+.room-list { display: grid; gap: 10px; margin-top: 12px; }
+.room-card { display: flex; align-items: flex-start; gap: 14px; padding: 12px 14px; border: 1px solid var(--g-line); border-radius: var(--g-radius); background: var(--g-surface); }
+.room-card .room-no { flex: none; min-width: 76px; padding-top: 6px; font: 400 30px/1 var(--g-title); letter-spacing: .01em; }
+.room-card--none { border-style: dashed; background: transparent; }
+.room-card--none .room-no { font: 600 12px Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--sand-alert); min-width: 76px; }
+.room-guests { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.room-guest { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 4px 0; border: 0; background: none; color: var(--g-ink); font: 400 17px Inter, sans-serif; text-align: left; cursor: pointer; }
+div.room-guest { cursor: default; }
+.room-guest:active { opacity: .6; }
+.room-guest-name b { font-weight: 600; }
+.room-row { display: flex; align-items: center; gap: 10px; padding: 4px 14px; border: 1px solid var(--g-line); border-radius: 14px; background: var(--g-surface); }
+.room-row .room-guest { flex: 1; min-width: 0; }
+.room-no--side { flex: none; font: 400 26px/1 var(--g-title); }
+.room-no--side.is-none { color: var(--g-muted); }
+.room-input { font: 400 30px var(--g-title); text-align: center; letter-spacing: .04em; min-height: 64px; }
+.paste-preview { display: grid; gap: 4px; margin-top: 10px; }
+.paste-line { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--g-line); font-size: 15.5px; }
+.paste-line b { flex: none; min-width: 56px; font: 500 18px var(--g-title); }
+.paste-line--bad { color: var(--sand-alert); }
+
+
+/* =====================================================================================================================================
+   v0.155.0: special requests (spa, hair, private guides, drivers).
+   ===================================================================================================================================== */
+.form-field { display: grid; gap: 6px; margin: 0 0 14px; }
+.form-field .form-label { font: 600 12px Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--g-muted); }
+.form-field .text-input { margin: 0; }
+.svc-who, .svc-faces { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.svc-who select { flex: 1 1 100%; }
+.svc-person { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px 12px 4px 4px; border: 1px solid var(--g-line); border-radius: 22px; background: var(--g-surface); color: var(--g-ink); font: 500 15px Inter, sans-serif; cursor: pointer; }
+span.svc-person { cursor: default; }
+.svc-person--add { padding-left: 12px; border-style: dashed; color: var(--g-muted); }
+.svc-x { color: var(--g-muted); font-size: 18px; margin-left: 2px; }
+.svc-fact { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--g-line); font-size: 16px; }
+.svc-fact span { color: var(--g-muted); font-size: 14px; }
+.svc-fact b { font-weight: 500; }
+.svc-faces { margin: 4px 0 8px; }
+.sheet-body > .btn + .btn { margin-top: 8px; }
+.svc-row { gap: 12px; }
+.svc-status { flex: none; padding: 4px 10px; border-radius: 10px; background: var(--g-mist); color: var(--g-muted); font: 600 12px Inter, sans-serif; white-space: nowrap; }
+.svc-status--requested, .svc-status--proposed { background: var(--sand-warn); color: var(--sand-warn-ink); }
+.svc-status--confirmed { background: color-mix(in srgb, var(--sand-ok) 16%, transparent); color: var(--sand-ok); }
+@media (max-width: 380px) { .svc-row .svc-status { display: none; } }
+/* While a sheet is open, a message ("Saved", an error) shows at the TOP of the screen, never over the sheet's own buttons. */
+body.sheet-open .toast { top: calc(env(safe-area-inset-top) + 14px); bottom: auto !important; }

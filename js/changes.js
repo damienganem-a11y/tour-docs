@@ -82,6 +82,12 @@
 //   { type: 'set-easy-walker', guestId, easyWalker }         the guest walks slowly: a tour's Easy Walker group is kept for them (v0.134.0)
 //   { type: 'save-together', togetherId | null, name, guestIds }   a "travel together" group: families who want the same tour groups (trip.together);
 //       a guest is in one such group at most (adding them elsewhere takes them out of the other). { type: 'delete-together', togetherId }
+//   { type: 'set-rooms', destinationId, rooms, what }   the rooming list of a stop (v0.154.0): rooms = { guestId: '412' | null } (null or '' removes),
+//       only the guests given change; the stop keeps destination.rooms = { guestId: '412' }. Undoable. Colleagues may change it.
+//   { type: 'service', action, destinationId, ... }   special requests (services.js, v0.155.0). destinationId = the request's stop (so an Advance's
+//       limits apply). action 'add' { service } | 'edit' { serviceId, service } | 'confirm' { serviceId, confirmed: { date, time, place, provider }, price, answer }
+//       | 'propose' { serviceId, proposal: { date, time, note } } | 'decline' { serviceId, answer } | 'cancel' { serviceId } | 'reopen' { serviceId }
+//       | 'settings' { settings: { guestSeesPending, guestSeesPrice, currency } } (owner; no destinationId). Undoable.
 //   { type: 'set-explore', destinationId, explore, what }   the guests' map of a stop (explore.js): dock point, back-on-board time, the team's places
 //   { type: 'set-contacts', contacts, what }   the local team (guides, drivers...: contacts.js), the whole list after an import or an edit; `what` says it in words
 //   { type: 'confirm-contact', contactId, activityId, confirmed }   a guide or driver reconfirmed (or not) for one tour, with who and when
@@ -127,6 +133,7 @@
 // Privacy: journal entries never contain dietary info.
 
 import { isFace } from './faces.js';
+import { serviceError, kindLabel as serviceKindLabel } from './services.js';
 import { newId, newToken } from './ids.js';
 import { canUser } from './users.js';
 import { explorerProblems } from './explorer.js';
@@ -157,6 +164,9 @@ const GUEST_TYPES = new Set(['edit-guest', 'guest-left', 'guest-return', 'make-s
 const TOGETHER_TYPES = new Set(['save-together', 'delete-together']);
 const CONTACT_TYPES = new Set(['set-contacts', 'confirm-contact']);
 const EXPLORE_TYPES = new Set(['set-explore']);
+const ROOM_TYPES = new Set(['set-rooms']);
+const SERVICE_TYPES = new Set(['service']); // special requests (v0.155.0) // the rooming list of a stop (v0.154.0)
+export const ROOM_MAX = 12; // letters in a room number ("412", "Suite 3B", "Villa 12")
 // The trip itself (step 9): archive, un-archive, delete, reinstate. Each on its own. Allowed even when
 // the trip is archived (see validateChanges below) — that is how these get taken back.
 const TRIP_TYPES = new Set(['archive-trip', 'unarchive-trip', 'delete-trip', 'reinstate-trip']);
@@ -166,7 +176,7 @@ const TRIP_INFO_TYPES = new Set(['rename-trip']);
 const BRANDING_TYPES = new Set(['set-branding']);
 // What a Team colleague may ask for: moving guests, roll call, and dinner tables. Everything else (settings, guests, groups, branding, the trip
 // itself, undo) stays with the owner.
-const TEAM_TYPES = new Set(['set-photo', 'move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
+const TEAM_TYPES = new Set(['service', 'set-rooms', 'set-photo', 'move', 'book-dinner', 'add-to-dinner-table', 'move-dinner-table', 'rollcall-start', 'rollcall-end', 'rollcall-reopen', 'rollcall-takeover', 'checkin', 'checkout', 'vehicle-add', 'vehicle-number']);
 // What an Advance (the local contact of ONE destination) may do inside their destination on top of that: the destination's own settings, its tours and
 // its restaurants. Everything trip-wide (guests, groups, branding, the trip itself) stays with the owner.
 const ADVANCE_TYPES = new Set([...TEAM_TYPES, 'edit-destination', 'add-activity', 'edit-activity', 'cancel-tour', 'add-restaurant', 'edit-restaurant', 'restaurant-card', 'set-program']);
@@ -230,7 +240,7 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   // Cancelling a tour, undoing and roll call changes are made on their own. The one exception: several
   // check-ins together (a travel party checked into the same vehicle at once).
   const allCheckins = changes.every((c) => c.type === 'checkin');
-  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || TOGETHER_TYPES.has(c.type) || CONTACT_TYPES.has(c.type) || EXPLORE_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type) || GUEST_LINK_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
+  if (changes.some((c) => c.type === 'cancel-tour' || c.type === 'undo' || ROLLCALL_TYPES.has(c.type) || SETTINGS_TYPES.has(c.type) || GUEST_TYPES.has(c.type) || TRIP_TYPES.has(c.type) || TRIP_INFO_TYPES.has(c.type) || BRANDING_TYPES.has(c.type) || DIETARY_TYPES.has(c.type) || SPLIT_TYPES.has(c.type) || TOGETHER_TYPES.has(c.type) || CONTACT_TYPES.has(c.type) || EXPLORE_TYPES.has(c.type) || ROOM_TYPES.has(c.type) || SERVICE_TYPES.has(c.type) || DINING_BOOKING_TYPES.has(c.type) || GUEST_LINK_TYPES.has(c.type)) && changes.length > 1 && !allCheckins) {
     return fail('Cancelling a tour, undoing, roll call, settings, dining, guest and trip changes are changes of their own.');
   }
   if (changes[0].type === 'undo') return validateUndo(trip, journal, changes[0].scope);
@@ -258,6 +268,18 @@ export function validateChanges(trip, user, changes, journal = [], opts = {}) {
   if (GUEST_LINK_TYPES.has(changes[0].type)) return validateGuestLinks(trip, changes[0]);
   if (SPLIT_TYPES.has(changes[0].type)) return validateSplitChange(trip, changes[0]);
   if (TOGETHER_TYPES.has(changes[0].type)) return validateTogether(trip, changes[0]);
+  if (changes[0].type === 'service') return validateService(trip, user, changes[0]);
+  if (changes[0].type === 'set-rooms') {
+    const c = changes[0];
+    if (!trip.destinations.some((d) => d.id === c.destinationId)) return fail('That stop is not in this trip.');
+    if (!c.rooms || typeof c.rooms !== 'object' || Object.keys(c.rooms).length === 0) return fail('There is no room number to save.');
+    for (const [guestId, room] of Object.entries(c.rooms)) {
+      if (!trip.guests.some((g) => g.id === guestId)) return fail('A guest of this list is not on the trip.');
+      if (room !== null && typeof room !== 'string') return fail('A room number is written in letters and numbers.');
+      if (String(room ?? '').trim().length > ROOM_MAX) return fail(`A room number has ${ROOM_MAX} letters at most.`);
+    }
+    return { ok: true };
+  }
   if (changes[0].type === 'set-explore') {
     if (!trip.destinations.some((d) => d.id === changes[0].destinationId)) return fail('That destination is not in this trip.');
     const problem = exploreError(changes[0].explore);
@@ -449,6 +471,14 @@ function validateUndo(trip, journal, scope) {
     if (entry.type === 'set-contacts' || entry.type === 'confirm-contact') {
       if (JSON.stringify(trip.contacts ?? []) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the local team has changed since.');
     }
+    if (entry.type === 'service') {
+      const now = entry.action === 'settings' ? trip.serviceSettings ?? null : (trip.services ?? []).find((x) => x.id === entry.serviceId) ?? null;
+      if (JSON.stringify(now) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the request has changed since.');
+    }
+    if (entry.type === 'set-rooms') {
+      const d = trip.destinations.find((x) => x.id === entry.destinationId);
+      if (!d || JSON.stringify(d.rooms ?? {}) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the rooming list has changed since.');
+    }
     if (entry.type === 'set-explore') {
       const d = trip.destinations.find((x) => x.id === entry.destinationId);
       if (!d || JSON.stringify(d.explore ?? null) !== JSON.stringify(entry.to)) return fail('This action cannot be undone: the map has changed since.');
@@ -615,6 +645,41 @@ export function slotOfChange(trip, change) {
 }
 // A change outside the colleague's own destination is NOT refused any more (owner's decision, 15 Oct 2026: guests often talk to the person of the next
 // destination): the owner's device holds it for the owner's OK instead (app.js). True when `change` falls outside `scope` (a destination id).
+// Special requests (services.js). The fields are checked there; here, what each answer needs and who may give it.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/; const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+function validateService(trip, user, c) {
+  if (c.action === 'settings') {
+    if (user && user.role !== 'owner') return fail('Only the owner of the trip changes what guests see.');
+    const st = c.settings ?? {};
+    if (typeof st.guestSeesPending !== 'boolean' || typeof st.guestSeesPrice !== 'boolean') return fail('Each choice is yes or no.');
+    if (st.currency && !/^[A-Z]{3}$/.test(st.currency)) return fail('Choose a currency.');
+    return { ok: true };
+  }
+  if (c.action === 'add') {
+    const problem = serviceError(trip, c.service);
+    if (problem) return fail(problem);
+    return c.destinationId === c.service.destinationId ? { ok: true } : fail('The request and its stop do not match.');
+  }
+  const s = (trip.services ?? []).find((x) => x.id === c.serviceId);
+  if (!s) return fail('That request is no longer in the trip.');
+  if (c.destinationId !== s.destinationId) return fail('The request and its stop do not match.');
+  if (c.action === 'edit') { const problem = serviceError(trip, { ...c.service, destinationId: s.destinationId }); return problem ? fail(problem) : { ok: true }; }
+  if (c.action === 'confirm') {
+    if (s.status === 'cancelled') return fail('This request was cancelled.');
+    if (!DATE_ONLY.test(c.confirmed?.date ?? '') || !CLOCK.test(c.confirmed?.time ?? '')) return fail('Write the day and the exact time it is booked for.');
+    if (String(c.confirmed.place ?? '').length > 80 || String(c.confirmed.provider ?? '').length > 80) return fail('The place and the name: 80 letters at most each.');
+    if (c.price && !(Number.isFinite(c.price.amount) && c.price.amount >= 0 && /^[A-Z]{3}$/.test(c.price.currency ?? ''))) return fail('The price is a number, with its currency.');
+    return { ok: true };
+  }
+  if (c.action === 'propose') {
+    if (s.status !== 'requested' && s.status !== 'proposed') return fail('Only a request waiting for an answer can get another time.');
+    return DATE_ONLY.test(c.proposal?.date ?? '') && CLOCK.test(c.proposal?.time ?? '') ? { ok: true } : fail('Write the day and the time you propose.');
+  }
+  if (c.action === 'decline') return String(c.answer ?? '').trim() ? { ok: true } : fail('Say in a few words why it is not possible: the colleague will tell the guest.');
+  if (c.action === 'cancel' || c.action === 'reopen') return { ok: true };
+  return fail('That is not something a request can do.');
+}
+
 export function outsideScope(trip, scope, change) {
   if (!scope || change.type === 'undo') return false; // an undo belongs to whoever did the action (checked in validateChanges), not to a place
   const slot = slotOfChange(trip, change);
@@ -1548,6 +1613,54 @@ async function doApplyOnce(ctx, tripId, changes, opts = {}) {
   // "local, right now" place too. Snapshots (from/to) make Undo exact, whatever changed inside a split.
   // The local team: the whole list before and after (Undo puts it back exactly). A reconfirmation keeps who and when.
   // The guests' map of a stop: the destination's whole Explore data before and after (Undo puts it back exactly).
+  if (SERVICE_TYPES.has(changes[0].type)) {
+    const c = changes[0];
+    const who = { id: actor.id, name: actor.name };
+    const services = next.services ?? (next.services = []);
+    const fromSettings = structuredClone(next.serviceSettings ?? null);
+    let s = c.serviceId ? services.find((x) => x.id === c.serviceId) : null;
+    const before = s ? structuredClone(s) : null;
+    const clean = (x) => ({ guestIds: [...x.guestIds], destinationId: x.destinationId, kind: x.kind, title: String(x.title ?? '').trim(), details: String(x.details ?? '').trim(),
+      when: { date: x.when.date, mode: x.when.mode, time: ['at', 'after', 'before'].includes(x.when.mode) ? x.when.time : null }, minutes: x.minutes ?? null,
+      price: x.price ? { amount: x.price.amount, currency: x.price.currency } : null, guestSees: x.guestSees ?? null, guestSeesPrice: x.guestSeesPrice ?? null });
+    if (c.action === 'settings') next.serviceSettings = { guestSeesPending: c.settings.guestSeesPending, guestSeesPrice: c.settings.guestSeesPrice, currency: c.settings.currency ?? '' };
+    else if (c.action === 'add') { s = { id: newId(), ...clean(c.service), status: 'requested', confirmed: null, proposal: null, answer: '', requestedBy: { ...who, email: String(c.askerEmail ?? '').toLowerCase() }, requestedAt: at, updatedBy: who, updatedAt: at }; services.push(s); }
+    else {
+      if (c.action === 'edit') Object.assign(s, clean({ ...c.service, destinationId: s.destinationId }), s.status === 'declined' || s.status === 'proposed' ? { status: 'requested', proposal: null } : {});
+      if (c.action === 'confirm') Object.assign(s, { status: 'confirmed', confirmed: { date: c.confirmed.date, time: c.confirmed.time, place: String(c.confirmed.place ?? '').trim(), provider: String(c.confirmed.provider ?? '').trim() }, proposal: null, answer: String(c.answer ?? '').trim() }, c.price !== undefined ? { price: c.price ? { amount: c.price.amount, currency: c.price.currency } : null } : {});
+      if (c.action === 'propose') Object.assign(s, { status: 'proposed', proposal: { date: c.proposal.date, time: c.proposal.time, note: String(c.proposal.note ?? '').trim() } });
+      if (c.action === 'decline') Object.assign(s, { status: 'declined', answer: String(c.answer).trim() });
+      if (c.action === 'cancel') s.status = 'cancelled';
+      if (c.action === 'reopen') Object.assign(s, { status: 'requested', confirmed: null, proposal: null });
+      Object.assign(s, { updatedBy: who, updatedAt: at });
+    }
+    const guestsOf = (x) => x.guestIds.map((id) => names.get(id)).filter(Boolean).join(', ');
+    const label = s ? `${s.title || serviceKindLabel(s.kind)} for ${guestsOf(s)}` : '';
+    const what = { settings: 'What guests see of special requests changed', add: `New request: ${label}`, edit: `Request changed: ${label}`, confirm: `Confirmed: ${label}`,
+      propose: `Other time proposed: ${label}`, decline: `Not possible: ${label}`, cancel: `Request cancelled: ${label}`, reopen: `Request re-opened: ${label}` }[c.action];
+    entries.push({ ...base(), type: 'service', ...guestWhere, slotLabel: next.destinations.find((d) => d.id === (s?.destinationId ?? c.destinationId))?.name ?? null,
+      action: c.action, serviceId: s?.id ?? null, what: what.slice(0, 120), from: c.action === 'settings' ? fromSettings : before, to: c.action === 'settings' ? structuredClone(next.serviceSettings) : structuredClone(s) });
+    return save(ctx, next, entries, {});
+  }
+
+  if (ROOM_TYPES.has(changes[0].type)) {
+    const c = changes[0];
+    const destination = next.destinations.find((d) => d.id === c.destinationId);
+    const before = structuredClone(destination.rooms ?? {});
+    const rooms = { ...before };
+    for (const [guestId, room] of Object.entries(c.rooms)) {
+      const value = String(room ?? '').trim();
+      if (value) rooms[guestId] = value; else delete rooms[guestId];
+    }
+    destination.rooms = rooms;
+    const changed = Object.keys(c.rooms).filter((id) => (before[id] ?? '') !== (rooms[id] ?? ''));
+    const what = c.what ?? (changed.length === 1
+      ? `${names.get(changed[0])}: room ${rooms[changed[0]] ?? 'removed'} in ${destination.name}`
+      : `Rooming list of ${destination.name}: ${changed.length} room${changed.length === 1 ? '' : 's'} updated`);
+    entries.push({ ...base(), type: c.type, ...guestWhere, slotLabel: destination.name, destinationId: c.destinationId, what: String(what).slice(0, 120), from: before, to: structuredClone(rooms) });
+    return save(ctx, next, entries, {});
+  }
+
   if (EXPLORE_TYPES.has(changes[0].type)) {
     const c = changes[0];
     const destination = next.destinations.find((d) => d.id === c.destinationId);
@@ -2008,6 +2121,21 @@ function undoEntry(next, entry, base, entries) {
     const guest = next.guests.find((g) => g.id === entry.guestId);
     if (entry.easyWalker) delete guest.easyWalker; else guest.easyWalker = true;
     entries.push({ ...base(), type: 'set-easy-walker', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, guestId: entry.guestId, guestName: entry.guestName, easyWalker: !entry.easyWalker });
+    return;
+  }
+  if (entry.type === 'service') {
+    if (entry.action === 'settings') { if (entry.from === null) delete next.serviceSettings; else next.serviceSettings = structuredClone(entry.from); }
+    else {
+      next.services = (next.services ?? []).filter((x) => x.id !== entry.serviceId);
+      if (entry.from) next.services.push(structuredClone(entry.from));
+    }
+    entries.push({ ...base(), type: 'service', cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, action: entry.action, serviceId: entry.serviceId, what: entry.what, from: entry.to, to: structuredClone(entry.from) });
+    return;
+  }
+  if (entry.type === 'set-rooms') {
+    const d = next.destinations.find((x) => x.id === entry.destinationId);
+    d.rooms = structuredClone(entry.from ?? {});
+    entries.push({ ...base(), type: entry.type, cause: 'undo', slotId: entry.slotId, slotLabel: entry.slotLabel, place: entry.place, destinationId: entry.destinationId, what: entry.what, from: entry.to, to: structuredClone(d.rooms) });
     return;
   }
   if (entry.type === 'set-explore') {

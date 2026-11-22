@@ -17,6 +17,9 @@ import { partiesOf } from './party.js';
 import { putIn } from '../put.js';
 import { face, faceBlock, photoSession } from './faceUi.js';
 import { isSevere } from '../dietary.js';
+import { roomingStop } from './rooming.js';
+import { servicesWaitingCount, guestServicesBlock } from './services.js';
+import { roomCount, roomOf } from '../rooming.js';
 
 export function guestPage(ctx, trip, guestId) {
   const guest = trip.guests.find((g) => g.id === guestId);
@@ -124,6 +127,14 @@ function guestList(ctx, trip) {
   const withPhoto = active.filter((g) => g.photo).length;
   const canPhoto = ctx.roleFor(trip.id) !== 'viewer' && !trip.archivedAt;
   const doors = h('div', { class: 'menu guest-doors' },
+    (() => { const waiting = servicesWaitingCount(trip, ctx.userFor?.(trip.id) ?? { role: 'owner' }); const open = (trip.services ?? []).filter((x) => x.status === 'requested' || x.status === 'proposed').length;
+      return h('a', { class: 'menu-row', href: `#/trip/${trip.id}/use/services` },
+        h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, 'Special requests'), h('span', { class: 'menu-hint' }, open ? `${open} being arranged${waiting ? `, ${waiting} for you to answer` : ''}` : 'Spa, hair, private guides and drivers')),
+        h('span', { class: 'menu-side' }, waiting ? h('span', { class: 'tile-badge tile-badge--row' }, String(waiting)) : null, h('span', { class: 'row-chev' }, '›'))); })(),
+    (() => { const stop = roomingStop(trip); const { withRoom, total } = roomCount(trip, stop);
+      return h('a', { class: 'menu-row', href: `#/trip/${trip.id}/use/rooming` },
+        h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, 'Rooming list'), h('span', { class: 'menu-hint' }, `${stop.name}: ${withRoom === total ? 'everybody has a room' : `${withRoom} of ${total} guests have a room`}`)),
+        h('span', { class: 'menu-side' }, h('span', { class: 'row-chev' }, '›'))); })(),
     h('a', { class: 'menu-row', href: `#/trip/${trip.id}/use/dietary` },
       h('span', { class: 'menu-text' }, h('span', { class: 'menu-label' }, 'Allergies & diets'), h('span', { class: 'menu-hint' }, needs ? `${needs} guest${needs === 1 ? '' : 's'}, with their photo` : 'Nobody has one written down')),
       h('span', { class: 'menu-side' }, needs ? h('span', { class: 'count' }, String(needs)) : null, h('span', { class: 'row-chev' }, '›'))),
@@ -155,9 +166,10 @@ function guestDetail(ctx, trip, guest) {
       faceBlock(ctx, trip, guest),
       h('div', { class: 'guest-card-text' },
         h('h1', { class: 'title' }, names.get(guest.id)),
-        h('div', { class: 'subtitle' }, [guest.seat ? `Seat ${guest.seat}` : null, partyLabel(trip, guest, names), guest.age ? `${guest.age} years` : null, guest.easyWalker ? 'Easy Walker' : null].filter(Boolean).join(' · ')))),
+        h('div', { class: 'subtitle' }, [guest.seat ? `Seat ${guest.seat}` : null, partyLabel(trip, guest, names), (() => { const stop = roomingStop(trip); const room = roomOf(stop, guest.id); return room ? `Room ${room} in ${stop.name}` : null; })(), guest.age ? `${guest.age} years` : null, guest.easyWalker ? 'Easy Walker' : null].filter(Boolean).join(' · ')))),
     guest.dietary ? h('div', { class: `diet-card${isSevere(guest.dietary) ? ' diet-card--severe' : ''}` }, h('div', { class: 'diet-card-head' }, isSevere(guest.dietary) ? 'Severe allergy' : 'Allergies & diet'), h('div', {}, guest.dietary)) : null,
     guest.notes ? h('div', { class: 'note-card' }, h('div', { class: 'diet-card-head' }, 'Note'), h('div', {}, guest.notes)) : null,
+    guestServicesBlock(ctx, trip, guest),
     // The whole travel party on one page (only when there is a party).
     partyPeople(trip, guest) > 1 ? h('a', { class: 'btn btn--plain btn--small', href: `#/trip/${trip.id}/use/party/${guest.id}` }, `See the whole party (${partyPeople(trip, guest)})`) : null,
     // Reached by an old link: this guest left the trip (Settings > Guests brings them back).

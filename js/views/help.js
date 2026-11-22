@@ -33,6 +33,16 @@ export const HELP = {
     'Tap a conversation to read it and answer. A red number means somebody is waiting.',
     'A message cannot be changed or deleted once it is sent.',
   ] },
+  services: { title: 'Special requests', lines: [
+    'Spa, hair, a private guide or a driver, for one guest or several. "New request" says who, what, where, when, how long and the price.',
+    'The Advance of that stop is told at once, and answers: Confirm (time, place, who), Propose another time, or Not possible. You are told too.',
+    'The guest sees "Being arranged", then the confirmed time, as the trip\'s settings allow (at the bottom of this page, for the owner).',
+  ] },
+  rooming: { title: 'Rooming list', lines: [
+    'The rooms of one stop. Change the stop with the line at the top; "By room" or "By last name" changes the order.',
+    'Tap a guest to write or change their room: their travel party can get the same room in the same go.',
+    '"Paste the hotel\'s list" reads names and rooms from an email or Excel. You check the list before anything is saved.',
+  ] },
   rollcall: { title: 'Roll call', lines: [
     'Choose the vehicle at the top, then tap each guest as they board. They leave the list.',
     'The three dots next to a name are for a guest who is not coming, or who goes on another tour.',

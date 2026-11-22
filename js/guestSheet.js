@@ -22,6 +22,7 @@ import { guestMenuCard } from './menuCard.js';
 import { tripAccent } from './loader.js';
 import { explorerForGuest } from './explorer.js';
 import { programOf } from './program.js';
+import { servicesForGuest } from './services.js';
 
 // The sheet's own format number: the guest app refuses a sheet it does not understand instead of showing it wrongly.
 export const SHEET_VERSION = 1;
@@ -181,6 +182,8 @@ export function buildGuestSheet(trip, guest, now) {
     farewell: farewellOf(trip),
     album: trip.album?.enabled !== false, // Our Album (the photos themselves are on the server)
     staffLabel: teamLabel(trip), // what the guest calls the people who answer their messages ("Jet Staff", "Adventure Guides"...)
+    // Special requests (v0.155.0): the guest's own massages, guides, drivers... pending (when the trip shows them) and confirmed; a price only when allowed.
+    services: servicesForGuest(trip, guest.id),
     restaurants: restaurants.map(({ _id, ...restaurant }) => restaurant),
     tours: order.map((i) => { const { _id, _slot, ...tour } = tours[i]; return tour; }),
   };

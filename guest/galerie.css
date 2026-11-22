@@ -346,3 +346,13 @@ html, body, main { background: var(--g-paper); color: var(--g-ink); }
   .atl-tabs { padding: 6px 22px calc(env(safe-area-inset-bottom) + 22px); }
   .atl-body, .gal-sheet { padding-bottom: calc(env(safe-area-inset-bottom) + 116px); } /* the last line of a page stays above the taller bar */
 }
+
+/* v0.155.0: "Your arrangements", the guest's special requests (spa, private guide, driver...). Pending: a dashed line and "Being arranged". */
+.gal-services { margin: 18px 0 6px; }
+.gal-service { display: flex; flex-direction: column; gap: 3px; padding: 14px 0; border-bottom: 1px solid var(--g-line); }
+.gal-service small { font: 600 10.5px Inter, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--g-brass); }
+.gal-service.is-pending small { color: var(--g-muted); }
+.gal-service b { font: 400 20px/1.2 var(--g-title); color: var(--g-ink); }
+.gal-service span { font-size: 14px; color: var(--g-muted); }
+.gal-service-price { color: var(--g-ink) !important; font-weight: 500; }
+.gal-service-note { font-style: italic; }

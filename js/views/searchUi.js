@@ -14,6 +14,8 @@ function pagesFor(ctx, trip, sections) {
   const pages = [
     { title: 'Allergies & diets', detail: 'Every guest with a need, with their photo', href: `#/trip/${trip.id}/use/dietary` },
     { title: 'Messages', detail: 'Guests and team', href: `#/trip/${trip.id}/use/messages` },
+    { title: 'Special requests', detail: 'Spa, hair, private guides and drivers', href: `#/trip/${trip.id}/use/services` },
+    { title: 'Rooming list', detail: 'The rooms of each stop, by room or by last name', href: `#/trip/${trip.id}/use/rooming` },
   ];
   if (role === 'viewer') return pages;
   for (const section of sections.filter((x) => !x.hidden || x.key === 'advanced')) {

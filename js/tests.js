@@ -29,6 +29,8 @@ import { HELP } from './views/help.js';
 import { centreSquare } from './faces.js';
 import { searchTrip, matches } from './search.js';
 import { changesSince } from './sinceLast.js';
+import { roomingRows, parseRooming, byRoom } from './rooming.js';
+import { serviceLine, guestView, servicesForGuest, serviceMessages, servicesToAnswer, serviceSettings } from './services.js';
 import { dietTags, isSevere, dietaryList } from './dietary.js';
 import { practiceHint } from './views/practice.js';
 import { plainError } from './ui.js';
@@ -2950,6 +2952,62 @@ function readZip(bytes) {
   const e = (batchId, at, id, extra = {}) => ({ batchId, seq: 1, at, who: { id, name: id }, type: 'set-easy-walker', guestName: 'Ann', easyWalker: true, guestId: 'g', ...extra });
   const entries = [e('1', '2027-01-01T10:00:00Z', 'kim'), e('2', '2027-01-01T12:00:00Z', 'me'), e('3', '2027-01-01T13:00:00Z', 'kim'), e('4', '2027-01-01T14:00:00Z', 'kim', { type: 'set-photo' })];
   check('"Since you last looked" lists what others changed after the moment, newest first, not my own changes, not a photo', changesSince(entries, '2027-01-01T11:00:00Z', 'me').length === 1 && changesSince(entries, '2027-01-01T09:00:00Z', 'me').length === 2 && changesSince(entries, null, 'me').length === 0);
+}
+
+// --- The rooming list (v0.154.0) ---
+{
+  const ctxR = makeCtx(); const t = ctxR.state; const d = t.destinations[0]; const [a, b, c] = t.guests;
+  const set = await applyChange(ctxR, trip.id, { type: 'set-rooms', destinationId: d.id, rooms: { [a.id]: ' 412 ', [b.id]: '412', [c.id]: '12' } });
+  check('Rooms are saved on the stop, trimmed, and the journal says it in words', set.ok && ctxR.state.destinations[0].rooms[a.id] === '412' && /Rooming list of .*: 3 rooms updated/.test(summarize(groupBatches(ctxR.entries).at(-1))));
+  const rows = roomingRows(ctxR.state, ctxR.state.destinations[0], 'room');
+  check('By room: the rooms in natural order ("12" before "412"), guests sharing a room together, then those without a room', rows[0].room === '12' && rows[1].room === '412' && rows[1].guests.length === 2 && rows.at(-1).room === null);
+  check('By last name: one line per guest, in last-name order', roomingRows(ctxR.state, ctxR.state.destinations[0], 'name').every((r, i, all) => i === 0 || all[i - 1].guests[0].last.localeCompare(r.guests[0].last, undefined, { sensitivity: 'base' }) <= 0));
+  await applyChange(ctxR, trip.id, { type: 'set-rooms', destinationId: d.id, rooms: { [c.id]: null } });
+  check('A room can be removed (null)', !(c.id in ctxR.state.destinations[0].rooms));
+  const undone = await applyChange(ctxR, trip.id, { type: 'undo' });
+  check('Undo puts the removed room back', undone.ok && ctxR.state.destinations[0].rooms[c.id] === '12');
+  check('A room number is 12 letters at most, for guests of the trip only', !(await applyChange(ctxR, trip.id, { type: 'set-rooms', destinationId: d.id, rooms: { [a.id]: 'X'.repeat(13) } })).ok
+    && !(await applyChange(ctxR, trip.id, { type: 'set-rooms', destinationId: d.id, rooms: { nobody: '1' } })).ok);
+  check('A colleague (Team) may change the rooming list', validateChanges(ctxR.state, { id: 'u2', role: 'team', name: 'Kim' }, [{ type: 'set-rooms', destinationId: d.id, rooms: { [a.id]: '5' } }]).ok);
+  const gs = [{ id: '1', first: 'Anna', last: 'Alder' }, { id: '2', first: 'Ben', last: 'Alder' }, { id: '3', first: 'Carla', last: 'Brown' }, { id: '4', first: 'Dev', last: 'Van der Berg' }];
+  const read = parseRooming('Alder, Anna  412\nRoom 12 – Carla Brown\nMr & Mrs Van der Berg 1205 2 nights\nBen Alder 413\nhello 55', gs);
+  check('A pasted hotel list is read: names in any order, "Room 12", a long last name, a room number among other numbers', JSON.stringify(read.rooms) === '{"1":"412","2":"413","3":"12","4":"1205"}' && read.notUnderstood.join() === 'hello 55');
+  check('A family name alone gives the room to the whole family', JSON.stringify(parseRooming('Alder 300', gs).rooms) === '{"1":"300","2":"300"}');
+  check('Room numbers sort naturally', ['12', '2', 'Suite 3', '101'].sort(byRoom).join() === '2,12,101,Suite 3');
+}
+
+// --- Special requests (v0.155.0) ---
+{
+  const ctxS = makeCtx(); const t = ctxS.state; const d = t.destinations[0]; const [a, b] = t.guests;
+  const date = t.slots.find((x) => x.destinationId === d.id).date;
+  const draft = { guestIds: [a.id], destinationId: d.id, kind: 'massage', title: 'Massage', details: 'Any massage', when: { date, mode: 'after', time: '16:00' }, minutes: 90, price: { amount: 120, currency: 'EUR' }, guestSees: null, guestSeesPrice: null };
+  check('A request needs who, the day and, for "after", a time', !(await applyChange(ctxS, trip.id, { type: 'service', action: 'add', destinationId: d.id, service: { ...draft, guestIds: [] } })).ok
+    && !(await applyChange(ctxS, trip.id, { type: 'service', action: 'add', destinationId: d.id, service: { ...draft, when: { date, mode: 'after', time: '' } } })).ok);
+  const added = await applyChange(ctxS, trip.id, { type: 'service', action: 'add', destinationId: d.id, service: draft, askerEmail: 'Kim@Example.com' });
+  const s1 = ctxS.state.services[0];
+  check('A request is saved, waiting for an answer, with who asked; the journal says "New request: Massage for …"', added.ok && s1.status === 'requested' && s1.requestedBy.email === 'kim@example.com' && /^New request: Massage for /.test(summarize(groupBatches(ctxS.entries).at(-1))));
+  check('Said in words: "Massage · 1 h 30 · <day> after 16:00"', /^Massage · 1 h 30 · .* after 16:00$/.test(serviceLine(s1)));
+  check('By default the guest sees it while it is arranged, without the price', JSON.stringify(guestView(ctxS.state, s1)) === '{"visible":true,"price":false}' && servicesForGuest(ctxS.state, a.id)[0].status === 'pending' && servicesForGuest(ctxS.state, b.id).length === 0);
+  const msgs = serviceMessages(ctxS.state, new Date(Date.parse(s1.requestedAt) + 60000));
+  check('A new request is announced to the Advance of its stop and the owner', msgs.length === 1 && msgs[0].audience === 'staff' && msgs[0].staff_emails.join() === `@advance:${d.id},@owner`);
+  check('…and is no longer on the list 30 minutes later (it was sent)', serviceMessages(ctxS.state, new Date(Date.parse(s1.requestedAt) + 31 * 60000)).length === 0);
+  check('An Advance of the stop must answer it; another Advance does not; the owner does',
+    servicesToAnswer(ctxS.state, { id: 'x', role: 'advance', scope: d.id }).length === 1 && servicesToAnswer(ctxS.state, { id: 'x', role: 'advance', scope: 'elsewhere' }).length === 0 && servicesToAnswer(ctxS.state, { id: 'o', role: 'owner' }).length === 1);
+  check('Confirming needs the exact time', !(await applyChange(ctxS, trip.id, { type: 'service', action: 'confirm', destinationId: d.id, serviceId: s1.id, confirmed: { date, time: '' } })).ok);
+  const ok = await applyChange(ctxS, trip.id, { type: 'service', action: 'confirm', destinationId: d.id, serviceId: s1.id, confirmed: { date, time: '16:30', place: 'Hotel spa', provider: 'Maria' }, price: { amount: 130, currency: 'EUR' } });
+  const s2 = ctxS.state.services[0];
+  const sent = serviceMessages(ctxS.state, new Date(Date.parse(s2.updatedAt) + 60000));
+  check('Confirmed: the asker and the owner are told, and the guest gets a notification', ok.ok && s2.status === 'confirmed' && sent.some((m) => m.audience === 'staff' && m.staff_emails.join() === 'kim@example.com,@owner') && sent.some((m) => m.audience === 'guests' && m.guest_ids.join() === a.id));
+  check('The guest\'s sheet shows the confirmed time and place, no details, no price (the trip hides prices)', (() => { const x = servicesForGuest(ctxS.state, a.id)[0]; return x.status === 'confirmed' && / at 16:30$/.test(x.when) && x.place === 'Hotel spa' && x.price === '' && !('details' in x); })());
+  await applyChange(ctxS, trip.id, { type: 'service', action: 'settings', settings: { guestSeesPending: false, guestSeesPrice: true, currency: 'EUR' } });
+  check('With prices shown by the trip, the guest sees "EUR 130"', servicesForGuest(ctxS.state, a.id)[0].price === 'EUR 130');
+  const undone = await applyChange(ctxS, trip.id, { type: 'undo' });
+  check('Undo takes back the last change of a request (here: the setting)', undone.ok && serviceSettings(ctxS.state).guestSeesPrice === false);
+  check('A colleague (Team) may make and answer requests; only the owner changes what guests see',
+    validateChanges(ctxS.state, { id: 'u2', role: 'team', name: 'Kim' }, [{ type: 'service', action: 'decline', destinationId: d.id, serviceId: s1.id, answer: 'Full' }]).ok
+    && !validateChanges(ctxS.state, { id: 'u2', role: 'team', name: 'Kim' }, [{ type: 'service', action: 'settings', settings: { guestSeesPending: true, guestSeesPrice: true } }]).ok);
+  check('Saying "not possible" needs a reason', !(await applyChange(ctxS, trip.id, { type: 'service', action: 'decline', destinationId: d.id, serviceId: s1.id, answer: ' ' })).ok);
+  check('The sheet of a guest carries their requests (guestSheet)', Array.isArray(buildGuestSheet(ctxS.state, a, new Date().toISOString()).services));
 }
 
 // --- Tour information for guests (activity.info) ---

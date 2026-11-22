@@ -35,6 +35,8 @@ import { sendSheet } from './sendSheet.js';
 import { messagesPage } from './messages.js';
 import { helpButton } from './help.js';
 import { allergiesPage } from './allergies.js';
+import { roomingPage } from './rooming.js';
+import { servicesPage, openServiceForm } from './services.js';
 import { openSearch } from './searchUi.js';
 import { openPractice } from './practice.js';
 import { inboxCount } from '../inbox.js';
@@ -99,7 +101,7 @@ export const SETTINGS_SECTIONS = [
 const USE_TABS = [
   { tab: 'today', pages: ['today'], label: 'Today', icon: 'today', href: (id) => `#/trip/${id}/use/today` },
   { tab: 'tours', pages: ['destination', 'dining'], label: 'Tours', icon: 'tours', href: (id) => `#/trip/${id}/use/destination` },
-  { tab: 'guest', pages: ['guest', 'party', 'dietary'], label: 'Guests', icon: 'guests', href: (id) => `#/trip/${id}/use/guest` },
+  { tab: 'guest', pages: ['guest', 'party', 'dietary', 'rooming', 'services'], label: 'Guests', icon: 'guests', href: (id) => `#/trip/${id}/use/guest` },
   { tab: 'messages', pages: ['messages'], label: 'Messages', icon: 'messages', href: (id) => `#/trip/${id}/use/messages` },
 ];
 
@@ -140,6 +142,7 @@ function openTripMenu(ctx, trip) {
       role === 'viewer' ? null : row('Send a list or a sheet', 'Guest lists, reservation sheets, as PDF or Excel', () => sendSheet(ctx, trip)),
       role === 'viewer' ? null : row('Settings', ctx.simpleFor(trip.id) ? 'Documents, requests, this phone' : 'Set-up, team, documents, this phone', () => ctx.go(`#/trip/${trip.id}/settings`)),
       row('Search everything', 'A guest, a tour, a restaurant, a page', () => openSearch(ctx, trip, SETTINGS_SECTIONS)),
+      role === 'viewer' ? null : row('New special request', 'Spa, hair, a private guide or driver, for a guest', () => openServiceForm(ctx, trip.id)),
       row('Change trip', 'Back to the list of your trips', () => ctx.go('#/')),
       row('This phone and my account', 'Notifications, Face ID, sign out', () => openAccountSheet(ctx))),
   });
@@ -247,7 +250,7 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
 
   // One slim row, for both modes (v0.151.0: words, no row of small pictures). Use: the trip's name, then "Saved" (the sync light, one word), "Help" and "Menu".
   // Settings: a way back to the trip. Changing trip lives in Menu (owner's request, 3 Oct 2026): once in a trip, you stay in it.
-  const usePage = page === 'guest' || page === 'party' || page === 'dietary' ? 'guests' : page === 'dining' ? 'dining' : page === 'destination' ? 'tours' : page === 'messages' ? 'messages' : 'today';
+  const usePage = page === 'rooming' ? 'rooming' : page === 'services' ? 'services' : page === 'guest' || page === 'party' || page === 'dietary' ? 'guests' : page === 'dining' ? 'dining' : page === 'destination' ? 'tours' : page === 'messages' ? 'messages' : 'today';
   const topBar = mode === 'settings'
     ? h('div', { class: 'top-bar' },
         h('a', { class: 'cog cog--home', href: `#/trip/${trip.id}/use`, 'aria-label': 'Back to the trip' }, icon('setup')),
@@ -275,13 +278,15 @@ function tripViewInner(ctx, tripId, mode, page = 'today', first, second, third, 
   }
 
   // Use: the chosen page and the bottom tabs. (The Undo button is inside each page, next to its title.)
-  const activePage = page === 'guest' ? 'guest' : page === 'party' ? 'party' : page === 'dietary' ? 'dietary' : page === 'dining' ? 'dining' : page === 'destination' ? 'destination' : page === 'messages' ? 'messages' : 'today';
+  const activePage = page === 'guest' ? 'guest' : page === 'party' ? 'party' : page === 'dietary' ? 'dietary' : page === 'rooming' ? 'rooming' : page === 'services' ? 'services' : page === 'dining' ? 'dining' : page === 'destination' ? 'destination' : page === 'messages' ? 'messages' : 'today';
   const content = activePage === 'guest' ? guestPage(ctx, trip, first)
     : activePage === 'party' ? partyPage(ctx, trip, first)
     : activePage === 'dining' ? diningPage(ctx, trip, first, second, third, fourth)
     : activePage === 'destination' ? destinationPage(ctx, trip, first, second)
     : activePage === 'messages' ? messagesPage(ctx, trip, first)
     : activePage === 'dietary' ? allergiesPage(ctx, trip)
+    : activePage === 'rooming' ? roomingPage(ctx, trip, first)
+    : activePage === 'services' ? servicesPage(ctx, trip, first)
     : todayPage(ctx, trip, SETTINGS_SECTIONS);
   // Touring and Dining share the Tours tab: a small switch at the top moves between them.
   const toursSwitch = activePage === 'destination' || activePage === 'dining'

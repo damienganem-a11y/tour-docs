@@ -463,8 +463,24 @@ function todayView(sheet, offline) {
   // rises over it. Order: what is next, the day, then the quiet rows (map, messages, games), the fact, and one small line at the bottom.
   hero.append(title);
   return [hero, h('div', { class: 'atl-body gal-sheet' }, offline, ...boardingCards(sheet), nextBar(sheet), h('div', { class: 'atl-day' }, parts),
+    servicesBlock(sheet, todayAt(sheet, day.destination)),
     h('div', { class: 'gal-rows' }, exploreTodayCard(sheet, go, simulatedDate ? new Date(`${simulatedDate}T12:00:00Z`) : new Date()), messageCard(), explorerCard(sheet)),
     factCard, myRequestsBlock(), installHint(), staleNotice(sheet), updatedRow(sheet), creditsLink(sheet))];
+}
+
+// "Your arrangements" (v0.155.0): the guest's special requests from today on (a massage, a private guide, a driver), as the staff chose to show them:
+// "Being arranged" while the Advance works on it, then the time, the place and who, once confirmed. A price only when the leader allows it.
+function servicesBlock(sheet, today) {
+  const list = (sheet.services ?? []).filter((x) => x.date >= today);
+  if (list.length === 0) return null;
+  return h('section', { class: 'gal-services' },
+    h('h2', { class: 'block-title' }, 'Your arrangements'),
+    ...list.map((x) => h('div', { class: `gal-service${x.status === 'pending' ? ' is-pending' : ''}` },
+      h('small', {}, x.status === 'pending' ? 'Being arranged' : 'Confirmed'),
+      h('b', {}, [x.title, x.minutes ? (x.minutes >= 60 ? `${Math.floor(x.minutes / 60)} h${x.minutes % 60 ? ` ${x.minutes % 60}` : ''}` : `${x.minutes} min`) : null].filter(Boolean).join(' · ')),
+      h('span', {}, [x.when, x.place, x.provider ? `with ${x.provider}` : null].filter(Boolean).join(' · ')),
+      x.price ? h('span', { class: 'gal-service-price' }, x.price) : null,
+      x.status === 'pending' ? h('span', { class: 'gal-service-note' }, 'We are working on it. You will be told as soon as it is confirmed.') : null)));
 }
 
 // The Trip tab: the whole programme, folded by destination.

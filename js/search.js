@@ -28,9 +28,12 @@ export function searchTrip(trip, query, { pages = [], limit = 8, now = new Date(
     return p?.kind === 'activity' ? `Today: ${p.activity.name}` : p?.kind === 'dinner' ? `Today: dinner at ${p.restaurant.name}` : null;
   };
 
-  const guests = trip.guests.filter((g) => !g.leftAt && matches(`${g.first} ${g.last} ${names.get(g.id)} ${g.seat ?? ''}`, query))
+  // The room of today's stop is searched too ("412" finds who sleeps there), and said in the result (v0.154.0).
+  const stopNow = destOf(todaySlots[0]?.destinationId);
+  const roomNow = (g) => stopNow?.rooms?.[g.id] ?? '';
+  const guests = trip.guests.filter((g) => !g.leftAt && matches(`${g.first} ${g.last} ${names.get(g.id)} ${g.seat ?? ''} ${roomNow(g)}`, query))
     .sort((a, b) => names.get(a.id).localeCompare(names.get(b.id)))
-    .map((g) => ({ kind: 'guest', id: g.id, guest: g, title: names.get(g.id), detail: [g.seat ? `Seat ${g.seat}` : null, nowOf(g), g.dietary ? 'Dietary need' : null].filter(Boolean).join(' · '), href: `${base}/use/guest/${g.id}` }));
+    .map((g) => ({ kind: 'guest', id: g.id, guest: g, title: names.get(g.id), detail: [roomNow(g) ? `Room ${roomNow(g)}` : null, g.seat ? `Seat ${g.seat}` : null, nowOf(g), g.dietary ? 'Dietary need' : null].filter(Boolean).join(' · '), href: `${base}/use/guest/${g.id}` }));
 
   const tours = trip.activities.filter((a) => matches(`${a.name} ${a.meeting ?? ''} ${destOf(slotOf(a.slotId)?.destinationId)?.name ?? ''}`, query))
     .map((a) => { const slot = slotOf(a.slotId); const d = destOf(slot?.destinationId);

@@ -13,6 +13,7 @@ import { findRollCall } from './rollcall.js';
 import { albumReminders } from './album.js';
 import { ticketFor } from './rules.js';
 import { jobReminders } from './teamJobs.js';
+import { serviceMessages } from './services.js';
 
 export const MESSAGE_TEMPLATES = [
   { key: 'clocks', label: 'Clocks change tonight', title: 'Clocks change tonight', body: 'Tonight, remember to change your clock or watch before you go to bed.' },
@@ -150,6 +151,9 @@ export function plannedAutoMessages(trip, now = new Date(), settings = autoNotif
   }
   // Team jobs (v0.141.0): the person in charge of the colours or of the local team is reminded on their own phone (Settings > Team > Jobs).
   if (settings.jobAlerts) for (const row of jobReminders(trip)) add(row);
+  // Special requests (v0.155.0): a new request to the Advance of its stop, an answer to the colleague who asked, a confirmation to its guests. These are
+  // about something that JUST happened: they are kept on the list for 30 minutes after it, even once their moment has passed (services.js).
+  for (const row of serviceMessages(trip, now)) rows.push(row);
   // Our Album: one week before it closes, when it closes, two weeks before the photos are erased. Sent to every guest. These are planned further ahead
   // than the 10 days of the others (the server keeps them until their time), in the time zone of the trip's last destination.
   const lastSlot = [...trip.slots].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
